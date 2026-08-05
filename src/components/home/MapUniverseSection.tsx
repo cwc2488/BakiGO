@@ -146,15 +146,15 @@ export function MapUniverseSection({ universe }: { universe: MapUniverseResult }
     <Card>
       <SectionLabel emoji={APP_EMOJI.section.mapUniverse}>活躍督導宇宙</SectionLabel>
       <p className="mt-2 text-[1.25rem] font-semibold tracking-tight text-[#1d1d1f] sm:text-[1.375rem]">
-        {universe.layoutSlotCount} 條活躍督導
+        {establishedCount} 位第一代夥伴
       </p>
 
-      {universe.isRuleMissing ? (
+      {universe.lines.length === 0 ? (
         <div className="mt-4">
           <EmptyState
             emoji={APP_EMOJI.mood.empty}
-            title="活躍督導目標尚未設定"
-            description="系統規則定義完成後，這裡會顯示 14 條活躍督導進度。"
+            title="尚無第一代夥伴"
+            description="招募下線後，這裡會顯示各條線的培育進度。"
           />
         </div>
       ) : (

@@ -28,12 +28,16 @@ import { APP_EMOJI } from "@/lib/ui/app-emojis";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import Link from "next/link";
 
-import type { DailyActionMetricView, TodayActionKey } from "@/types/daily-action";
+import type { DailyActionMetricView, DailyActionSuperLeagueEntryView, TodayActionKey } from "@/types/daily-action";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal";
 import { QuickRecruitModal } from "@/components/daily-action/QuickRecruitModal";
 import { SuperLeagueAddModal } from "@/components/daily-action/SuperLeagueAddModal";
-import { addSuperLeagueEntry } from "@/lib/daily-action/super-league-entries";
+import {
+  addSuperLeagueEntry,
+  removeSuperLeagueEntry,
+  updateSuperLeagueEntry,
+} from "@/lib/daily-action/super-league-entries";
 
 function TodayCalendarPlanCard({ plan }: { plan: CalendarDayPlanSummary }) {
   return (
@@ -130,9 +134,13 @@ function MetricCard({
 function SuperLeagueCard({
   superLeague,
   onAddClick,
+  onEditEntry,
+  onToggleSupervisor,
 }: {
   superLeague: ReturnType<typeof buildDailyActionSnapshot>["superLeague"];
   onAddClick: () => void;
+  onEditEntry: (entry: DailyActionSuperLeagueEntryView) => void;
+  onToggleSupervisor: (entryId: string, isSupervisor: boolean) => void;
 }) {
   return (
     <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
@@ -151,6 +159,53 @@ function SuperLeagueCard({
           + 新增
         </button>
       </div>
+
+      {superLeague.entries.length > 0 ? (
+        <ul className="mt-4 divide-y divide-[var(--brand-border)] rounded-xl border border-[var(--brand-border)]">
+          {superLeague.entries.map((entry) => (
+            <li key={entry.id} className="flex items-center gap-3 px-3 py-3">
+              <button
+                className="min-w-0 flex-1 text-left"
+                onClick={() => onEditEntry(entry)}
+                type="button"
+              >
+                <p className="truncate text-[0.9375rem] font-medium text-[#1d1d1f]">
+                  {entry.displayName}
+                </p>
+                <p className="mt-0.5 text-[0.75rem] text-[#86868b]">點擊編輯姓名</p>
+              </button>
+              <div className="grid shrink-0 grid-cols-2 gap-1 rounded-lg bg-[var(--brand-bg)] p-1">
+                <button
+                  className={`rounded-md px-2.5 py-1.5 text-[0.75rem] font-medium ${
+                    !entry.isSupervisor
+                      ? "bg-white text-[var(--brand-primary-dark)] shadow-sm"
+                      : "text-[#86868b]"
+                  }`}
+                  onClick={() => onToggleSupervisor(entry.id, false)}
+                  type="button"
+                >
+                  會員
+                </button>
+                <button
+                  className={`rounded-md px-2.5 py-1.5 text-[0.75rem] font-medium ${
+                    entry.isSupervisor
+                      ? "bg-white text-[var(--brand-primary-dark)] shadow-sm"
+                      : "text-[#86868b]"
+                  }`}
+                  onClick={() => onToggleSupervisor(entry.id, true)}
+                  type="button"
+                >
+                  督導
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 rounded-xl bg-[var(--brand-bg)] px-4 py-3 text-[0.8125rem] text-[#86868b]">
+          {APP_EMOJI.mood.empty} 尚無夥伴，按「+ 新增」開始記錄。
+        </p>
+      )}
 
       <div className="mt-4 space-y-3">
         <div className="flex items-end justify-between">
@@ -218,9 +273,19 @@ function DailyActionView({
   const displayName = getMemberDisplayName();
   const [recruitModalOpen, setRecruitModalOpen] = useState(false);
   const [superLeagueModalOpen, setSuperLeagueModalOpen] = useState(false);
+  const [editingSuperLeagueEntryId, setEditingSuperLeagueEntryId] = useState<string | null>(null);
   const [activityModalType, setActivityModalType] = useState<"measurement" | "consultation" | null>(
     null,
   );
+
+  const editingSuperLeagueEntry = useMemo(() => {
+    if (!editingSuperLeagueEntryId) {
+      return null;
+    }
+    return (
+      snapshot.superLeague.entries.find((entry) => entry.id === editingSuperLeagueEntryId) ?? null
+    );
+  }, [editingSuperLeagueEntryId, snapshot.superLeague.entries]);
 
   const handleAction = useCallback((actionKey: TodayActionKey) => {
     if (actionKey === "recruit") {
@@ -252,17 +317,49 @@ function DailyActionView({
 
   const handleSuperLeagueSubmit = useCallback(
     (input: { displayName: string; isSupervisor: boolean }) => {
-      const year = new Date(`${snapshot.referenceDate}T12:00:00`).getFullYear();
-      addSuperLeagueEntry(storage, {
-        ownerMemberId: memberId,
-        displayName: input.displayName,
-        isSupervisor: input.isSupervisor,
-        year,
-      });
+      if (editingSuperLeagueEntryId) {
+        updateSuperLeagueEntry(storage, editingSuperLeagueEntryId, input);
+      } else {
+        const year = new Date(`${snapshot.referenceDate}T12:00:00`).getFullYear();
+        addSuperLeagueEntry(storage, {
+          ownerMemberId: memberId,
+          displayName: input.displayName,
+          isSupervisor: input.isSupervisor,
+          year,
+        });
+      }
+      setEditingSuperLeagueEntryId(null);
       setRefreshKey((current) => current + 1);
     },
-    [memberId, snapshot.referenceDate, storage],
+    [editingSuperLeagueEntryId, memberId, snapshot.referenceDate, storage],
   );
+
+  const handleSuperLeagueDelete = useCallback(() => {
+    if (!editingSuperLeagueEntryId) {
+      return;
+    }
+    removeSuperLeagueEntry(storage, editingSuperLeagueEntryId);
+    setEditingSuperLeagueEntryId(null);
+    setRefreshKey((current) => current + 1);
+  }, [editingSuperLeagueEntryId, storage]);
+
+  const handleToggleSupervisor = useCallback(
+    (entryId: string, isSupervisor: boolean) => {
+      updateSuperLeagueEntry(storage, entryId, { isSupervisor });
+      setRefreshKey((current) => current + 1);
+    },
+    [storage],
+  );
+
+  const openSuperLeagueAdd = useCallback(() => {
+    setEditingSuperLeagueEntryId(null);
+    setSuperLeagueModalOpen(true);
+  }, []);
+
+  const openSuperLeagueEdit = useCallback((entry: DailyActionSuperLeagueEntryView) => {
+    setEditingSuperLeagueEntryId(entry.id);
+    setSuperLeagueModalOpen(true);
+  }, []);
 
   return (
     <div className="min-h-full bg-[var(--brand-bg)]">
@@ -313,7 +410,12 @@ function DailyActionView({
         />
 
         <SuperLeagueAddModal
-          onClose={() => setSuperLeagueModalOpen(false)}
+          editingEntry={editingSuperLeagueEntry}
+          onClose={() => {
+            setSuperLeagueModalOpen(false);
+            setEditingSuperLeagueEntryId(null);
+          }}
+          onDelete={editingSuperLeagueEntryId ? handleSuperLeagueDelete : undefined}
           onSubmit={handleSuperLeagueSubmit}
           open={superLeagueModalOpen}
         />
@@ -322,7 +424,12 @@ function DailyActionView({
           <MetricCard compact metric={snapshot.monthlyMeasurement} title="本月量測" barColor="#77b539" />
           <MetricCard compact metric={snapshot.monthlyConsultation} title="本月諮詢" barColor="#77b539" />
         </div>
-        <SuperLeagueCard onAddClick={() => setSuperLeagueModalOpen(true)} superLeague={snapshot.superLeague} />
+        <SuperLeagueCard
+          onAddClick={openSuperLeagueAdd}
+          onEditEntry={openSuperLeagueEdit}
+          onToggleSupervisor={handleToggleSupervisor}
+          superLeague={snapshot.superLeague}
+        />
       </main>
     </div>
   );

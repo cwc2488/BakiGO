@@ -105,6 +105,11 @@ function buildSuperLeagueView(
     firstGeneration,
     supervisor,
     completionPercent: calculateSuperLeagueCompletion(firstGeneration, supervisor),
+    entries: entries.map((entry) => ({
+      id: entry.id,
+      displayName: entry.displayName,
+      isSupervisor: entry.isSupervisor,
+    })),
   };
 }
 

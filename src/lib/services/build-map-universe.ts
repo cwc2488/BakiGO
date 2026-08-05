@@ -33,10 +33,14 @@ import type { RetailTransaction } from "@/types/retail-transaction";
 import type { EntityId, ISODateString, YearMonth } from "@/types";
 import type { LeaderSignal } from "@/lib/business-engine/types";
 
-/** Product MAP Universe grid — matches homepage layout when Engine totalLines is Rule Missing. */
-const MAP_UNIVERSE_LAYOUT_SLOTS = 14;
-
 export type MapUniverseLineStatus = "growing" | "needs_help" | "danger" | "empty";
+
+function resolveSlotCount(map: MapProgressResult, directDownlineCount: number): number {
+  if (map.totalLines !== null && !Number.isNaN(map.totalLines)) {
+    return map.totalLines;
+  }
+  return Math.max(directDownlineCount, map.lines.length);
+}
 
 export type MapUniverseRankTier = "world_team" | "promotion_group" | "wealth_group" | null;
 
@@ -69,13 +73,6 @@ function priorYearMonth(yearMonth: YearMonth): YearMonth {
   const [year, month] = yearMonth.split("-").map(Number);
   const date = new Date(year, month - 2, 1);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}` as YearMonth;
-}
-
-function resolveSlotCount(map: MapProgressResult): number {
-  if (map.totalLines !== null && !Number.isNaN(map.totalLines)) {
-    return map.totalLines;
-  }
-  return MAP_UNIVERSE_LAYOUT_SLOTS;
 }
 
 function mapSignalToStatus(
@@ -160,9 +157,8 @@ export interface BuildMapUniverseInput {
  * Not a Business Engine — orchestrates calculateLeaderForest + per-line Engine calls.
  */
 export function buildMapUniverse(input: BuildMapUniverseInput): MapUniverseResult {
-  const slotCount = resolveSlotCount(input.map);
-  const isRuleMissing = input.map.totalLines === null;
   const directDownline = getDirectDownline(input.members, input.leaderMemberId);
+  const slotCount = resolveSlotCount(input.map, directDownline.length);
   const challenge = buildMonthlyChallenge(input.yearMonth);
   const priorMonth = priorYearMonth(input.yearMonth);
 
@@ -420,7 +416,7 @@ export function buildMapUniverse(input: BuildMapUniverseInput): MapUniverseResul
   return {
     layoutSlotCount: slotCount,
     lines,
-    isRuleMissing,
+    isRuleMissing: false,
     computedAt: new Date().toISOString(),
   };
 }

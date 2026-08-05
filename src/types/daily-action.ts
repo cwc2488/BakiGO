@@ -5,10 +5,17 @@ export interface DailyActionMetricView {
   isRuleMissing: boolean;
 }
 
+export interface DailyActionSuperLeagueEntryView {
+  id: string;
+  displayName: string;
+  isSupervisor: boolean;
+}
+
 export interface DailyActionSuperLeagueView {
   firstGeneration: DailyActionMetricView;
   supervisor: DailyActionMetricView;
   completionPercent: number | null;
+  entries: DailyActionSuperLeagueEntryView[];
 }
 
 export interface DailyActionSnapshot {

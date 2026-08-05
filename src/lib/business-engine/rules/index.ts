@@ -192,7 +192,7 @@ export const DEFAULT_BUSINESS_RULES: BusinessRulesConfig = {
     },
   },
   presidentTree: {
-    totalLines: 14,
+    totalLines: null,
     activeRankKeys: [RANK_KEYS.ACTIVE_SUPERVISOR],
     minActivityCount: 0,
     activityKeys: Object.values(ACTIVITY_KEYS),
@@ -331,18 +331,7 @@ export const DEFAULT_BUSINESS_RULES: BusinessRulesConfig = {
         descriptionTemplate: "目前已累積 {current} {unit}，目標 {target} {unit}",
       },
     ],
-    mapSteps: [
-      {
-        stepKey: "map_milestone",
-        targetActiveLines: 14,
-        milestoneLabel: "14 條活躍督導",
-        unit: "條",
-        priority: 2,
-        rewardXP: 40,
-        titleTemplate: "距離{milestoneLabel}還差{remaining}{unit}",
-        descriptionTemplate: "目前已有 {current} 條活躍督導線，目標 {target} 條",
-      },
-    ],
+    mapSteps: [],
     dailyActivitySteps: [
       {
         stepKey: "daily_consultation",

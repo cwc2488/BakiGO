@@ -86,7 +86,7 @@ function isNodeCompleted(
     case "member":
       return true;
     case "map":
-      return rankIndex >= 2 || !findNextStep(metrics, "map_milestone");
+      return rankIndex >= 2;
     case "supervisor":
       return rankIndex >= 2;
     case "active_supervisor":
@@ -118,16 +118,12 @@ function resolveActiveMilestoneIndex(rankKey: string, metrics: MemberComputedMet
   if (nextRankId && NEXT_RANK_TO_ROAD_INDEX[nextRankId] !== undefined) {
     const targetIndex = NEXT_RANK_TO_ROAD_INDEX[nextRankId] as number;
     if (nextRankId === PROMOTION_RANK_IDS.SUPERVISOR && getRankRoadIndex(rankKey) <= 0) {
-      return findNextStep(metrics, "map_milestone") ? 1 : 2;
+      return 1;
     }
     if (nextRankId === PROMOTION_RANK_IDS.WORLD_TEAM && getRankRoadIndex(rankKey) <= 3) {
       return rankKey === RANK_KEYS.ACTIVE_SUPERVISOR ? 4 : Math.max(2, getRankRoadIndex(rankKey));
     }
     return targetIndex;
-  }
-
-  if (findNextStep(metrics, "map_milestone")) {
-    return 1;
   }
 
   return Math.min(getRankRoadIndex(rankKey) + 1, 7);
@@ -175,7 +171,6 @@ function buildMapNode(
   activeIndex: number,
 ): PresidentRoadNode {
   const status = resolveNodeStatus("map", 1, rankKey, metrics, activeIndex);
-  const mapStep = findNextStep(metrics, "map_milestone");
   const vpStep = findNextStep(metrics, "world_team_vp");
   const lines: PresidentRoadProgressLine[] = [];
 
@@ -187,26 +182,8 @@ function buildMapNode(
     });
   }
 
-  if (mapStep) {
-    lines.push({
-      label: "活躍督導",
-      value: `${mapStep.current} / ${mapStep.target}`,
-      remaining: mapStep.remaining > 0 ? `還差 ${mapStep.remaining} 位` : null,
-    });
-  } else if (metrics.map.totalLines !== null) {
-    lines.push({
-      label: "活躍督導",
-      value: `${metrics.map.activeLines} / ${metrics.map.totalLines}`,
-      remaining:
-        metrics.map.totalLines - metrics.map.activeLines > 0
-          ? `還差 ${metrics.map.totalLines - metrics.map.activeLines} 位`
-          : null,
-    });
-  }
-
   const progressPercent =
-    mapStep?.progressPercent ??
-    metrics.map.progressPercent ??
+    vpStep?.progressPercent ??
     (status === "completed" ? 100 : status === "not_started" ? 0 : null);
 
   return {
@@ -215,11 +192,8 @@ function buildMapNode(
     ...formatStatus(status),
     progressPercent,
     lines,
-    remainingSummary: mapStep
-      ? `還差 ${mapStep.remaining} 位`
-      : metrics.map.totalLines !== null
-        ? `還差 ${Math.max(0, metrics.map.totalLines - metrics.map.activeLines)} 位`
-        : null,
+    remainingSummary:
+      vpStep && vpStep.remaining > 0 ? `還差 ${vpStep.remaining} VP` : null,
   };
 }
 

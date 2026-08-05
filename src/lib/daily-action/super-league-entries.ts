@@ -65,3 +65,44 @@ export function addSuperLeagueEntry(
   storage.setItem(STORAGE_KEYS.superLeagueEntries, JSON.stringify(next));
   return entry;
 }
+
+function persistEntries(storage: StorageAdapter, entries: SuperLeagueEntry[]): void {
+  storage.setItem(STORAGE_KEYS.superLeagueEntries, JSON.stringify(entries));
+}
+
+export function updateSuperLeagueEntry(
+  storage: StorageAdapter,
+  entryId: string,
+  patch: Partial<Pick<SuperLeagueEntry, "displayName" | "isSupervisor">>,
+): SuperLeagueEntry | null {
+  const entries = loadSuperLeagueEntries(storage);
+  const index = entries.findIndex((entry) => entry.id === entryId);
+  if (index < 0) {
+    return null;
+  }
+
+  const updated: SuperLeagueEntry = {
+    ...entries[index],
+    ...(patch.displayName !== undefined ? { displayName: patch.displayName.trim() } : {}),
+    ...(patch.isSupervisor !== undefined ? { isSupervisor: patch.isSupervisor } : {}),
+  };
+
+  if (!updated.displayName) {
+    return null;
+  }
+
+  const next = [...entries];
+  next[index] = updated;
+  persistEntries(storage, next);
+  return updated;
+}
+
+export function removeSuperLeagueEntry(storage: StorageAdapter, entryId: string): boolean {
+  const entries = loadSuperLeagueEntries(storage);
+  const next = entries.filter((entry) => entry.id !== entryId);
+  if (next.length === entries.length) {
+    return false;
+  }
+  persistEntries(storage, next);
+  return true;
+}

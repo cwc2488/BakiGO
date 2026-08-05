@@ -98,11 +98,7 @@ export function shouldShowBossRuleMissing(metrics: MemberComputedMetrics): boole
     return false;
   }
 
-  return (
-    hasRuleMissing(metrics, "nextSteps.world_team_vp") ||
-    hasRuleMissing(metrics, "nextSteps.map_milestone") ||
-    hasRuleMissing(metrics, "presidentTree.totalLines")
-  );
+  return hasRuleMissing(metrics, "nextSteps.world_team_vp");
 }
 
 export function shouldShowMissionRuleMissing(metrics: MemberComputedMetrics): boolean {

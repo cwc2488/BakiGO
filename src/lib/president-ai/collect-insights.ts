@@ -34,14 +34,6 @@ export function collectWarnings(input: PresidentAIInput): Warning[] {
     });
   }
 
-  if (input.map.totalLines === null) {
-    warnings.push({
-      warningKey: "presidentTree.totalLines",
-      message: "MAP 目標尚未定義",
-      category: "MAP",
-    });
-  }
-
   if (input.gamification.streak.currentStreak > 0 && !input.gamification.streak.isActiveToday) {
     warnings.push({
       warningKey: "streak_inactive_today",

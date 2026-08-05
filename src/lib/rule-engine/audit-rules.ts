@@ -22,8 +22,6 @@ export function auditBusinessRules(
 ): RuleMissingEntry[] {
   const entries: RuleMissingEntry[] = [];
 
-  pushMissing(entries, "presidentTree.totalLines", "business", rules.presidentTree.totalLines);
-
   Object.entries(rules.rankQualification).forEach(([rankKey, qualification]) => {
     qualification.criteria.forEach((criterion) => {
       pushMissing(
