@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBodyScrollLock } from "@/lib/ui/use-body-scroll-lock";
 import {
@@ -293,6 +293,38 @@ function ActivityTypeSelect({
   );
 }
 
+function NewFriendsCountField({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (count: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const displayValue = draft ?? (value === 0 ? "" : String(value));
+
+  return (
+    <label className="block space-y-2">
+      <span className="text-[0.875rem] font-medium text-[#636366]">帶幾位新朋友</span>
+      <input
+        className="w-full rounded-xl border border-[var(--cal-border)] px-4 py-3 text-[1rem] outline-none focus:border-[var(--cal-primary)]"
+        inputMode="numeric"
+        onBlur={() => setDraft(null)}
+        onChange={(event) => {
+          const next = event.target.value.replace(/\D/g, "");
+          setDraft(next);
+          onChange(next === "" ? 0 : Number.parseInt(next, 10));
+        }}
+        onFocus={() => setDraft(value === 0 ? "" : String(value))}
+        pattern="[0-9]*"
+        placeholder="0"
+        type="text"
+        value={displayValue}
+      />
+    </label>
+  );
+}
+
 export function EventFormModal({
   open,
   mode,
@@ -553,20 +585,10 @@ export function EventFormModal({
         <div className="shrink-0 space-y-3 border-t border-[var(--cal-border)] bg-[var(--cal-surface)] p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
           {sharedContext ? (
             <>
-              <label className="block space-y-2">
-                <span className="text-[0.875rem] font-medium text-[#636366]">帶幾位新朋友</span>
-                <input
-                  className="w-full rounded-xl border border-[var(--cal-border)] px-4 py-3 text-[1rem] outline-none focus:border-[var(--cal-primary)]"
-                  min={0}
-                  onChange={(event) =>
-                    sharedContext.onNewFriendsCountChange(
-                      Math.max(0, Number.parseInt(event.target.value, 10) || 0),
-                    )
-                  }
-                  type="number"
-                  value={sharedContext.newFriendsCount}
-                />
-              </label>
+              <NewFriendsCountField
+                onChange={sharedContext.onNewFriendsCountChange}
+                value={sharedContext.newFriendsCount}
+              />
 
               <button
                 className={`w-full rounded-xl px-4 py-3.5 text-[1rem] font-semibold text-white ${
