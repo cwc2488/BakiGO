@@ -17,6 +17,11 @@ function buildTimelineSubtitle(event: BakiEvent): string {
     return event.metadata.note.trim();
   }
 
+  const metadata = event.metadata as { calendarTitle?: string; source?: string } | undefined;
+  if (metadata?.source === "calendar" && metadata.calendarTitle?.trim()) {
+    return `${metadata.calendarTitle.trim()} · 來自行事曆`;
+  }
+
   return getEventTypeDefinition(event.eventTypeKey)?.description ?? event.eventTypeKey;
 }
 

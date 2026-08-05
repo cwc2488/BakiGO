@@ -330,7 +330,7 @@ export default function EventCenterPage() {
             {APP_EMOJI.page.events} 紀錄中心
           </h1>
           <p className="text-[1.0625rem] text-[#86868b]">
-            登記日常活動與 MAP 會議。成交請至零售屋；晉升資格由下線達標自動計算。
+            登記日常活動與 MAP 會議。行事曆標記「會參加」或「完成並登記」的行程會自動出現於此；成交請至零售屋；晉升資格由下線達標自動計算。
           </p>
         </header>
 

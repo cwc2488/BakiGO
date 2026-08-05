@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import {
   CALENDAR_OTHER_ACTIVITY_KEY,
   getCalendarDailyActivityTypes,
@@ -46,6 +47,12 @@ export interface SharedEventFormContext {
   onNewFriendsCountChange: (count: number) => void;
   attendanceSummary: MeetingAttendanceSummaryView;
   onToggleAttend: (attending: boolean, activityTypeKey: string, newFriendsCount: number) => void;
+}
+
+export interface PersonalEventLogContext {
+  isLogged: boolean;
+  isLogging?: boolean;
+  onLogActivity: () => void;
 }
 
 export function buildDefaultFormValues(date: string, startTime = "09:00"): EventFormValues {
@@ -290,6 +297,7 @@ export function EventFormModal({
   values,
   readOnly = false,
   sharedContext,
+  personalLogContext,
   onChange,
   onClose,
   onSubmit,
@@ -300,11 +308,24 @@ export function EventFormModal({
   values: EventFormValues;
   readOnly?: boolean;
   sharedContext?: SharedEventFormContext;
+  personalLogContext?: PersonalEventLogContext;
   onChange: (values: EventFormValues) => void;
   onClose: () => void;
   onSubmit: () => void;
   onDelete?: () => void;
 }) {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   if (!open) {
     return null;
   }
@@ -313,22 +334,26 @@ export function EventFormModal({
     mode === "create" ? "新增行程" : mode === "view" ? "共用行程" : "編輯行程";
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/30 p-0 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] sm:items-center sm:p-4 sm:pb-4">
+    <div className="fixed inset-0 z-[120] flex items-end justify-center sm:items-center sm:p-4">
       <button
         aria-label="關閉"
-        className="absolute inset-0"
+        className="absolute inset-0 bg-black/30"
         onClick={onClose}
         type="button"
       />
-      <div className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-[1.75rem] bg-[var(--cal-surface)] shadow-xl sm:max-h-[90vh] sm:rounded-[1.75rem]">
-        <div className="flex-1 overflow-y-auto p-6 pb-4">
-        <div className="mb-5 flex items-center justify-between">
+      <div className="relative mb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] flex w-full max-w-md max-h-[calc(100dvh-4.5rem-env(safe-area-inset-bottom,0px))] flex-col overflow-hidden rounded-t-[1.75rem] bg-[var(--cal-surface)] shadow-xl sm:mb-0 sm:max-h-[90vh] sm:rounded-[1.75rem]">
+        <div className="flex shrink-0 items-center justify-between border-b border-[var(--cal-border)] px-6 py-4">
           <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">{title}</h2>
-          <button className="text-[0.9375rem] font-medium text-[var(--cal-primary-dark)]" onClick={onClose} type="button">
+          <button
+            className="rounded-lg px-2 py-1 text-[0.9375rem] font-medium text-[var(--cal-primary-dark)]"
+            onClick={onClose}
+            type="button"
+          >
             {readOnly ? "關閉" : "取消"}
           </button>
         </div>
 
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4 [-webkit-overflow-scrolling:touch]">
         {readOnly ? (
           <p className="mb-4 text-[0.8125rem] leading-relaxed text-[#86868b]">
             此行程來自共用行事曆，無法編輯內容。請選擇種類後按「會參加」，系統會列入統計並固定顯示在您的行事曆。
@@ -502,75 +527,91 @@ export function EventFormModal({
         </div>
 
         {sharedContext ? (
-          <div className="mt-6 space-y-4">
-            <div className="rounded-xl bg-[var(--cal-primary-muted)] px-4 py-3">
-              <p className="text-[0.875rem] font-semibold text-[#1d1d1f]">
-                下線夥伴參加 {sharedContext.attendanceSummary.totalParticipants} 人
-                {sharedContext.attendanceSummary.totalNewFriends > 0
-                  ? ` · 新朋友 ${sharedContext.attendanceSummary.totalNewFriends} 人`
-                  : ""}
-              </p>
-              {sharedContext.attendanceSummary.participants.length > 0 ? (
-                <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto text-[0.8125rem] text-[#636366]">
-                  {sharedContext.attendanceSummary.participants.map((participant) => (
-                    <li key={participant.name} className="flex justify-between gap-2">
-                      <span>{participant.name}</span>
-                      {participant.newFriendsCount > 0 ? (
-                        <span className="shrink-0 text-[var(--cal-primary-dark)]">
-                          +{participant.newFriendsCount} 新朋友
-                        </span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-1 text-[0.8125rem] text-[#86868b]">尚無夥伴標記參加</p>
-              )}
-            </div>
-
-            <label className="block space-y-2">
-              <span className="text-[0.875rem] font-medium text-[#636366]">帶幾位新朋友</span>
-              <input
-                className="w-full rounded-xl border border-[var(--cal-border)] px-4 py-3 text-[1rem] outline-none focus:border-[var(--cal-primary)]"
-                min={0}
-                onChange={(event) =>
-                  sharedContext.onNewFriendsCountChange(
-                    Math.max(0, Number.parseInt(event.target.value, 10) || 0),
-                  )
-                }
-                type="number"
-                value={sharedContext.newFriendsCount}
-              />
-            </label>
-
-            <button
-              className={`w-full rounded-xl px-4 py-3.5 text-[1rem] font-semibold text-white ${
-                sharedContext.isAttending ? "bg-[var(--cal-primary-dark)]" : "bg-[var(--cal-primary)]"
-              }`}
-              onClick={() =>
-                sharedContext.onToggleAttend(
-                  !sharedContext.isAttending,
-                  values.activityTypeKey,
-                  sharedContext.newFriendsCount,
-                )
-              }
-              type="button"
-            >
-              {sharedContext.isAttending
-                ? `已標記參加（新朋友 ${sharedContext.newFriendsCount} 人 · 點擊取消）`
-                : `會參加 · 帶 ${sharedContext.newFriendsCount} 位新朋友`}
-            </button>
-            {sharedContext.isAttending ? (
-              <p className="text-center text-[0.8125rem] text-[#636366]">
-                已列入統計，關閉共用行事曆後仍會顯示
-              </p>
-            ) : null}
+          <div className="mt-6 rounded-xl bg-[var(--cal-primary-muted)] px-4 py-3">
+            <p className="text-[0.875rem] font-semibold text-[#1d1d1f]">
+              下線夥伴參加 {sharedContext.attendanceSummary.totalParticipants} 人
+              {sharedContext.attendanceSummary.totalNewFriends > 0
+                ? ` · 新朋友 ${sharedContext.attendanceSummary.totalNewFriends} 人`
+                : ""}
+            </p>
+            {sharedContext.attendanceSummary.participants.length > 0 ? (
+              <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto overscroll-contain text-[0.8125rem] text-[#636366]">
+                {sharedContext.attendanceSummary.participants.map((participant) => (
+                  <li key={participant.name} className="flex justify-between gap-2">
+                    <span>{participant.name}</span>
+                    {participant.newFriendsCount > 0 ? (
+                      <span className="shrink-0 text-[var(--cal-primary-dark)]">
+                        +{participant.newFriendsCount} 新朋友
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-[0.8125rem] text-[#86868b]">尚無夥伴標記參加</p>
+            )}
           </div>
         ) : null}
         </div>
 
-        {!readOnly ? (
-          <div className="shrink-0 space-y-3 border-t border-[var(--cal-border)] bg-[var(--cal-surface)] p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+        <div className="shrink-0 space-y-3 border-t border-[var(--cal-border)] bg-[var(--cal-surface)] p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+          {sharedContext ? (
+            <>
+              <label className="block space-y-2">
+                <span className="text-[0.875rem] font-medium text-[#636366]">帶幾位新朋友</span>
+                <input
+                  className="w-full rounded-xl border border-[var(--cal-border)] px-4 py-3 text-[1rem] outline-none focus:border-[var(--cal-primary)]"
+                  min={0}
+                  onChange={(event) =>
+                    sharedContext.onNewFriendsCountChange(
+                      Math.max(0, Number.parseInt(event.target.value, 10) || 0),
+                    )
+                  }
+                  type="number"
+                  value={sharedContext.newFriendsCount}
+                />
+              </label>
+
+              <button
+                className={`w-full rounded-xl px-4 py-3.5 text-[1rem] font-semibold text-white ${
+                  sharedContext.isAttending ? "bg-[var(--cal-primary-dark)]" : "bg-[var(--cal-primary)]"
+                }`}
+                onClick={() =>
+                  sharedContext.onToggleAttend(
+                    !sharedContext.isAttending,
+                    values.activityTypeKey,
+                    sharedContext.newFriendsCount,
+                  )
+                }
+                type="button"
+              >
+                {sharedContext.isAttending
+                  ? `已標記參加（新朋友 ${sharedContext.newFriendsCount} 人 · 點擊取消）`
+                  : `會參加 · 帶 ${sharedContext.newFriendsCount} 位新朋友`}
+              </button>
+            </>
+          ) : null}
+
+          {!readOnly ? (
+            <>
+            {personalLogContext ? (
+              <button
+                className={`w-full rounded-xl px-4 py-3.5 text-[0.9375rem] font-semibold ${
+                  personalLogContext.isLogged
+                    ? "border border-[var(--cal-primary-dark)] bg-[var(--cal-primary-light)] text-[var(--cal-primary-dark)]"
+                    : "border border-[var(--cal-border)] bg-[var(--cal-surface)] text-[#1d1d1f]"
+                }`}
+                disabled={personalLogContext.isLogged || personalLogContext.isLogging}
+                onClick={personalLogContext.onLogActivity}
+                type="button"
+              >
+                {personalLogContext.isLogged
+                  ? "已登記至紀錄中心"
+                  : personalLogContext.isLogging
+                    ? "登記中…"
+                    : "完成並登記至紀錄中心"}
+              </button>
+            ) : null}
             <button
               className="w-full rounded-xl bg-[var(--cal-primary)] px-4 py-3.5 text-[1rem] font-semibold text-white disabled:opacity-50"
               disabled={!values.title.trim()}
@@ -588,8 +629,9 @@ export function EventFormModal({
                 刪除行程
               </button>
             ) : null}
-          </div>
-        ) : null}
+            </>
+          ) : null}
+        </div>
       </div>
     </div>
   );

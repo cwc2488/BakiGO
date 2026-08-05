@@ -46,6 +46,14 @@ import {
 import { getSharedCalendarIds, getSharedCalendarSyncRange, syncSharedGoogleCalendars } from "@/lib/calendar/sync-shared-calendars";
 import { buildMeetingAttendanceSummary } from "@/lib/calendar/meeting-attendance-summary";
 import {
+  isPersonalCalendarEventLogged,
+  isRecordableCalendarActivityKey,
+  removeBakiEventForPersonalCalendarEvent,
+  removeBakiEventForSharedAttendance,
+  syncPersonalCalendarEventToBakiEvent,
+  syncSharedAttendanceToBakiEvent,
+} from "@/lib/calendar/calendar-baki-event-sync";
+import {
   isPersonalCalendarEvent,
   isSharedCalendarCacheFresh,
   loadSharedCalendarEvents,
@@ -126,6 +134,8 @@ export default function CalendarPage() {
   const [viewingExpandedEvent, setViewingExpandedEvent] = useState<ExpandedCalendarEvent | null>(null);
   const [attendNewFriendsCount, setAttendNewFriendsCount] = useState(0);
   const [attendanceRefreshKey, setAttendanceRefreshKey] = useState(0);
+  const [personalEventLogged, setPersonalEventLogged] = useState(false);
+  const [isLoggingPersonalEvent, setIsLoggingPersonalEvent] = useState(false);
 
   const reloadAttendance = useCallback(() => {
     migrateSharedAttendanceColors(storage);
@@ -322,6 +332,25 @@ export default function CalendarPage() {
     setFormOpen(true);
   }
 
+  function syncAttendanceRecord(
+    sharedEventId: string,
+    activityTypeKey: string,
+    newFriendsCount: number,
+  ) {
+    if (!viewingExpandedEvent) {
+      return;
+    }
+
+    syncSharedAttendanceToBakiEvent(storage, memberId, {
+      sharedEventId,
+      activityTypeKey,
+      newFriendsCount,
+      title: viewingExpandedEvent.title,
+      notes: viewingExpandedEvent.notes,
+      startAt: viewingExpandedEvent.startAt,
+    });
+  }
+
   function handleToggleSharedAttend(
     attending: boolean,
     activityTypeKey: string,
@@ -330,6 +359,8 @@ export default function CalendarPage() {
     if (!viewingExpandedEvent) {
       return;
     }
+
+    const referenceDate = viewingExpandedEvent.startAt.slice(0, 10);
 
     if (attending) {
       saveSharedCalendarAttendance(
@@ -342,12 +373,25 @@ export default function CalendarPage() {
           newFriendsCount,
         ),
       );
-      setStatusMessage(`已標記參加，帶 ${newFriendsCount} 位新朋友`);
+      syncAttendanceRecord(viewingExpandedEvent.sourceEventId, activityTypeKey, newFriendsCount);
+      setStatusMessage(
+        isRecordableCalendarActivityKey(activityTypeKey)
+          ? `已標記參加並同步至紀錄中心，帶 ${newFriendsCount} 位新朋友`
+          : `已標記參加，帶 ${newFriendsCount} 位新朋友`,
+      );
       void refreshCalendarReminderSchedule(storage);
+      setFormOpen(false);
+      setViewingExpandedEvent(null);
     } else {
       removeSharedCalendarAttendance(storage, memberId, viewingExpandedEvent.sourceEventId);
+      removeBakiEventForSharedAttendance(
+        storage,
+        memberId,
+        viewingExpandedEvent.sourceEventId,
+        referenceDate,
+      );
       setAttendNewFriendsCount(0);
-      setStatusMessage("已取消參加");
+      setStatusMessage("已取消參加，紀錄中心同步移除");
       void refreshCalendarReminderSchedule(storage);
     }
 
@@ -379,6 +423,7 @@ export default function CalendarPage() {
     }
 
     setViewingExpandedEvent(null);
+    setPersonalEventLogged(false);
     const source = createCalendarEventRepository(storage).getById(expanded.sourceEventId);
     if (!source) {
       return;
@@ -387,7 +432,43 @@ export default function CalendarPage() {
     setFormReadOnly(false);
     setEditingEventId(source.id);
     setFormValues(eventToFormValues(source));
+    setPersonalEventLogged(
+      isPersonalCalendarEventLogged(storage, memberId, source.id, expanded.startAt.slice(0, 10)),
+    );
     setFormOpen(true);
+  }
+
+  function handleLogPersonalEvent() {
+    if (!editingEventId) {
+      return;
+    }
+
+    const source = createCalendarEventRepository(storage).getById(editingEventId);
+    if (!source) {
+      return;
+    }
+
+    setIsLoggingPersonalEvent(true);
+    try {
+      const payload = formValuesToPayload(formValues);
+      const calendarEvent: CalendarEvent = {
+        ...source,
+        ...payload,
+        activityTypeKey: formValues.activityTypeKey,
+      };
+      syncPersonalCalendarEventToBakiEvent(
+        storage,
+        memberId,
+        calendarEvent,
+        formValues.date,
+      );
+      setPersonalEventLogged(true);
+      setStatusMessage("已登記至紀錄中心");
+    } catch (caught) {
+      setStatusMessage(caught instanceof Error ? caught.message : "登記失敗");
+    } finally {
+      setIsLoggingPersonalEvent(false);
+    }
   }
 
   function handleFormChange(nextValues: typeof formValues) {
@@ -406,6 +487,11 @@ export default function CalendarPage() {
           nextValues.reminderMinutes,
           attendNewFriendsCount,
         ),
+      );
+      syncAttendanceRecord(
+        viewingExpandedEvent.sourceEventId,
+        nextValues.activityTypeKey,
+        attendNewFriendsCount,
       );
       reloadAttendance();
       setAttendanceRefreshKey((current) => current + 1);
@@ -492,6 +578,12 @@ export default function CalendarPage() {
 
     try {
       await syncToGoogle(existing, "delete");
+      removeBakiEventForPersonalCalendarEvent(
+        storage,
+        memberId,
+        editingEventId,
+        existing.startAt.slice(0, 10),
+      );
       repository.delete(editingEventId);
       setFormOpen(false);
       reloadEvents();
@@ -566,6 +658,15 @@ export default function CalendarPage() {
             };
           })(),
           onToggleAttend: handleToggleSharedAttend,
+        }
+      : undefined;
+
+  const personalLogContext =
+    formMode === "edit" && editingEventId && isRecordableCalendarActivityKey(formValues.activityTypeKey)
+      ? {
+          isLogged: personalEventLogged,
+          isLogging: isLoggingPersonalEvent,
+          onLogActivity: handleLogPersonalEvent,
         }
       : undefined;
 
@@ -758,6 +859,7 @@ export default function CalendarPage() {
         onDelete={formMode === "edit" ? () => void handleDelete() : undefined}
         onSubmit={() => void handleSubmit()}
         open={formOpen}
+        personalLogContext={personalLogContext}
         readOnly={formReadOnly}
         sharedContext={formSharedContext}
         values={formValues}
