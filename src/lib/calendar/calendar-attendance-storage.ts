@@ -23,6 +23,8 @@ export interface SharedCalendarAttendance {
   color: CalendarEventColor;
   activityTypeKey: string;
   reminderMinutes?: number[];
+  /** 參加會議時帶的新朋友人數 */
+  newFriendsCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -121,6 +123,7 @@ export function saveSharedCalendarAttendance(
     allDay: input.allDay,
     color: input.color,
     activityTypeKey: input.activityTypeKey,
+    newFriendsCount: Math.max(0, input.newFriendsCount ?? 0),
     reminderMinutes: normalizeReminderMinutes(input.reminderMinutes),
   };
   storage.setItem(STORAGE_KEYS.calendarSharedAttendance, JSON.stringify([...items, created]));
@@ -164,6 +167,7 @@ export function attendanceFromExpandedSharedEvent(
   event: ExpandedCalendarEvent,
   activityTypeKey: string,
   reminderMinutes?: number[],
+  newFriendsCount = 0,
 ): Omit<SharedCalendarAttendance, "id" | "createdAt" | "updatedAt"> {
   return {
     memberId,
@@ -177,6 +181,7 @@ export function attendanceFromExpandedSharedEvent(
     allDay: event.allDay,
     color: getSharedCalendarEventColor(event.googleCalendarId),
     activityTypeKey,
+    newFriendsCount: Math.max(0, newFriendsCount),
     reminderMinutes: normalizeReminderMinutes(
       reminderMinutes ?? DEFAULT_CALENDAR_REMINDER_MINUTES,
     ),

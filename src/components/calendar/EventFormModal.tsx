@@ -33,10 +33,19 @@ export interface EventFormValues {
   reminderMinutes: number[];
 }
 
+export interface MeetingAttendanceSummaryView {
+  totalParticipants: number;
+  totalNewFriends: number;
+  participants: Array<{ name: string; newFriendsCount: number }>;
+}
+
 export interface SharedEventFormContext {
   sharedEventId: string;
   isAttending: boolean;
-  onToggleAttend: (attending: boolean, activityTypeKey: string) => void;
+  newFriendsCount: number;
+  onNewFriendsCountChange: (count: number) => void;
+  attendanceSummary: MeetingAttendanceSummaryView;
+  onToggleAttend: (attending: boolean, activityTypeKey: string, newFriendsCount: number) => void;
 }
 
 export function buildDefaultFormValues(date: string, startTime = "09:00"): EventFormValues {
@@ -439,17 +448,63 @@ export function EventFormModal({
         </div>
 
         {sharedContext ? (
-          <div className="mt-6 space-y-3">
+          <div className="mt-6 space-y-4">
+            <div className="rounded-xl bg-[var(--cal-primary-muted)] px-4 py-3">
+              <p className="text-[0.875rem] font-semibold text-[#1d1d1f]">
+                下線夥伴參加 {sharedContext.attendanceSummary.totalParticipants} 人
+                {sharedContext.attendanceSummary.totalNewFriends > 0
+                  ? ` · 新朋友 ${sharedContext.attendanceSummary.totalNewFriends} 人`
+                  : ""}
+              </p>
+              {sharedContext.attendanceSummary.participants.length > 0 ? (
+                <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto text-[0.8125rem] text-[#636366]">
+                  {sharedContext.attendanceSummary.participants.map((participant) => (
+                    <li key={participant.name} className="flex justify-between gap-2">
+                      <span>{participant.name}</span>
+                      {participant.newFriendsCount > 0 ? (
+                        <span className="shrink-0 text-[var(--cal-primary-dark)]">
+                          +{participant.newFriendsCount} 新朋友
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-1 text-[0.8125rem] text-[#86868b]">尚無夥伴標記參加</p>
+              )}
+            </div>
+
+            <label className="block space-y-2">
+              <span className="text-[0.875rem] font-medium text-[#636366]">帶幾位新朋友</span>
+              <input
+                className="w-full rounded-xl border border-[var(--cal-border)] px-4 py-3 text-[1rem] outline-none focus:border-[var(--cal-primary)]"
+                min={0}
+                onChange={(event) =>
+                  sharedContext.onNewFriendsCountChange(
+                    Math.max(0, Number.parseInt(event.target.value, 10) || 0),
+                  )
+                }
+                type="number"
+                value={sharedContext.newFriendsCount}
+              />
+            </label>
+
             <button
               className={`w-full rounded-xl px-4 py-3.5 text-[1rem] font-semibold text-white ${
                 sharedContext.isAttending ? "bg-[var(--cal-primary-dark)]" : "bg-[var(--cal-primary)]"
               }`}
               onClick={() =>
-                sharedContext.onToggleAttend(!sharedContext.isAttending, values.activityTypeKey)
+                sharedContext.onToggleAttend(
+                  !sharedContext.isAttending,
+                  values.activityTypeKey,
+                  sharedContext.newFriendsCount,
+                )
               }
               type="button"
             >
-              {sharedContext.isAttending ? "已標記參加（點擊取消）" : "會參加"}
+              {sharedContext.isAttending
+                ? `已標記參加（新朋友 ${sharedContext.newFriendsCount} 人 · 點擊取消）`
+                : `會參加 · 帶 ${sharedContext.newFriendsCount} 位新朋友`}
             </button>
             {sharedContext.isAttending ? (
               <p className="text-center text-[0.8125rem] text-[#636366]">

@@ -43,6 +43,7 @@ import {
   saveShowSharedCalendar,
 } from "@/lib/calendar/shared-calendar-preferences";
 import { getSharedCalendarIds, getSharedCalendarSyncRange, syncSharedGoogleCalendars } from "@/lib/calendar/sync-shared-calendars";
+import { buildMeetingAttendanceSummary } from "@/lib/calendar/meeting-attendance-summary";
 import {
   isPersonalCalendarEvent,
   isSharedCalendarCacheFresh,
@@ -122,6 +123,8 @@ export default function CalendarPage() {
     isSharedCalendarCacheFresh(storage, memberId) ? "done" : "idle",
   );
   const [viewingExpandedEvent, setViewingExpandedEvent] = useState<ExpandedCalendarEvent | null>(null);
+  const [attendNewFriendsCount, setAttendNewFriendsCount] = useState(0);
+  const [attendanceRefreshKey, setAttendanceRefreshKey] = useState(0);
 
   const reloadAttendance = useCallback(() => {
     migrateSharedAttendanceColors(storage);
@@ -289,7 +292,20 @@ export default function CalendarPage() {
     }
   }
 
-  const swipeHandlers = useSwipeNavigation(
+  const daySwipeHandlers = useSwipeNavigation(
+    () => {
+      if (viewMode === "day") {
+        setSelectedDate(addDays(selectedDate, 1));
+      }
+    },
+    () => {
+      if (viewMode === "day") {
+        setSelectedDate(addDays(selectedDate, -1));
+      }
+    },
+  );
+
+  const weekSwipeHandlers = useSwipeNavigation(
     () => shiftWeekNavigation(1),
     () => shiftWeekNavigation(-1),
   );
@@ -305,7 +321,11 @@ export default function CalendarPage() {
     setFormOpen(true);
   }
 
-  function handleToggleSharedAttend(attending: boolean, activityTypeKey: string) {
+  function handleToggleSharedAttend(
+    attending: boolean,
+    activityTypeKey: string,
+    newFriendsCount: number,
+  ) {
     if (!viewingExpandedEvent) {
       return;
     }
@@ -318,17 +338,20 @@ export default function CalendarPage() {
           viewingExpandedEvent,
           activityTypeKey,
           formValues.reminderMinutes,
+          newFriendsCount,
         ),
       );
-      setStatusMessage("已標記參加，此行程會列入統計");
+      setStatusMessage(`已標記參加，帶 ${newFriendsCount} 位新朋友`);
       void refreshCalendarReminderSchedule(storage);
     } else {
       removeSharedCalendarAttendance(storage, memberId, viewingExpandedEvent.sourceEventId);
+      setAttendNewFriendsCount(0);
       setStatusMessage("已取消參加");
       void refreshCalendarReminderSchedule(storage);
     }
 
     reloadAttendance();
+    setAttendanceRefreshKey((current) => current + 1);
   }
 
   function openEdit(expanded: ExpandedCalendarEvent) {
@@ -337,6 +360,7 @@ export default function CalendarPage() {
 
     if (isShared) {
       const attendance = isSharedEventAttending(storage, memberId, expanded.sourceEventId);
+      setAttendNewFriendsCount(attendance?.newFriendsCount ?? 0);
       setViewingExpandedEvent(expanded);
       setFormMode("view");
       setFormReadOnly(true);
@@ -379,9 +403,11 @@ export default function CalendarPage() {
           viewingExpandedEvent,
           nextValues.activityTypeKey,
           nextValues.reminderMinutes,
+          attendNewFriendsCount,
         ),
       );
       reloadAttendance();
+      setAttendanceRefreshKey((current) => current + 1);
       void refreshCalendarReminderSchedule(storage);
     }
   }
@@ -503,6 +529,41 @@ export default function CalendarPage() {
           isAttending: Boolean(
             isSharedEventAttending(storage, memberId, viewingExpandedEvent.sourceEventId),
           ),
+          newFriendsCount: attendNewFriendsCount,
+          onNewFriendsCountChange: (count) => {
+            setAttendNewFriendsCount(count);
+            if (
+              isSharedEventAttending(storage, memberId, viewingExpandedEvent.sourceEventId)
+            ) {
+              saveSharedCalendarAttendance(
+                storage,
+                attendanceFromExpandedSharedEvent(
+                  memberId,
+                  viewingExpandedEvent,
+                  formValues.activityTypeKey,
+                  formValues.reminderMinutes,
+                  count,
+                ),
+              );
+              reloadAttendance();
+              setAttendanceRefreshKey((current) => current + 1);
+            }
+          },
+          attendanceSummary: (() => {
+            void attendanceRefreshKey;
+            const summary = buildMeetingAttendanceSummary(
+              viewingExpandedEvent.sourceEventId,
+              storage,
+            );
+            return {
+              totalParticipants: summary.totalParticipants,
+              totalNewFriends: summary.totalNewFriends,
+              participants: summary.participants.map((participant) => ({
+                name: participant.name,
+                newFriendsCount: participant.newFriendsCount,
+              })),
+            };
+          })(),
           onToggleAttend: handleToggleSharedAttend,
         }
       : undefined;
@@ -601,7 +662,7 @@ export default function CalendarPage() {
             <WeekDayStrip
               days={weekStrip}
               onSelectDate={selectDate}
-              swipeHandlers={swipeHandlers}
+              swipeHandlers={daySwipeHandlers}
             />
 
             <div className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-[var(--cal-border)] bg-[var(--cal-surface)] px-4 py-3">
@@ -636,6 +697,7 @@ export default function CalendarPage() {
               intervalMinutes={slotInterval}
               onEventSelect={openEdit}
               onSlotSelect={openCreate}
+              swipeHandlers={daySwipeHandlers}
             />
           </div>
         ) : null}
@@ -653,7 +715,7 @@ export default function CalendarPage() {
               onEventSelect={openEdit}
               onSelectDate={(date) => selectDate(date, true)}
               selectedDate={selectedDate}
-              swipeHandlers={swipeHandlers}
+              swipeHandlers={weekSwipeHandlers}
             />
           </div>
         ) : null}

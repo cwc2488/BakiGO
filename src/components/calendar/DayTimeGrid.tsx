@@ -16,6 +16,7 @@ import {
   type CalendarSlotInterval,
   type ExpandedCalendarEvent,
 } from "@/types/calendar-event";
+import type { SwipeHandlers } from "@/lib/hooks/use-swipe-navigation";
 
 function CurrentTimeIndicator({
   dayDate,
@@ -53,12 +54,14 @@ export function DayTimeGrid({
   intervalMinutes,
   onSlotSelect,
   onEventSelect,
+  swipeHandlers,
 }: {
   dayDate: string;
   events: ExpandedCalendarEvent[];
   intervalMinutes: CalendarSlotInterval;
   onSlotSelect: (startAt: string) => void;
   onEventSelect: (event: ExpandedCalendarEvent) => void;
+  swipeHandlers?: SwipeHandlers;
 }) {
   const slotCount = getSlotCount(intervalMinutes);
   const slotHeight = getSlotHeightPx(intervalMinutes);
@@ -75,7 +78,10 @@ export function DayTimeGrid({
   });
 
   return (
-    <div className="overflow-hidden rounded-[1.25rem] border border-[var(--cal-border)] bg-[var(--cal-surface)]">
+    <div
+      className="touch-pan-y overflow-hidden rounded-[1.25rem] border border-[var(--cal-border)] bg-[var(--cal-surface)]"
+      {...swipeHandlers}
+    >
       {allDayEvents.length > 0 ? (
         <div className="border-b border-[var(--cal-border)] px-4 py-3">
           <p className="text-[0.75rem] font-medium text-[var(--cal-text-muted)]">全天</p>

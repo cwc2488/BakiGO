@@ -39,7 +39,7 @@ export function createQuickRecruitMember(storage: StorageAdapter, input: QuickRe
   const categoryLabel = QUICK_RECRUIT_CATEGORY_LABELS[input.category];
   const tags =
     input.category === "distributor"
-      ? ["超級聯賽招募", categoryLabel]
+      ? [categoryLabel]
       : [categoryLabel];
 
   return memberRepository.create({

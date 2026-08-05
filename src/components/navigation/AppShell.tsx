@@ -22,8 +22,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <CalendarReminderScheduler />
-      <div className={showNav ? "pb-24" : undefined}>{children}</div>
-      {showNav ? <AppNav /> : null}
+      <div className="min-h-full overflow-x-hidden max-w-[100vw]">
+        <div className={showNav ? "pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]" : undefined}>
+          {children}
+        </div>
+        {showNav ? <AppNav /> : null}
+      </div>
     </>
   );
 }

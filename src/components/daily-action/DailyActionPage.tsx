@@ -32,6 +32,8 @@ import type { DailyActionMetricView, TodayActionKey } from "@/types/daily-action
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal";
 import { QuickRecruitModal } from "@/components/daily-action/QuickRecruitModal";
+import { SuperLeagueAddModal } from "@/components/daily-action/SuperLeagueAddModal";
+import { addSuperLeagueEntry } from "@/lib/daily-action/super-league-entries";
 
 function TodayCalendarPlanCard({ plan }: { plan: CalendarDayPlanSummary }) {
   return (
@@ -84,123 +86,101 @@ function ProgressBar({ percent, color = "#77b539" }: { percent: number | null; c
 }
 
 function MetricCard({
-  index,
   title,
   metric,
   barColor = "#77b539",
+  compact = false,
 }: {
-  index: number;
+  index?: number;
   title: string;
   metric: DailyActionMetricView;
   barColor?: string;
+  compact?: boolean;
 }) {
   return (
-    <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6">
-      <div className="flex items-center gap-3">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--brand-primary-light)] text-[0.8125rem] font-semibold text-[var(--brand-primary-dark)]">
-          {index}
-        </span>
-        <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">{title}</h2>
-      </div>
-      <p className="mt-4 text-[1.75rem] font-semibold tracking-tight text-[#1d1d1f]">
+    <section
+      className={`rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] ${
+        compact ? "p-4" : "p-6"
+      }`}
+    >
+      <h2 className={`font-semibold text-[#1d1d1f] ${compact ? "text-[0.875rem]" : "text-[1.125rem]"}`}>
+        {title}
+      </h2>
+      <p
+        className={`mt-2 font-semibold tracking-tight text-[#1d1d1f] ${
+          compact ? "text-[1.375rem]" : "text-[1.75rem]"
+        }`}
+      >
         {formatDailyActionProgress(metric.current, metric.target)}
       </p>
       <ProgressBar color={barColor} percent={metric.progressPercent} />
-      <div className="mt-4 flex items-end justify-between">
-        <span className="text-[0.875rem] text-[#86868b]">完成率</span>
-        <span className="text-[1.25rem] font-semibold text-[var(--brand-primary-dark)]">
+      <div className="mt-3 flex items-end justify-between">
+        <span className="text-[0.8125rem] text-[#86868b]">完成率</span>
+        <span className="text-[1rem] font-semibold text-[var(--brand-primary-dark)]">
           {formatDailyActionPercent(metric.progressPercent)}
         </span>
       </div>
       {metric.isRuleMissing ? (
-        <p className="mt-3 text-[0.8125rem] text-[#86868b]">目標規則尚待設定</p>
+        <p className="mt-2 text-[0.75rem] text-[#86868b]">目標規則尚待設定</p>
       ) : null}
     </section>
   );
 }
 
 function SuperLeagueCard({
-  index,
   superLeague,
+  onAddClick,
 }: {
-  index: number;
   superLeague: ReturnType<typeof buildDailyActionSnapshot>["superLeague"];
+  onAddClick: () => void;
 }) {
   return (
-    <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6">
-      <div className="flex items-center gap-3">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#e8f8ee] text-[0.8125rem] font-semibold text-[#248a3d]">
-          {index}
-        </span>
+    <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">
+          <h2 className="text-[1rem] font-semibold text-[#1d1d1f]">
             {APP_EMOJI.section.superLeague} 超級聯賽 10+2
           </h2>
-          <p className="text-[0.8125rem] text-[#86868b]">今年第一代 10 位 · 其中 2 位督導</p>
+          <p className="mt-1 text-[0.8125rem] text-[#86868b]">僅計入手動新增的夥伴</p>
         </div>
+        <button
+          className="shrink-0 rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-[0.8125rem] font-semibold text-white"
+          onClick={onAddClick}
+          type="button"
+        >
+          + 新增
+        </button>
       </div>
 
-      <div className="mt-5 space-y-4">
-        <div>
-          <div className="flex items-end justify-between">
-            <span className="text-[0.875rem] text-[#86868b]">第一代</span>
-            <span className="text-[1.0625rem] font-semibold text-[#1d1d1f]">
-              {formatDailyActionProgress(
-                superLeague.firstGeneration.current,
-                superLeague.firstGeneration.target,
-              )}
-            </span>
-          </div>
-          <ProgressBar color="#30d158" percent={superLeague.firstGeneration.progressPercent} />
+      <div className="mt-4 space-y-3">
+        <div className="flex items-end justify-between">
+          <span className="text-[0.875rem] text-[#86868b]">第一代</span>
+          <span className="font-semibold text-[#1d1d1f]">
+            {formatDailyActionProgress(
+              superLeague.firstGeneration.current,
+              superLeague.firstGeneration.target,
+            )}
+          </span>
         </div>
-        <div>
-          <div className="flex items-end justify-between">
-            <span className="text-[0.875rem] text-[#86868b]">督導</span>
-            <span className="text-[1.0625rem] font-semibold text-[#1d1d1f]">
-              {formatDailyActionProgress(
-                superLeague.supervisor.current,
-                superLeague.supervisor.target,
-              )}
-            </span>
-          </div>
-          <ProgressBar color="#30d158" percent={superLeague.supervisor.progressPercent} />
+        <ProgressBar color="#30d158" percent={superLeague.firstGeneration.progressPercent} />
+        <div className="flex items-end justify-between">
+          <span className="text-[0.875rem] text-[#86868b]">督導</span>
+          <span className="font-semibold text-[#1d1d1f]">
+            {formatDailyActionProgress(
+              superLeague.supervisor.current,
+              superLeague.supervisor.target,
+            )}
+          </span>
         </div>
+        <ProgressBar color="#30d158" percent={superLeague.supervisor.progressPercent} />
       </div>
 
-      <div className="mt-5 flex items-end justify-between border-t border-[var(--brand-border)] pt-4">
+      <div className="mt-4 flex items-end justify-between border-t border-[var(--brand-border)] pt-3">
         <span className="text-[0.875rem] text-[#86868b]">總完成率</span>
-        <span className="text-[1.375rem] font-semibold text-[#248a3d]">
+        <span className="text-[1.125rem] font-semibold text-[#248a3d]">
           {formatDailyActionPercent(superLeague.completionPercent)}
         </span>
       </div>
-    </section>
-  );
-}
-
-function PresidentAiCard({
-  index,
-  title,
-  description,
-}: {
-  index: number;
-  title: string;
-  description: string | null;
-}) {
-  return (
-    <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6">
-      <div className="flex items-center gap-3">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--brand-bg)] text-[0.8125rem] font-semibold text-[#636366]">
-          {index}
-        </span>
-        <div>
-          <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">總裁 AI</h2>
-          <p className="text-[0.8125rem] text-[#86868b]">今天最重要的一件事</p>
-        </div>
-      </div>
-      <p className="mt-4 text-[1.25rem] font-semibold leading-snug text-[#1d1d1f]">{title}</p>
-      {description ? (
-        <p className="mt-2 text-[0.9375rem] leading-relaxed text-[#636366]">{description}</p>
-      ) : null}
     </section>
   );
 }
@@ -237,6 +217,7 @@ function DailyActionView({
   }, [memberId, refreshKey, snapshot.referenceDate, storage]);
   const displayName = getMemberDisplayName();
   const [recruitModalOpen, setRecruitModalOpen] = useState(false);
+  const [superLeagueModalOpen, setSuperLeagueModalOpen] = useState(false);
   const [activityModalType, setActivityModalType] = useState<"measurement" | "consultation" | null>(
     null,
   );
@@ -269,6 +250,20 @@ function DailyActionView({
     [onMetricsChange, storage],
   );
 
+  const handleSuperLeagueSubmit = useCallback(
+    (input: { displayName: string; isSupervisor: boolean }) => {
+      const year = new Date(`${snapshot.referenceDate}T12:00:00`).getFullYear();
+      addSuperLeagueEntry(storage, {
+        ownerMemberId: memberId,
+        displayName: input.displayName,
+        isSupervisor: input.isSupervisor,
+        year,
+      });
+      setRefreshKey((current) => current + 1);
+    },
+    [memberId, snapshot.referenceDate, storage],
+  );
+
   return (
     <div className="min-h-full bg-[var(--brand-bg)]">
       <main className="mx-auto flex w-full max-w-md flex-col gap-4 px-5 pb-24 pt-12">
@@ -290,12 +285,11 @@ function DailyActionView({
           <h2 className="text-[1rem] font-semibold text-[#1d1d1f]">
             {APP_EMOJI.section.quickLog} 快速記錄
           </h2>
-          <p className="mt-1 text-[0.8125rem] text-[#86868b]">招募會同步計入超級聯賽</p>
-          <div className="mt-4 grid grid-cols-2 gap-2.5">
+          <div className="mt-4 grid grid-cols-3 gap-2">
             {TODAY_ACTIONS.map((action) => (
               <button
                 key={action.key}
-                className="rounded-2xl bg-[#1d1d1f] px-4 py-4 text-[0.9375rem] font-semibold text-white transition-transform active:scale-[0.98]"
+                className="rounded-2xl bg-[#1d1d1f] px-3 py-3.5 text-[0.8125rem] font-semibold text-white transition-transform active:scale-[0.98]"
                 onClick={() => handleAction(action.key)}
                 type="button"
               >
@@ -318,14 +312,17 @@ function DailyActionView({
           open={activityModalType !== null}
         />
 
-        <MetricCard index={1} metric={snapshot.monthlyMeasurement} title={`${APP_EMOJI.action.measurement} 本月量測`} />
-        <MetricCard index={2} metric={snapshot.monthlyConsultation} title={`${APP_EMOJI.action.consultation} 本月諮詢`} />
-        <SuperLeagueCard index={3} superLeague={snapshot.superLeague} />
-        <PresidentAiCard
-          description={snapshot.presidentAiDescription}
-          index={4}
-          title={snapshot.presidentAiTitle}
+        <SuperLeagueAddModal
+          onClose={() => setSuperLeagueModalOpen(false)}
+          onSubmit={handleSuperLeagueSubmit}
+          open={superLeagueModalOpen}
         />
+
+        <div className="grid grid-cols-2 gap-3">
+          <MetricCard compact metric={snapshot.monthlyMeasurement} title="本月量測" barColor="#77b539" />
+          <MetricCard compact metric={snapshot.monthlyConsultation} title="本月諮詢" barColor="#77b539" />
+        </div>
+        <SuperLeagueCard onAddClick={() => setSuperLeagueModalOpen(true)} superLeague={snapshot.superLeague} />
       </main>
     </div>
   );

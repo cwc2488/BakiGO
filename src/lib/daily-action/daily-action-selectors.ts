@@ -11,10 +11,10 @@ import {
 import { projectEventsForEngines } from "@/lib/event-center/project-events";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import { createEventRepository } from "@/lib/repositories/event-repository";
-import { createMemberRepository } from "@/lib/repositories/member-repository";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
+import { loadMemberSuperLeagueEntries } from "@/lib/daily-action/super-league-entries";
 import {
-  buildSuperLeagueMetrics,
+  buildSuperLeagueMetricView,
   calculateSuperLeagueCompletion,
 } from "@/lib/daily-action/super-league-selectors";
 import type {
@@ -91,11 +91,14 @@ function buildSuperLeagueView(
   metrics: MemberComputedMetrics,
   storage: StorageAdapter,
 ): DailyActionSuperLeagueView {
-  const members = createMemberRepository(storage).getAll();
-  const { firstGeneration, supervisor } = buildSuperLeagueMetrics(
-    members,
-    metrics.memberId,
-    metrics.missions.referenceDate,
+  const year = new Date(`${metrics.missions.referenceDate}T12:00:00`).getFullYear();
+  const entries = loadMemberSuperLeagueEntries(storage, metrics.memberId, year);
+  const rules = DEFAULT_BUSINESS_RULES.superLeague;
+
+  const firstGeneration = buildSuperLeagueMetricView(entries.length, rules.firstGenerationTarget);
+  const supervisor = buildSuperLeagueMetricView(
+    entries.filter((entry) => entry.isSupervisor).length,
+    rules.supervisorTarget,
   );
 
   return {

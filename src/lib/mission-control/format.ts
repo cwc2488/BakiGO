@@ -113,6 +113,19 @@ export function formatIcon(iconKey: string): string {
     xp: "🏆",
     streak: "🔥",
     challenge: "🎯",
+    consultation: "💬",
+    recruit: "🤝",
+    measurement_gold: "📏",
+    sale_gold: "💰",
+    vp: "💎",
+    rank: "🎖️",
+    rank_gold: "👑",
   };
-  return icons[iconKey] ?? "🎯";
+  if (icons[iconKey]) {
+    return icons[iconKey];
+  }
+  if (/^[\p{Extended_Pictographic}]/u.test(iconKey)) {
+    return iconKey;
+  }
+  return "🏅";
 }

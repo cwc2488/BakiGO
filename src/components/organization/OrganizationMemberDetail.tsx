@@ -1,6 +1,8 @@
 "use client";
 
 import { adjustDownlineRank } from "@/lib/members/adjust-downline-rank";
+import { buildMemberActivitySummary } from "@/lib/organization/member-activity-summary";
+import { todayISODate } from "@/lib/config/app-config";
 import { formatPointsValue } from "@/lib/points/streak-multiplier";
 import { loadRedemptionsForMember } from "@/lib/repositories/point-redemption-repository";
 import { PointRedemptionModal } from "@/components/points/PointRedemptionModal";
@@ -31,6 +33,10 @@ export function OrganizationMemberDetail({
   const viewer = useMemo(() => getCurrentMember(storage), [storage]);
   const redemptions = useMemo(
     () => loadRedemptionsForMember(member.memberId, storage),
+    [member.memberId, storage],
+  );
+  const activitySummary = useMemo(
+    () => buildMemberActivitySummary(member.memberId, todayISODate(), storage),
     [member.memberId, storage],
   );
   const canRedeem =
@@ -112,6 +118,42 @@ export function OrganizationMemberDetail({
           </dd>
         </div>
       </dl>
+
+      <div className="mt-5 rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-primary-muted)] px-4 py-4">
+        <p className="text-[0.875rem] font-semibold text-[#1d1d1f]">本月活動狀態</p>
+        <dl className="mt-3 grid grid-cols-2 gap-3">
+          <div>
+            <dt className="text-[0.75rem] text-[#86868b]">諮詢</dt>
+            <dd className="mt-0.5 text-[1.125rem] font-semibold text-[#1d1d1f]">
+              {activitySummary.monthlyConsultations} 次
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[0.75rem] text-[#86868b]">量測</dt>
+            <dd className="mt-0.5 text-[1.125rem] font-semibold text-[#1d1d1f]">
+              {activitySummary.monthlyMeasurements} 次
+            </dd>
+          </div>
+        </dl>
+        <div className="mt-3">
+          <p className="text-[0.75rem] font-medium text-[#86868b]">近期參加會議</p>
+          {activitySummary.recentMeetings.length > 0 ? (
+            <ul className="mt-2 space-y-1.5">
+              {activitySummary.recentMeetings.map((meeting) => (
+                <li
+                  key={`${meeting.date}-${meeting.title}`}
+                  className="text-[0.8125rem] text-[#636366]"
+                >
+                  <span className="font-medium text-[#1d1d1f]">{meeting.title}</span>
+                  <span className="text-[#86868b]"> · {meeting.date}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-[0.8125rem] text-[#86868b]">尚無會議紀錄</p>
+          )}
+        </div>
+      </div>
 
       {canRedeem ? (
         <div className="mt-4">
