@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useRef } from "react";
+import { createPortal } from "react-dom";
+import { useBodyScrollLock } from "@/lib/ui/use-body-scroll-lock";
 import {
   CALENDAR_OTHER_ACTIVITY_KEY,
   getCalendarDailyActivityTypes,
@@ -314,17 +316,8 @@ export function EventFormModal({
   onSubmit: () => void;
   onDelete?: () => void;
 }) {
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [open]);
+  const modalRootRef = useRef<HTMLDivElement>(null);
+  useBodyScrollLock(open, modalRootRef);
 
   if (!open) {
     return null;
@@ -333,15 +326,18 @@ export function EventFormModal({
   const title =
     mode === "create" ? "新增行程" : mode === "view" ? "共用行程" : "編輯行程";
 
-  return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center sm:items-center sm:p-4">
+  return createPortal(
+    <div
+      ref={modalRootRef}
+      className="fixed inset-0 z-[120] flex items-end justify-center overflow-hidden overscroll-none touch-none sm:items-center sm:p-4"
+    >
       <button
         aria-label="關閉"
         className="absolute inset-0 bg-black/30"
         onClick={onClose}
         type="button"
       />
-      <div className="relative mb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] flex w-full max-w-md max-h-[calc(100dvh-4.5rem-env(safe-area-inset-bottom,0px))] flex-col overflow-hidden rounded-t-[1.75rem] bg-[var(--cal-surface)] shadow-xl sm:mb-0 sm:max-h-[90vh] sm:rounded-[1.75rem]">
+      <div className="relative mb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] flex w-full max-w-md max-h-[calc(100dvh-4.5rem-env(safe-area-inset-bottom,0px))] touch-auto flex-col overflow-hidden rounded-t-[1.75rem] bg-[var(--cal-surface)] shadow-xl sm:mb-0 sm:max-h-[90vh] sm:rounded-[1.75rem]">
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--cal-border)] px-6 py-4">
           <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">{title}</h2>
           <button
@@ -353,7 +349,7 @@ export function EventFormModal({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4 [-webkit-overflow-scrolling:touch]">
+        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-6 py-4 [-webkit-overflow-scrolling:touch]">
         {readOnly ? (
           <p className="mb-4 text-[0.8125rem] leading-relaxed text-[#86868b]">
             此行程來自共用行事曆，無法編輯內容。請選擇種類後按「會參加」，系統會列入統計並固定顯示在您的行事曆。
@@ -633,6 +629,7 @@ export function EventFormModal({
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
