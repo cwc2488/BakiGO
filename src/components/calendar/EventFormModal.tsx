@@ -49,16 +49,12 @@ export interface SharedEventFormContext {
 }
 
 export function buildDefaultFormValues(date: string, startTime = "09:00"): EventFormValues {
-  const [hour, minute] = startTime.split(":").map(Number);
-  const nextHour = hour + 1;
-  const endHour = nextHour > 23 ? 23 : nextHour;
-  const endMinute = nextHour > 23 ? 59 : minute;
   return {
     title: "",
     notes: "",
     date,
     startTime,
-    endTime: `${String(endHour).padStart(2, "0")}:${String(endMinute).padStart(2, "0")}`,
+    endTime: addHoursToTime(startTime, 1),
     allDay: false,
     color: "green",
     activityTypeKey: CALENDAR_OTHER_ACTIVITY_KEY,
@@ -153,6 +149,93 @@ export function validateEventFormValues(values: EventFormValues): string | null 
   return null;
 }
 
+export function addHoursToTime(time: string, hours: number): string {
+  const [hour, minute] = time.split(":").map(Number);
+  const totalMinutes = hour * 60 + minute + hours * 60;
+  const capped = Math.min(totalMinutes, 23 * 60 + 59);
+  const nextHour = Math.floor(capped / 60);
+  const nextMinute = capped % 60;
+  return `${String(nextHour).padStart(2, "0")}:${String(nextMinute).padStart(2, "0")}`;
+}
+
+type RecurrencePresetKey =
+  | "none"
+  | "daily"
+  | "weekly"
+  | "every_2_weeks"
+  | "every_3_days"
+  | "monthly"
+  | "every_2_months";
+
+const RECURRENCE_PRESETS: Array<{
+  key: RecurrencePresetKey;
+  label: string;
+  frequency: RecurrenceFrequency;
+  interval: number;
+  customUnit?: EventFormValues["recurrenceCustomUnit"];
+}> = [
+  { key: "none", label: "不重複", frequency: "none", interval: 1 },
+  { key: "daily", label: "每天", frequency: "daily", interval: 1 },
+  { key: "weekly", label: "每週", frequency: "weekly", interval: 1 },
+  { key: "every_2_weeks", label: "每 2 週", frequency: "custom", interval: 2, customUnit: "weekly" },
+  { key: "every_3_days", label: "每 3 天", frequency: "custom", interval: 3, customUnit: "daily" },
+  { key: "monthly", label: "每月", frequency: "monthly", interval: 1 },
+  { key: "every_2_months", label: "每 2 個月", frequency: "custom", interval: 2, customUnit: "monthly" },
+];
+
+function getRecurrencePresetKey(values: EventFormValues): RecurrencePresetKey {
+  if (values.recurrenceFrequency === "none") {
+    return "none";
+  }
+  if (values.recurrenceFrequency === "daily" && values.recurrenceInterval === 1) {
+    return "daily";
+  }
+  if (values.recurrenceFrequency === "weekly" && values.recurrenceInterval === 1) {
+    return "weekly";
+  }
+  if (values.recurrenceFrequency === "monthly" && values.recurrenceInterval === 1) {
+    return "monthly";
+  }
+  if (
+    values.recurrenceFrequency === "custom" &&
+    values.recurrenceCustomUnit === "weekly" &&
+    values.recurrenceInterval === 2
+  ) {
+    return "every_2_weeks";
+  }
+  if (
+    values.recurrenceFrequency === "custom" &&
+    values.recurrenceCustomUnit === "daily" &&
+    values.recurrenceInterval === 3
+  ) {
+    return "every_3_days";
+  }
+  if (
+    values.recurrenceFrequency === "custom" &&
+    values.recurrenceCustomUnit === "monthly" &&
+    values.recurrenceInterval === 2
+  ) {
+    return "every_2_months";
+  }
+  return "weekly";
+}
+
+function applyRecurrencePreset(
+  presetKey: RecurrencePresetKey,
+  values: EventFormValues,
+): EventFormValues {
+  const preset = RECURRENCE_PRESETS.find((item) => item.key === presetKey);
+  if (!preset) {
+    return values;
+  }
+  return {
+    ...values,
+    recurrenceFrequency: preset.frequency,
+    recurrenceInterval: preset.interval,
+    recurrenceCustomUnit: preset.customUnit ?? values.recurrenceCustomUnit,
+  };
+}
+
 function ActivityTypeSelect({
   value,
   onChange,
@@ -230,14 +313,15 @@ export function EventFormModal({
     mode === "create" ? "新增行程" : mode === "view" ? "共用行程" : "編輯行程";
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/30 p-0 sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/30 p-0 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] sm:items-center sm:p-4 sm:pb-4">
       <button
         aria-label="關閉"
         className="absolute inset-0"
         onClick={onClose}
         type="button"
       />
-      <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-[1.75rem] bg-[var(--cal-surface)] p-6 shadow-xl sm:rounded-[1.75rem]">
+      <div className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-[1.75rem] bg-[var(--cal-surface)] shadow-xl sm:max-h-[90vh] sm:rounded-[1.75rem]">
+        <div className="flex-1 overflow-y-auto p-6 pb-4">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">{title}</h2>
           <button className="text-[0.9375rem] font-medium text-[var(--cal-primary-dark)]" onClick={onClose} type="button">
@@ -296,7 +380,14 @@ export function EventFormModal({
                 <input
                   className="w-full rounded-xl border border-[var(--cal-border)] px-4 py-3 disabled:bg-[var(--cal-primary-muted)] disabled:text-[var(--cal-text)]"
                   disabled={readOnly}
-                  onChange={(event) => onChange({ ...values, startTime: event.target.value })}
+                  onChange={(event) => {
+                    const startTime = event.target.value;
+                    onChange({
+                      ...values,
+                      startTime,
+                      endTime: addHoursToTime(startTime, 1),
+                    });
+                  }}
                   type="time"
                   value={values.startTime}
                 />
@@ -336,61 +427,24 @@ export function EventFormModal({
 
           {!readOnly ? (
             <>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block space-y-2">
-                  <span className="text-[0.875rem] font-medium text-[#636366]">重複</span>
-                  <select
-                    className="w-full rounded-xl border border-[var(--cal-border)] px-3 py-3"
-                    onChange={(event) =>
-                      onChange({
-                        ...values,
-                        recurrenceFrequency: event.target.value as RecurrenceFrequency,
-                      })
-                    }
-                    value={values.recurrenceFrequency}
-                  >
-                    <option value="none">不重複</option>
-                    <option value="daily">每天</option>
-                    <option value="weekly">每週</option>
-                    <option value="monthly">每月</option>
-                    <option value="custom">自訂</option>
-                  </select>
-                </label>
-                {values.recurrenceFrequency !== "none" ? (
-                  <label className="block space-y-2">
-                    <span className="text-[0.875rem] font-medium text-[#636366]">間隔</span>
-                    <input
-                      className="w-full rounded-xl border border-[var(--cal-border)] px-3 py-3"
-                      min={1}
-                      onChange={(event) =>
-                        onChange({ ...values, recurrenceInterval: Number(event.target.value) || 1 })
-                      }
-                      type="number"
-                      value={values.recurrenceInterval}
-                    />
-                  </label>
-                ) : null}
-              </div>
-
-              {values.recurrenceFrequency === "custom" ? (
-                <label className="block space-y-2">
-                  <span className="text-[0.875rem] font-medium text-[#636366]">自訂單位</span>
-                  <select
-                    className="w-full rounded-xl border border-[var(--cal-border)] px-3 py-3"
-                    onChange={(event) =>
-                      onChange({
-                        ...values,
-                        recurrenceCustomUnit: event.target.value as EventFormValues["recurrenceCustomUnit"],
-                      })
-                    }
-                    value={values.recurrenceCustomUnit}
-                  >
-                    <option value="daily">天</option>
-                    <option value="weekly">週</option>
-                    <option value="monthly">月</option>
-                  </select>
-                </label>
-              ) : null}
+              <label className="block space-y-2">
+                <span className="text-[0.875rem] font-medium text-[#636366]">重複</span>
+                <select
+                  className="w-full rounded-xl border border-[var(--cal-border)] px-3 py-2.5 text-[0.9375rem]"
+                  onChange={(event) =>
+                    onChange(
+                      applyRecurrencePreset(event.target.value as RecurrencePresetKey, values),
+                    )
+                  }
+                  value={getRecurrencePresetKey(values)}
+                >
+                  {RECURRENCE_PRESETS.map((preset) => (
+                    <option key={preset.key} value={preset.key}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
               {values.recurrenceFrequency !== "none" ? (
                 <div className="space-y-3 rounded-xl bg-[var(--cal-primary-muted)] px-3 py-3">
@@ -513,9 +567,10 @@ export function EventFormModal({
             ) : null}
           </div>
         ) : null}
+        </div>
 
         {!readOnly ? (
-          <div className="mt-6 space-y-3">
+          <div className="shrink-0 space-y-3 border-t border-[var(--cal-border)] bg-[var(--cal-surface)] p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
             <button
               className="w-full rounded-xl bg-[var(--cal-primary)] px-4 py-3.5 text-[1rem] font-semibold text-white disabled:opacity-50"
               disabled={!values.title.trim()}
