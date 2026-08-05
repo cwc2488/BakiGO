@@ -1,5 +1,6 @@
 "use client";
 
+import { SupabaseSetupNotice } from "@/components/auth/SupabaseSetupNotice";
 import { loginAccount } from "@/lib/auth/auth-service";
 import { useAuth } from "@/lib/auth/auth-context";
 import { AuthError } from "@/types/auth";
@@ -43,6 +44,8 @@ export default function LoginPage() {
           <h1 className="text-[2.5rem] font-semibold tracking-tight text-[#1d1d1f]">登入</h1>
           <p className="text-[1rem] text-[#86868b]">使用 Email 登入 Baki GO 雲端帳號</p>
         </header>
+
+        <SupabaseSetupNotice />
 
         <form className="space-y-5" onSubmit={handleSubmit}>
           <label className="block space-y-2">

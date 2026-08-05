@@ -1,5 +1,6 @@
 "use client";
 
+import { SupabaseSetupNotice } from "@/components/auth/SupabaseSetupNotice";
 import { registerAccount } from "@/lib/auth/auth-service";
 import { useAuth } from "@/lib/auth/auth-context";
 import { CLOUD_MEMBER_LEVELS } from "@/lib/cloud/member-levels";
@@ -60,6 +61,8 @@ export default function RegisterPage() {
             會員資料永久保存在 Supabase 雲端，任何裝置登入都看到同一份組織。
           </p>
         </header>
+
+        <SupabaseSetupNotice />
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <label className="block space-y-2">
