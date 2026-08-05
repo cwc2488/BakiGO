@@ -14,6 +14,7 @@ import {
   buildQualificationContext,
   evaluateAllQualificationRules,
 } from "@/lib/business-engine/qualification";
+import { DEFAULT_QUALIFICATION_RULES } from "@/lib/business-engine/rules/qualification";
 import {
   DEFAULT_PROMOTION_TREE,
   PROMOTION_RANK_IDS,
@@ -21,6 +22,7 @@ import {
   type PromotionRankId,
 } from "@/lib/business-engine/rules/promotion";
 import type { LeaderForestResult, MapProgressResult } from "@/lib/business-engine/types";
+import { isActiveSupervisorDownline } from "@/lib/business-engine/active-supervisor-line";
 import { getDirectDownline } from "@/lib/business-engine/utils";
 import type { AppMember } from "@/lib/config/app-config";
 import { buildMonthlyChallenge } from "@/lib/config/app-config";
@@ -94,6 +96,20 @@ function mapSignalToStatus(
     default:
       return "needs_help";
   }
+}
+
+function resolveLineVisualStatus(
+  isActiveSupervisor: boolean,
+  lineSignal: LeaderSignal | undefined,
+  isEstablished: boolean,
+): MapUniverseLineStatus {
+  if (!isEstablished) {
+    return "empty";
+  }
+  if (isActiveSupervisor) {
+    return "growing";
+  }
+  return mapSignalToStatus(lineSignal, true);
 }
 
 function resolveRankTier(promotionRankId: PromotionRankId | null): MapUniverseRankTier {
@@ -264,7 +280,11 @@ export function buildMapUniverse(input: BuildMapUniverseInput): MapUniverseResul
       activeLines: lineMap.activeLines,
       activeLineTarget: lineMap.totalLines,
     });
-    const qualificationResults = evaluateAllQualificationRules(qualificationContext);
+    const qualificationResults = evaluateAllQualificationRules(
+      qualificationContext,
+      DEFAULT_QUALIFICATION_RULES,
+      member.rankKey,
+    );
 
     const promotionProgress = calculatePromotionProgress({
       member: { id: downlineMemberId, rankKey: member.rankKey },
@@ -364,6 +384,10 @@ export function buildMapUniverse(input: BuildMapUniverseInput): MapUniverseResul
         : member.rankKey;
 
     const lineSignal = resolveLineSignal(leaderForest, downlineMemberId);
+    const isActiveSupervisor = isActiveSupervisorDownline(
+      member.rankKey,
+      qualificationResults,
+    );
     const presidentSuggestion =
       input.presidentAI.topPriorities.find((priority) =>
         priority.sourceKey.includes(String(downlineMemberId)),
@@ -376,7 +400,7 @@ export function buildMapUniverse(input: BuildMapUniverseInput): MapUniverseResul
       lineIndex,
       downlineMemberId,
       displayName: member.nickname ?? member.displayName,
-      status: mapSignalToStatus(lineSignal, true),
+      status: resolveLineVisualStatus(isActiveSupervisor, lineSignal, true),
       rankTier: resolveRankTier(promotionRankId),
       rankName,
       vpTotal: vp.totalVp,
@@ -387,7 +411,7 @@ export function buildMapUniverse(input: BuildMapUniverseInput): MapUniverseResul
       recentTransactionLabel: recentTransaction
         ? formatRecentTransaction(recentTransaction)
         : null,
-      monthlyActive: engineLine?.isActive ?? lineMap.activeLines > 0,
+      monthlyActive: isActiveSupervisor,
       monthlyMissionTitle: missions.dailyMissionSet.missions[0]?.title ?? null,
       isEstablished: true,
     };

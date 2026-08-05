@@ -75,6 +75,7 @@ function toLineItem(transaction: RetailTransaction, unit: "NTD" | "VP"): RetailR
     amount: transaction.amount,
     unit,
     transactionDate: transaction.transactionDate,
+    note: transaction.note,
   };
 }
 

@@ -1,15 +1,47 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f5f5f7;
-  --foreground: #1d1d1f;
-  --home-shadow: 0 8px 40px rgba(0, 0, 0, 0.04);
+  /* 賀寶芙白綠 — 全 App 品牌色 */
+  --brand-bg: #f5faf6;
+  --brand-surface: #ffffff;
+  --brand-border: #dce8df;
+  --brand-primary: #77b539;
+  --brand-primary-dark: #248a3d;
+  --brand-primary-light: #e8f8ee;
+  --brand-primary-muted: #f0faf3;
+  --brand-text: #1d1d1f;
+  --brand-text-secondary: #636366;
+  --brand-text-muted: #86868b;
+  --brand-hint: #aeaeb2;
+
+  --background: var(--brand-bg);
+  --foreground: var(--brand-text);
+  --home-shadow: 0 8px 40px rgba(36, 138, 61, 0.06);
   --home-radius: 1.75rem;
+
+  /* 行事曆別名（相容） */
+  --cal-bg: var(--brand-bg);
+  --cal-surface: var(--brand-surface);
+  --cal-border: var(--brand-border);
+  --cal-primary: var(--brand-primary);
+  --cal-primary-dark: var(--brand-primary-dark);
+  --cal-primary-light: var(--brand-primary-light);
+  --cal-primary-muted: var(--brand-primary-muted);
+  --cal-text: var(--brand-text);
+  --cal-text-secondary: var(--brand-text-secondary);
+  --cal-text-muted: var(--brand-text-muted);
+  --cal-hint: var(--brand-hint);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-primary-dark: var(--brand-primary-dark);
+  --color-brand-primary-light: var(--brand-primary-light);
+  --color-brand-primary-muted: var(--brand-primary-muted);
+  --color-brand-border: var(--brand-border);
+  --color-brand-surface: var(--brand-surface);
   --font-sans: var(--font-geist-sans);
 }
 
@@ -76,6 +108,35 @@ body {
 @media (min-width: 1024px) {
   .profile-container {
     max-width: 48rem;
+  }
+}
+
+.calendar-container {
+  width: 100%;
+  max-width: 28rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+
+@media (min-width: 640px) {
+  .calendar-container {
+    max-width: 36rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .calendar-container {
+    max-width: 42rem;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .calendar-container {
+    max-width: 52rem;
   }
 }
 

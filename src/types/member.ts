@@ -6,74 +6,98 @@ import type {
   Timestamp,
 } from "./common";
 
+export type MemberStatus = "active" | "inactive" | "archived";
+
 /**
- * Persisted member record.
+ * Persisted member record — CRM source of truth.
  *
  * Rank, progress, stats, and daily actions are computed — do not store them here.
- * Rank keys are defined in docs/BUSINESS_RULES.md, not as hardcoded enums.
  */
 export interface Member extends StoredEntity {
   organizationId: EntityId;
 
-  /** Display name shown in greetings and team views. */
+  /** Herbalife Member ID — unique login identity */
+  herbalifeMemberId: string;
+
+  /** Legal / display name */
   displayName: string;
-
-  /** Optional nickname, e.g. "巴其哥". */
   nickname?: string;
-
-  /**
-   * Current rank key, e.g. "new_member", "supervisor", "president".
-   * Valid values are organization-configured; see docs/BUSINESS_RULES.md.
-   */
-  rankKey: string;
-
-  /**
-   * Role key for permissions, e.g. "member", "leader", "admin".
-   * Valid values are organization-configured.
-   */
-  roleKey: string;
-
-  /** Direct sponsor in the organization tree. */
-  sponsorMemberId?: EntityId;
-
-  /** Team assignment within the organization. */
-  teamId?: EntityId;
-
-  /** Date the member joined the organization. */
+  gender?: string;
+  birthday?: ISODateString;
+  phone?: string;
+  lineId?: string;
+  instagram?: string;
+  email?: string;
   joinedAt: ISODateString;
 
-  /** Extension fields without schema migration. */
+  /** Direct referrer / sponsor in the organization tree. */
+  sponsorMemberId?: EntityId;
+  /** Assigned coach / upline leader. */
+  coachId?: EntityId;
+
+  status: MemberStatus;
+  goal?: string;
+  occupation?: string;
+  city?: string;
+  notes?: string;
+  tags: string[];
+
+  rankKey: string;
+  roleKey: string;
+  teamId?: EntityId;
   metadata?: EntityMetadata;
 }
 
-/** Fields required to create a new member. */
 export interface MemberCreateInput {
   organizationId: EntityId;
+  herbalifeMemberId: string;
   displayName: string;
   nickname?: string;
+  gender?: string;
+  birthday?: ISODateString;
+  phone?: string;
+  lineId?: string;
+  instagram?: string;
+  email?: string;
+  joinedAt: ISODateString;
+  sponsorMemberId?: EntityId;
+  coachId?: EntityId;
+  status?: MemberStatus;
+  goal?: string;
+  occupation?: string;
+  city?: string;
+  notes?: string;
+  tags?: string[];
   rankKey: string;
   roleKey: string;
-  sponsorMemberId?: EntityId;
   teamId?: EntityId;
-  joinedAt: ISODateString;
   metadata?: EntityMetadata;
 }
 
-/** Partial update for mutable member fields. Rank changes may be system-driven. */
 export interface MemberUpdateInput {
   displayName?: string;
   nickname?: string;
+  gender?: string;
+  birthday?: ISODateString;
+  phone?: string;
+  lineId?: string;
+  instagram?: string;
+  email?: string;
+  joinedAt?: ISODateString;
+  sponsorMemberId?: EntityId;
+  coachId?: EntityId;
+  status?: MemberStatus;
+  goal?: string;
+  occupation?: string;
+  city?: string;
+  notes?: string;
+  tags?: string[];
   rankKey?: string;
   roleKey?: string;
-  sponsorMemberId?: EntityId;
   teamId?: EntityId;
   metadata?: EntityMetadata;
 }
 
-/**
- * Derived member snapshot — never persisted.
- * Built from Member + activity records + business rules.
- */
 export interface MemberSummary {
   memberId: EntityId;
   displayName: string;

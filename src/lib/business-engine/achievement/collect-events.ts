@@ -19,7 +19,6 @@ export interface CollectGamificationEventsInput {
 const ACTIVITY_SOURCE_MAP: Record<string, string> = {
   [ACTIVITY_KEYS.MEASUREMENT]: GAMIFICATION_EVENT_SOURCES.MEASUREMENT,
   [ACTIVITY_KEYS.CONSULTATION]: GAMIFICATION_EVENT_SOURCES.CONSULTATION,
-  [ACTIVITY_KEYS.PRODUCT_SHARING]: GAMIFICATION_EVENT_SOURCES.PRODUCT_SHARING,
   [ACTIVITY_KEYS.RETAIL_HOUSE_UPDATE]: GAMIFICATION_EVENT_SOURCES.TRANSACTION,
 };
 
@@ -74,7 +73,6 @@ export function resolveTriggerMetric(
   switch (rule.eventSource) {
     case GAMIFICATION_EVENT_SOURCES.MEASUREMENT:
     case GAMIFICATION_EVENT_SOURCES.CONSULTATION:
-    case GAMIFICATION_EVENT_SOURCES.PRODUCT_SHARING:
       if (rule.eventKey === "streak_days") {
         return context.currentStreak;
       }
@@ -153,8 +151,7 @@ export function findUnlockDate(
 
   if (
     rule.eventSource === GAMIFICATION_EVENT_SOURCES.MEASUREMENT ||
-    rule.eventSource === GAMIFICATION_EVENT_SOURCES.CONSULTATION ||
-    rule.eventSource === GAMIFICATION_EVENT_SOURCES.PRODUCT_SHARING
+    rule.eventSource === GAMIFICATION_EVENT_SOURCES.CONSULTATION
   ) {
     const matching = events.filter(
       (event) =>

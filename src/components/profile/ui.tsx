@@ -7,16 +7,23 @@ export function ProfileCard({
 }) {
   return (
     <section
-      className={`rounded-[1.75rem] border border-[#ececf1] bg-white p-6 sm:p-7 ${className}`}
+      className={`rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6 sm:p-7 ${className}`}
     >
       {children}
     </section>
   );
 }
 
-export function ProfileSectionTitle({ children }: { children: React.ReactNode }) {
+export function ProfileSectionTitle({
+  children,
+  emoji,
+}: {
+  children: React.ReactNode;
+  emoji?: string;
+}) {
   return (
     <h2 className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">
+      {emoji ? <span className="mr-1.5 normal-case">{emoji}</span> : null}
       {children}
     </h2>
   );
@@ -57,7 +64,7 @@ export function MetricTile({
   unit?: string;
 }) {
   return (
-    <div className="rounded-2xl bg-[#f5f5f7] px-4 py-4 sm:px-5 sm:py-5">
+    <div className="rounded-2xl bg-[var(--brand-bg)] px-4 py-4 sm:px-5 sm:py-5">
       <p className="text-[0.8125rem] font-medium text-[#86868b]">{label}</p>
       <p className="mt-2 text-[1.5rem] font-semibold leading-none tracking-tight text-[#1d1d1f] sm:text-[1.625rem]">
         {value === null ? "—" : value}
@@ -72,13 +79,16 @@ export function MetricTile({
 export function EmptyBlock({
   title,
   description,
+  emoji,
 }: {
   title: string;
   description: string;
+  emoji?: string;
 }) {
   return (
-    <div className="rounded-2xl bg-[#f5f5f7] px-5 py-6 text-center">
-      <p className="text-[1rem] font-semibold text-[#1d1d1f]">{title}</p>
+    <div className="rounded-2xl bg-[var(--brand-bg)] px-5 py-6 text-center">
+      {emoji ? <p className="text-[1.75rem] leading-none">{emoji}</p> : null}
+      <p className={`text-[1rem] font-semibold text-[#1d1d1f] ${emoji ? "mt-2" : ""}`}>{title}</p>
       <p className="mt-2 text-[0.875rem] leading-relaxed text-[#86868b]">{description}</p>
     </div>
   );
@@ -86,7 +96,7 @@ export function EmptyBlock({
 
 export function ProgressBar({
   percent,
-  color = "#0071e3",
+  color = "#77b539",
 }: {
   percent: number | null;
   color?: string;
@@ -96,7 +106,7 @@ export function ProgressBar({
   }
 
   return (
-    <div className="h-2 overflow-hidden rounded-full bg-[#ececf1]">
+    <div className="h-2 overflow-hidden rounded-full bg-[var(--brand-border)]">
       <div
         className="h-full rounded-full transition-all duration-250 ease-out"
         style={{ width: `${percent}%`, backgroundColor: color }}

@@ -1,13 +1,10 @@
 import type { BusinessRulesConfig } from "../rules";
 import { DEFAULT_BUSINESS_RULES } from "../rules";
-import type { PromotionProgress } from "../calculate-promotion-progress";
-import type { QualificationResult } from "../qualification/types";
 import { buildQualificationNextSteps } from "../qualification/build-next-steps";
-import type { QualificationRulesConfig } from "../rules/qualification";
-import { DEFAULT_QUALIFICATION_RULES } from "../rules/qualification";
 import { buildPromotionNextSteps } from "./build-promotion-steps";
 import { resolveRuleTarget } from "@/lib/rule-engine";
 import { resolveVpTargetAmount } from "../rules/vp";
+import { isCareerRankAtOrAbove } from "@/lib/auth/career-rank-order";
 import { clampPercent } from "../utils";
 import { applyTemplate, computeRemaining } from "./templates";
 import type {
@@ -61,6 +58,13 @@ function buildVpRankSteps(
   rules: BusinessRulesConfig,
 ): NextStep[] {
   return rules.nextSteps.vpRankSteps.flatMap((stepRule) => {
+    if (
+      input.memberRankKey &&
+      isCareerRankAtOrAbove(input.memberRankKey, stepRule.rankKey)
+    ) {
+      return [];
+    }
+
     const targetResult = stepRule.vpTargetKey
       ? resolveRuleTarget(
           resolveVpTargetAmount(stepRule.vpTargetKey, rules.vp),

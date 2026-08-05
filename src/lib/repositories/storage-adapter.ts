@@ -1,6 +1,7 @@
 export interface StorageAdapter {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem(key: string): void;
 }
 
 export class LocalStorageAdapter implements StorageAdapter {
@@ -16,6 +17,13 @@ export class LocalStorageAdapter implements StorageAdapter {
       return;
     }
     window.localStorage.setItem(key, value);
+  }
+
+  removeItem(key: string): void {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.removeItem(key);
   }
 }
 

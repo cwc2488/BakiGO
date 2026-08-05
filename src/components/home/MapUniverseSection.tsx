@@ -5,6 +5,7 @@ import type {
   MapUniverseLineStatus,
   MapUniverseResult,
 } from "@/lib/services/build-map-universe";
+import { APP_EMOJI } from "@/lib/ui/app-emojis";
 import { useState } from "react";
 import { EmptyState } from "./states";
 import { Card, SectionLabel } from "./ui";
@@ -16,12 +17,12 @@ const STATUS_STYLES: Record<
   growing: {
     dot: "bg-[#30d158]",
     ring: "shadow-[0_0_0_4px_rgba(48,209,88,0.25)]",
-    label: "正在成長",
+    label: "活躍督導",
   },
   needs_help: {
     dot: "bg-[#ffd60a]",
     ring: "shadow-[0_0_0_4px_rgba(255,214,10,0.25)]",
-    label: "需要協助",
+    label: "培育中",
   },
   danger: {
     dot: "bg-[#ff375f]",
@@ -40,7 +41,7 @@ function tierClassName(line: MapUniverseLine): string {
     case "world_team":
       return "shadow-[0_0_16px_rgba(48,209,88,0.35)]";
     case "promotion_group":
-      return "ring-2 ring-[#0071e3]/20";
+      return "ring-2 ring-[var(--brand-primary)]/20";
     case "wealth_group":
       return "shadow-[0_0_16px_rgba(255,214,10,0.35)]";
     default:
@@ -61,14 +62,14 @@ function MapDot({
 
   return (
     <button
-      aria-label={line.displayName ?? `MAP ${line.lineIndex + 1}`}
+      aria-label={line.displayName ?? `活躍督導線 ${line.lineIndex + 1}`}
       aria-pressed={isSelected}
       className={`relative flex aspect-square w-full items-center justify-center rounded-full transition-transform duration-200 active:scale-95 ${isSelected ? "scale-105" : "hover:scale-[1.03]"}`}
       onClick={onSelect}
       type="button"
     >
       <span
-        className={`block h-[85%] w-[85%] rounded-full ${style.dot} ${style.ring} ${tierClassName(line)} ${isSelected ? "ring-4 ring-[#0071e3]/30" : ""}`}
+        className={`block h-[85%] w-[85%] rounded-full ${style.dot} ${style.ring} ${tierClassName(line)} ${isSelected ? "ring-4 ring-[var(--brand-primary)]/30" : ""}`}
       />
     </button>
   );
@@ -82,7 +83,7 @@ function DetailCard({ line }: { line: MapUniverseLine }) {
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[0.8125rem] font-medium text-white/60">
-            MAP {line.lineIndex + 1}
+            活躍督導線 {line.lineIndex + 1}
           </p>
           <h3 className="mt-1 text-[1.375rem] font-semibold tracking-tight sm:text-[1.5rem]">
             {line.displayName ?? "空線"}
@@ -96,7 +97,7 @@ function DetailCard({ line }: { line: MapUniverseLine }) {
       {line.isEstablished ? (
         <dl className="mt-5 space-y-3.5 sm:mt-6 sm:space-y-4">
           <DetailRow label="目前 VP" value={line.vpTotal !== null ? `${line.vpTotal} VP` : "—"} />
-          <DetailRow label="目前 Rank" value={line.rankName ?? "—"} />
+          <DetailRow label="目前職級" value={line.rankName ?? "—"} />
           <DetailRow
             label="距離下一階"
             value={
@@ -105,17 +106,17 @@ function DetailCard({ line }: { line: MapUniverseLine }) {
                 : (line.promotionDescription ?? "—")
             }
           />
-          <DetailRow label="President AI 建議" value={line.presidentSuggestion ?? "—"} />
+          <DetailRow label="總裁 AI 建議" value={line.presidentSuggestion ?? "—"} />
           <DetailRow label="最近成交" value={line.recentTransactionLabel ?? "—"} />
           <DetailRow
-            label="本月 Active"
-            value={line.monthlyActive === null ? "—" : line.monthlyActive ? "是" : "否"}
+            label="活躍督導"
+            value={line.monthlyActive === null ? "—" : line.monthlyActive ? "已達成" : "尚未達成"}
           />
-          <DetailRow label="本月 Mission" value={line.monthlyMissionTitle ?? "—"} />
+          <DetailRow label="本月任務" value={line.monthlyMissionTitle ?? "—"} />
         </dl>
       ) : (
         <p className="mt-5 text-[0.9375rem] text-white/70 sm:mt-6">
-          此 MAP 線尚未建立夥伴。邀請第一位夥伴加入，這顆圓點就會亮起來。
+          此線尚未有第一代夥伴。招募下線並協助達成活躍督導，這顆圓點就會亮起來。
         </p>
       )}
     </article>
@@ -143,16 +144,17 @@ export function MapUniverseSection({ universe }: { universe: MapUniverseResult }
 
   return (
     <Card>
-      <SectionLabel>MAP Universe</SectionLabel>
+      <SectionLabel emoji={APP_EMOJI.section.mapUniverse}>活躍督導宇宙</SectionLabel>
       <p className="mt-2 text-[1.25rem] font-semibold tracking-tight text-[#1d1d1f] sm:text-[1.375rem]">
-        {universe.layoutSlotCount} 條 MAP
+        {universe.layoutSlotCount} 條活躍督導
       </p>
 
       {universe.isRuleMissing ? (
         <div className="mt-4">
           <EmptyState
-            title="MAP 目標尚未設定"
-            description="系統規則定義完成後，這裡會顯示你的 MAP 進度。"
+            emoji={APP_EMOJI.mood.empty}
+            title="活躍督導目標尚未設定"
+            description="系統規則定義完成後，這裡會顯示 14 條活躍督導進度。"
           />
         </div>
       ) : (
@@ -184,8 +186,9 @@ export function MapUniverseSection({ universe }: { universe: MapUniverseResult }
           {establishedCount === 0 ? (
             <div className="mt-5">
               <EmptyState
-                title="還沒有 MAP 線"
-                description="完成第一筆成交、建立第一條線，你的 MAP Universe 就會開始發光。"
+                emoji={APP_EMOJI.section.mapUniverse}
+                title="還沒有活躍督導線"
+                description="第一代下線達成活躍督導後，對應的圓點會亮起來。"
               />
             </div>
           ) : null}

@@ -7,16 +7,23 @@ export function Card({
 }) {
   return (
     <section
-      className={`home-card animate-fade-in rounded-[1.75rem] bg-white/90 p-6 shadow-[0_8px_40px_rgba(0,0,0,0.04)] backdrop-blur-sm ${className}`}
+      className={`home-card animate-fade-in rounded-[1.75rem] bg-[var(--brand-surface)]/90 p-6 shadow-[0_8px_40px_rgba(0,0,0,0.04)] backdrop-blur-sm ${className}`}
     >
       {children}
     </section>
   );
 }
 
-export function SectionLabel({ children }: { children: React.ReactNode }) {
+export function SectionLabel({
+  children,
+  emoji,
+}: {
+  children: React.ReactNode;
+  emoji?: string;
+}) {
   return (
     <h2 className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">
+      {emoji ? <span className="mr-1.5 normal-case">{emoji}</span> : null}
       {children}
     </h2>
   );
@@ -24,7 +31,7 @@ export function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export function ProgressBar({
   percent,
-  color = "#0071e3",
+  color = "#77b539",
   height = "h-2",
 }: {
   percent: number | null;
@@ -36,7 +43,7 @@ export function ProgressBar({
   }
 
   return (
-    <div className={`${height} overflow-hidden rounded-full bg-[#ececf1]`}>
+    <div className={`${height} overflow-hidden rounded-full bg-[var(--brand-border)]`}>
       <div
         className="h-full rounded-full transition-all duration-250 ease-out"
         style={{ width: `${percent}%`, backgroundColor: color }}

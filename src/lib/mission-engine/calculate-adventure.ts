@@ -87,9 +87,10 @@ function stepRankId(stepKey: string): PromotionRankId {
 
 export function calculateAdventure(
   input: CalculateAdventureInput,
-  rules: MissionRulesConfig = DEFAULT_MISSION_RULES,
+  _rules: MissionRulesConfig = DEFAULT_MISSION_RULES,
   businessRules: BusinessRulesConfig = DEFAULT_BUSINESS_RULES,
 ): Adventure {
+  void _rules;
   const promotionTree = businessRules.promotion;
   const adventureTemplates = promotionTree.adventureTemplates;
   const adventureSteps = buildPromotionAdventureSteps(promotionTree);

@@ -1,0 +1,94 @@
+---
+description: Core principles and conventions for Baki GO
+alwaysApply: true
+---
+
+# Baki GO — Project Rules
+
+## Product Context
+
+Baki GO is a **Business Operating System for Network Marketing organizations** — not a CRM, KPI dashboard, or task manager. Before implementing features, read the relevant docs in `/docs`.
+
+## Golden Rule
+
+> Every member should know exactly what to do next.
+
+## Non-Negotiable Principles
+
+### Mobile-first
+
+Everything must be designed for phones first. Desktop is secondary.
+
+### Enter data once
+
+Users must never re-enter the same information. Every statistic is calculated automatically from stored activity.
+
+### Motivation first
+
+Every screen should increase motivation. Every interaction should make users want to come back tomorrow.
+
+### Business before technology
+
+Business rules always come first. Technology exists only to support the business. Never hardcode business logic — rules belong in `docs/BUSINESS_RULES.md`.
+
+### Priority 0 — Rule Engine (non-negotiable)
+
+- **Never infer KPI numbers in UI or engines.** Any target (10, 100, 500, 2500, etc.) must be defined in Business Rules and returned by the Rule Engine.
+- If a required rule is missing or its target is `null`, return **Rule Missing** / **等待使用者定義。** — do not show placeholder KPIs or default targets.
+- UI is a renderer only. Computing `(current / target) * 100` or similar in components is a bug; progress must come from engine output.
+- Violations of this rule are bugs, not acceptable shortcuts.
+
+### Simplicity
+
+Usable by someone who has never used CRM software. If a feature feels complicated, redesign it.
+
+### Gamification is core
+
+Progress should feel like a game. Members earn levels, experience, badges, achievements, titles, and rankings. Consult `docs/GAME_DESIGN.md` before building user-facing flows.
+
+### Meeting friendly
+
+Support weekly team meetings. Members should review progress together on one screen.
+
+### Leader first
+
+Leaders must instantly see who needs help, who is improving, who is falling behind, and who deserves recognition.
+
+### Data driven
+
+All coaching is based on real logged activity — never memory or assumptions.
+
+### Long-term thinking
+
+Every feature should still make sense five years from now. Avoid shortcuts. Build systems.
+
+### UI inspiration
+
+Follow `docs/UI_SYSTEM.md`: clean and spacious (Apple), progress-driven and celebratory (Apple Fitness), fast and minimal (Linear).
+
+## Career Path
+
+Members progress: New Member → Supervisor → Active Supervisor → World Team → President. Rank rules live in `docs/BUSINESS_RULES.md`.
+
+## Code Standards
+
+- **Readability and scalability** over cleverness.
+- **Never hardcode business logic** — implement what the docs define.
+- When behavior is unclear, update documentation first, then code.
+
+## Documentation Map
+
+| File | Purpose |
+|------|---------|
+| `docs/PRODUCT.md` | Philosophy, mission, and principles |
+| `docs/BUSINESS_RULES.md` | Domain rules and rank criteria (source of truth) |
+| `docs/DATABASE.md` | Data model and persistence |
+| `docs/UI_SYSTEM.md` | Design system and UI patterns |
+| `docs/GAME_DESIGN.md` | Gamification mechanics |
+| `docs/ROADMAP.md` | Delivery phases and priorities |
+
+## Before Writing Code
+
+1. Check whether the relevant doc section exists; if not, add it.
+2. Confirm the change serves the Golden Rule and aligns with all product principles.
+3. Avoid scope creep — foundation and docs before features unless explicitly requested.

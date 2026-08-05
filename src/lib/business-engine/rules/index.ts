@@ -9,6 +9,7 @@ import { DEFAULT_GAMIFICATION_RULES } from "./gamification";
 import type { GamificationRulesConfig } from "./gamification";
 import { DEFAULT_PROMOTION_TREE, type PromotionTree } from "./promotion";
 import { DEFAULT_QUALIFICATION_RULES, type QualificationRulesConfig } from "./qualification";
+import { DEFAULT_SUPER_LEAGUE_RULES, type SuperLeagueRules } from "./super-league";
 import { DEFAULT_VP_RULES, VP_TARGET_KEYS, type VpRulesConfig } from "./vp";
 import {
   ACTIVITY_KEYS,
@@ -47,6 +48,11 @@ export interface PresidentTreeRules {
   activityKeys: string[];
 }
 
+export interface PresidentLifetimeGoals {
+  /** 只吃不做的客人 — lifetime target for 總裁組. */
+  passiveCustomerTarget: number;
+}
+
 export interface RetailHouseRules {
   /** Activity key that counts as a retail house update. */
   updateActivityKey: string;
@@ -61,7 +67,7 @@ export interface RetailTransactionTypeConfig {
   criterionKey: string;
 }
 
-export interface VpRules extends VpRulesConfig {}
+export type VpRules = VpRulesConfig;
 
 export interface MonthlyChallengeTemplate {
   title: string;
@@ -153,6 +159,8 @@ export interface BusinessRulesConfig {
     labels: Record<string, string>;
   };
   presidentTree: PresidentTreeRules;
+  presidentLifetimeGoals: PresidentLifetimeGoals;
+  superLeague: SuperLeagueRules;
   rankQualification: Record<string, RankQualificationRule>;
   retailHouse: RetailHouseRules;
   retailTransactionTypes: RetailTransactionTypeConfig[];
@@ -179,33 +187,51 @@ export const DEFAULT_BUSINESS_RULES: BusinessRulesConfig = {
       [RANK_KEYS.NEW_MEMBER]: "新夥伴",
       [RANK_KEYS.SUPERVISOR]: "督導",
       [RANK_KEYS.ACTIVE_SUPERVISOR]: "活躍督導",
-      [RANK_KEYS.WORLD_TEAM]: "環球團隊",
+      [RANK_KEYS.WORLD_TEAM]: "世界組",
       [RANK_KEYS.PRESIDENT]: "總裁",
     },
   },
   presidentTree: {
-    totalLines: null,
-    activeRankKeys: [RANK_KEYS.SUPERVISOR, RANK_KEYS.ACTIVE_SUPERVISOR, RANK_KEYS.WORLD_TEAM, RANK_KEYS.PRESIDENT],
+    totalLines: 14,
+    activeRankKeys: [RANK_KEYS.ACTIVE_SUPERVISOR],
     minActivityCount: 0,
     activityKeys: Object.values(ACTIVITY_KEYS),
   },
+  presidentLifetimeGoals: {
+    passiveCustomerTarget: 50,
+  },
+  superLeague: DEFAULT_SUPER_LEAGUE_RULES,
   rankQualification: {
+    [RANK_KEYS.NEW_MEMBER]: {
+      rankKey: RANK_KEYS.NEW_MEMBER,
+      label: "新夥伴",
+      criteria: [
+        {
+          criterionKey: ACTIVITY_KEYS.MEASUREMENT,
+          targetValue: 30,
+          weight: 1,
+        },
+        {
+          criterionKey: ACTIVITY_KEYS.CONSULTATION,
+          targetValue: 7,
+          weight: 1,
+        },
+      ],
+    },
     [RANK_KEYS.SUPERVISOR]: {
       rankKey: RANK_KEYS.SUPERVISOR,
       label: "督導",
       criteria: [
-        { criterionKey: ACTIVITY_KEYS.MEASUREMENT, targetValue: null, weight: 1 },
-        { criterionKey: ACTIVITY_KEYS.CONSULTATION, targetValue: null, weight: 1 },
-        { criterionKey: ACTIVITY_KEYS.PRODUCT_SHARING, targetValue: null, weight: 1 },
+        { criterionKey: ACTIVITY_KEYS.MEASUREMENT, targetValue: 30, weight: 1 },
+        { criterionKey: ACTIVITY_KEYS.CONSULTATION, targetValue: 7, weight: 1 },
       ],
     },
     [RANK_KEYS.WORLD_TEAM]: {
       rankKey: RANK_KEYS.WORLD_TEAM,
-      label: "環球團隊",
+      label: "世界組",
       criteria: [
         { criterionKey: ACTIVITY_KEYS.MEASUREMENT, targetValue: null, weight: 1 },
         { criterionKey: ACTIVITY_KEYS.CONSULTATION, targetValue: null, weight: 1 },
-        { criterionKey: ACTIVITY_KEYS.PRODUCT_SHARING, targetValue: null, weight: 1 },
         { criterionKey: ACTIVITY_KEYS.RETAIL_HOUSE_UPDATE, targetValue: null, weight: 1 },
       ],
     },
@@ -247,6 +273,20 @@ export const DEFAULT_BUSINESS_RULES: BusinessRulesConfig = {
   monthlyChallenge: {
     title: "本月挑戰",
     criteria: [
+      {
+        criterionKey: ACTIVITY_KEYS.MEASUREMENT,
+        label: "量測",
+        targetValue: 30,
+        unit: "次",
+        weight: 1,
+      },
+      {
+        criterionKey: ACTIVITY_KEYS.CONSULTATION,
+        label: "諮詢新會員",
+        targetValue: 7,
+        unit: "次",
+        weight: 1,
+      },
       {
         criterionKey: "retail_new_customer_ntd",
         label: "新顧客成交",
@@ -294,20 +334,20 @@ export const DEFAULT_BUSINESS_RULES: BusinessRulesConfig = {
     mapSteps: [
       {
         stepKey: "map_milestone",
-        targetActiveLines: null,
-        milestoneLabel: "MAP20",
-        unit: "位",
+        targetActiveLines: 14,
+        milestoneLabel: "14 條活躍督導",
+        unit: "條",
         priority: 2,
         rewardXP: 40,
         titleTemplate: "距離{milestoneLabel}還差{remaining}{unit}",
-        descriptionTemplate: "目前已有 {current} 條活躍線，目標 {target} 條",
+        descriptionTemplate: "目前已有 {current} 條活躍督導線，目標 {target} 條",
       },
     ],
     dailyActivitySteps: [
       {
         stepKey: "daily_consultation",
         activityKey: ACTIVITY_KEYS.CONSULTATION,
-        activityLabel: "安排試喝",
+        activityLabel: "諮詢",
         dailyTarget: null,
         unit: "位",
         priority: 3,
@@ -371,6 +411,10 @@ export type {
   PromotionRule,
   PromotionTree,
 } from "./promotion";
+export {
+  DEFAULT_SUPER_LEAGUE_RULES,
+} from "./super-league";
+export type { SuperLeagueRules } from "./super-league";
 export {
   DEFAULT_VP_RULES,
   VP_BUCKET_KEYS,

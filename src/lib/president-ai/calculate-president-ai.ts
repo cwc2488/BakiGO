@@ -4,6 +4,7 @@ import type { PresidentAIInput } from "./types";
 import { candidatesToPriorities, collectPriorityCandidates } from "./collect-candidates";
 import { collectOpportunities, collectWarnings } from "./collect-insights";
 import { resolveFocusModeFromCategory } from "./map-category";
+import { formatFocusModeLabel, formatPriorityCategoryLabel } from "./display-labels";
 import { sortCandidates } from "./score-priority";
 
 function buildReasoning(
@@ -16,7 +17,7 @@ function buildReasoning(
   if (topPriorities.length > 0) {
     const top = topPriorities[0];
     reasoning.push(
-      `今日最高優先：${top.title}（${top.category}，完成度 ${top.score}%）`,
+      `今日最高優先：${top.title}（${formatPriorityCategoryLabel(top.category)}，完成度 ${top.score}%）`,
     );
   }
 
@@ -44,7 +45,7 @@ function selectFocusMode(
   if (!topPriority) {
     return {
       key: "Leadership Sprint",
-      label: "Leadership Sprint",
+      label: formatFocusModeLabel("Leadership Sprint"),
       reason: "尚無可排序的優先事項，維持日常領導節奏",
     };
   }
@@ -53,8 +54,8 @@ function selectFocusMode(
 
   return {
     key,
-    label: key,
-    reason: `依 ${topPriority.category} 類最高優先「${topPriority.title}」自動選定`,
+    label: formatFocusModeLabel(key),
+    reason: `依 ${formatPriorityCategoryLabel(topPriority.category)} 類最高優先「${topPriority.title}」自動選定`,
   };
 }
 

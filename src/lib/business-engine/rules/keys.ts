@@ -13,7 +13,6 @@ export const RANK_KEYS = {
 export const ACTIVITY_KEYS = {
   MEASUREMENT: "measurement",
   CONSULTATION: "consultation",
-  PRODUCT_SHARING: "product_sharing",
   RETAIL_HOUSE_UPDATE: "retail_house_update",
 } as const;
 

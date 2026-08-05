@@ -7,6 +7,7 @@ export interface RetailReportLineItem {
   amount: number;
   unit: "NTD" | "VP";
   transactionDate: ISODateString;
+  note?: string;
 }
 
 export interface RetailReportCategory {

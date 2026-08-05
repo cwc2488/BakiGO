@@ -18,6 +18,7 @@ import {
   evaluateAllQualificationRules,
   type QualificationResult,
 } from "@/lib/business-engine/qualification";
+import { DEFAULT_QUALIFICATION_RULES } from "@/lib/business-engine/rules/qualification";
 import type { MissionEngineResult } from "@/types/mission";
 import {
   calculateMissionEngine,
@@ -49,11 +50,13 @@ import type { RetailWeeklyReport } from "@/types/retail-weekly-report";
 import type { EventCenterResult } from "@/types/event-center";
 import { applyMemberStateFromEvents } from "@/lib/event-center/resolve-member-state";
 import { projectEventsForEngines } from "@/lib/event-center/project-events";
+import { loadPointRedemptions } from "@/lib/repositories/point-redemption-repository";
 import { createEventRepository } from "@/lib/repositories/event-repository";
 import { buildRetailWeeklyReport } from "./build-retail-weekly-report";
 import { buildEventTimeline } from "./build-event-timeline";
 import { buildMapUniverse, type MapUniverseResult } from "./build-map-universe";
 import { calculatePresidentAI, toPresidentAIInput } from "@/lib/president-ai";
+import { clampPercent } from "@/lib/business-engine/utils";
 
 export interface MemberComputedMetrics {
   memberId: EntityId;
@@ -126,7 +129,7 @@ export function recalculateMemberMetrics(
     (transaction) => transaction.memberId === input.memberId,
   );
   const engineTransactions = toEngineTransactions(memberTransactions);
-  const members = applyMemberStateFromEvents(getAppMembers(), allEvents);
+  const members = applyMemberStateFromEvents(getAppMembers(storage), allEvents);
   const currentMember = members.find((member) => member.id === input.memberId);
   const retailHouseKeys = getRetailHouseKeys();
   const challenge = buildMonthlyChallenge(yearMonth);
@@ -181,7 +184,11 @@ export function recalculateMemberMetrics(
     activeLineTarget: map.totalLines,
   });
 
-  const qualificationResults = evaluateAllQualificationRules(qualificationContext);
+  const qualificationResults = evaluateAllQualificationRules(
+    qualificationContext,
+    DEFAULT_QUALIFICATION_RULES,
+    currentMember?.rankKey,
+  );
 
   const downlinePromotionRankCounts = countDownlineByPromotionRank(members, input.memberId);
   const promotionProgress = calculatePromotionProgress({
@@ -210,6 +217,7 @@ export function recalculateMemberMetrics(
     monthlyChallenge,
     promotionProgress,
     qualificationResults,
+    memberRankKey: currentMember?.rankKey,
   });
 
   const gamification = calculateAchievementEngine({
@@ -228,6 +236,7 @@ export function recalculateMemberMetrics(
     monthlyChallengePercent: monthlyChallenge.overallProgressPercent,
     downlineRankCounts: downlinePromotionRankCounts,
     qualificationResults,
+    redemptions: loadPointRedemptions(storage),
   });
 
   const missions = calculateMissionEngine({
@@ -295,6 +304,18 @@ export function recalculateMemberMetrics(
     retailHouseKey: retailHouseKeys[0] ?? null,
   });
 
+  const activeSupervisorLineCount = mapUniverse.lines.filter(
+    (line) => line.monthlyActive === true,
+  ).length;
+  const syncedMap =
+    map.totalLines !== null
+      ? {
+          ...map,
+          activeLines: activeSupervisorLineCount,
+          progressPercent: clampPercent((activeSupervisorLineCount / map.totalLines) * 100),
+        }
+      : map;
+
   const eventCenter = buildEventTimeline({
     memberId: input.memberId,
     referenceDate: input.referenceDate,
@@ -303,6 +324,7 @@ export function recalculateMemberMetrics(
 
   const snapshot: MemberComputedMetrics = {
     ...snapshotCore,
+    map: syncedMap,
     presidentAI,
     retailWeeklyReport,
     mapUniverse,

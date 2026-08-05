@@ -1,14 +1,12 @@
 "use client";
 
-import { DEFAULT_BUSINESS_RULES } from "@/lib/business-engine";
-import {
-  APP_IDS,
-  todayISODate,
-} from "@/lib/config/app-config";
+import { todayISODate } from "@/lib/config/app-config";
 import { processEventForCurrentMember } from "@/lib/event-center/process-event";
 import {
   getEventTypeDefinition,
-  getEventTypesByCategory,
+  getRecordableEventTypes,
+  getRecordableEventTypesByGroup,
+  type EventTypeDefinition,
 } from "@/lib/event-center/event-types";
 import {
   formatShortDate,
@@ -17,32 +15,204 @@ import {
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import type { BakiEventCategory } from "@/types/baki-event";
+import type { EventTimelineEntry } from "@/types/event-center";
+import { APP_EMOJI } from "@/lib/ui/app-emojis";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-const CATEGORY_LABELS: Record<BakiEventCategory, string> = {
+const TIMELINE_CATEGORY_LABELS: Record<BakiEventCategory, string> = {
   transaction: "成交",
   activity: "活動",
   qualification: "資格",
 };
 
-function getTransactionCurrencyCode(typeKey: string): string {
-  const config = DEFAULT_BUSINESS_RULES.retailTransactionTypes.find(
-    (type) => type.key === typeKey,
+const SELECT_CLASS =
+  "w-full appearance-none rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)]";
+
+interface EventTypeListItem {
+  eventTypeKey: string;
+  label: string;
+  group: "daily" | "meeting";
+  count: number;
+}
+
+function buildEventTypeList(
+  recordableTypes: EventTypeDefinition[],
+  timeline: EventTimelineEntry[],
+): EventTypeListItem[] {
+  const countByKey = new Map<string, number>();
+  for (const event of timeline) {
+    countByKey.set(event.eventTypeKey, (countByKey.get(event.eventTypeKey) ?? 0) + 1);
+  }
+
+  return recordableTypes.map((type) => ({
+    eventTypeKey: type.key,
+    label: type.label,
+    group: type.recordGroup ?? "daily",
+    count: countByKey.get(type.key) ?? 0,
+  }));
+}
+
+function EventTypeSelect({
+  eventTypeKey,
+  onSelect,
+}: {
+  eventTypeKey: string;
+  onSelect: (key: string) => void;
+}) {
+  const dailyTypes = getRecordableEventTypesByGroup("daily");
+  const meetingTypes = getRecordableEventTypesByGroup("meeting");
+
+  return (
+    <label className="block space-y-2">
+      <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">活動類型</span>
+      <select
+        className={SELECT_CLASS}
+        onChange={(event) => onSelect(event.target.value)}
+        required
+        value={eventTypeKey}
+      >
+        <optgroup label="日常活動">
+          {dailyTypes.map((type) => (
+            <option key={type.key} value={type.key}>
+              {type.label}
+            </option>
+          ))}
+        </optgroup>
+        <optgroup label="MAP 會議（可重複參加）">
+          {meetingTypes.map((type) => (
+            <option key={type.key} value={type.key}>
+              {type.label}
+            </option>
+          ))}
+        </optgroup>
+      </select>
+    </label>
   );
-  return config?.currencyCode ?? "TWD";
+}
+
+function EventHistoryList({
+  items,
+  selectedKey,
+  onSelect,
+}: {
+  items: EventTypeListItem[];
+  selectedKey: string | null;
+  onSelect: (key: string) => void;
+}) {
+  const dailyItems = items.filter((item) => item.group === "daily");
+  const meetingItems = items.filter((item) => item.group === "meeting");
+
+  function renderGroup(title: string, groupItems: EventTypeListItem[]) {
+    if (groupItems.length === 0) {
+      return null;
+    }
+
+    return (
+      <div>
+        <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.08em] text-[#86868b]">
+          {title}
+        </p>
+        <ul className="mt-2 divide-y divide-[var(--brand-border)] overflow-hidden rounded-2xl border border-[var(--brand-border)]">
+          {groupItems.map((item) => {
+            const isSelected = selectedKey === item.eventTypeKey;
+
+            return (
+              <li key={item.eventTypeKey}>
+                <button
+                  className={`flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left transition-colors ${
+                    isSelected ? "bg-[var(--brand-primary-light)]" : "bg-[var(--brand-surface)] hover:bg-[var(--brand-primary-muted)]"
+                  }`}
+                  onClick={() => onSelect(item.eventTypeKey)}
+                  type="button"
+                >
+                  <span className="text-[1rem] font-medium text-[#1d1d1f]">{item.label}</span>
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-[0.8125rem] font-semibold ${
+                      item.count > 0
+                        ? "bg-[var(--brand-bg)] text-[#636366]"
+                        : "bg-[var(--brand-primary-muted)] text-[#aeaeb2]"
+                    }`}
+                  >
+                    {item.count} 筆
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {renderGroup("日常活動", dailyItems)}
+      {renderGroup("MAP 會議", meetingItems)}
+    </div>
+  );
+}
+
+function EventHistoryDetail({
+  events,
+  selectedType,
+}: {
+  events: EventTimelineEntry[];
+  selectedType: EventTypeDefinition;
+}) {
+  return (
+    <div className="mt-5 rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-primary-muted)] p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[0.8125rem] font-medium text-[#86868b]">歷程</p>
+          <h3 className="mt-1 text-[1.125rem] font-semibold text-[#1d1d1f]">
+            {selectedType.label}
+          </h3>
+          <p className="mt-1 text-[0.875rem] text-[#86868b]">{selectedType.description}</p>
+        </div>
+        <span className="shrink-0 rounded-full bg-[var(--brand-surface)] px-3 py-1.5 text-[0.8125rem] font-semibold text-[#636366]">
+          {events.length} 筆
+        </span>
+      </div>
+
+      {events.length > 0 ? (
+        <ol className="mt-5 space-y-3">
+          {events.map((event) => (
+            <li
+              key={event.id}
+              className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-[var(--brand-bg)] px-3 py-1 text-[0.75rem] font-medium text-[#636366]">
+                  {TIMELINE_CATEGORY_LABELS[event.category]}
+                </span>
+                <time className="text-[0.8125rem] text-[#86868b]">
+                  {formatShortDate(event.eventDate)}
+                </time>
+              </div>
+              <p className="mt-2 text-[0.9375rem] leading-relaxed text-[#636366]">
+                {event.subtitle}
+              </p>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <div className="mt-5 rounded-2xl bg-white px-4 py-5 text-center">
+          <p className="text-[0.9375rem] font-medium text-[#1d1d1f]">尚無此類型的紀錄</p>
+          <p className="mt-1 text-[0.875rem] text-[#86868b]">新增一筆後會顯示在這裡。</p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function EventCenterPage() {
+  const recordableTypes = useMemo(() => getRecordableEventTypes(), []);
   const [metrics, setMetrics] = useState<MemberComputedMetrics | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
-  const [category, setCategory] = useState<BakiEventCategory>("transaction");
-  const [eventTypeKey, setEventTypeKey] = useState(
-    getEventTypesByCategory("transaction")[0]?.key ?? "",
-  );
+  const [eventTypeKey, setEventTypeKey] = useState(recordableTypes[0]?.key ?? "");
+  const [historyTypeKey, setHistoryTypeKey] = useState<string | null>(null);
   const [eventDate, setEventDate] = useState(todayISODate());
-  const [customerName, setCustomerName] = useState("");
-  const [value, setValue] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -58,42 +228,44 @@ export default function EventCenterPage() {
   }, []);
 
   useEffect(() => {
-    loadMetrics();
+    queueMicrotask(() => {
+      loadMetrics();
+    });
   }, [loadMetrics]);
 
-  const eventTypes = useMemo(() => getEventTypesByCategory(category), [category]);
   const selectedType = useMemo(
     () => getEventTypeDefinition(eventTypeKey),
     [eventTypeKey],
   );
 
-  useEffect(() => {
-    const firstType = getEventTypesByCategory(category)[0];
-    if (firstType) {
-      setEventTypeKey(firstType.key);
+  const timeline = useMemo(
+    () => metrics?.eventCenter.events ?? [],
+    [metrics],
+  );
+
+  const eventTypeList = useMemo(
+    () => buildEventTypeList(recordableTypes, timeline),
+    [recordableTypes, timeline],
+  );
+
+  const selectedHistoryType = useMemo(
+    () => (historyTypeKey ? getEventTypeDefinition(historyTypeKey) : null),
+    [historyTypeKey],
+  );
+
+  const filteredHistory = useMemo(() => {
+    if (!historyTypeKey) {
+      return [];
     }
-  }, [category]);
+    return timeline.filter((event) => event.eventTypeKey === historyTypeKey);
+  }, [historyTypeKey, timeline]);
 
   function handleSubmit(formEvent: React.FormEvent<HTMLFormElement>) {
     formEvent.preventDefault();
     setError(null);
 
-    if (!selectedType) {
-      setError("請選擇 Event 類型");
-      return;
-    }
-
-    const parsedValue = value.trim() ? Number(value) : undefined;
-
-    if (selectedType.requiresValue) {
-      if (!parsedValue || !Number.isFinite(parsedValue) || parsedValue <= 0) {
-        setError(`請輸入有效的${selectedType.valueLabel ?? "數值"}`);
-        return;
-      }
-    }
-
-    if (selectedType.requiresCustomerName && !customerName.trim()) {
-      setError("請輸入姓名");
+    if (!selectedType || selectedType.category !== "activity") {
+      setError("請選擇紀錄類型");
       return;
     }
 
@@ -104,29 +276,17 @@ export default function EventCenterPage() {
       const nextMetrics = processEventForCurrentMember(
         {
           eventTypeKey: selectedType.key,
-          eventCategory: selectedType.category,
+          eventCategory: "activity",
           eventDate,
-          value: parsedValue,
-          retailHouseKey: APP_IDS.defaultRetailHouseKey,
-          metadata:
-            selectedType.category === "transaction"
-              ? {
-                  customerName: customerName.trim(),
-                  currencyCode: getTransactionCurrencyCode(selectedType.key),
-                  note: note.trim() || undefined,
-                }
-              : note.trim()
-                ? { note: note.trim() }
-                : undefined,
+          metadata: note.trim() ? { note: note.trim() } : undefined,
         },
         storage,
       );
 
       setMetrics(nextMetrics);
-      setCustomerName("");
-      setValue("");
       setNote("");
       setEventDate(todayISODate());
+      setHistoryTypeKey(selectedType.key);
     } catch {
       setError("儲存失敗，請稍後再試");
     } finally {
@@ -136,7 +296,7 @@ export default function EventCenterPage() {
 
   if (loadState === "loading") {
     return (
-      <div className="flex min-h-full items-center justify-center bg-white text-[#86868b]">
+      <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] text-[#86868b]">
         載入中…
       </div>
     );
@@ -144,11 +304,11 @@ export default function EventCenterPage() {
 
   if (loadState === "error" || !metrics) {
     return (
-      <div className="flex min-h-full items-center justify-center bg-white px-6">
-        <div className="w-full max-w-sm rounded-[1.75rem] border border-[#ececf1] p-8 text-center">
-          <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">無法載入 Event Center</p>
+      <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] px-6">
+        <div className="w-full max-w-sm rounded-[1.75rem] border border-[var(--brand-border)] p-8 text-center">
+          <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">無法載入紀錄中心</p>
           <button
-            className="mt-6 w-full rounded-2xl bg-[#0071e3] px-4 py-3.5 text-[1rem] font-semibold text-white"
+            className="mt-6 w-full rounded-2xl bg-[var(--brand-primary)] px-4 py-3.5 text-[1rem] font-semibold text-white"
             onClick={loadMetrics}
             type="button"
           >
@@ -159,126 +319,50 @@ export default function EventCenterPage() {
     );
   }
 
-  const timeline = metrics.eventCenter.events;
-
   return (
-    <div className="min-h-full bg-white">
+    <div className="min-h-full bg-[var(--brand-bg)]">
       <main className="profile-container flex flex-col gap-6 pb-24 pt-10 sm:pt-12">
         <header className="space-y-3">
-          <Link
-            className="inline-flex text-[0.875rem] font-medium text-[#0071e3]"
-            href="/"
-          >
+          <Link className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)]" href="/">
             ← 返回首頁
           </Link>
           <h1 className="text-[2rem] font-semibold tracking-tight text-[#1d1d1f] sm:text-[2.25rem]">
-            Event Center
+            {APP_EMOJI.page.events} 紀錄中心
           </h1>
           <p className="text-[1.0625rem] text-[#86868b]">
-            所有輸入從這裡進入，Engine 自動推導全系統。
+            登記日常活動與 MAP 會議。成交請至零售屋；晉升資格由下線達標自動計算。
           </p>
         </header>
 
-        <section className="rounded-[1.75rem] border border-[#ececf1] bg-white p-6 sm:p-7">
+        <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6 sm:p-7">
           <h2 className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">
-            新增 Event
+            {APP_EMOJI.action.addRecord} 新增紀錄
           </h2>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            {(Object.keys(CATEGORY_LABELS) as BakiEventCategory[]).map((item) => (
-              <button
-                key={item}
-                className={`rounded-full px-4 py-2 text-[0.875rem] font-medium transition-colors duration-200 ${
-                  category === item
-                    ? "bg-[#1d1d1f] text-white"
-                    : "bg-[#f5f5f7] text-[#636366] hover:bg-[#ececf1]"
-                }`}
-                onClick={() => setCategory(item)}
-                type="button"
-              >
-                {CATEGORY_LABELS[item]}
-              </button>
-            ))}
-          </div>
+          <form className="mt-6 space-y-6" onSubmit={handleSubmit}>
+            <EventTypeSelect eventTypeKey={eventTypeKey} onSelect={setEventTypeKey} />
 
-          <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
-            <fieldset className="space-y-3">
-              <legend className="text-[0.9375rem] font-medium text-[#1d1d1f]">類型</legend>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {eventTypes.map((type) => (
-                  <label
-                    key={type.key}
-                    className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3.5 ${
-                      eventTypeKey === type.key
-                        ? "border-[#0071e3] bg-[#eef8ff]"
-                        : "border-[#ececf1] bg-white"
-                    }`}
-                  >
-                    <input
-                      checked={eventTypeKey === type.key}
-                      className="mt-1 h-4 w-4 accent-[#0071e3]"
-                      name="eventType"
-                      onChange={() => setEventTypeKey(type.key)}
-                      type="radio"
-                      value={type.key}
-                    />
-                    <span>
-                      <span className="block text-[1rem] font-medium text-[#1d1d1f]">
-                        {type.label}
-                      </span>
-                      <span className="mt-0.5 block text-[0.8125rem] text-[#86868b]">
-                        {type.description}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+            {selectedType ? (
+              <p className="rounded-2xl bg-[var(--brand-bg)] px-4 py-3 text-[0.875rem] text-[#636366]">
+                {selectedType.description}
+              </p>
+            ) : null}
 
             <label className="block space-y-2">
               <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">日期</span>
               <input
-                className="w-full rounded-2xl border border-[#ececf1] px-4 py-3.5 text-[1rem] outline-none focus:border-[#0071e3]"
+                className="w-full rounded-2xl border border-[var(--brand-border)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)]"
                 onChange={(event) => setEventDate(event.target.value)}
+                required
                 type="date"
                 value={eventDate}
               />
             </label>
 
-            {selectedType?.requiresCustomerName ? (
-              <label className="block space-y-2">
-                <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">姓名</span>
-                <input
-                  className="w-full rounded-2xl border border-[#ececf1] px-4 py-3.5 text-[1rem] outline-none focus:border-[#0071e3]"
-                  onChange={(event) => setCustomerName(event.target.value)}
-                  placeholder="請輸入姓名"
-                  type="text"
-                  value={customerName}
-                />
-              </label>
-            ) : null}
-
-            {selectedType?.requiresValue ? (
-              <label className="block space-y-2">
-                <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">
-                  {selectedType.valueLabel}
-                </span>
-                <input
-                  className="w-full rounded-2xl border border-[#ececf1] px-4 py-3.5 text-[1rem] outline-none focus:border-[#0071e3]"
-                  inputMode="decimal"
-                  min="0"
-                  onChange={(event) => setValue(event.target.value)}
-                  step="any"
-                  type="number"
-                  value={value}
-                />
-              </label>
-            ) : null}
-
             <label className="block space-y-2">
               <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">備註（選填）</span>
               <textarea
-                className="min-h-[5rem] w-full rounded-2xl border border-[#ececf1] px-4 py-3.5 text-[1rem] outline-none focus:border-[#0071e3]"
+                className="min-h-[5rem] w-full rounded-2xl border border-[var(--brand-border)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)]"
                 onChange={(event) => setNote(event.target.value)}
                 value={note}
               />
@@ -291,65 +375,48 @@ export default function EventCenterPage() {
             ) : null}
 
             <button
-              className="w-full rounded-2xl bg-[#0071e3] px-4 py-4 text-[1.0625rem] font-semibold text-white disabled:opacity-60"
+              className="w-full rounded-2xl bg-[var(--brand-primary)] px-4 py-4 text-[1.0625rem] font-semibold text-white disabled:opacity-60"
               disabled={isSaving}
               type="submit"
             >
-              {isSaving ? "儲存中…" : "新增 Event"}
+              {isSaving ? "儲存中…" : "新增紀錄"}
             </button>
           </form>
         </section>
 
-        <section className="rounded-[1.75rem] border border-[#ececf1] bg-white p-6 sm:p-7">
+        <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6 sm:p-7">
           <div className="flex items-end justify-between gap-4">
-            <h2 className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">
-              Event Timeline
-            </h2>
-            <span className="text-[0.875rem] text-[#86868b]">
-              {metrics.eventCenter.totalEventCount} 筆
+            <div>
+              <h2 className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">
+                紀錄歷程
+              </h2>
+              <p className="mt-2 text-[0.9375rem] text-[#86868b]">
+                選擇活動類型後查看歷程
+              </p>
+            </div>
+            <span className="shrink-0 text-[0.875rem] text-[#86868b]">
+              共 {metrics.eventCenter.totalEventCount} 筆
             </span>
           </div>
 
-          <div className="mt-4">
-            {timeline.length > 0 ? (
-              <ol className="space-y-0">
-                {timeline.map((event, index) => (
-                  <li key={event.id} className="relative flex gap-4 pb-6 last:pb-0">
-                    {index < timeline.length - 1 ? (
-                      <span
-                        aria-hidden
-                        className="absolute left-[0.6875rem] top-6 h-[calc(100%-0.5rem)] w-px bg-[#ececf1]"
-                      />
-                    ) : null}
-                    <span className="relative z-10 mt-1.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 border-[#0071e3] bg-white" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-[#f5f5f7] px-3 py-1 text-[0.75rem] font-medium text-[#636366]">
-                          {CATEGORY_LABELS[event.category]}
-                        </span>
-                        <time className="text-[0.8125rem] text-[#86868b]">
-                          {formatShortDate(event.eventDate)}
-                        </time>
-                      </div>
-                      <p className="mt-2 text-[1rem] font-semibold text-[#1d1d1f]">
-                        {event.label}
-                      </p>
-                      <p className="mt-1 text-[0.875rem] leading-relaxed text-[#86868b]">
-                        {event.subtitle}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <div className="rounded-2xl bg-[#f5f5f7] px-5 py-6 text-center">
-                <p className="text-[1rem] font-semibold text-[#1d1d1f]">還沒有 Event</p>
-                <p className="mt-2 text-[0.875rem] text-[#86868b]">
-                  新增第一筆 Event，Timeline 會出現在這裡。
-                </p>
-              </div>
-            )}
+          <div className="mt-5">
+            <EventHistoryList
+              items={eventTypeList}
+              onSelect={setHistoryTypeKey}
+              selectedKey={historyTypeKey}
+            />
           </div>
+
+          {selectedHistoryType ? (
+            <EventHistoryDetail events={filteredHistory} selectedType={selectedHistoryType} />
+          ) : (
+            <div className="mt-5 rounded-2xl bg-[var(--brand-bg)] px-5 py-6 text-center">
+              <p className="text-[1rem] font-semibold text-[#1d1d1f]">請從上方名單選擇活動</p>
+              <p className="mt-2 text-[0.875rem] text-[#86868b]">
+                選定後才會顯示該類型的完整歷程。
+              </p>
+            </div>
+          )}
         </section>
       </main>
     </div>

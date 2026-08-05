@@ -1,30 +1,13 @@
 import type { BusinessRulesConfig } from "./rules";
+import { isActiveSupervisorDownline } from "./active-supervisor-line";
 import { DEFAULT_BUSINESS_RULES } from "./rules";
 import type { CalculateMapProgressInput, MapProgressResult } from "./types";
-import {
-  clampPercent,
-  countActivitiesByKey,
-  filterActivitiesByMember,
-  filterActivitiesByYearMonth,
-  getDirectDownline,
-} from "./utils";
+import { clampPercent, getDirectDownline } from "./utils";
 
 function isLineActive(
   downlineMember: { id: string; rankKey: string },
-  downlineActivities: ReturnType<typeof filterActivitiesByYearMonth>,
-  rules: BusinessRulesConfig,
 ): boolean {
-  const rankIsActive = rules.presidentTree.activeRankKeys.includes(downlineMember.rankKey);
-  if (rules.presidentTree.minActivityCount <= 0) {
-    return rankIsActive;
-  }
-
-  const activityCount = rules.presidentTree.activityKeys.reduce(
-    (total, activityKey) => total + countActivitiesByKey(downlineActivities, activityKey),
-    0,
-  );
-
-  return rankIsActive && activityCount >= rules.presidentTree.minActivityCount;
+  return isActiveSupervisorDownline(downlineMember.rankKey);
 }
 
 /**
@@ -38,13 +21,9 @@ export function calculateMapProgress(
   const totalLines = rules.presidentTree.totalLines;
 
   if (totalLines === null || totalLines === undefined || Number.isNaN(totalLines)) {
-    const activeLines = directDownline.filter((downlineMember) => {
-      const downlineActivities = filterActivitiesByYearMonth(
-        filterActivitiesByMember(input.activities, downlineMember.id),
-        input.yearMonth,
-      );
-      return isLineActive(downlineMember, downlineActivities, rules);
-    }).length;
+    const activeLines = directDownline.filter((downlineMember) =>
+      isLineActive(downlineMember),
+    ).length;
 
     return {
       memberId: input.memberId,
@@ -67,15 +46,10 @@ export function calculateMapProgress(
       };
     }
 
-    const downlineActivities = filterActivitiesByYearMonth(
-      filterActivitiesByMember(input.activities, downlineMember.id),
-      input.yearMonth,
-    );
-
     return {
       lineIndex,
       downlineMemberId: downlineMember.id,
-      isActive: isLineActive(downlineMember, downlineActivities, rules),
+      isActive: isLineActive(downlineMember),
     };
   });
 

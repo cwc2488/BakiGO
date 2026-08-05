@@ -86,6 +86,10 @@ function resolveLeafMetricValue(
       return ctx.activeLines;
     case QUALIFICATION_METRICS.SUPERVISOR_COUNT:
       return ctx.downlineRankCounts.supervisor ?? 0;
+    case QUALIFICATION_METRICS.FIRST_GENERATION_COUNT:
+      return context.firstGenerationCount;
+    case QUALIFICATION_METRICS.QUALIFIED_RECRUIT_COUNT:
+      return context.qualifiedRecruitCount;
     case QUALIFICATION_METRICS.WORLD_TEAM_COUNT:
       return ctx.downlineRankCounts.world_team ?? 0;
     case QUALIFICATION_METRICS.EXPANSION_TEAM_COUNT:
@@ -94,6 +98,8 @@ function resolveLeafMetricValue(
       return ctx.downlineRankCounts.wealth_group ?? 0;
     case QUALIFICATION_METRICS.PRESIDENT_TEAM_COUNT:
       return ctx.downlineRankCounts.president ?? 0;
+    case QUALIFICATION_METRICS.MEETING_COUNT:
+      return context.meetingCount;
     default:
       return null;
   }
@@ -106,7 +112,8 @@ function buildLeafResult(
   if (
     leaf.metric !== QUALIFICATION_METRICS.CONSECUTIVE_MONTH &&
     leaf.metric !== QUALIFICATION_METRICS.ROLLING_MONTH &&
-    leaf.metric !== QUALIFICATION_METRICS.ACTIVITY
+    leaf.metric !== QUALIFICATION_METRICS.ACTIVITY &&
+    leaf.metric !== QUALIFICATION_METRICS.MEETING_COUNT
   ) {
     const resolved = resolveLeafTarget(leaf);
     if (resolved.isRuleMissing) {
@@ -122,6 +129,37 @@ function buildLeafResult(
         isRuleMissing: true,
       };
     }
+  }
+
+  if (leaf.metric === QUALIFICATION_METRICS.MEETING_COUNT) {
+    if (isTargetMissing(leaf.target)) {
+      return {
+        conditionKey: leaf.conditionKey,
+        metric: leaf.metric,
+        label: leaf.labelTemplate,
+        current: null,
+        target: null,
+        remaining: null,
+        progressPercent: null,
+        isSatisfied: false,
+        isRuleMissing: true,
+      };
+    }
+    const current = context.meetingCount;
+    const target = leaf.target as number;
+    const remaining = Math.max(0, target - current);
+    const progressPercent = clampPercent((current / target) * 100);
+    return {
+      conditionKey: leaf.conditionKey,
+      metric: leaf.metric,
+      label: applyTemplate(leaf.labelTemplate, { target, current, remaining }),
+      current,
+      target,
+      remaining,
+      progressPercent,
+      isSatisfied: current >= target,
+      isRuleMissing: false,
+    };
   }
 
   if (leaf.metric === QUALIFICATION_METRICS.ACTIVITY) {

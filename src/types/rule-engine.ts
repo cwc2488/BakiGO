@@ -1,5 +1,5 @@
 /** Priority 0 — shown when a required business rule is not yet defined. */
-export const RULE_MISSING_LABEL = "Rule Missing";
+export const RULE_MISSING_LABEL = "規則待設定";
 
 export const RULE_MISSING_DESCRIPTION = "等待使用者定義。";
 

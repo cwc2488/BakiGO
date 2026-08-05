@@ -13,7 +13,6 @@ import {
 export const GAMIFICATION_EVENT_SOURCES = {
   MEASUREMENT: "measurement",
   CONSULTATION: "consultation",
-  PRODUCT_SHARING: "product_sharing",
   TRANSACTION: "transaction",
   MAP: "map",
   VP: "vp",
@@ -28,10 +27,10 @@ export const ACHIEVEMENT_TRIGGER_TYPES = {
   THRESHOLD: "threshold",
 } as const;
 
-export interface XpEventRewardRule {
+export interface PointEventRewardRule {
   eventSource: string;
   eventKey: string;
-  xp: number;
+  points: number;
 }
 
 export interface LevelRule {
@@ -72,8 +71,8 @@ export interface StreakRules {
 }
 
 export interface GamificationRulesConfig {
-  xp: {
-    eventRewards: XpEventRewardRule[];
+  points: {
+    eventRewards: PointEventRewardRule[];
   };
   levels: LevelRule[];
   streak: StreakRules;
@@ -82,42 +81,37 @@ export interface GamificationRulesConfig {
 }
 
 export const DEFAULT_GAMIFICATION_RULES: GamificationRulesConfig = {
-  xp: {
+  points: {
     eventRewards: [
       {
         eventSource: GAMIFICATION_EVENT_SOURCES.MEASUREMENT,
         eventKey: ACTIVITY_KEYS.MEASUREMENT,
-        xp: 10,
+        points: 1,
       },
       {
         eventSource: GAMIFICATION_EVENT_SOURCES.CONSULTATION,
         eventKey: ACTIVITY_KEYS.CONSULTATION,
-        xp: 12,
-      },
-      {
-        eventSource: GAMIFICATION_EVENT_SOURCES.PRODUCT_SHARING,
-        eventKey: ACTIVITY_KEYS.PRODUCT_SHARING,
-        xp: 8,
+        points: 5,
       },
       {
         eventSource: GAMIFICATION_EVENT_SOURCES.TRANSACTION,
         eventKey: RETAIL_TRANSACTION_TYPE_KEYS.NEW_CUSTOMER_NTD,
-        xp: 15,
+        points: 20,
       },
       {
         eventSource: GAMIFICATION_EVENT_SOURCES.TRANSACTION,
         eventKey: RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_CUSTOMER_NTD,
-        xp: 10,
+        points: 25,
       },
       {
         eventSource: GAMIFICATION_EVENT_SOURCES.TRANSACTION,
         eventKey: RETAIL_TRANSACTION_TYPE_KEYS.NEW_MEMBER_VP,
-        xp: 20,
+        points: 25,
       },
       {
         eventSource: GAMIFICATION_EVENT_SOURCES.TRANSACTION,
         eventKey: RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_MEMBER_VP,
-        xp: 15,
+        points: 25,
       },
     ],
   },
@@ -132,7 +126,6 @@ export const DEFAULT_GAMIFICATION_RULES: GamificationRulesConfig = {
     qualifyingEventSources: [
       GAMIFICATION_EVENT_SOURCES.MEASUREMENT,
       GAMIFICATION_EVENT_SOURCES.CONSULTATION,
-      GAMIFICATION_EVENT_SOURCES.PRODUCT_SHARING,
       GAMIFICATION_EVENT_SOURCES.TRANSACTION,
     ],
   },
@@ -229,7 +222,7 @@ export const DEFAULT_GAMIFICATION_RULES: GamificationRulesConfig = {
       threshold: null,
       rewardXP: 200,
       badgeKey: "badge_world_team",
-      titleTemplate: "晉升環球團隊",
+      titleTemplate: "晉升世界組",
       descriptionTemplate: "達成 {rankLabel} 資格",
     },
     {
@@ -305,7 +298,7 @@ export const DEFAULT_GAMIFICATION_RULES: GamificationRulesConfig = {
     },
     {
       badgeKey: "badge_world_team",
-      label: "環球團隊",
+      label: "世界組",
       iconKey: "rank_gold",
       linkedAchievementKey: "rank_world_team",
     },

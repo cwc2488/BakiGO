@@ -123,7 +123,7 @@ export function auditQualificationRules(
 
   Object.values(config.rules).forEach((rule) => auditQualificationRule(entries, rule));
 
-  config.rankEntryRuleKeys &&
+  if (config.rankEntryRuleKeys) {
     Object.entries(config.rankEntryRuleKeys).forEach(([rankId, ruleKey]) => {
       if (!ruleKey || !config.rules[ruleKey]) {
         entries.push({
@@ -132,6 +132,7 @@ export function auditQualificationRules(
         });
       }
     });
+  }
 
   return entries;
 }

@@ -26,17 +26,82 @@ This document is the **single source of truth** for domain logic and business co
 
 ### Targets pending definition
 
-The following must be filled in here before corresponding KPIs appear:
+The following remain optional / future KPIs:
 
-- **President tree:** total active lines required
-- **Rank qualification:** activity counts per rank (Supervisor, World Team, …)
-- **Monthly challenge:** criterion targets per transaction/activity type
-- **Next steps:** VP targets, MAP active-line targets, daily activity targets
-- **Gamification achievements:** unlock thresholds
+- **Gamification achievements:** some unlock thresholds still null
 - **Adventure:** step completion thresholds
 - **Missions:** streak daily target, monthly challenge overall target
+- **Retail monthly challenge:** NTD / VP retail criteria (non-activity)
 
-Until defined, the homepage and mission views will display **Rule Missing** — this is intentional.
+Activity, MAP, VP qualification, President tree, and Super League targets are defined below.
+
+## Monthly Activity
+
+Every member should maintain monthly field activity — **either** criterion satisfies the month:
+
+| Criterion | Target | Unit |
+|-----------|--------|------|
+| 量測 (`measurement`) | **30** | 次 / 月 |
+| 諮詢新會員 (`consultation`) | **7** | 次 / 月 |
+
+Logic: **OR** — 30 量測 **或** 7 次諮詢新加入會員。
+
+配置：`rankQualification.new_member` + `monthlyChallenge` activity criteria。
+
+## MAP 計劃 → 督導
+
+| 條件 | 數值 |
+|------|------|
+| 個人 VP（連續月） | **1000 VP × 3 個月** |
+| 招募達標會員 | **2 位**（各於加入後 **一年內累積 4000 VP**） |
+| MAP 會議 | **30 場**（HOM、STS、商機、新人設定、成就營、摘星之旅、風尚之旅、風雲盛會、新人導航、一日培訓、督導培訓、RO 大學、營養課、財富健康講座；各類型可重複參加） |
+
+配置：`qualification_supervisor` + VP targets `map_monthly_personal_vp` / `downline_qualifying_lifetime_vp` + `meeting-types.ts`。
+
+> **成交**僅在零售屋登記；**晉升資格**由下線達標與 Engine 自動計算，不需手動標記。
+
+## 督導 → 活躍督導 → 世界組
+
+| 轉換 | 條件 |
+|------|------|
+| 督導 → 活躍督導 | 連續 **3** 個月個人 **2500 VP** 以上 |
+| 活躍督導 → 世界組（VP 路徑） | 連續 **4** 個月個人 **2500 VP** 以上 |
+
+配置：`qualification_active_supervisor`、`qualification_world_team` + `supervisor_monthly_personal_vp`。
+
+## 下線晉升（推廣組以上）
+
+| 目前階級 | 下一階 | 條件 |
+|----------|--------|------|
+| 世界組 | 推廣組 | 下線 **5** 位世界組 |
+| 推廣組 | 富豪組 | 下線 **6** 位推廣組 |
+| 富豪組 | 總裁 | 下線 **3** 位富豪組 |
+
+## 總裁組
+
+| 項目 | 數值 |
+|------|------|
+| 活動線（活躍督導） | **14** 條 |
+| 終生目標 — 只吃不做的客人 | **50** 位 |
+
+活動線判定：`presidentTree.activeRankKeys = [active_supervisor]`，`totalLines = 14`。
+
+## 超級聯賽 10+2
+
+年度重點（**1/1 – 12/31**）：
+
+| 項目 | 目標 |
+|------|------|
+| 一代招募 | **10** 位 |
+| 其中成為督導 | **2** 位 |
+
+配置：`superLeague.firstGenerationTarget = 10`，`supervisorTarget = 2`。
+
+## 註冊位階（已完成里程碑）
+
+若使用者註冊時選擇的位階為 **推廣組**，代表 **MAP → 推廣組** 之間的任務均視為已完成（以此類推更高位階）。
+
+實作：以 `member.rankKey` 對照晉升階梯；已達或超過之 Qualification 標記 `isQualified`。
 
 ## Organization Context
 
@@ -53,24 +118,26 @@ All Mission、Achievement、Adventure、Next Step 相關晉升 KPI **只能讀�
 | 順序 | rankId | 名稱 | 說明 |
 |------|--------|------|------|
 | 1 | `member` | 會員 | 組織起點 |
-| 2 | `supervisor` | 督導 | 領導團隊的第一步 |
-| 3 | `world_team` | 世界組 | 組織開始出現世界組成員 |
-| 4 | `promotion_group` | 推廣組 | 推廣力量在組織中成形 |
-| 5 | `wealth_group` | 富豪組 | 事業達到新高度 |
-| 6 | `president` | 總裁 | 晉升最高階 |
+| 2 | `supervisor` | 督導 | MAP 計劃達標 |
+| 3 | `active_supervisor` | 活躍督導 | 2500 VP × 3 連續月 |
+| 4 | `world_team` | 世界組 | 2500 VP × 4 連續月 |
+| 5 | `promotion_group` | 推廣組 | 5 位下線世界組 |
+| 6 | `wealth_group` | 富豪組 | 6 位下線推廣組 |
+| 7 | `president` | 總裁 | 3 位下線富豪組 |
 
 階級路徑：
 
 ```
-會員 → 督導 → 世界組 → 推廣組 → 富豪組 → 總裁
+會員 → 督導 → 活躍督導 → 世界組 → 推廣組 → 富豪組 → 總裁
 ```
 
 ### 2. 晉升條件
 
 | 目前階級 | 下一階 | 條件 | 狀態 |
 |----------|--------|------|------|
-| 會員 | 督導 | _待使用者定義_ | Rule Missing |
-| 督導 | 世界組 | _待使用者定義_ | Rule Missing |
+| 會員 | 督導 | MAP 計劃（1000 VP×3 月 + 2 位達標招募） | ✅ Qualification |
+| 督導 | 活躍督導 | 2500 VP × 3 連續月 | ✅ Qualification |
+| 活躍督導 | 世界組 | 2500 VP × 4 連續月 | ✅ Qualification |
 | 世界組 | 推廣組 | 下線中 **5** 位世界組 | ✅ 已定義 |
 | 推廣組 | 富豪組 | 下線中 **6** 位推廣組 | ✅ 已定義 |
 | 富豪組 | 總裁 | 下線中 **3** 位富豪組 | ✅ 已定義 |

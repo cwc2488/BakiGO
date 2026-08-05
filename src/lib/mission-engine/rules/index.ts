@@ -3,12 +3,6 @@
  * UI must never hardcode business logic; read MissionEngineResult only.
  */
 
-import {
-  ACTIVITY_KEYS,
-  RETAIL_TRANSACTION_TYPE_KEYS,
-} from "@/lib/business-engine/rules/keys";
-import { GAMIFICATION_EVENT_SOURCES } from "@/lib/business-engine/rules/gamification";
-
 export const MISSION_SOURCE_KEYS = {
   NEXT_STEP: "next_step",
   ACHIEVEMENT: "achievement",
@@ -148,7 +142,7 @@ export const DEFAULT_MISSION_RULES: MissionRulesConfig = {
       key: MISSION_CATEGORY_KEYS.DAILY,
       label: "今日",
       icon: "calendar",
-      color: "#0071e3",
+      color: "#77b539",
     },
     {
       key: MISSION_CATEGORY_KEYS.CHALLENGE,
@@ -197,14 +191,14 @@ export const DEFAULT_MISSION_RULES: MissionRulesConfig = {
   ],
   defaultTemplate: {
     subtitleTemplate: "距離目標還差 {remaining}",
-    descriptionTemplate: "目前 {current} / {target}，完成後獲得 {xp} XP",
+    descriptionTemplate: "目前 {current} / {target}，完成後獲得 {xp} 積分",
   },
   nextStepMappings: [
     {
       stepKeyPattern: "daily_",
       categoryKey: MISSION_CATEGORY_KEYS.DAILY,
       icon: "calendar",
-      color: "#0071e3",
+      color: "#77b539",
       subtitleTemplate: "今日優先事項",
     },
     {
@@ -232,18 +226,18 @@ export const DEFAULT_MISSION_RULES: MissionRulesConfig = {
   defaultNextStepMapping: {
     categoryKey: MISSION_CATEGORY_KEYS.GROWTH,
     icon: "target",
-    color: "#0071e3",
+    color: "#77b539",
     subtitleTemplate: "繼續前進",
   },
   achievementNearUnlockRatio: 0.75,
   adventure: {
     adventureKey: "promotion_main",
     title: "晉升主線",
-    description: "由 Promotion Rules 驅動 — 見 BusinessRulesConfig.promotion。",
+    description: "由晉升規則驅動的主線成長路徑。",
     steps: [],
   },
   rewardLabels: {
-    xp: "XP",
+    xp: "積分",
     badge: "徽章",
   },
   streakMaintain: {

@@ -1,4 +1,5 @@
 import { APP_IDS } from "@/lib/config/app-config";
+import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import { createEventRepository } from "@/lib/repositories/event-repository";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import { recalculateMemberMetrics, type MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
@@ -37,7 +38,7 @@ export function processEventForCurrentMember(
   return processEvent(
     {
       ...input,
-      memberId: APP_IDS.currentMemberId,
+      memberId: resolveAuthenticatedMemberId(storage),
       organizationId: APP_IDS.organizationId,
     },
     storage,

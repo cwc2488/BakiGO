@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
+import { AuthGate } from "@/components/auth/AuthGate";
+import { AppShell } from "@/components/navigation/AppShell";
+import { AuthProvider } from "@/lib/auth/auth-context";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -10,6 +13,12 @@ const geistSans = Geist({
 export const metadata: Metadata = {
   title: "Baki GO",
   description: "直銷組織的每日成長夥伴",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    title: "Baki GO",
+    statusBarStyle: "default",
+  },
 };
 
 export const viewport: Viewport = {
@@ -21,7 +30,16 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="zh-Hant" className={`${geistSans.variable} h-full antialiased`}>
-      <body className="min-h-full font-sans">{children}</body>
+      <head>
+        <link href="/icon.svg" rel="apple-touch-icon" />
+      </head>
+      <body className="min-h-full font-sans">
+        <AuthProvider>
+          <AuthGate>
+            <AppShell>{children}</AppShell>
+          </AuthGate>
+        </AuthProvider>
+      </body>
     </html>
   );
 }

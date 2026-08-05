@@ -46,18 +46,20 @@ export interface Badge {
   linkedAchievementKey?: AchievementKey;
 }
 
-/** Computed XP state for a member. */
-export interface Xp {
+/** Computed points state for a member. */
+export interface Points {
   memberId: EntityId;
-  eventXP: number;
-  achievementXP: number;
-  totalXP: number;
-  level: number;
-  levelLabel: string;
-  currentLevelXP: number;
-  nextLevelXP: number;
-  xpToNextLevel: number;
+  lifetimePoints: number;
+  monthlyPoints: number;
+  weeklyPoints: number;
+  todayPoints: number;
+  redeemedPoints: number;
+  availablePoints: number;
+  streakMultiplier: number;
 }
+
+/** @deprecated Use Points */
+export type Xp = Points;
 
 /** Computed streak state for a member. */
 export interface Streak {
@@ -72,7 +74,7 @@ export interface Streak {
 export interface AchievementEngineResult {
   memberId: EntityId;
   referenceDate: ISODateString;
-  xp: Xp;
+  points: Points;
   streak: Streak;
   badges: Badge[];
   achievements: Achievement[];

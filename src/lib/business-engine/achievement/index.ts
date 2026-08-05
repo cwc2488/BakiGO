@@ -3,6 +3,7 @@ export type { CalculateAchievementEngineInput } from "./calculate-achievement-en
 export { calculateAchievements } from "./calculate-achievements";
 export { calculateBadges } from "./calculate-badges";
 export { calculateStreak } from "./calculate-streak";
+export { calculatePoints } from "./calculate-points";
 export { calculateXp } from "./calculate-xp";
 export {
   collectGamificationEvents,

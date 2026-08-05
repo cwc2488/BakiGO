@@ -3,7 +3,7 @@ import type { PromotionProgress } from "../calculate-promotion-progress";
 import type { PromotionTree } from "../rules/promotion";
 import { resolveRuleTarget } from "@/lib/rule-engine";
 import { clampPercent } from "../utils";
-import { applyTemplate, computeRemaining } from "./templates";
+import { computeRemaining } from "./templates";
 
 function applyPromotionTemplate(
   template: string,

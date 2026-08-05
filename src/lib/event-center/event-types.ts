@@ -1,5 +1,10 @@
 import { RETAIL_TRANSACTION_TYPE_KEYS } from "@/lib/business-engine/rules/keys";
 import type { BakiEventCategory } from "@/types/baki-event";
+import {
+  MEETING_KEY_LIST,
+  MEETING_LABELS,
+  type MeetingKey,
+} from "./meeting-types";
 
 export interface EventTypeDefinition {
   key: string;
@@ -9,28 +14,17 @@ export interface EventTypeDefinition {
   requiresValue: boolean;
   valueLabel?: string;
   requiresCustomerName?: boolean;
+  /** UI grouping for recordable activity types. */
+  recordGroup?: "daily" | "meeting";
 }
-
-export const QUALIFICATION_EVENT_KEYS = {
-  ACTIVE: "qualification_active",
-  SUPERVISOR: "qualification_supervisor",
-  WORLD_TEAM: "qualification_world_team",
-  PROMOTION_GROUP: "qualification_promotion_group",
-  WEALTH_GROUP: "qualification_wealth_group",
-  PRESIDENT: "qualification_president",
-} as const;
 
 export const ACTIVITY_EVENT_KEYS = {
   MEASUREMENT: "measurement",
   CONSULTATION: "consultation",
-  TRIAL_DRINK: "trial_drink",
-  PRODUCT_SHARING: "product_sharing",
-  HOM: "hom",
-  STS: "sts",
-  WORLD_TEAM_UNIVERSITY: "world_team_university",
+  COACH_CLASS: "coach_class",
 } as const;
 
-export const EVENT_TYPE_CATALOG: EventTypeDefinition[] = [
+const TRANSACTION_EVENT_TYPES: EventTypeDefinition[] = [
   {
     key: RETAIL_TRANSACTION_TYPE_KEYS.NEW_CUSTOMER_NTD,
     category: "transaction",
@@ -67,12 +61,16 @@ export const EVENT_TYPE_CATALOG: EventTypeDefinition[] = [
     valueLabel: "VP",
     requiresCustomerName: true,
   },
+];
+
+const RECORDABLE_ACTIVITY_TYPES: EventTypeDefinition[] = [
   {
     key: ACTIVITY_EVENT_KEYS.MEASUREMENT,
     category: "activity",
     label: "量測",
     description: "量測活動",
     requiresValue: false,
+    recordGroup: "daily",
   },
   {
     key: ACTIVITY_EVENT_KEYS.CONSULTATION,
@@ -80,84 +78,30 @@ export const EVENT_TYPE_CATALOG: EventTypeDefinition[] = [
     label: "諮詢",
     description: "諮詢活動",
     requiresValue: false,
+    recordGroup: "daily",
   },
   {
-    key: ACTIVITY_EVENT_KEYS.TRIAL_DRINK,
+    key: ACTIVITY_EVENT_KEYS.COACH_CLASS,
     category: "activity",
-    label: "試喝",
-    description: "試喝活動",
+    label: "教練課",
+    description: "教練課",
     requiresValue: false,
+    recordGroup: "daily",
   },
-  {
-    key: ACTIVITY_EVENT_KEYS.PRODUCT_SHARING,
-    category: "activity",
-    label: "產品分享",
-    description: "產品分享活動",
+  ...MEETING_KEY_LIST.map((key: MeetingKey) => ({
+    key,
+    category: "activity" as const,
+    label: MEETING_LABELS[key],
+    description: `${MEETING_LABELS[key]}（可重複參加）`,
     requiresValue: false,
-  },
-  {
-    key: ACTIVITY_EVENT_KEYS.HOM,
-    category: "activity",
-    label: "HOM",
-    description: "HOM 活動",
-    requiresValue: false,
-  },
-  {
-    key: ACTIVITY_EVENT_KEYS.STS,
-    category: "activity",
-    label: "STS",
-    description: "STS 活動",
-    requiresValue: false,
-  },
-  {
-    key: ACTIVITY_EVENT_KEYS.WORLD_TEAM_UNIVERSITY,
-    category: "activity",
-    label: "世界組大學",
-    description: "世界組大學活動",
-    requiresValue: false,
-  },
-  {
-    key: QUALIFICATION_EVENT_KEYS.ACTIVE,
-    category: "qualification",
-    label: "Active",
-    description: "標記本月 Active",
-    requiresValue: false,
-  },
-  {
-    key: QUALIFICATION_EVENT_KEYS.SUPERVISOR,
-    category: "qualification",
-    label: "升督導",
-    description: "晉升督導",
-    requiresValue: false,
-  },
-  {
-    key: QUALIFICATION_EVENT_KEYS.WORLD_TEAM,
-    category: "qualification",
-    label: "升世界組",
-    description: "晉升世界組",
-    requiresValue: false,
-  },
-  {
-    key: QUALIFICATION_EVENT_KEYS.PROMOTION_GROUP,
-    category: "qualification",
-    label: "升推廣組",
-    description: "晉升推廣組",
-    requiresValue: false,
-  },
-  {
-    key: QUALIFICATION_EVENT_KEYS.WEALTH_GROUP,
-    category: "qualification",
-    label: "升富豪組",
-    description: "晉升富豪組",
-    requiresValue: false,
-  },
-  {
-    key: QUALIFICATION_EVENT_KEYS.PRESIDENT,
-    category: "qualification",
-    label: "升總裁",
-    description: "晉升總裁",
-    requiresValue: false,
-  },
+    recordGroup: "meeting" as const,
+  })),
+];
+
+/** Full catalog — includes transaction types for零售屋 / 名單流程 / 今日行動。 */
+export const EVENT_TYPE_CATALOG: EventTypeDefinition[] = [
+  ...TRANSACTION_EVENT_TYPES,
+  ...RECORDABLE_ACTIVITY_TYPES,
 ];
 
 export function getEventTypeDefinition(
@@ -170,4 +114,19 @@ export function getEventTypesByCategory(
   category: BakiEventCategory,
 ): EventTypeDefinition[] {
   return EVENT_TYPE_CATALOG.filter((definition) => definition.category === category);
+}
+
+export function getTransactionEventTypes(): EventTypeDefinition[] {
+  return TRANSACTION_EVENT_TYPES;
+}
+
+/** 紀錄中心可登記的類型：日常活動 + 會議（不含成交、資格）。 */
+export function getRecordableEventTypes(): EventTypeDefinition[] {
+  return RECORDABLE_ACTIVITY_TYPES;
+}
+
+export function getRecordableEventTypesByGroup(
+  group: "daily" | "meeting",
+): EventTypeDefinition[] {
+  return RECORDABLE_ACTIVITY_TYPES.filter((definition) => definition.recordGroup === group);
 }

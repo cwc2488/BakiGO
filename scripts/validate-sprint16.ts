@@ -23,6 +23,10 @@ class MemoryStorageAdapter implements StorageAdapter {
   setItem(key: string, value: string): void {
     this.store.set(key, value);
   }
+
+  removeItem(key: string): void {
+    this.store.delete(key);
+  }
 }
 
 const TRANSACTION_CASES = [
@@ -165,7 +169,7 @@ function main(): void {
     "[3] Qualification engine output missing results",
   );
   assert(
-    lastMetrics.gamification.xp !== undefined,
+    lastMetrics.gamification.points !== undefined,
     "[3] Achievement engine output missing xp",
   );
   assert(

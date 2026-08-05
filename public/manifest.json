@@ -1,0 +1,18 @@
+{
+  "name": "Baki GO",
+  "short_name": "Baki GO",
+  "description": "直銷組織的每日成長夥伴",
+  "start_url": "/calendar",
+  "display": "standalone",
+  "background_color": "#f5faf6",
+  "theme_color": "#77b539",
+  "lang": "zh-Hant",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

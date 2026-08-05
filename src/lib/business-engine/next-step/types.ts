@@ -38,6 +38,8 @@ export interface CalculateNextStepsInput {
   };
   promotionProgress?: PromotionProgress;
   qualificationResults?: QualificationResult[];
+  /** When set, next steps for lower career ranks are omitted. */
+  memberRankKey?: string;
 }
 
 export interface NextStepEngineResult {

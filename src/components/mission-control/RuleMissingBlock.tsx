@@ -10,7 +10,7 @@ export function RuleMissingBlock({
 }) {
   return (
     <div
-      className={`rounded-2xl border border-dashed border-[#d2d2d7] bg-[#fafafa] px-4 py-5 text-center ${className}`}
+      className={`rounded-2xl border border-dashed border-[#d2d2d7] bg-[var(--brand-primary-muted)] px-4 py-5 text-center ${className}`}
     >
       <p className="text-[1rem] font-semibold text-[#1d1d1f]">{RULE_MISSING_LABEL}</p>
       <p className="mt-1 text-[0.875rem] text-[#86868b]">{RULE_MISSING_DESCRIPTION}</p>

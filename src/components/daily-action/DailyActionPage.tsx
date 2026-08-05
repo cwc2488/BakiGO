@@ -1,0 +1,352 @@
+"use client";
+
+import {
+  buildCalendarDayPlan,
+  type CalendarDayPlanSummary,
+} from "@/lib/calendar/calendar-day-plan";
+import {
+  attendanceToCalendarEvent,
+  loadMemberSharedCalendarAttendance,
+} from "@/lib/calendar/calendar-attendance-storage";
+import { isPersonalCalendarEvent } from "@/lib/calendar/shared-calendar-storage";
+import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
+import { logTodayActivity, logTodayRecruit } from "@/lib/daily-action/log-today-action";
+import {
+  formatDisplayDate,
+  formatTimeGreeting,
+  getMemberDisplayName,
+  loadMissionControlMetrics,
+} from "@/lib/mission-control/format";
+import {
+  buildDailyActionSnapshot,
+  formatDailyActionPercent,
+  formatDailyActionProgress,
+} from "@/lib/daily-action/daily-action-selectors";
+import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
+import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import Link from "next/link";
+
+import type { DailyActionMetricView, TodayActionKey } from "@/types/daily-action";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal";
+import { QuickRecruitModal } from "@/components/daily-action/QuickRecruitModal";
+
+function TodayCalendarPlanCard({ plan }: { plan: CalendarDayPlanSummary }) {
+  return (
+    <section className="rounded-[1.75rem] border border-[var(--cal-border)] bg-[var(--cal-surface)] p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[1rem] font-semibold text-[var(--cal-text)]">
+            {APP_EMOJI.section.calendarToday} 今日行程
+          </h2>
+          <p className="mt-1 text-[0.8125rem] text-[var(--cal-text-muted)]">
+            共 {plan.totalCount} 項 · 會議 {plan.meetingCount} · 日常 {plan.dailyCount}
+          </p>
+        </div>
+        <Link className="text-[0.8125rem] font-medium text-[var(--cal-primary-dark)]" href="/calendar">
+          行事曆
+        </Link>
+      </div>
+      {plan.items.length > 0 ? (
+        <ul className="mt-4 space-y-2">
+          {plan.items.slice(0, 5).map((item) => (
+            <li key={`${item.title}-${item.startAt}`} className="rounded-xl bg-[var(--cal-primary-muted)] px-3 py-2.5">
+              <p className="truncate text-[0.875rem] font-medium text-[#1d1d1f]">{item.title}</p>
+              <p className="mt-0.5 text-[0.75rem] text-[#86868b]">
+                {item.allDay ? "全天" : `${item.startAt.slice(11, 16)}–${item.endAt.slice(11, 16)}`}
+                {" · "}
+                {item.activityLabel}
+                {item.attendedFromShared ? " · 已參加" : ""}
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 text-[0.875rem] text-[#86868b]">
+          {APP_EMOJI.mood.empty} 今天尚無行程，可到行事曆新增或標記參加共用會議。
+        </p>
+      )}
+    </section>
+  );
+}
+
+function ProgressBar({ percent, color = "#77b539" }: { percent: number | null; color?: string }) {
+  return (
+    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--brand-bg)]">
+      <div
+        className="h-full rounded-full transition-all duration-500"
+        style={{ width: `${percent ?? 0}%`, backgroundColor: color }}
+      />
+    </div>
+  );
+}
+
+function MetricCard({
+  index,
+  title,
+  metric,
+  barColor = "#77b539",
+}: {
+  index: number;
+  title: string;
+  metric: DailyActionMetricView;
+  barColor?: string;
+}) {
+  return (
+    <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6">
+      <div className="flex items-center gap-3">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--brand-primary-light)] text-[0.8125rem] font-semibold text-[var(--brand-primary-dark)]">
+          {index}
+        </span>
+        <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">{title}</h2>
+      </div>
+      <p className="mt-4 text-[1.75rem] font-semibold tracking-tight text-[#1d1d1f]">
+        {formatDailyActionProgress(metric.current, metric.target)}
+      </p>
+      <ProgressBar color={barColor} percent={metric.progressPercent} />
+      <div className="mt-4 flex items-end justify-between">
+        <span className="text-[0.875rem] text-[#86868b]">完成率</span>
+        <span className="text-[1.25rem] font-semibold text-[var(--brand-primary-dark)]">
+          {formatDailyActionPercent(metric.progressPercent)}
+        </span>
+      </div>
+      {metric.isRuleMissing ? (
+        <p className="mt-3 text-[0.8125rem] text-[#86868b]">目標規則尚待設定</p>
+      ) : null}
+    </section>
+  );
+}
+
+function SuperLeagueCard({
+  index,
+  superLeague,
+}: {
+  index: number;
+  superLeague: ReturnType<typeof buildDailyActionSnapshot>["superLeague"];
+}) {
+  return (
+    <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6">
+      <div className="flex items-center gap-3">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#e8f8ee] text-[0.8125rem] font-semibold text-[#248a3d]">
+          {index}
+        </span>
+        <div>
+          <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">
+            {APP_EMOJI.section.superLeague} 超級聯賽 10+2
+          </h2>
+          <p className="text-[0.8125rem] text-[#86868b]">今年第一代 10 位 · 其中 2 位督導</p>
+        </div>
+      </div>
+
+      <div className="mt-5 space-y-4">
+        <div>
+          <div className="flex items-end justify-between">
+            <span className="text-[0.875rem] text-[#86868b]">第一代</span>
+            <span className="text-[1.0625rem] font-semibold text-[#1d1d1f]">
+              {formatDailyActionProgress(
+                superLeague.firstGeneration.current,
+                superLeague.firstGeneration.target,
+              )}
+            </span>
+          </div>
+          <ProgressBar color="#30d158" percent={superLeague.firstGeneration.progressPercent} />
+        </div>
+        <div>
+          <div className="flex items-end justify-between">
+            <span className="text-[0.875rem] text-[#86868b]">督導</span>
+            <span className="text-[1.0625rem] font-semibold text-[#1d1d1f]">
+              {formatDailyActionProgress(
+                superLeague.supervisor.current,
+                superLeague.supervisor.target,
+              )}
+            </span>
+          </div>
+          <ProgressBar color="#30d158" percent={superLeague.supervisor.progressPercent} />
+        </div>
+      </div>
+
+      <div className="mt-5 flex items-end justify-between border-t border-[var(--brand-border)] pt-4">
+        <span className="text-[0.875rem] text-[#86868b]">總完成率</span>
+        <span className="text-[1.375rem] font-semibold text-[#248a3d]">
+          {formatDailyActionPercent(superLeague.completionPercent)}
+        </span>
+      </div>
+    </section>
+  );
+}
+
+function PresidentAiCard({
+  index,
+  title,
+  description,
+}: {
+  index: number;
+  title: string;
+  description: string | null;
+}) {
+  return (
+    <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6">
+      <div className="flex items-center gap-3">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--brand-bg)] text-[0.8125rem] font-semibold text-[#636366]">
+          {index}
+        </span>
+        <div>
+          <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">總裁 AI</h2>
+          <p className="text-[0.8125rem] text-[#86868b]">今天最重要的一件事</p>
+        </div>
+      </div>
+      <p className="mt-4 text-[1.25rem] font-semibold leading-snug text-[#1d1d1f]">{title}</p>
+      {description ? (
+        <p className="mt-2 text-[0.9375rem] leading-relaxed text-[#636366]">{description}</p>
+      ) : null}
+    </section>
+  );
+}
+
+const TODAY_ACTIONS: Array<{ key: TodayActionKey; label: string; emoji: string }> = [
+  { key: "measurement", label: "量測", emoji: APP_EMOJI.action.measurement },
+  { key: "consultation", label: "諮詢", emoji: APP_EMOJI.action.consultation },
+  { key: "recruit", label: "招募會員", emoji: APP_EMOJI.action.recruit },
+];
+
+function DailyActionView({
+  metrics,
+  onMetricsChange,
+}: {
+  metrics: MemberComputedMetrics;
+  onMetricsChange: (metrics: MemberComputedMetrics) => void;
+}) {
+  const storage = useMemo(() => createLocalStorageAdapter(), []);
+  const memberId = useMemo(() => resolveAuthenticatedMemberId(storage), [storage]);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const snapshot = useMemo(() => {
+    void refreshKey;
+    return buildDailyActionSnapshot(metrics, storage);
+  }, [metrics, refreshKey, storage]);
+  const todayPlan = useMemo(() => {
+    void refreshKey;
+    const personal = createCalendarEventRepository(storage)
+      .getByMemberId(memberId)
+      .filter(isPersonalCalendarEvent);
+    const attended = loadMemberSharedCalendarAttendance(storage, memberId).map(
+      attendanceToCalendarEvent,
+    );
+    return buildCalendarDayPlan([...personal, ...attended], snapshot.referenceDate);
+  }, [memberId, refreshKey, snapshot.referenceDate, storage]);
+  const displayName = getMemberDisplayName();
+  const [recruitModalOpen, setRecruitModalOpen] = useState(false);
+  const [activityModalType, setActivityModalType] = useState<"measurement" | "consultation" | null>(
+    null,
+  );
+
+  const handleAction = useCallback((actionKey: TodayActionKey) => {
+    if (actionKey === "recruit") {
+      setRecruitModalOpen(true);
+      return;
+    }
+    if (actionKey === "measurement" || actionKey === "consultation") {
+      setActivityModalType(actionKey);
+    }
+  }, []);
+
+  const handleRecruitSubmit = useCallback(
+    async (input: Parameters<typeof logTodayRecruit>[0]) => {
+      const nextMetrics = logTodayRecruit(input, storage);
+      onMetricsChange(nextMetrics);
+      setRefreshKey((current) => current + 1);
+    },
+    [onMetricsChange, storage],
+  );
+
+  const handleActivitySubmit = useCallback(
+    async (activityType: "measurement" | "consultation", input: Parameters<typeof logTodayActivity>[1]) => {
+      const nextMetrics = logTodayActivity(activityType, input, storage);
+      onMetricsChange(nextMetrics);
+      setRefreshKey((current) => current + 1);
+    },
+    [onMetricsChange, storage],
+  );
+
+  return (
+    <div className="min-h-full bg-[var(--brand-bg)]">
+      <main className="mx-auto flex w-full max-w-md flex-col gap-4 px-5 pb-24 pt-12">
+        <header className="space-y-1">
+          <p className="text-[0.8125rem] font-medium text-[#86868b]">
+            {APP_EMOJI.page.dailyAction} 今日行動
+          </p>
+          <p className="text-[1.75rem] font-semibold tracking-tight text-[#1d1d1f]">
+            {formatDisplayDate(snapshot.referenceDate)}
+          </p>
+          <h1 className="text-[1.375rem] font-semibold text-[#1d1d1f]">
+            {formatTimeGreeting()}，{displayName}
+          </h1>
+        </header>
+
+        <TodayCalendarPlanCard plan={todayPlan} />
+
+        <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
+          <h2 className="text-[1rem] font-semibold text-[#1d1d1f]">
+            {APP_EMOJI.section.quickLog} 快速記錄
+          </h2>
+          <p className="mt-1 text-[0.8125rem] text-[#86868b]">招募會同步計入超級聯賽</p>
+          <div className="mt-4 grid grid-cols-2 gap-2.5">
+            {TODAY_ACTIONS.map((action) => (
+              <button
+                key={action.key}
+                className="rounded-2xl bg-[#1d1d1f] px-4 py-4 text-[0.9375rem] font-semibold text-white transition-transform active:scale-[0.98]"
+                onClick={() => handleAction(action.key)}
+                type="button"
+              >
+                {action.emoji} {action.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <QuickRecruitModal
+          onClose={() => setRecruitModalOpen(false)}
+          onSubmit={handleRecruitSubmit}
+          open={recruitModalOpen}
+        />
+
+        <QuickActivityModal
+          activityType={activityModalType}
+          onClose={() => setActivityModalType(null)}
+          onSubmit={handleActivitySubmit}
+          open={activityModalType !== null}
+        />
+
+        <MetricCard index={1} metric={snapshot.monthlyMeasurement} title={`${APP_EMOJI.action.measurement} 本月量測`} />
+        <MetricCard index={2} metric={snapshot.monthlyConsultation} title={`${APP_EMOJI.action.consultation} 本月諮詢`} />
+        <SuperLeagueCard index={3} superLeague={snapshot.superLeague} />
+        <PresidentAiCard
+          description={snapshot.presidentAiDescription}
+          index={4}
+          title={snapshot.presidentAiTitle}
+        />
+      </main>
+    </div>
+  );
+}
+
+export default function DailyActionPage() {
+  const [metrics, setMetrics] = useState<MemberComputedMetrics | null>(null);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setMetrics(loadMissionControlMetrics());
+    });
+  }, []);
+
+  if (!metrics) {
+    return (
+      <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] text-[#86868b]">
+        {APP_EMOJI.mood.loading} 載入今日行動…
+      </div>
+    );
+  }
+
+  return <DailyActionView metrics={metrics} onMetricsChange={setMetrics} />;
+}

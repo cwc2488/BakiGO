@@ -83,7 +83,7 @@ export function projectEventsForEngines(events: BakiEvent[]): ProjectedEvents {
       return;
     }
 
-    if (event.eventCategory === "activity" || event.eventCategory === "qualification") {
+    if (event.eventCategory === "activity") {
       activities.push(toActivityEvent(event));
     }
   });

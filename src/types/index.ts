@@ -11,6 +11,7 @@ export type {
 export type {
   Member,
   MemberCreateInput,
+  MemberStatus,
   MemberSummary,
   MemberUpdateInput,
 } from "./member";
@@ -98,6 +99,15 @@ export type {
   EventCenterResult,
   EventTimelineEntry,
 } from "./event-center";
+
+export type {
+  GoalCard,
+  GoalCenterResult,
+  GoalKpiCategory,
+  GoalKpiDefinition,
+} from "./goal-center";
+
+export { GOAL_KPI_DEFINITIONS } from "./goal-center";
 
 export {
   RULE_MISSING_DESCRIPTION,

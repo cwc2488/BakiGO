@@ -7,7 +7,7 @@ import { resolvePromotionQualifiedRankIds } from "../promotion/resolve-qualified
 import { calculateAchievements } from "./calculate-achievements";
 import { calculateBadges } from "./calculate-badges";
 import { calculateStreak } from "./calculate-streak";
-import { calculateXp } from "./calculate-xp";
+import { calculatePoints } from "./calculate-points";
 import { collectGamificationEvents } from "./collect-events";
 
 export interface CalculateAchievementEngineInput {
@@ -26,6 +26,7 @@ export interface CalculateAchievementEngineInput {
   monthlyChallengePercent: number;
   downlineRankCounts: Record<string, number>;
   qualificationResults?: import("../qualification/types").QualificationResult[];
+  redemptions?: import("@/types/points").PointRedemption[];
 }
 
 function resolveQualifiedRankKeys(
@@ -97,13 +98,23 @@ export function calculateAchievementEngine(
   };
 
   const achievements = calculateAchievements(evaluationContext, rules);
-  const xp = calculateXp(input.memberId, events, achievements, rules);
+  const redemptions = input.redemptions ?? [];
+  const points = calculatePoints(
+    {
+      memberId: input.memberId,
+      referenceDate: input.referenceDate,
+      yearMonth: input.yearMonth,
+      events,
+      redemptions,
+    },
+    rules,
+  );
   const badges = calculateBadges(achievements, evaluationContext, rules);
 
   return {
     memberId: input.memberId,
     referenceDate: input.referenceDate,
-    xp,
+    points,
     streak,
     badges,
     achievements,

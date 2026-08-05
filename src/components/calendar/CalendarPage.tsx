@@ -1,0 +1,676 @@
+"use client";
+
+import { CalendarStatsPanel } from "@/components/calendar/CalendarStatsPanel";
+import { NotificationPermissionBanner } from "@/components/calendar/NotificationPermissionBanner";
+import { refreshCalendarReminderSchedule } from "@/lib/calendar/calendar-reminder-runner";
+import { DayTimeGrid } from "@/components/calendar/DayTimeGrid";
+import {
+  EventFormModal,
+  buildDefaultFormValues,
+  eventToFormValues,
+  expandedEventToFormValues,
+  formValuesToPayload,
+  validateEventFormValues,
+  type SharedEventFormContext,
+} from "@/components/calendar/EventFormModal";
+import { GoogleCalendarPanel } from "@/components/calendar/GoogleCalendarPanel";
+import { MonthView } from "@/components/calendar/MonthView";
+import { WeekDayStrip } from "@/components/calendar/WeekDayStrip";
+import { WeekView } from "@/components/calendar/WeekView";
+import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { inferCalendarActivityTypeFromTitle } from "@/lib/calendar/calendar-activity-types";
+import {
+  attendanceFromExpandedSharedEvent,
+  attendanceToCalendarEvent,
+  isSharedEventAttending,
+  loadMemberSharedCalendarAttendance,
+  migrateSharedAttendanceColors,
+  removeSharedCalendarAttendance,
+  saveSharedCalendarAttendance,
+  type SharedCalendarAttendance,
+} from "@/lib/calendar/calendar-attendance-storage";
+import { getMonthStart, shiftMonth, shiftWeek } from "@/lib/calendar/calendar-stats";
+import { addDays, expandEventsForDay, expandEventsForRange, getMonthGridDates, getWeekDates } from "@/lib/calendar/recurrence";
+import {
+  createGoogleCalendarEvent,
+  deleteGoogleCalendarEvent,
+  loadGoogleCalendarConnection,
+  updateGoogleCalendarEvent,
+} from "@/lib/calendar/google-calendar";
+import { getSharedCalendarEventColor, isSharedGoogleCalendarId } from "@/lib/calendar/shared-calendars";
+import {
+  loadShowSharedCalendar,
+  saveShowSharedCalendar,
+} from "@/lib/calendar/shared-calendar-preferences";
+import {
+  isPersonalCalendarEvent,
+  migrateSharedCalendarStorageIfNeeded,
+  purgeSharedEventsFromPersonalStorage,
+} from "@/lib/calendar/shared-calendar-storage";
+import { getSharedCalendarIds, syncSharedGoogleCalendars } from "@/lib/calendar/sync-shared-calendars";
+import {
+  formatChineseMonthDay,
+  formatChineseWeekday,
+  formatChineseYearMonth,
+  getTodayDateString,
+} from "@/lib/calendar/time-grid";
+import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
+import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import { useSwipeNavigation } from "@/lib/hooks/use-swipe-navigation";
+import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import type { CalendarEvent, CalendarSlotInterval, ExpandedCalendarEvent } from "@/types/calendar-event";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+type CalendarViewMode = "day" | "week" | "month" | "stats";
+
+const VIEW_OPTIONS: Array<{ value: CalendarViewMode; label: string }> = [
+  { value: "day", label: "日" },
+  { value: "week", label: "週" },
+  { value: "month", label: "月" },
+  { value: "stats", label: "統計" },
+];
+
+function readCalendarOAuthStatusMessage(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("google_connected") === "1") {
+    window.history.replaceState({}, "", "/calendar");
+    return "Google 日曆已連接";
+  }
+  if (params.get("google_error") === "1") {
+    window.history.replaceState({}, "", "/calendar");
+    return "Google 日曆連接失敗";
+  }
+  return null;
+}
+
+const INTERVAL_OPTIONS: Array<{ value: CalendarSlotInterval; label: string }> = [
+  { value: 30, label: "30 分鐘" },
+  { value: 60, label: "1 小時" },
+  { value: 120, label: "2 小時" },
+];
+
+export default function CalendarPage() {
+  const storage = useMemo(() => createLocalStorageAdapter(), []);
+  const memberId = useMemo(() => resolveAuthenticatedMemberId(storage), [storage]);
+
+  const [viewMode, setViewMode] = useState<CalendarViewMode>("day");
+  const [selectedDate, setSelectedDate] = useState(getTodayDateString());
+  const [monthAnchor, setMonthAnchor] = useState(getMonthStart(getTodayDateString()));
+  const [slotInterval, setSlotInterval] = useState<CalendarSlotInterval>(60);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [sharedEvents, setSharedEvents] = useState<CalendarEvent[]>([]);
+  const [attendedSharedEvents, setAttendedSharedEvents] = useState<SharedCalendarAttendance[]>([]);
+  const [showSharedCalendar, setShowSharedCalendar] = useState(() =>
+    loadShowSharedCalendar(storage),
+  );
+  const [formOpen, setFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState<"create" | "edit" | "view">("create");
+  const [formReadOnly, setFormReadOnly] = useState(false);
+  const [formValues, setFormValues] = useState(() => buildDefaultFormValues(getTodayDateString()));
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(readCalendarOAuthStatusMessage);
+  const [sharedSyncState, setSharedSyncState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [viewingExpandedEvent, setViewingExpandedEvent] = useState<ExpandedCalendarEvent | null>(null);
+
+  const reloadAttendance = useCallback(() => {
+    migrateSharedAttendanceColors(storage);
+    setAttendedSharedEvents(loadMemberSharedCalendarAttendance(storage, memberId));
+  }, [memberId, storage]);
+
+  const reloadEvents = useCallback(() => {
+    migrateSharedCalendarStorageIfNeeded(storage);
+    purgeSharedEventsFromPersonalStorage(storage, getSharedCalendarIds());
+    setEvents(createCalendarEventRepository(storage).getByMemberId(memberId).filter(isPersonalCalendarEvent));
+    reloadAttendance();
+  }, [memberId, reloadAttendance, storage]);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      purgeSharedEventsFromPersonalStorage(storage, getSharedCalendarIds());
+      reloadEvents();
+    });
+  }, [reloadEvents, storage]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const rangeStart = addDays(selectedDate, -62);
+    const rangeEnd = addDays(selectedDate, 62);
+
+    void (async () => {
+      setSharedSyncState("loading");
+      try {
+        const result = await syncSharedGoogleCalendars(storage, memberId, rangeStart, rangeEnd);
+        if (!cancelled) {
+          setSharedEvents(result.events);
+          reloadEvents();
+          setSharedSyncState("done");
+          if (result.count > 0) {
+            setStatusMessage(`已載入共用行事曆 ${result.count} 筆行程`);
+          }
+        }
+      } catch (caught) {
+        if (!cancelled) {
+          setSharedSyncState("error");
+          setStatusMessage(
+            caught instanceof Error ? caught.message : "共用行事曆載入失敗，請稍後再試",
+          );
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [memberId, reloadEvents, selectedDate, storage]);
+
+  const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
+  const weekRangeStart = weekDates[0];
+  const weekRangeEnd = weekDates[6];
+  const monthGridDates = useMemo(() => {
+    const dates = getMonthGridDates(monthAnchor);
+    return { start: dates[0], end: dates[dates.length - 1] };
+  }, [monthAnchor]);
+
+  const withSharedCalendarColor = useCallback((event: CalendarEvent): CalendarEvent => {
+    if (!isSharedGoogleCalendarId(event.googleCalendarId)) {
+      return event;
+    }
+    return { ...event, color: getSharedCalendarEventColor(event.googleCalendarId) };
+  }, []);
+
+  const attendedCalendarEvents = useMemo(
+    () => attendedSharedEvents.map(attendanceToCalendarEvent).map(withSharedCalendarColor),
+    [attendedSharedEvents, withSharedCalendarColor],
+  );
+
+  const normalizedSharedEvents = useMemo(
+    () => sharedEvents.map(withSharedCalendarColor),
+    [sharedEvents, withSharedCalendarColor],
+  );
+
+  const statsEvents = useMemo(() => {
+    const personalEvents = events.filter(isPersonalCalendarEvent);
+    return [...personalEvents, ...attendedCalendarEvents];
+  }, [attendedCalendarEvents, events]);
+
+  const visibleEvents = useMemo(() => {
+    const personalEvents = events.filter(isPersonalCalendarEvent);
+    const attendedIds = new Set(attendedCalendarEvents.map((event) => event.id));
+
+    if (!showSharedCalendar) {
+      const personalOnly = personalEvents.filter((event) => !attendedIds.has(event.id));
+      return [...personalOnly, ...attendedCalendarEvents];
+    }
+
+    const sharedIds = new Set(normalizedSharedEvents.map((event) => event.id));
+    const dedupedPersonal = personalEvents.filter(
+      (event) => !sharedIds.has(event.id) && !attendedIds.has(event.id),
+    );
+    const sharedVisible = normalizedSharedEvents.filter((event) => !attendedIds.has(event.id));
+    return [...dedupedPersonal, ...sharedVisible, ...attendedCalendarEvents];
+  }, [attendedCalendarEvents, events, normalizedSharedEvents, showSharedCalendar]);
+
+  const dayEvents = useMemo(
+    () => expandEventsForDay(visibleEvents, selectedDate),
+    [visibleEvents, selectedDate],
+  );
+
+  const weekEvents = useMemo(
+    () => expandEventsForRange(visibleEvents, weekRangeStart, weekRangeEnd),
+    [visibleEvents, weekRangeStart, weekRangeEnd],
+  );
+
+  const monthEvents = useMemo(
+    () => expandEventsForRange(visibleEvents, monthGridDates.start, monthGridDates.end),
+    [visibleEvents, monthGridDates.end, monthGridDates.start],
+  );
+
+  function toggleShowSharedCalendar(next: boolean) {
+    setShowSharedCalendar(next);
+    saveShowSharedCalendar(storage, next);
+  }
+
+  const weekStrip = useMemo(
+    () =>
+      weekDates.map((value, index) => ({
+        value,
+        weekday: ["一", "二", "三", "四", "五", "六", "日"][index],
+        day: Number(value.slice(8, 10)),
+        isSelected: value === selectedDate,
+        isToday: value === getTodayDateString(),
+      })),
+    [selectedDate, weekDates],
+  );
+
+  function selectDate(date: string, switchToDay = false) {
+    setSelectedDate(date);
+    setMonthAnchor(getMonthStart(date));
+    if (switchToDay) {
+      setViewMode("day");
+    }
+  }
+
+  function shiftNavigation(delta: number) {
+    if (viewMode === "day") {
+      setSelectedDate(addDays(selectedDate, delta));
+    } else if (viewMode === "week") {
+      setSelectedDate(shiftWeek(selectedDate, delta));
+    }
+  }
+
+  function shiftWeekNavigation(delta: number) {
+    if (viewMode === "day" || viewMode === "week") {
+      setSelectedDate(addDays(selectedDate, delta * 7));
+    }
+  }
+
+  const swipeHandlers = useSwipeNavigation(
+    () => shiftWeekNavigation(1),
+    () => shiftWeekNavigation(-1),
+  );
+
+  function openCreate(startAt?: string) {
+    const date = startAt?.slice(0, 10) ?? selectedDate;
+    const time = startAt?.slice(11, 16) ?? "09:00";
+    setFormMode("create");
+    setFormReadOnly(false);
+    setEditingEventId(null);
+    setViewingExpandedEvent(null);
+    setFormValues(buildDefaultFormValues(date, time));
+    setFormOpen(true);
+  }
+
+  function handleToggleSharedAttend(attending: boolean, activityTypeKey: string) {
+    if (!viewingExpandedEvent) {
+      return;
+    }
+
+    if (attending) {
+      saveSharedCalendarAttendance(
+        storage,
+        attendanceFromExpandedSharedEvent(
+          memberId,
+          viewingExpandedEvent,
+          activityTypeKey,
+          formValues.reminderMinutes,
+        ),
+      );
+      setStatusMessage("已標記參加，此行程會列入統計");
+      void refreshCalendarReminderSchedule(storage);
+    } else {
+      removeSharedCalendarAttendance(storage, memberId, viewingExpandedEvent.sourceEventId);
+      setStatusMessage("已取消參加");
+      void refreshCalendarReminderSchedule(storage);
+    }
+
+    reloadAttendance();
+  }
+
+  function openEdit(expanded: ExpandedCalendarEvent) {
+    const isShared =
+      expanded.attendedFromShared || isSharedGoogleCalendarId(expanded.googleCalendarId);
+
+    if (isShared) {
+      const attendance = isSharedEventAttending(storage, memberId, expanded.sourceEventId);
+      setViewingExpandedEvent(expanded);
+      setFormMode("view");
+      setFormReadOnly(true);
+      setEditingEventId(null);
+      setFormValues({
+        ...expandedEventToFormValues(expanded),
+        activityTypeKey:
+          attendance?.activityTypeKey ??
+          expanded.activityTypeKey ??
+          inferCalendarActivityTypeFromTitle(expanded.title),
+        reminderMinutes: attendance?.reminderMinutes ?? formValues.reminderMinutes,
+      });
+      setFormOpen(true);
+      return;
+    }
+
+    setViewingExpandedEvent(null);
+    const source = createCalendarEventRepository(storage).getById(expanded.sourceEventId);
+    if (!source) {
+      return;
+    }
+    setFormMode("edit");
+    setFormReadOnly(false);
+    setEditingEventId(source.id);
+    setFormValues(eventToFormValues(source));
+    setFormOpen(true);
+  }
+
+  function handleFormChange(nextValues: typeof formValues) {
+    setFormValues(nextValues);
+    if (
+      formMode === "view" &&
+      viewingExpandedEvent &&
+      isSharedEventAttending(storage, memberId, viewingExpandedEvent.sourceEventId)
+    ) {
+      saveSharedCalendarAttendance(
+        storage,
+        attendanceFromExpandedSharedEvent(
+          memberId,
+          viewingExpandedEvent,
+          nextValues.activityTypeKey,
+          nextValues.reminderMinutes,
+        ),
+      );
+      reloadAttendance();
+      void refreshCalendarReminderSchedule(storage);
+    }
+  }
+
+  async function syncToGoogle(event: CalendarEvent, mode: "create" | "update" | "delete") {
+    const connection = loadGoogleCalendarConnection(storage);
+    const calendarId = connection?.selectedCalendarId ?? event.googleCalendarId;
+    if (!connection || !calendarId || isSharedGoogleCalendarId(calendarId)) {
+      return event;
+    }
+
+    if (mode === "delete" && event.googleEventId) {
+      await deleteGoogleCalendarEvent(connection, calendarId, event.googleEventId);
+      return event;
+    }
+
+    const payload = {
+      title: event.title,
+      notes: event.notes,
+      startAt: event.startAt,
+      endAt: event.endAt,
+      allDay: event.allDay,
+      reminderMinutes: event.reminderMinutes,
+    };
+
+    if (mode === "create") {
+      const googleEventId = await createGoogleCalendarEvent(connection, calendarId, payload);
+      return createCalendarEventRepository(storage).update(event.id, {
+        googleEventId,
+        googleCalendarId: calendarId,
+      });
+    }
+
+    if (event.googleEventId) {
+      await updateGoogleCalendarEvent(connection, calendarId, event.googleEventId, payload);
+    } else {
+      const googleEventId = await createGoogleCalendarEvent(connection, calendarId, payload);
+      return createCalendarEventRepository(storage).update(event.id, {
+        googleEventId,
+        googleCalendarId: calendarId,
+      });
+    }
+
+    return event;
+  }
+
+  async function handleSubmit() {
+    const validationError = validateEventFormValues(formValues);
+    if (validationError) {
+      setStatusMessage(validationError);
+      return;
+    }
+
+    const repository = createCalendarEventRepository(storage);
+    const payload = formValuesToPayload(formValues);
+
+    try {
+      if (formMode === "create") {
+        await syncToGoogle(repository.create({ memberId, ...payload }), "create");
+      } else if (editingEventId) {
+        await syncToGoogle(repository.update(editingEventId, payload), "update");
+      }
+      setFormOpen(false);
+      reloadEvents();
+      await refreshCalendarReminderSchedule(storage);
+      setStatusMessage(formMode === "create" ? "行程已新增" : "行程已更新");
+    } catch (caught) {
+      setStatusMessage(caught instanceof Error ? caught.message : "儲存失敗");
+    }
+  }
+
+  async function handleDelete() {
+    if (!editingEventId) {
+      return;
+    }
+    const repository = createCalendarEventRepository(storage);
+    const existing = repository.getById(editingEventId);
+    if (!existing) {
+      return;
+    }
+
+    try {
+      await syncToGoogle(existing, "delete");
+      repository.delete(editingEventId);
+      setFormOpen(false);
+      reloadEvents();
+      await refreshCalendarReminderSchedule(storage);
+      setStatusMessage("行程已刪除");
+    } catch (caught) {
+      setStatusMessage(caught instanceof Error ? caught.message : "刪除失敗");
+    }
+  }
+
+  const headerTitle =
+    viewMode === "month"
+      ? formatChineseYearMonth(monthAnchor)
+      : viewMode === "week"
+        ? `${formatChineseMonthDay(weekRangeStart)} – ${formatChineseMonthDay(weekRangeEnd)}`
+        : `${formatChineseMonthDay(selectedDate)} ${formatChineseWeekday(selectedDate)}`;
+
+  const headerSubtitle =
+    viewMode === "month"
+      ? `${APP_EMOJI.page.calendar} 月視圖`
+      : viewMode === "week"
+        ? `${APP_EMOJI.page.calendar} 週視圖`
+        : viewMode === "stats"
+          ? `${APP_EMOJI.section.activity} 查詢統計`
+          : `${APP_EMOJI.page.calendar} ${formatChineseYearMonth(selectedDate)}`;
+
+  const monthSwipeHandlers = useSwipeNavigation(
+    () => setMonthAnchor(shiftMonth(monthAnchor, 1)),
+    () => setMonthAnchor(shiftMonth(monthAnchor, -1)),
+  );
+
+  const formSharedContext: SharedEventFormContext | undefined =
+    formMode === "view" && viewingExpandedEvent
+      ? {
+          sharedEventId: viewingExpandedEvent.sourceEventId,
+          isAttending: Boolean(
+            isSharedEventAttending(storage, memberId, viewingExpandedEvent.sourceEventId),
+          ),
+          onToggleAttend: handleToggleSharedAttend,
+        }
+      : undefined;
+
+  return (
+    <div className="min-h-full bg-[var(--cal-bg)]">
+      <main className="calendar-container flex flex-col gap-4 pb-24 pt-10 sm:pt-12">
+        <header className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-[0.8125rem] font-medium text-[#86868b]">{headerSubtitle}</p>
+              <h1 className="text-[1.75rem] font-semibold tracking-tight text-[#1d1d1f]">
+                {headerTitle}
+              </h1>
+            </div>
+            {viewMode !== "stats" ? (
+              <button
+                className="rounded-full bg-[var(--cal-primary)] px-4 py-2 text-[0.875rem] font-semibold text-white"
+                onClick={() => openCreate()}
+                type="button"
+              >
+                {APP_EMOJI.action.addRecord} 新增
+              </button>
+            ) : null}
+          </div>
+
+          <div className="flex gap-1 rounded-xl bg-[var(--cal-primary-muted)] p-1">
+            {VIEW_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                className={`flex-1 rounded-lg py-2 text-[0.8125rem] font-semibold ${
+                  viewMode === option.value
+                    ? "bg-[var(--brand-surface)] text-[#1d1d1f] shadow-sm"
+                    : "text-[#86868b]"
+                }`}
+                onClick={() => {
+                  if (option.value === "month") {
+                    setMonthAnchor(getMonthStart(selectedDate));
+                  }
+                  setViewMode(option.value);
+                }}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          {viewMode !== "month" && viewMode !== "stats" ? (
+            <div className="flex items-center gap-2">
+              <button
+                className="rounded-lg border border-[var(--cal-border)] bg-[var(--brand-surface)] px-3 py-1.5 text-[0.8125rem] font-medium text-[#636366]"
+                onClick={() => shiftNavigation(-1)}
+                type="button"
+              >
+                ‹
+              </button>
+              <button
+                className="rounded-lg border border-[var(--cal-border)] bg-[var(--brand-surface)] px-3 py-1.5 text-[0.8125rem] font-medium text-[var(--cal-primary-dark)]"
+                onClick={() => {
+                  const today = getTodayDateString();
+                  setSelectedDate(today);
+                  setMonthAnchor(getMonthStart(today));
+                }}
+                type="button"
+              >
+                今天
+              </button>
+              <button
+                className="rounded-lg border border-[var(--cal-border)] bg-[var(--brand-surface)] px-3 py-1.5 text-[0.8125rem] font-medium text-[#636366]"
+                onClick={() => shiftNavigation(1)}
+                type="button"
+              >
+                ›
+              </button>
+            </div>
+          ) : null}
+        </header>
+
+        <NotificationPermissionBanner />
+
+        {viewMode !== "stats" ? (
+          <GoogleCalendarPanel
+            memberId={memberId}
+            onSharedEventsSynced={setSharedEvents}
+            onSynced={reloadEvents}
+            onShowSharedCalendarChange={toggleShowSharedCalendar}
+            selectedDate={selectedDate}
+            sharedSyncState={sharedSyncState}
+            showSharedCalendar={showSharedCalendar}
+          />
+        ) : null}
+
+        {viewMode === "day" ? (
+          <div className="space-y-4">
+            <WeekDayStrip
+              days={weekStrip}
+              onSelectDate={selectDate}
+              swipeHandlers={swipeHandlers}
+            />
+
+            <div className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-[var(--cal-border)] bg-[var(--cal-surface)] px-4 py-3">
+              <p className="text-[0.875rem] font-medium text-[#636366]">時間間隔</p>
+              <div className="flex gap-1 rounded-lg bg-[var(--cal-primary-muted)] p-1">
+                {INTERVAL_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    className={`rounded-md px-3 py-1.5 text-[0.8125rem] font-medium ${
+                      slotInterval === option.value
+                        ? "bg-[var(--brand-surface)] text-[#1d1d1f] shadow-sm"
+                        : "text-[#86868b]"
+                    }`}
+                    onClick={() => setSlotInterval(option.value)}
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {statusMessage ? (
+              <p className="rounded-xl bg-[var(--cal-primary-light)] px-4 py-2.5 text-[0.875rem] text-[var(--cal-primary-dark)]">
+                {statusMessage}
+              </p>
+            ) : null}
+
+            <DayTimeGrid
+              dayDate={selectedDate}
+              events={dayEvents}
+              intervalMinutes={slotInterval}
+              onEventSelect={openEdit}
+              onSlotSelect={openCreate}
+            />
+          </div>
+        ) : null}
+
+        {viewMode === "week" ? (
+          <div className="space-y-4">
+            {statusMessage ? (
+              <p className="rounded-xl bg-[var(--cal-primary-light)] px-4 py-2.5 text-[0.875rem] text-[var(--cal-primary-dark)]">
+                {statusMessage}
+              </p>
+            ) : null}
+            <WeekView
+              anchorDate={selectedDate}
+              events={weekEvents}
+              onEventSelect={openEdit}
+              onSelectDate={(date) => selectDate(date, true)}
+              selectedDate={selectedDate}
+              swipeHandlers={swipeHandlers}
+            />
+          </div>
+        ) : null}
+
+        {viewMode === "month" ? (
+          <MonthView
+            anchorDate={monthAnchor}
+            events={monthEvents}
+            onSelectDate={(date) => selectDate(date, true)}
+            onShiftMonth={setMonthAnchor}
+            selectedDate={selectedDate}
+            swipeHandlers={monthSwipeHandlers}
+          />
+        ) : null}
+
+        {viewMode === "stats" ? (
+          <CalendarStatsPanel
+            defaultEndDate={selectedDate}
+            defaultStartDate={getMonthStart(selectedDate)}
+            events={statsEvents}
+          />
+        ) : null}
+      </main>
+
+      <EventFormModal
+        mode={formMode}
+        onChange={handleFormChange}
+        onClose={() => {
+          setFormOpen(false);
+          setViewingExpandedEvent(null);
+        }}
+        onDelete={formMode === "edit" ? () => void handleDelete() : undefined}
+        onSubmit={() => void handleSubmit()}
+        open={formOpen}
+        readOnly={formReadOnly}
+        sharedContext={formSharedContext}
+        values={formValues}
+      />
+    </div>
+  );
+}

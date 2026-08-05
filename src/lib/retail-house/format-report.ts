@@ -25,3 +25,11 @@ export function formatReportYearMonth(yearMonth: string): string {
 export function formatLineItem(item: RetailReportLineItem): string {
   return formatReportAmount(item.amount, item.unit);
 }
+
+export function formatTransactionDate(date: string): string {
+  const parsed = new Date(`${date}T12:00:00`);
+  return new Intl.DateTimeFormat("zh-Hant", {
+    month: "numeric",
+    day: "numeric",
+  }).format(parsed);
+}

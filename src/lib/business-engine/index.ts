@@ -50,6 +50,7 @@ export {
   calculateAchievements,
   calculateBadges,
   calculateStreak,
+  calculatePoints,
   calculateXp,
   collectGamificationEvents,
   type CalculateAchievementEngineInput,

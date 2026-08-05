@@ -15,6 +15,8 @@ export const QUALIFICATION_METRICS = {
   ROLLING_MONTH: "rolling_month",
   CONSECUTIVE_MONTH: "consecutive_month",
   SUPERVISOR_COUNT: "supervisor_count",
+  FIRST_GENERATION_COUNT: "first_generation_count",
+  QUALIFIED_RECRUIT_COUNT: "qualified_recruit_count",
   WORLD_TEAM_COUNT: "world_team_count",
   EXPANSION_TEAM_COUNT: "expansion_team_count",
   MILLIONAIRE_TEAM_COUNT: "millionaire_team_count",
@@ -22,6 +24,7 @@ export const QUALIFICATION_METRICS = {
   MAP: "map",
   ACTIVE_LINE: "active_line",
   ACTIVITY: "activity",
+  MEETING_COUNT: "meeting_count",
 } as const;
 
 export type QualificationMetricKey =
@@ -101,84 +104,100 @@ export interface QualificationRulesConfig {
   missionTemplates: QualificationMissionTemplates;
 }
 
-const worldTeamMonthlyVpOr: QualificationCompositeCondition = {
-  kind: "composite",
-  conditionKey: "world_team_monthly_vp_or",
-  operator: QUALIFICATION_OPERATORS.OR,
-  conditions: [
-    {
-      kind: "leaf",
-      conditionKey: "world_team_month_personal_vp",
-      metric: QUALIFICATION_METRICS.VP,
-      target: null,
-      vpTargetKey: VP_TARGET_KEYS.QUALIFICATION_WORLD_TEAM_PERSONAL,
-      labelTemplate: "個人 {target} VP",
-      unit: "VP",
-    },
-    {
-      kind: "leaf",
-      conditionKey: "world_team_month_organization_vp",
-      metric: QUALIFICATION_METRICS.ORGANIZATION_VP,
-      target: null,
-      vpTargetKey: VP_TARGET_KEYS.QUALIFICATION_WORLD_TEAM_ORGANIZATION,
-      labelTemplate: "組織 {target} VP",
-      unit: "VP",
-    },
-  ],
+const supervisorMonthlyVp: QualificationLeafCondition = {
+  kind: "leaf",
+  conditionKey: "supervisor_month_personal_vp",
+  metric: QUALIFICATION_METRICS.VP,
+  target: null,
+  vpTargetKey: VP_TARGET_KEYS.SUPERVISOR_MONTHLY_PERSONAL,
+  labelTemplate: "個人 {target} VP",
+  unit: "VP",
+};
+
+const mapMonthlyVp: QualificationLeafCondition = {
+  kind: "leaf",
+  conditionKey: "map_month_personal_vp",
+  metric: QUALIFICATION_METRICS.VP,
+  target: null,
+  vpTargetKey: VP_TARGET_KEYS.MAP_MONTHLY_PERSONAL,
+  labelTemplate: "個人 {target} VP",
+  unit: "VP",
 };
 
 export const DEFAULT_QUALIFICATION_RULES: QualificationRulesConfig = {
   rules: {
-    qualification_world_team: {
-      ruleKey: "qualification_world_team",
-      name: "世界組資格",
-      targetRankId: PROMOTION_RANK_IDS.WORLD_TEAM,
-      description: "個人 VP 或 組織 VP 目標（見 VP Rules），連續四個月。",
+    qualification_supervisor: {
+      ruleKey: "qualification_supervisor",
+      name: "MAP 計劃 → 督導",
+      targetRankId: PROMOTION_RANK_IDS.SUPERVISOR,
+      description: "連續三個月 1000 VP、招募兩位達標會員，並參加 30 場 MAP 會議。",
       root: {
         kind: "composite",
-        conditionKey: "world_team_qualification_root",
+        conditionKey: "supervisor_qualification_root",
         operator: QUALIFICATION_OPERATORS.AND,
         conditions: [
           {
-            kind: "composite",
-            conditionKey: "world_team_current_vp_or",
-            operator: QUALIFICATION_OPERATORS.OR,
-            labelTemplate: "本月 VP 條件",
-            conditions: [
-              {
-                kind: "leaf",
-                conditionKey: "world_team_personal_vp",
-                metric: QUALIFICATION_METRICS.VP,
-                target: null,
-                vpTargetKey: VP_TARGET_KEYS.QUALIFICATION_WORLD_TEAM_PERSONAL,
-                labelTemplate: "個人 {target} VP",
-                unit: "VP",
-              },
-              {
-                kind: "leaf",
-                conditionKey: "world_team_organization_vp",
-                metric: QUALIFICATION_METRICS.ORGANIZATION_VP,
-                target: null,
-                vpTargetKey: VP_TARGET_KEYS.QUALIFICATION_WORLD_TEAM_ORGANIZATION,
-                labelTemplate: "組織 {target} VP",
-                unit: "VP",
-              },
-            ],
+            kind: "leaf",
+            conditionKey: "map_consecutive_months",
+            metric: QUALIFICATION_METRICS.CONSECUTIVE_MONTH,
+            target: 3,
+            monthExpression: mapMonthlyVp,
+            labelTemplate: "連續 {target} 個月 1000 VP",
+            unit: "月",
           },
           {
             kind: "leaf",
-            conditionKey: "world_team_consecutive_months",
-            metric: QUALIFICATION_METRICS.CONSECUTIVE_MONTH,
-            target: 4,
-            monthExpression: worldTeamMonthlyVpOr,
-            labelTemplate: "連續 {target} 個月",
-            unit: "月",
+            conditionKey: "map_qualified_recruits",
+            metric: QUALIFICATION_METRICS.QUALIFIED_RECRUIT_COUNT,
+            target: 2,
+            labelTemplate: "招募 {target} 位達標會員（一年內 4000 VP）",
+            unit: "位",
+          },
+          {
+            kind: "leaf",
+            conditionKey: "map_meeting_attendance",
+            metric: QUALIFICATION_METRICS.MEETING_COUNT,
+            target: 30,
+            labelTemplate: "參加 {target} 場 MAP 會議（目前 {current} 場）",
+            unit: "場",
           },
         ],
       },
     },
+    qualification_active_supervisor: {
+      ruleKey: "qualification_active_supervisor",
+      name: "活躍督導",
+      targetRankId: PROMOTION_RANK_IDS.ACTIVE_SUPERVISOR,
+      description: "督導連續三個月 2500 VP 以上。",
+      root: {
+        kind: "leaf",
+        conditionKey: "active_supervisor_consecutive_months",
+        metric: QUALIFICATION_METRICS.CONSECUTIVE_MONTH,
+        target: 3,
+        monthExpression: supervisorMonthlyVp,
+        labelTemplate: "連續 {target} 個月 2500 VP",
+        unit: "月",
+      },
+    },
+    qualification_world_team: {
+      ruleKey: "qualification_world_team",
+      name: "世界組資格",
+      targetRankId: PROMOTION_RANK_IDS.WORLD_TEAM,
+      description: "督導連續四個月 2500 VP 以上。",
+      root: {
+        kind: "leaf",
+        conditionKey: "world_team_consecutive_months",
+        metric: QUALIFICATION_METRICS.CONSECUTIVE_MONTH,
+        target: 4,
+        monthExpression: supervisorMonthlyVp,
+        labelTemplate: "連續 {target} 個月 2500 VP",
+        unit: "月",
+      },
+    },
   },
   rankEntryRuleKeys: {
+    [PROMOTION_RANK_IDS.SUPERVISOR]: "qualification_supervisor",
+    [PROMOTION_RANK_IDS.ACTIVE_SUPERVISOR]: "qualification_active_supervisor",
     [PROMOTION_RANK_IDS.WORLD_TEAM]: "qualification_world_team",
   },
   nextStepTemplates: {

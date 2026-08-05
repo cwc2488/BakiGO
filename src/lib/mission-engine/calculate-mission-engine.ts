@@ -9,7 +9,6 @@ import { DEFAULT_BUSINESS_RULES } from "@/lib/business-engine/rules";
 import { collectGamificationEvents } from "@/lib/business-engine/achievement";
 import {
   DEFAULT_MISSION_RULES,
-  MISSION_SOURCE_KEYS,
   type MissionRulesConfig,
 } from "./rules";
 import {
@@ -18,6 +17,7 @@ import {
   type CalculateAdventureInput,
 } from "./calculate-adventure";
 import { generateMissionsFromNextSteps } from "./generators/from-next-steps";
+import { isPromotionCoveredByNextSteps } from "@/lib/business-engine/next-step/promotion-step-dedupe";
 import {
   generateMissionsFromAchievements,
   generateMissionsFromBusiness,
@@ -153,11 +153,13 @@ export function calculateMissionEngine(
     input.referenceDate,
     rules,
   );
-  const fromPromotion = generateMissionsFromPromotion(
-    input.promotionProgress,
-    input.referenceDate,
-    rules,
-  );
+  const fromPromotion = isPromotionCoveredByNextSteps(input.nextSteps, input.promotionProgress)
+    ? []
+    : generateMissionsFromPromotion(
+        input.promotionProgress,
+        input.referenceDate,
+        rules,
+      );
   const fromQualification = generateMissionsFromQualification(
     input.qualificationResults,
     input.referenceDate,

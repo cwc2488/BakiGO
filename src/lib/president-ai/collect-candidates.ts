@@ -1,4 +1,5 @@
 import type { PriorityCandidate, PresidentAIInput } from "./types";
+import { isPromotionCoveredByNextSteps } from "@/lib/business-engine/next-step/promotion-step-dedupe";
 import {
   resolveCategoryFromCriterionKey,
   resolveCategoryFromMetric,
@@ -76,7 +77,10 @@ export function collectPriorityCandidates(input: PresidentAIInput): PriorityCand
         progressPercent: 100,
         enginePriority: 1000,
       });
-    } else if (input.promotionProgress.progressSource === "downline") {
+    } else if (
+      input.promotionProgress.progressSource === "downline" &&
+      !isPromotionCoveredByNextSteps(input.nextSteps, input.promotionProgress)
+    ) {
       pushCandidate(candidates, {
         sourceKey: `promotion_${input.promotionProgress.ruleKey ?? "downline"}`,
         title: input.promotionProgress.nextRankName
@@ -122,8 +126,8 @@ export function collectPriorityCandidates(input: PresidentAIInput): PriorityCand
     if (remainingLines > 0) {
       pushCandidate(candidates, {
         sourceKey: "map_active_lines",
-        title: "開新 MAP",
-        description: `目前已有 ${input.map.activeLines} 條活躍線，目標 ${input.map.totalLines} 條`,
+        title: "培育活躍督導",
+        description: `目前已有 ${input.map.activeLines} 條活躍督導，目標 ${input.map.totalLines} 條`,
         category: "MAP",
         current: input.map.activeLines,
         target: input.map.totalLines,

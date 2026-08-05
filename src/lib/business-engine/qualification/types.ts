@@ -65,5 +65,11 @@ export interface QualificationEvaluationContext {
   activeLineTarget: number | null;
   activityCounts: Record<string, number>;
   downlineRankCounts: Record<string, number>;
+  /** Direct (first-generation) downline count. */
+  firstGenerationCount: number;
+  /** Direct downline who reached qualifying lifetime VP within one year of joining. */
+  qualifiedRecruitCount: number;
+  /** Lifetime MAP meeting attendance — any meeting type counts, repeats allowed. */
+  meetingCount: number;
   monthlySnapshots: QualificationMonthlySnapshot[];
 }

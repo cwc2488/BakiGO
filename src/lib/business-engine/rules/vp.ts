@@ -19,6 +19,9 @@ export const VP_BUCKET_KEYS = {
 } as const satisfies Record<string, VpBucketKey>;
 
 export const VP_TARGET_KEYS = {
+  MAP_MONTHLY_PERSONAL: "map_monthly_personal_vp",
+  SUPERVISOR_MONTHLY_PERSONAL: "supervisor_monthly_personal_vp",
+  DOWNLINE_QUALIFYING_LIFETIME: "downline_qualifying_lifetime_vp",
   QUALIFICATION_WORLD_TEAM_PERSONAL: "qualification_world_team_personal_vp",
   QUALIFICATION_WORLD_TEAM_ORGANIZATION: "qualification_world_team_organization_vp",
 } as const;
@@ -88,6 +91,27 @@ export const DEFAULT_VP_RULES: VpRulesConfig = {
     },
   ],
   targets: {
+    [VP_TARGET_KEYS.MAP_MONTHLY_PERSONAL]: {
+      targetKey: VP_TARGET_KEYS.MAP_MONTHLY_PERSONAL,
+      bucket: "qualification",
+      label: "MAP 計劃 — 月個人 VP",
+      amount: 1000,
+      unit: "VP",
+    },
+    [VP_TARGET_KEYS.SUPERVISOR_MONTHLY_PERSONAL]: {
+      targetKey: VP_TARGET_KEYS.SUPERVISOR_MONTHLY_PERSONAL,
+      bucket: "qualification",
+      label: "督導 / 活躍督導 / 世界組 — 月個人 VP",
+      amount: 2500,
+      unit: "VP",
+    },
+    [VP_TARGET_KEYS.DOWNLINE_QUALIFYING_LIFETIME]: {
+      targetKey: VP_TARGET_KEYS.DOWNLINE_QUALIFYING_LIFETIME,
+      bucket: "lifetime",
+      label: "MAP 招募 — 下線會員一年內累積 VP",
+      amount: 4000,
+      unit: "VP",
+    },
     [VP_TARGET_KEYS.QUALIFICATION_WORLD_TEAM_PERSONAL]: {
       targetKey: VP_TARGET_KEYS.QUALIFICATION_WORLD_TEAM_PERSONAL,
       bucket: "qualification",

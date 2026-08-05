@@ -95,8 +95,11 @@ Qualification Rule 中 VP / Organization VP 條件使用 `vpTargetKey` 引用 VP
 
 | Target Key | 用途 | 已定義數值 |
 |------------|------|------------|
-| `qualification_world_team_personal_vp` | 世界組 — 個人 VP | **2500** |
-| `qualification_world_team_organization_vp` | 世界組 — 組織 VP | **10000** |
+| `map_monthly_personal_vp` | MAP — 月個人 VP | **1000** |
+| `supervisor_monthly_personal_vp` | 督導 / 活躍督導 / 世界組 — 月個人 VP | **2500** |
+| `downline_qualifying_lifetime_vp` | MAP 招募 — 下線一年內累積 VP | **4000** |
+| `qualification_world_team_personal_vp` | 世界組 — 個人 VP（備用） | **2500** |
+| `qualification_world_team_organization_vp` | 世界組 — 組織 VP（備用） | **10000** |
 
 Qualification Engine 讀取 **Qualification VP**（來自 VPSnapshot），不直接掃描原始交易。
 

@@ -9,9 +9,12 @@ export type BakiEventCategory = "transaction" | "activity" | "qualification";
 
 export interface BakiEventTransactionMetadata {
   customerName: string;
+  customerPhone?: string;
   currencyCode: string;
   note?: string;
   productKey?: string;
+  recruitMemberId?: string;
+  recruitCategory?: string;
 }
 
 export interface BakiEvent extends StoredEntity {

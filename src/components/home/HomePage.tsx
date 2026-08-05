@@ -1,5 +1,6 @@
 "use client";
 
+import { buildGoalCenter } from "@/lib/goal-center/build-goal-center";
 import {
   formatDisplayDate,
   formatIcon,
@@ -8,10 +9,21 @@ import {
   loadMissionControlMetrics,
 } from "@/lib/mission-control/format";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
+import type { GoalCenterResult } from "@/types/goal-center";
 import type { Mission } from "@/types/mission";
 import type { Priority } from "@/types/president-ai";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { GoalCardCompact } from "@/components/goal-center/GoalCardView";
+import { MonthlyPromotionsPanel } from "@/components/promotions/MonthlyPromotionsPanel";
+import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { todayISODate } from "@/lib/config/app-config";
+import { loadAllMembers } from "@/lib/members/member-service";
+import { buildMemberMonthlyPromotions } from "@/lib/promotions/promotion-selectors";
+import { loadOrganizationPromotions } from "@/lib/repositories/promotion-repository";
+import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import { APP_EMOJI, WORK_HUB_EMOJIS } from "@/lib/ui/app-emojis";
+import { HomeLeaderboardSection } from "@/components/leaderboard/HomeLeaderboardSection";
 import { MapUniverseSection } from "./MapUniverseSection";
 import { EmptyState, HomeErrorState, HomeLoadingSkeleton } from "./states";
 import { Card, ProgressBar, SectionLabel } from "./ui";
@@ -38,7 +50,7 @@ function GreetingSection({ metrics }: { metrics: MemberComputedMetrics }) {
       <h1 className="text-[1.625rem] font-semibold leading-snug tracking-tight text-[#1d1d1f] sm:text-[1.875rem]">
         {formatTimeGreeting()}，
         <Link
-          className="underline decoration-[#d1d1d6] underline-offset-4 transition-colors duration-200 hover:text-[#0071e3] hover:decoration-[#0071e3]/30"
+          className="underline decoration-[#d1d1d6] underline-offset-4 transition-colors duration-200 hover:text-[var(--brand-primary-dark)] hover:decoration-[var(--brand-primary-dark)]/30"
           href="/profile"
         >
           {displayName}
@@ -50,7 +62,7 @@ function GreetingSection({ metrics }: { metrics: MemberComputedMetrics }) {
 
 function PriorityCard({ priority, index }: { priority: Priority; index: number }) {
   return (
-    <article className="rounded-2xl bg-[#f5f5f7] px-4 py-4 transition-transform duration-200 active:scale-[0.99]">
+    <article className="rounded-2xl bg-[var(--brand-bg)] px-4 py-4 transition-transform duration-200 active:scale-[0.99]">
       <div className="flex items-start gap-3">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1d1d1f] text-[0.875rem] font-bold text-white">
           {index + 1}
@@ -60,7 +72,7 @@ function PriorityCard({ priority, index }: { priority: Priority; index: number }
             <p className="text-[1.0625rem] font-semibold leading-snug text-[#1d1d1f]">
               {priority.title}
             </p>
-            <span className="shrink-0 text-[0.8125rem] font-semibold text-[#0071e3]">
+            <span className="shrink-0 text-[0.8125rem] font-semibold text-[var(--brand-primary-dark)]">
               {priority.score}%
             </span>
           </div>
@@ -73,14 +85,19 @@ function PriorityCard({ priority, index }: { priority: Priority; index: number }
   );
 }
 
-function PresidentAISection({ metrics }: { metrics: MemberComputedMetrics }) {
-  const priorities = metrics.presidentAI.topPriorities.slice(0, 3);
-  const reasoning = metrics.presidentAI.reasoning[0];
-  const firstUse = !hasAnyActivity(metrics);
+function PresidentAISection({
+  goalCenter,
+  firstUse,
+}: {
+  goalCenter: GoalCenterResult;
+  firstUse: boolean;
+}) {
+  const priorities = goalCenter.topPriorities;
+  const reasoning = goalCenter.reasoning[0];
 
   return (
     <Card>
-      <SectionLabel>President AI</SectionLabel>
+      <SectionLabel emoji={APP_EMOJI.section.presidentAi}>總裁 AI</SectionLabel>
       <p className="mt-1 text-[0.9375rem] text-[#86868b]">今日最重要三件事</p>
       {reasoning ? (
         <p className="mt-3 text-[0.9375rem] leading-relaxed text-[#636366]">{reasoning}</p>
@@ -92,11 +109,13 @@ function PresidentAISection({ metrics }: { metrics: MemberComputedMetrics }) {
           ))
         ) : firstUse ? (
           <EmptyState
+            emoji={APP_EMOJI.mood.welcome}
             title="歡迎使用 Baki GO"
-            description="完成第一筆成交後，President AI 會為你排出今日最重要的三件事。"
+            description="完成第一筆成交後，總裁 AI 會為你排出今日最重要的三件事。"
           />
         ) : (
           <EmptyState
+            emoji={APP_EMOJI.mood.done}
             title="今日沒有優先事項"
             description="所有關鍵目標都已完成，或相關規則尚待設定。"
           />
@@ -108,7 +127,7 @@ function PresidentAISection({ metrics }: { metrics: MemberComputedMetrics }) {
 
 function MissionCard({ mission }: { mission: Mission }) {
   return (
-    <article className="rounded-2xl border border-[#ececf1] px-4 py-4 transition-transform duration-200 active:scale-[0.99]">
+    <article className="rounded-2xl border border-[var(--brand-border)] px-4 py-4 transition-transform duration-200 active:scale-[0.99]">
       <div className="flex items-start gap-3">
         <span aria-hidden className="text-[1.375rem] leading-none">
           {formatIcon(mission.icon)}
@@ -130,7 +149,7 @@ function MissionCard({ mission }: { mission: Mission }) {
           </div>
           <div className="mt-3 flex items-center justify-between gap-3 text-[0.875rem]">
             <span className="text-[#86868b]">{mission.description}</span>
-            <span className="shrink-0 font-semibold text-[#ff375f]">+{mission.xp} XP</span>
+            <span className="shrink-0 font-semibold text-[#ff375f]">+{mission.xp} 積分</span>
           </div>
         </div>
       </div>
@@ -138,24 +157,31 @@ function MissionCard({ mission }: { mission: Mission }) {
   );
 }
 
-function MissionSection({ metrics }: { metrics: MemberComputedMetrics }) {
-  const missions = metrics.missions.dailyMissionSet.missions;
-  const firstUse = !hasAnyActivity(metrics);
+function MissionSection({
+  goalCenter,
+  firstUse,
+}: {
+  goalCenter: GoalCenterResult;
+  firstUse: boolean;
+}) {
+  const missions = goalCenter.dailyMissions;
 
   return (
     <Card>
-      <SectionLabel>今日 Mission</SectionLabel>
+      <SectionLabel emoji={APP_EMOJI.section.missions}>今日任務</SectionLabel>
       <div className="mt-4 space-y-3">
         {missions.length > 0 ? (
           missions.map((mission) => <MissionCard key={mission.id} mission={mission} />)
         ) : firstUse ? (
           <EmptyState
-            title="還沒有 Mission"
-            description="記錄第一筆成交，Mission Engine 會自動產生今日任務。"
+            emoji={APP_EMOJI.mood.empty}
+            title="還沒有任務"
+            description="記錄第一筆成交，系統會自動產生今日任務。"
           />
         ) : (
           <EmptyState
-            title="今日沒有 Mission"
+            emoji={APP_EMOJI.mood.done}
+            title="今日沒有任務"
             description="今天的任務已全部完成，或相關目標尚待規則定義。"
           />
         )}
@@ -169,14 +195,15 @@ function BossSection({ metrics }: { metrics: MemberComputedMetrics }) {
 
   return (
     <Card>
-      <SectionLabel>Boss Progress</SectionLabel>
+      <SectionLabel emoji={APP_EMOJI.section.promotion}>晉升進度</SectionLabel>
       <p className="mt-1 text-[0.9375rem] text-[#86868b]">目前晉升</p>
 
       {promotion.isRuleMissing ? (
         <div className="mt-4">
           <EmptyState
+            emoji={APP_EMOJI.mood.empty}
             title="晉升條件尚未設定"
-            description="Promotion Rule 定義完成後，這裡會顯示你的晉升進度。"
+            description="晉升規則定義完成後，這裡會顯示你的晉升進度。"
           />
         </div>
       ) : promotion.isMaxRank ? (
@@ -207,15 +234,15 @@ function BossSection({ metrics }: { metrics: MemberComputedMetrics }) {
           />
           {promotion.target !== null && promotion.remaining !== null ? (
             <dl className="grid grid-cols-3 gap-2 text-center sm:gap-3">
-              <div className="rounded-2xl bg-[#f5f5f7] px-2 py-3 sm:px-3">
+              <div className="rounded-2xl bg-[var(--brand-bg)] px-2 py-3 sm:px-3">
                 <dt className="text-[0.75rem] text-[#86868b]">目前</dt>
                 <dd className="mt-1 text-[1rem] font-semibold text-[#1d1d1f]">{promotion.current}</dd>
               </div>
-              <div className="rounded-2xl bg-[#f5f5f7] px-2 py-3 sm:px-3">
+              <div className="rounded-2xl bg-[var(--brand-bg)] px-2 py-3 sm:px-3">
                 <dt className="text-[0.75rem] text-[#86868b]">目標</dt>
                 <dd className="mt-1 text-[1rem] font-semibold text-[#1d1d1f]">{promotion.target}</dd>
               </div>
-              <div className="rounded-2xl bg-[#f5f5f7] px-2 py-3 sm:px-3">
+              <div className="rounded-2xl bg-[var(--brand-bg)] px-2 py-3 sm:px-3">
                 <dt className="text-[0.75rem] text-[#86868b]">剩餘</dt>
                 <dd className="mt-1 text-[1rem] font-semibold text-[#ff375f]">{promotion.remaining}</dd>
               </div>
@@ -227,58 +254,8 @@ function BossSection({ metrics }: { metrics: MemberComputedMetrics }) {
   );
 }
 
-function TodayXpSection({ metrics }: { metrics: MemberComputedMetrics }) {
-  const referenceDate = metrics.missions.referenceDate;
-  const xp = metrics.gamification.xp;
-  const streak = metrics.gamification.streak;
-  const todayAchievements = metrics.gamification.achievements.filter(
-    (achievement) => achievement.unlockedAt === referenceDate,
-  );
-  const todayXp = todayAchievements.reduce(
-    (sum, achievement) => sum + achievement.rewardXP,
-    0,
-  );
-  const firstUse = !hasAnyActivity(metrics);
-
-  return (
-    <Card>
-      <SectionLabel>今日 XP</SectionLabel>
-      <div className="mt-4 space-y-4">
-        {firstUse ? (
-          <EmptyState
-            title="還沒有 XP"
-            description="完成 Mission 或記錄成交，今天就會開始累積 XP。"
-          />
-        ) : (
-          <>
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="text-[2.25rem] font-semibold leading-none tracking-tight text-[#1d1d1f] sm:text-[2.5rem]">
-                  +{todayXp}
-                </p>
-                <p className="mt-2 text-[0.9375rem] font-medium text-[#86868b]">
-                  今日獲得 · 累積 {xp.totalXP} XP · {xp.levelLabel}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-[0.8125rem] text-[#86868b]">距離下一級</p>
-                <p className="mt-1 text-[1.0625rem] font-semibold text-[#0071e3] sm:text-[1.125rem]">
-                  {xp.xpToNextLevel} XP
-                </p>
-              </div>
-            </div>
-            {todayXp === 0 ? (
-              <p className="text-[0.875rem] text-[#86868b]">今天還沒有新的 XP，完成 Mission 即可獲得。</p>
-            ) : null}
-            <span className="inline-flex rounded-full bg-[#fff4e5] px-4 py-2 text-[0.875rem] font-medium text-[#1d1d1f]">
-              {formatIcon("streak")} 連續 {streak.currentStreak} 天
-              {!streak.isActiveToday && streak.currentStreak > 0 ? " · 今日尚未完成活動" : ""}
-            </span>
-          </>
-        )}
-      </div>
-    </Card>
-  );
+function TodayPointsSection({ metrics }: { metrics: MemberComputedMetrics }) {
+  return <HomeLeaderboardSection metrics={metrics} />;
 }
 
 function TodayAchievementSection({ metrics }: { metrics: MemberComputedMetrics }) {
@@ -294,19 +271,20 @@ function TodayAchievementSection({ metrics }: { metrics: MemberComputedMetrics }
 
   return (
     <Card>
-      <SectionLabel>今日 Achievement</SectionLabel>
+      <SectionLabel emoji={APP_EMOJI.section.achievements}>今日成就</SectionLabel>
       <div className="mt-4">
         {firstUse ? (
           <EmptyState
+            emoji={APP_EMOJI.mood.trophy}
             title="還沒有成就"
-            description="持續記錄成交與完成 Mission，成就會在這裡解鎖。"
+            description="持續記錄成交與完成任務，成就會在這裡解鎖。"
           />
         ) : hasToday ? (
           <div className="flex flex-wrap gap-2">
             {todayBadges.map((badge) => (
               <span
                 key={badge.badgeKey}
-                className="rounded-full bg-[#f5f5f7] px-4 py-2 text-[0.875rem] font-medium text-[#1d1d1f]"
+                className="rounded-full bg-[var(--brand-bg)] px-4 py-2 text-[0.875rem] font-medium text-[#1d1d1f]"
               >
                 {formatIcon(badge.iconKey)} {badge.label}
               </span>
@@ -314,7 +292,7 @@ function TodayAchievementSection({ metrics }: { metrics: MemberComputedMetrics }
             {todayAchievements.map((achievement) => (
               <span
                 key={achievement.achievementKey}
-                className="rounded-full bg-[#eef8ff] px-4 py-2 text-[0.875rem] font-medium text-[#1d1d1f]"
+                className="rounded-full bg-[var(--brand-primary-light)] px-4 py-2 text-[0.875rem] font-medium text-[#1d1d1f]"
               >
                 {formatIcon("xp")} {achievement.title}
               </span>
@@ -322,12 +300,58 @@ function TodayAchievementSection({ metrics }: { metrics: MemberComputedMetrics }
           </div>
         ) : (
           <EmptyState
+            emoji={APP_EMOJI.mood.empty}
             title="今日還沒有新成就"
-            description="完成今天的 Mission，就有機會解鎖新的 Achievement。"
+            description="完成今天的任務，就有機會解鎖新的成就。"
           />
         )}
       </div>
     </Card>
+  );
+}
+
+function MonthlyPromotionsHomeSection() {
+  const storage = useMemo(() => createLocalStorageAdapter(), []);
+  const view = useMemo(() => {
+    const viewerId = resolveAuthenticatedMemberId(storage);
+    return buildMemberMonthlyPromotions({
+      viewerMemberId: viewerId,
+      members: loadAllMembers(storage),
+      campaigns: loadOrganizationPromotions(storage),
+      referenceDate: todayISODate(),
+    });
+  }, [storage]);
+
+  return <MonthlyPromotionsPanel showViewAllLink variant="compact" view={view} />;
+}
+
+function WorkHubSection() {
+  const hubs = [
+    { href: "/daily-action", title: "今日行動", desc: "每天第一件事" },
+    { href: "/retail-pipeline", title: "名單流程", desc: "推進每位名單" },
+    { href: "/retail-house", title: "零售屋", desc: "週分享與成交" },
+    { href: "/organization", title: "組織圖", desc: "夥伴狀況一覽" },
+    { href: "/promotions", title: "促銷專欄", desc: "獎勵與挑戰" },
+    { href: "/calendar", title: "行事曆", desc: "行程與 Google 同步" },
+    { href: "/events", title: "紀錄中心", desc: "活動與會議" },
+  ] as const;
+
+  return (
+    <section className="home-section grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+      {hubs.map((hub) => (
+        <Link
+          key={hub.href}
+          className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5 transition-colors active:bg-[var(--brand-primary-muted)] hover:border-[#d1d1d6]"
+          href={hub.href}
+        >
+          <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">
+            <span aria-hidden className="mr-1.5">{WORK_HUB_EMOJIS[hub.href]}</span>
+            {hub.title}
+          </p>
+          <p className="mt-0.5 text-[0.75rem] text-[#86868b]">{hub.desc}</p>
+        </Link>
+      ))}
+    </section>
   );
 }
 
@@ -338,26 +362,63 @@ function AddTransactionButton() {
       href="/events"
     >
       <div>
-        <p className="text-[1.0625rem] font-semibold">新增 Event</p>
-        <p className="mt-1 text-[0.875rem] text-white/70">成交、活動、資格</p>
+        <p className="text-[1.0625rem] font-semibold">{APP_EMOJI.action.addRecord} 新增紀錄</p>
+        <p className="mt-1 text-[0.875rem] text-white/70">活動、會議</p>
       </div>
       <span aria-hidden className="text-[1.375rem]">
-        →
+        📝
       </span>
     </Link>
   );
 }
 
-function HomeView({ metrics }: { metrics: MemberComputedMetrics }) {
+function NextStepSection({ goalCenter }: { goalCenter: GoalCenterResult }) {
+  const nextSteps = goalCenter.nextSteps.slice(0, 5);
+
   return (
-    <div className="min-h-full bg-[linear-gradient(180deg,#fafafa_0%,#f5f5f7_48%,#eef0f4_100%)]">
+    <Card>
+      <div className="flex items-center justify-between gap-3">
+        <SectionLabel emoji={APP_EMOJI.section.nextSteps}>下一步</SectionLabel>
+        <Link className="text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]" href="/goals">
+          目標中心 →
+        </Link>
+      </div>
+      <div className="mt-4 space-y-3">
+        {nextSteps.length > 0 ? (
+          nextSteps.map((goal) => <GoalCardCompact key={goal.id} goal={goal} />)
+        ) : (
+          <EmptyState
+            emoji={APP_EMOJI.mood.empty}
+            title="尚無下一步"
+            description="目標中心會依業務規則顯示距離各項 KPI 目標的差距。"
+          />
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function HomeView({
+  metrics,
+  goalCenter,
+}: {
+  metrics: MemberComputedMetrics;
+  goalCenter: GoalCenterResult;
+}) {
+  const firstUse = !hasAnyActivity(metrics);
+
+  return (
+    <div className="min-h-full bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]">
       <main className="home-container flex flex-col gap-5 pb-24 pt-10 sm:pt-12">
         <GreetingSection metrics={metrics} />
-        <PresidentAISection metrics={metrics} />
-        <MissionSection metrics={metrics} />
+        <TodayPointsSection metrics={metrics} />
+        <WorkHubSection />
+        <MonthlyPromotionsHomeSection />
+        <PresidentAISection goalCenter={goalCenter} firstUse={firstUse} />
+        <MissionSection goalCenter={goalCenter} firstUse={firstUse} />
+        <NextStepSection goalCenter={goalCenter} />
         <BossSection metrics={metrics} />
         <MapUniverseSection universe={metrics.mapUniverse} />
-        <TodayXpSection metrics={metrics} />
         <TodayAchievementSection metrics={metrics} />
         <AddTransactionButton />
       </main>
@@ -383,13 +444,20 @@ export default function HomePage() {
       setLoadState("ready");
     } catch {
       setLoadState("error");
-      setErrorMessage("Engine 無法完成計算，請重新載入或稍後再試。");
+      setErrorMessage("系統無法完成計算，請重新載入或稍後再試。");
     }
   }, []);
 
   useEffect(() => {
-    loadMetrics();
+    queueMicrotask(() => {
+      loadMetrics();
+    });
   }, [loadMetrics]);
+
+  const goalCenter = useMemo(
+    () => (metrics ? buildGoalCenter(metrics) : null),
+    [metrics],
+  );
 
   if (loadState === "loading") {
     return <HomeLoadingSkeleton />;
@@ -399,11 +467,11 @@ export default function HomePage() {
     return <HomeErrorState message={errorMessage} onRetry={loadMetrics} />;
   }
 
-  if (!metrics) {
+  if (!metrics || !goalCenter) {
     return (
       <HomeErrorState message="找不到可用的計算結果。" onRetry={loadMetrics} />
     );
   }
 
-  return <HomeView metrics={metrics} />;
+  return <HomeView metrics={metrics} goalCenter={goalCenter} />;
 }

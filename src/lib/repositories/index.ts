@@ -8,4 +8,6 @@ export {
 } from "./retail-repository";
 export type { EventRepository } from "./event-repository";
 export { createEventRepository, LocalStorageEventRepository } from "./event-repository";
+export type { MemberRepository } from "./member-repository";
+export { createMemberRepository, LocalStorageMemberRepository } from "./member-repository";
 export { STORAGE_KEYS } from "./storage-keys";
