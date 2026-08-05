@@ -49,7 +49,7 @@ export function CalendarStatsPanel({
           <label className="block space-y-1.5">
             <span className="text-[0.8125rem] font-medium text-[#636366]">開始日</span>
             <input
-              className="w-full rounded-xl border border-[var(--brand-border)] px-3 py-2.5"
+              className="date-input"
               onChange={(event) => setQuery((current) => ({ ...current, startDate: event.target.value }))}
               type="date"
               value={query.startDate}
@@ -58,7 +58,7 @@ export function CalendarStatsPanel({
           <label className="block space-y-1.5">
             <span className="text-[0.8125rem] font-medium text-[#636366]">結束日</span>
             <input
-              className="w-full rounded-xl border border-[var(--brand-border)] px-3 py-2.5"
+              className="date-input"
               onChange={(event) => setQuery((current) => ({ ...current, endDate: event.target.value }))}
               type="date"
               value={query.endDate}

@@ -1,11 +1,13 @@
 "use client";
 
 import type { QuickActivityInput } from "@/lib/daily-action/log-today-action";
+import { RegionField } from "@/components/ui/RegionField";
 import { useState } from "react";
 
 const EMPTY_FORM: QuickActivityInput = {
   customerName: "",
   customerPhone: "",
+  region: "",
   note: "",
 };
 
@@ -43,6 +45,7 @@ function QuickActivityModalForm({
       await onSubmit(activityType, {
         customerName: form.customerName.trim(),
         customerPhone: form.customerPhone?.trim() || undefined,
+        region: form.region?.trim() || undefined,
         note: form.note?.trim() || undefined,
       });
       onClose();
@@ -89,6 +92,14 @@ function QuickActivityModalForm({
               placeholder="選填"
               type="tel"
               value={form.customerPhone ?? ""}
+            />
+          </label>
+
+          <label className="block space-y-2">
+            <span className="text-[0.875rem] font-medium text-[#636366]">地區</span>
+            <RegionField
+              onChange={(region) => setForm((current) => ({ ...current, region }))}
+              value={form.region ?? ""}
             />
           </label>
 

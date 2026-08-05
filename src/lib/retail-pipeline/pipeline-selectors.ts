@@ -26,6 +26,7 @@ function toLeadView(lead: RetailPipelineLead): RetailPipelineLeadView {
     nextStepLabel: stage.nextStepLabel,
     canAdvance: nextStageKey !== null,
     scheduledDate: lead.scheduledDate,
+    region: lead.region,
   };
 }
 

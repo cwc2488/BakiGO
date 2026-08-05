@@ -415,7 +415,7 @@ export function EventFormModal({
                   </label>
                   {!values.recurrenceNeverEnds ? (
                     <input
-                      className="w-full rounded-xl border border-[var(--cal-border)] px-4 py-3"
+                      className="date-input"
                       onChange={(event) => onChange({ ...values, recurrenceEndDate: event.target.value })}
                       type="date"
                       value={values.recurrenceEndDate}

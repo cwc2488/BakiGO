@@ -47,6 +47,7 @@ export interface RetailLeadRepository {
   create(input: RetailPipelineLeadCreateInput): RetailPipelineLead;
   updateStage(leadId: EntityId, stageKey: RetailPipelineStageKey): RetailPipelineLead;
   updateScheduledDate(leadId: EntityId, scheduledDate: ISODateString | undefined): RetailPipelineLead;
+  updateRegion(leadId: EntityId, region: string | undefined): RetailPipelineLead;
 }
 
 export class LocalStorageRetailLeadRepository implements RetailLeadRepository {
@@ -77,6 +78,7 @@ export class LocalStorageRetailLeadRepository implements RetailLeadRepository {
       stageKey: "stranger",
       stageUpdatedAt: today,
       scheduledDate: input.scheduledDate,
+      region: input.region?.trim() || undefined,
       note: input.note?.trim() || undefined,
     };
 
@@ -120,6 +122,26 @@ export class LocalStorageRetailLeadRepository implements RetailLeadRepository {
     const updated: RetailPipelineLead = {
       ...leads[index],
       scheduledDate: scheduledDate || undefined,
+      updatedAt: now,
+    };
+
+    const next = [...leads];
+    next[index] = updated;
+    this.storage.setItem(STORAGE_KEYS.retailPipelineLeads, JSON.stringify(next));
+    return updated;
+  }
+
+  updateRegion(leadId: EntityId, region: string | undefined): RetailPipelineLead {
+    const leads = this.getAll();
+    const index = leads.findIndex((lead) => lead.id === leadId);
+    if (index < 0) {
+      throw new Error(`Pipeline lead not found: ${leadId}`);
+    }
+
+    const now = new Date().toISOString();
+    const updated: RetailPipelineLead = {
+      ...leads[index],
+      region: region?.trim() || undefined,
       updatedAt: now,
     };
 

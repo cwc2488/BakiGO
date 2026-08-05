@@ -15,6 +15,7 @@ import {
 } from "@/components/calendar/EventFormModal";
 import { GoogleCalendarPanel } from "@/components/calendar/GoogleCalendarPanel";
 import { MonthView } from "@/components/calendar/MonthView";
+import { MonthDayAgenda } from "@/components/calendar/MonthDayAgenda";
 import { WeekDayStrip } from "@/components/calendar/WeekDayStrip";
 import { WeekView } from "@/components/calendar/WeekView";
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
@@ -721,14 +722,21 @@ export default function CalendarPage() {
         ) : null}
 
         {viewMode === "month" ? (
-          <MonthView
-            anchorDate={monthAnchor}
-            events={monthEvents}
-            onSelectDate={(date) => selectDate(date, true)}
-            onShiftMonth={setMonthAnchor}
-            selectedDate={selectedDate}
-            swipeHandlers={monthSwipeHandlers}
-          />
+          <div className="space-y-4">
+            <MonthView
+              anchorDate={monthAnchor}
+              events={monthEvents}
+              onSelectDate={(date) => selectDate(date)}
+              onShiftMonth={setMonthAnchor}
+              selectedDate={selectedDate}
+              swipeHandlers={monthSwipeHandlers}
+            />
+            <MonthDayAgenda
+              date={selectedDate}
+              events={monthEvents}
+              onEventSelect={openEdit}
+            />
+          </div>
         ) : null}
 
         {viewMode === "stats" ? (

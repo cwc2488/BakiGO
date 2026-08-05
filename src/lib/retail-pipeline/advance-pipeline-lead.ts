@@ -20,6 +20,7 @@ function buildPipelineEventMetadata(
     leadId: lead.id,
     pipelineStage: targetStageKey,
     customerName: lead.displayName,
+    region: lead.region,
   };
 
   const stage = targetStageKey ? getPipelineStageDefinition(targetStageKey) : null;
@@ -93,6 +94,7 @@ export function advancePipelineLead(
 export function createPipelineLead(
   displayName: string,
   storage: StorageAdapter,
+  region?: string,
 ): RetailPipelineLead {
   const trimmed = displayName.trim();
   if (!trimmed) {
@@ -103,7 +105,27 @@ export function createPipelineLead(
     organizationId: APP_IDS.organizationId,
     ownerMemberId: resolveAuthenticatedMemberId(storage),
     displayName: trimmed,
+    region: region?.trim() || undefined,
   });
+}
+
+export function updatePipelineLeadRegion(
+  leadId: EntityId,
+  region: string | undefined,
+  storage: StorageAdapter,
+): RetailPipelineLead {
+  const repository = createRetailLeadRepository(storage);
+  const lead = repository.getById(leadId);
+  if (!lead) {
+    throw new Error("找不到名單");
+  }
+
+  const ownerMemberId = resolveAuthenticatedMemberId(storage);
+  if (lead.ownerMemberId !== ownerMemberId) {
+    throw new Error("無權限操作此名單");
+  }
+
+  return repository.updateRegion(leadId, region);
 }
 
 export function updatePipelineLeadScheduledDate(

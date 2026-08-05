@@ -4,8 +4,10 @@ import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import {
   advancePipelineLead,
   createPipelineLead,
+  updatePipelineLeadRegion,
   updatePipelineLeadScheduledDate,
 } from "@/lib/retail-pipeline/advance-pipeline-lead";
+import { RegionField } from "@/components/ui/RegionField";
 import { buildRetailPipelineSnapshot } from "@/lib/retail-pipeline/pipeline-selectors";
 import { todayISODate } from "@/lib/config/app-config";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
@@ -44,11 +46,13 @@ function LeadCard({
   lead,
   onAdvance,
   onScheduledDateChange,
+  onRegionChange,
   isAdvancing,
 }: {
   lead: RetailPipelineLeadView;
   onAdvance: (leadId: string) => void;
   onScheduledDateChange: (leadId: string, scheduledDate: string) => void;
+  onRegionChange: (leadId: string, region: string) => void;
   isAdvancing: boolean;
 }) {
   const scheduleHint = formatScheduledDateHint(lead.scheduledDate);
@@ -58,9 +62,17 @@ function LeadCard({
       <p className="text-[1rem] font-semibold text-[#1d1d1f]">{lead.displayName}</p>
 
       <label className="mt-3 block space-y-1.5">
+        <span className="text-[0.75rem] font-medium text-[#86868b]">地區</span>
+        <RegionField
+          onChange={(region) => onRegionChange(lead.leadId, region)}
+          value={lead.region ?? ""}
+        />
+      </label>
+
+      <label className="mt-3 block space-y-1.5">
         <span className="text-[0.75rem] font-medium text-[#86868b]">排定執行日期</span>
         <input
-          className="w-full rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-3 py-2 text-[0.875rem] outline-none focus:border-[var(--brand-primary)]"
+          className="date-input w-full"
           onChange={(event) => onScheduledDateChange(lead.leadId, event.target.value)}
           type="date"
           value={lead.scheduledDate ?? ""}
@@ -103,12 +115,14 @@ function PipelineStageSection({
   advancingLeadId,
   onAdvance,
   onScheduledDateChange,
+  onRegionChange,
 }: {
   column: RetailPipelineColumnView;
   stageIndex: number;
   advancingLeadId: string | null;
   onAdvance: (leadId: string) => void;
   onScheduledDateChange: (leadId: string, scheduledDate: string) => void;
+  onRegionChange: (leadId: string, region: string) => void;
 }) {
   const hasLeads = column.leads.length > 0;
 
@@ -138,6 +152,7 @@ function PipelineStageSection({
                 isAdvancing={advancingLeadId === lead.leadId}
                 lead={lead}
                 onAdvance={onAdvance}
+                onRegionChange={onRegionChange}
                 onScheduledDateChange={onScheduledDateChange}
               />
             ))}
@@ -157,6 +172,7 @@ export default function RetailPipelinePage() {
   );
   const [advancingLeadId, setAdvancingLeadId] = useState<string | null>(null);
   const [newLeadName, setNewLeadName] = useState("");
+  const [newLeadRegion, setNewLeadRegion] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
@@ -197,13 +213,27 @@ export default function RetailPipelinePage() {
     [refresh, storage],
   );
 
+  const handleRegionChange = useCallback(
+    (leadId: string, region: string) => {
+      setError(null);
+      try {
+        updatePipelineLeadRegion(leadId, region || undefined, storage);
+        refresh();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "無法更新地區");
+      }
+    },
+    [refresh, storage],
+  );
+
   function handleCreateLead(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
 
     try {
-      createPipelineLead(newLeadName, storage);
+      createPipelineLead(newLeadName, storage, newLeadRegion);
       setNewLeadName("");
+      setNewLeadRegion("");
       refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "無法新增名單");
@@ -230,13 +260,17 @@ export default function RetailPipelinePage() {
           onSubmit={handleCreateLead}
         >
           <input
-            className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
+            className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3 text-[0.9375rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
             placeholder="新增名單姓名"
             value={newLeadName}
             onChange={(event) => setNewLeadName(event.target.value)}
           />
+          <label className="block space-y-1.5">
+            <span className="text-[0.8125rem] font-medium text-[#86868b]">地區</span>
+            <RegionField onChange={setNewLeadRegion} value={newLeadRegion} />
+          </label>
           <button
-            className="rounded-2xl bg-[var(--brand-primary)] px-5 py-3.5 text-[1rem] font-semibold text-white"
+            className="rounded-2xl bg-[var(--brand-primary)] px-5 py-3 text-[0.9375rem] font-semibold text-white"
             type="submit"
           >
             {APP_EMOJI.action.addRecord} 新增陌生人
@@ -252,6 +286,7 @@ export default function RetailPipelinePage() {
               advancingLeadId={advancingLeadId}
               column={column}
               onAdvance={handleAdvance}
+              onRegionChange={handleRegionChange}
               onScheduledDateChange={handleScheduledDateChange}
               stageIndex={index}
             />

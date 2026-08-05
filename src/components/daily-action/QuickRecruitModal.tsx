@@ -5,11 +5,13 @@ import {
   type QuickRecruitCategory,
   type QuickRecruitInput,
 } from "@/lib/daily-action/create-quick-recruit";
+import { RegionField } from "@/components/ui/RegionField";
 import { useState } from "react";
 
 const EMPTY_FORM: QuickRecruitInput = {
   displayName: "",
   phone: "",
+  region: "",
   category: "distributor",
   note: "",
 };
@@ -51,6 +53,7 @@ export function QuickRecruitModal({
       await onSubmit({
         displayName: form.displayName.trim(),
         phone: form.phone?.trim() || undefined,
+        region: form.region?.trim() || undefined,
         category: form.category,
         note: form.note?.trim() || undefined,
       });
@@ -99,6 +102,14 @@ export function QuickRecruitModal({
               placeholder="選填"
               type="tel"
               value={form.phone ?? ""}
+            />
+          </label>
+
+          <label className="block space-y-2">
+            <span className="text-[0.875rem] font-medium text-[#636366]">地區</span>
+            <RegionField
+              onChange={(region) => setForm((current) => ({ ...current, region }))}
+              value={form.region ?? ""}
             />
           </label>
 

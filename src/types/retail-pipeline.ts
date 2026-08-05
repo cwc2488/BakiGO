@@ -18,6 +18,8 @@ export interface RetailPipelineLead extends StoredEntity {
   stageUpdatedAt: ISODateString;
   /** 排定執行日期 */
   scheduledDate?: ISODateString;
+  /** 客戶所在區域 */
+  region?: string;
   note?: string;
 }
 
@@ -26,6 +28,7 @@ export interface RetailPipelineLeadCreateInput {
   ownerMemberId: EntityId;
   displayName: string;
   scheduledDate?: ISODateString;
+  region?: string;
   note?: string;
 }
 
@@ -37,6 +40,7 @@ export interface RetailPipelineLeadView {
   nextStepLabel: string | null;
   canAdvance: boolean;
   scheduledDate?: ISODateString;
+  region?: string;
 }
 
 export interface RetailPipelineColumnView {

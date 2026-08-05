@@ -16,6 +16,7 @@ export type { QuickRecruitInput } from "@/lib/daily-action/create-quick-recruit"
 export interface QuickActivityInput {
   customerName: string;
   customerPhone?: string;
+  region?: string;
   note?: string;
 }
 
@@ -42,6 +43,7 @@ export function logTodayActivity(
       metadata: {
         customerName,
         customerPhone: input.customerPhone?.trim() || undefined,
+        region: input.region?.trim() || undefined,
         note: input.note?.trim() || undefined,
       },
     },
@@ -71,6 +73,7 @@ export function logTodayRecruit(
         metadata: {
           customerName: recruit.displayName,
           customerPhone: input.phone?.trim() || undefined,
+          region: input.region?.trim() || undefined,
           currencyCode: "VP",
           recruitMemberId: recruit.id,
           recruitCategory: input.category,

@@ -142,6 +142,46 @@ function unescapeIcalText(value: string): string {
   return value.replace(/\\n/g, "\n").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\");
 }
 
+function decodeQuotedPrintable(value: string): string {
+  const cleaned = value.replace(/=\r?\n/g, "");
+  const bytes: number[] = [];
+
+  for (let index = 0; index < cleaned.length; index += 1) {
+    const char = cleaned[index];
+    if (char === "=" && index + 2 < cleaned.length) {
+      const hex = cleaned.slice(index + 1, index + 3);
+      if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
+        bytes.push(Number.parseInt(hex, 16));
+        index += 2;
+        continue;
+      }
+    }
+    bytes.push(char.charCodeAt(0));
+  }
+
+  return new TextDecoder("utf-8").decode(new Uint8Array(bytes));
+}
+
+function decodeBase64Ical(value: string): string {
+  const normalized = value.replace(/\s/g, "");
+  const binary = atob(normalized);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+function decodeIcalPropertyValue(value: string, params: Record<string, string>): string {
+  const encoding = params.ENCODING?.toUpperCase();
+  let decoded = value;
+
+  if (encoding === "QUOTED-PRINTABLE" || encoding === "QP") {
+    decoded = decodeQuotedPrintable(value);
+  } else if (encoding === "BASE64" || encoding === "B") {
+    decoded = decodeBase64Ical(value);
+  }
+
+  return unescapeIcalText(decoded);
+}
+
 function isValidCalendarDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(value) && !value.includes("NaN");
 }
@@ -218,17 +258,28 @@ export function parseIcalEvents(
     }
 
     const description = fields.get("DESCRIPTION")?.value;
+    const descriptionParams = fields.get("DESCRIPTION")?.params ?? {};
     const location = fields.get("LOCATION")?.value;
+    const locationParams = fields.get("LOCATION")?.params ?? {};
+    const summaryParams = fields.get("SUMMARY")?.params ?? {};
     const notes = [description, location ? `地點：${location}` : undefined]
       .filter((value): value is string => Boolean(value))
-      .map(unescapeIcalText)
+      .map((value, index) =>
+        decodeIcalPropertyValue(
+          value,
+          index === 0 ? descriptionParams : locationParams,
+        ),
+      )
       .join("\n");
 
     const event: ParsedIcalEvent = {
       uid,
-      title: unescapeIcalText(summary.trim()) || "（無標題）",
+      title:
+        decodeIcalPropertyValue(summary.trim(), summaryParams).trim() || "（無標題）",
       notes: notes || undefined,
-      location: location ? unescapeIcalText(location) : undefined,
+      location: location
+        ? decodeIcalPropertyValue(location, locationParams)
+        : undefined,
       startAt: start.startAt,
       endAt,
       allDay,
@@ -245,8 +296,25 @@ export function parseIcalEvents(
 }
 
 export function extractIcalCalendarName(text: string): string | undefined {
-  const match = unfoldIcal(text).match(/X-WR-CALNAME:(.+)/);
-  return match?.[1] ? unescapeIcalText(match[1].trim()) : undefined;
+  const unfolded = unfoldIcal(text);
+  const match = unfolded.match(/X-WR-CALNAME(?:;[^:]*)?:(.+)/);
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  const line = match[0];
+  const colonIndex = line.indexOf(":");
+  const rawName = line.slice(colonIndex + 1).trim();
+  const paramsPart = line.slice("X-WR-CALNAME".length, colonIndex);
+  const params: Record<string, string> = {};
+  for (const part of paramsPart.split(";").filter(Boolean)) {
+    const [key, paramValue] = part.split("=");
+    if (key && paramValue) {
+      params[key.toUpperCase()] = paramValue;
+    }
+  }
+
+  return decodeIcalPropertyValue(rawName, params);
 }
 
 export function extractIcalCalendarTimeZone(text: string): string | undefined {

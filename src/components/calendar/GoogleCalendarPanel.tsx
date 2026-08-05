@@ -26,8 +26,10 @@ function mergeCalendarOptions(
   }));
   const merged = [...preset];
   for (const calendar of remoteCalendars) {
+    const presetMatch = SHARED_GOOGLE_CALENDARS.find((item) => item.id === calendar.id);
+    const summary = presetMatch?.name ?? (calendar.summary?.trim() || "Google 日曆");
     if (!merged.some((item) => item.id === calendar.id)) {
-      merged.push(calendar);
+      merged.push({ id: calendar.id, summary });
     }
   }
   return merged;

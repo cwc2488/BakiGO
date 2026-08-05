@@ -15,6 +15,7 @@ export const QUICK_RECRUIT_CATEGORY_LABELS: Record<QuickRecruitCategory, string>
 export interface QuickRecruitInput {
   displayName: string;
   phone?: string;
+  region?: string;
   category: QuickRecruitCategory;
   note?: string;
 }
@@ -55,6 +56,7 @@ export function createQuickRecruitMember(storage: StorageAdapter, input: QuickRe
     tags,
     metadata: {
       recruitCategory: input.category,
+      region: input.region?.trim() || undefined,
     },
   });
 }

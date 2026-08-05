@@ -87,7 +87,7 @@ export function MonthView({
           return (
             <button
               key={date}
-              className={`flex min-h-[3.25rem] flex-col items-center rounded-xl px-1 py-1.5 ${
+              className={`flex min-h-[2.75rem] flex-col items-center rounded-lg px-0.5 py-1 ${
                 isSelected
                   ? "bg-[var(--cal-primary)] text-white"
                   : isToday
@@ -99,7 +99,7 @@ export function MonthView({
               onClick={() => onSelectDate(date)}
               type="button"
             >
-              <span className="text-[0.875rem] font-semibold">{Number(date.slice(8, 10))}</span>
+              <span className="text-[0.8125rem] font-semibold">{Number(date.slice(8, 10))}</span>
               {count > 0 && color ? (
                 <span className="mt-1 flex items-center gap-0.5">
                   <span
