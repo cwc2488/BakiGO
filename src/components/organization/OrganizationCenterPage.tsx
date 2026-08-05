@@ -1,18 +1,19 @@
 "use client";
 
-import { getCurrentMember } from "@/lib/auth/auth-service";
+import { getCurrentMember, getCurrentSession } from "@/lib/auth/auth-service";
 import {
   canAdjustDownlineRank,
   getVisibleMembers,
 } from "@/lib/auth/organization-access";
+import { fetchCloudOrganizationData } from "@/lib/cloud/cloud-member-service";
+import { buildViewerCloudOrganizationSnapshot } from "@/lib/cloud/build-cloud-organization-tree";
+import { syncCloudMembersToLocalStorage } from "@/lib/cloud/sync-cloud-members-to-local";
 import { todayISODate } from "@/lib/config/app-config";
 import { loadAllMembers } from "@/lib/members/member-service";
 import { loadMemberMetrics } from "@/lib/mission-control/format";
-import {
-  buildViewerOrganizationSnapshot,
-  findMemberSubtree,
-} from "@/lib/organization/organization-selectors";
+import { findMemberSubtree } from "@/lib/organization/organization-selectors";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import type { OrganizationCenterSnapshot, OrganizationTreeNode } from "@/types/organization-center";
 import type { Member } from "@/types/member";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
 import Link from "next/link";
@@ -25,43 +26,91 @@ import {
 
 type LoadState = "loading" | "ready" | "error";
 
+function mergeCloudTreeWithLocalMetrics(
+  node: OrganizationTreeNode,
+  members: Member[],
+  storage: ReturnType<typeof createLocalStorageAdapter>,
+): OrganizationTreeNode {
+  const localMember = members.find((member) => member.id === node.member.memberId);
+  const metrics = localMember ? loadMemberMetrics(localMember.id, storage) : null;
+
+  const mergedMember = metrics
+    ? {
+        ...node.member,
+        monthlyVp: metrics.vp.totalVp,
+        metMonthlyVp2500: node.member.monthlyVpTarget
+          ? metrics.vp.totalVp >= node.member.monthlyVpTarget
+          : false,
+        monthlyPoints: metrics.gamification.points.monthlyPoints,
+        lifetimePoints: metrics.gamification.points.lifetimePoints,
+        availablePoints: metrics.gamification.points.availablePoints,
+        streakMultiplier: metrics.gamification.points.streakMultiplier,
+      }
+    : node.member;
+
+  return {
+    member: mergedMember,
+    children: node.children.map((child) => mergeCloudTreeWithLocalMetrics(child, members, storage)),
+  };
+}
+
 export default function OrganizationCenterPage() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
-  const [snapshot, setSnapshot] = useState<ReturnType<
-    typeof buildViewerOrganizationSnapshot
-  > | null>(null);
+  const [snapshot, setSnapshot] = useState<OrganizationCenterSnapshot | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string>("");
   const [viewer, setViewer] = useState<Member | null>(null);
   const [allMembers, setAllMembers] = useState<Member[]>([]);
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     setLoadState("loading");
     try {
       const storage = createLocalStorageAdapter();
+      const session = getCurrentSession(storage);
+      if (!session) {
+        setLoadState("error");
+        return;
+      }
+
+      await syncCloudMembersToLocalStorage(storage);
+
       const viewer = getCurrentMember(storage);
       if (!viewer) {
         setLoadState("error");
         return;
       }
 
-      const allMembers = loadAllMembers(storage);
-      const visibleMembers = getVisibleMembers(viewer, allMembers);
-      const referenceDate = todayISODate();
-      const metricsByMemberId = new Map(
-        visibleMembers.map((member) => [member.id, loadMemberMetrics(member.id, storage)]),
+      const { members: cloudMembers, relationships } = await fetchCloudOrganizationData();
+      const viewerCloud = cloudMembers.find((member) => member.id === session.memberId);
+      if (!viewerCloud) {
+        setLoadState("error");
+        return;
+      }
+
+      const cloudSnapshot = buildViewerCloudOrganizationSnapshot({
+        viewerMemberNumber: viewerCloud.memberNumber,
+        members: cloudMembers,
+        relationships,
+        referenceDate: todayISODate(),
+      });
+
+      const localMembers = loadAllMembers(storage);
+      const visibleMembers = getVisibleMembers(viewer, localMembers);
+      const mergedRoots = cloudSnapshot.roots.map((root) =>
+        mergeCloudTreeWithLocalMetrics(root, visibleMembers, storage),
       );
 
-      const nextSnapshot = buildViewerOrganizationSnapshot({
-        viewer,
-        members: visibleMembers,
-        metricsByMemberId,
-        referenceDate,
-      });
+      const nextSnapshot: OrganizationCenterSnapshot = {
+        referenceDate: cloudSnapshot.referenceDate,
+        rootMemberId: cloudSnapshot.rootMemberId,
+        roots: mergedRoots,
+        totalMembers: cloudSnapshot.totalMembers,
+        computedAt: cloudSnapshot.computedAt,
+      };
 
       setSnapshot(nextSnapshot);
       setViewer(viewer);
-      setAllMembers(allMembers);
+      setAllMembers(localMembers);
       setExpandedIds(collectDefaultExpandedIds(nextSnapshot.roots, 2));
       setSelectedMemberId(viewer.id);
       setLoadState("ready");
@@ -73,7 +122,7 @@ export default function OrganizationCenterPage() {
 
   useEffect(() => {
     queueMicrotask(() => {
-      load();
+      void load();
     });
   }, [load]);
 
@@ -124,7 +173,7 @@ export default function OrganizationCenterPage() {
         <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">
           {APP_EMOJI.mood.error} 無法載入組織圖
         </p>
-        <button className="text-[var(--brand-primary-dark)]" onClick={load} type="button">
+        <button className="text-[var(--brand-primary-dark)]" onClick={() => void load()} type="button">
           重新載入
         </button>
       </div>
@@ -142,7 +191,7 @@ export default function OrganizationCenterPage() {
             {APP_EMOJI.page.organization} 組織圖
           </h1>
           <p className="text-[1rem] leading-relaxed text-[#636366]">
-            共 {snapshot.totalMembers} 位夥伴 · 樹狀圖查看每位夥伴的位階、VP 與晉升進度
+            共 {snapshot.totalMembers} 位夥伴 · 雲端同步 · 自己 → 第一代 → 第二代…
           </p>
         </header>
 
@@ -163,7 +212,7 @@ export default function OrganizationCenterPage() {
               key={selectedNode.member.memberId}
               canAdjustRank={canAdjustSelectedRank}
               member={selectedNode.member}
-              onRankAdjusted={load}
+              onRankAdjusted={() => void load()}
             />
           </section>
         ) : null}

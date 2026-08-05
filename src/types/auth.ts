@@ -1,8 +1,12 @@
-import type { EntityId, ISODateString } from "./common";
+import type { EntityId } from "./common";
 
 export interface AuthSession {
   memberId: EntityId;
+  /** Herbalife member number */
+  memberNumber: string;
+  /** @deprecated Use memberNumber — kept for existing call sites */
   herbalifeMemberId: string;
+  email: string;
   signedInAt: string;
 }
 
@@ -14,25 +18,27 @@ export interface AuthAccount {
 }
 
 export interface RegisterInput {
-  displayName: string;
-  herbalifeMemberId: string;
-  sponsorHerbalifeMemberId: string;
+  name: string;
   email: string;
   password: string;
-  joinedAt: ISODateString;
-  rankKey: string;
+  memberNumber: string;
+  sponsorMemberNumber?: string;
+  currentLevel: string;
 }
 
 export interface LoginInput {
-  herbalifeMemberId: string;
+  email: string;
   password: string;
 }
 
 export type AuthErrorCode =
-  | "duplicate_herbalife_member_id"
+  | "duplicate_member_number"
+  | "duplicate_email"
   | "sponsor_not_found"
   | "invalid_credentials"
-  | "member_not_found";
+  | "member_not_found"
+  | "supabase_not_configured"
+  | "cloud_sync_failed";
 
 export class AuthError extends Error {
   constructor(
@@ -44,10 +50,28 @@ export class AuthError extends Error {
   }
 }
 
-export function normalizeHerbalifeMemberId(value: string): string {
+export function normalizeMemberNumber(value: string): string {
   return value.trim();
 }
 
+export function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/** @deprecated Use normalizeMemberNumber */
+export function normalizeHerbalifeMemberId(value: string): string {
+  return normalizeMemberNumber(value);
+}
+
+export function isValidMemberNumber(value: string): boolean {
+  return normalizeMemberNumber(value).length > 0;
+}
+
+/** @deprecated Use isValidMemberNumber */
 export function isValidHerbalifeMemberId(value: string): boolean {
-  return normalizeHerbalifeMemberId(value).length > 0;
+  return isValidMemberNumber(value);
+}
+
+export function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value));
 }

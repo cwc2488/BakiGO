@@ -1,24 +1,72 @@
+import { isValidCloudMemberLevel, resolveCloudMemberRole } from "@/lib/cloud/member-levels";
+import {
+  fetchCloudMemberByEmail,
+  fetchCloudMemberByMemberNumber,
+  insertCloudMember,
+  insertCloudOrganizationRelationship,
+} from "@/lib/cloud/cloud-member-service";
+import {
+  clearCloudMembersMode,
+  syncCloudMembersToLocalStorage,
+} from "@/lib/cloud/sync-cloud-members-to-local";
 import { APP_IDS } from "@/lib/config/app-config";
-import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { createAuthRepository } from "@/lib/repositories/auth-repository";
 import { createMemberRepository } from "@/lib/repositories/member-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
+import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import {
   AuthError,
-  isValidHerbalifeMemberId,
-  normalizeHerbalifeMemberId,
+  isValidEmail,
+  isValidMemberNumber,
+  normalizeEmail,
+  normalizeMemberNumber,
   type AuthSession,
   type LoginInput,
   type RegisterInput,
 } from "@/types/auth";
 import type { EntityId } from "@/types";
 import type { Member } from "@/types/member";
-import { getOrganizationId } from "./organization-access";
-import {
-  isValidRegistrationRankKey,
-  resolveRegistrationRoleKey,
-} from "./registration-ranks";
+
+function assertSupabaseConfigured(): void {
+  if (!isSupabaseConfigured()) {
+    throw new AuthError(
+      "supabase_not_configured",
+      "雲端資料庫尚未設定，請設定 Supabase 環境變數",
+    );
+  }
+}
+
+function writeLocalSession(
+  storage: StorageAdapter,
+  member: { id: EntityId; memberNumber: string; email: string },
+): AuthSession {
+  const session: AuthSession = {
+    memberId: member.id,
+    memberNumber: member.memberNumber,
+    herbalifeMemberId: member.memberNumber,
+    email: member.email,
+    signedInAt: new Date().toISOString(),
+  };
+  createAuthRepository(storage).writeSession(session);
+  return session;
+}
+
+async function finalizeCloudAuth(
+  storage: StorageAdapter,
+  member: { id: EntityId; memberNumber: string; email: string },
+): Promise<AuthSession> {
+  try {
+    await syncCloudMembersToLocalStorage(storage);
+  } catch (error) {
+    throw new AuthError(
+      "cloud_sync_failed",
+      error instanceof Error ? error.message : "無法同步雲端會員資料",
+    );
+  }
+
+  return writeLocalSession(storage, member);
+}
 
 export function getCurrentMemberId(
   storage: StorageAdapter = createLocalStorageAdapter(),
@@ -52,105 +100,178 @@ export async function registerAccount(
   input: RegisterInput,
   storage: StorageAdapter = createLocalStorageAdapter(),
 ): Promise<AuthSession> {
-  const herbalifeMemberId = normalizeHerbalifeMemberId(input.herbalifeMemberId);
-  const sponsorHerbalifeMemberId = normalizeHerbalifeMemberId(input.sponsorHerbalifeMemberId);
+  assertSupabaseConfigured();
 
-  if (!isValidHerbalifeMemberId(herbalifeMemberId)) {
-    throw new AuthError("invalid_credentials", "請輸入會員編號");
+  const memberNumber = normalizeMemberNumber(input.memberNumber);
+  const email = normalizeEmail(input.email);
+  const sponsorMemberNumber = input.sponsorMemberNumber
+    ? normalizeMemberNumber(input.sponsorMemberNumber)
+    : "";
+
+  if (!isValidMemberNumber(memberNumber)) {
+    throw new AuthError("invalid_credentials", "請輸入賀寶芙會員編號");
   }
 
-  if (herbalifeMemberId === APP_IDS.virtualUplineHerbalifeMemberId) {
-    throw new AuthError("duplicate_herbalife_member_id", "此會員編號為系統保留");
+  if (!isValidEmail(email)) {
+    throw new AuthError("invalid_credentials", "請輸入有效的 Email");
   }
 
-  if (!isValidHerbalifeMemberId(sponsorHerbalifeMemberId)) {
-    throw new AuthError("sponsor_not_found", "請輸入推薦人會員編號");
+  if (!isValidCloudMemberLevel(input.currentLevel)) {
+    throw new AuthError("invalid_credentials", "請選擇目前資格");
   }
 
-  const memberRepository = createMemberRepository(storage);
-  const authRepository = createAuthRepository(storage);
-
-  if (memberRepository.getByHerbalifeMemberId(herbalifeMemberId)) {
-    throw new AuthError("duplicate_herbalife_member_id", "此會員編號已被使用");
+  if (input.password.length < 6) {
+    throw new AuthError("invalid_credentials", "密碼至少需要 6 個字元");
   }
 
-  if (authRepository.getAccountByHerbalifeMemberId(herbalifeMemberId)) {
-    throw new AuthError("duplicate_herbalife_member_id", "此會員編號已被使用");
+  const existingNumber = await fetchCloudMemberByMemberNumber(memberNumber);
+  if (existingNumber) {
+    throw new AuthError("duplicate_member_number", "此賀寶芙會員編號已被使用");
   }
 
-  const sponsor = memberRepository.getByHerbalifeMemberId(sponsorHerbalifeMemberId);
-  if (!sponsor) {
-    throw new AuthError("sponsor_not_found", "推薦人會員編號不存在，無法建立帳號");
+  const existingEmail = await fetchCloudMemberByEmail(email);
+  if (existingEmail) {
+    throw new AuthError("duplicate_email", "此 Email 已被使用");
   }
 
-  if (!isValidRegistrationRankKey(input.rankKey)) {
-    throw new AuthError("invalid_credentials", "請選擇有效的位階");
+  if (sponsorMemberNumber) {
+    const sponsor = await fetchCloudMemberByMemberNumber(sponsorMemberNumber);
+    if (!sponsor) {
+      throw new AuthError("sponsor_not_found", "推薦人會員編號不存在");
+    }
   }
 
-  const member = memberRepository.create({
-    organizationId: getOrganizationId(),
-    herbalifeMemberId,
-    displayName: input.displayName.trim(),
-    email: input.email.trim(),
-    joinedAt: input.joinedAt,
-    sponsorMemberId: sponsor.id,
-    status: "active",
-    tags: [],
-    rankKey: input.rankKey,
-    roleKey: resolveRegistrationRoleKey(input.rankKey),
+  const supabase = createSupabaseBrowserClient();
+  const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+    email,
+    password: input.password,
   });
 
-  const passwordHash = await hashPassword(input.password);
-  authRepository.createAccount({
-    herbalifeMemberId,
-    passwordHash,
-    memberId: member.id,
-    createdAt: new Date().toISOString(),
-  });
+  if (signUpError) {
+    if (signUpError.message.toLowerCase().includes("already")) {
+      throw new AuthError("duplicate_email", "此 Email 已被使用");
+    }
+    throw new AuthError("invalid_credentials", signUpError.message);
+  }
 
-  const session: AuthSession = {
-    memberId: member.id,
-    herbalifeMemberId,
-    signedInAt: new Date().toISOString(),
-  };
-  authRepository.writeSession(session);
-  return session;
+  if (!signUpData.session) {
+    throw new AuthError(
+      "invalid_credentials",
+      "註冊成功但尚未完成 Email 驗證，請至信箱確認後再登入",
+    );
+  }
+
+  let cloudMember;
+  try {
+    cloudMember = await insertCloudMember({
+      memberNumber,
+      name: input.name.trim(),
+      email,
+      role: resolveCloudMemberRole(input.currentLevel),
+      currentLevel: input.currentLevel,
+      sponsorMemberNumber: sponsorMemberNumber || null,
+    });
+
+    if (sponsorMemberNumber) {
+      await insertCloudOrganizationRelationship({
+        parentMemberNumber: sponsorMemberNumber,
+        childMemberNumber: memberNumber,
+      });
+    }
+  } catch (error) {
+    await supabase.auth.signOut();
+    throw new AuthError(
+      "cloud_sync_failed",
+      error instanceof Error ? error.message : "無法建立雲端會員資料",
+    );
+  }
+
+  return finalizeCloudAuth(storage, {
+    id: cloudMember.id,
+    memberNumber: cloudMember.memberNumber,
+    email: cloudMember.email,
+  });
 }
 
 export async function loginAccount(
   input: LoginInput,
   storage: StorageAdapter = createLocalStorageAdapter(),
 ): Promise<AuthSession> {
-  const herbalifeMemberId = normalizeHerbalifeMemberId(input.herbalifeMemberId);
-  const authRepository = createAuthRepository(storage);
-  const account = authRepository.getAccountByHerbalifeMemberId(herbalifeMemberId);
+  assertSupabaseConfigured();
 
-  if (!account) {
-    throw new AuthError("invalid_credentials", "會員編號或密碼錯誤");
+  const email = normalizeEmail(input.email);
+  if (!isValidEmail(email)) {
+    throw new AuthError("invalid_credentials", "請輸入有效的 Email");
   }
 
-  const valid = await verifyPassword(input.password, account.passwordHash);
-  if (!valid) {
-    throw new AuthError("invalid_credentials", "會員編號或密碼錯誤");
+  const supabase = createSupabaseBrowserClient();
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email,
+    password: input.password,
+  });
+
+  if (signInError) {
+    throw new AuthError("invalid_credentials", "Email 或密碼錯誤");
   }
 
-  const member = createMemberRepository(storage).getById(account.memberId);
-  if (!member) {
-    throw new AuthError("member_not_found", "找不到對應的會員資料");
+  const cloudMember = await fetchCloudMemberByEmail(email);
+  if (!cloudMember) {
+    await supabase.auth.signOut();
+    throw new AuthError("member_not_found", "找不到對應的會員資料，請先完成註冊");
   }
 
-  const session: AuthSession = {
-    memberId: member.id,
-    herbalifeMemberId: member.herbalifeMemberId,
-    signedInAt: new Date().toISOString(),
-  };
-  authRepository.writeSession(session);
-  return session;
+  return finalizeCloudAuth(storage, {
+    id: cloudMember.id,
+    memberNumber: cloudMember.memberNumber,
+    email: cloudMember.email,
+  });
 }
 
+export async function restoreCloudSession(
+  storage: StorageAdapter = createLocalStorageAdapter(),
+): Promise<AuthSession | null> {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const supabase = createSupabaseBrowserClient();
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session?.user.email) {
+    return null;
+  }
+
+  const cloudMember = await fetchCloudMemberByEmail(data.session.user.email);
+  if (!cloudMember) {
+    return null;
+  }
+
+  return finalizeCloudAuth(storage, {
+    id: cloudMember.id,
+    memberNumber: cloudMember.memberNumber,
+    email: cloudMember.email,
+  });
+}
+
+export async function logoutAccount(
+  storage: StorageAdapter = createLocalStorageAdapter(),
+): Promise<void> {
+  if (isSupabaseConfigured()) {
+    const supabase = createSupabaseBrowserClient();
+    await supabase.auth.signOut();
+  }
+
+  createAuthRepository(storage).writeSession(null);
+  clearCloudMembersMode(storage);
+}
+
+/** Legacy bootstrap — skipped when Supabase cloud mode is active. */
 export async function ensureBootstrapPresidentAccount(
   storage: StorageAdapter = createLocalStorageAdapter(),
 ): Promise<void> {
+  if (isSupabaseConfigured()) {
+    return;
+  }
+
   const authRepository = createAuthRepository(storage);
   if (authRepository.getAccountByHerbalifeMemberId("ROOT00001")) {
     return;
@@ -161,16 +282,11 @@ export async function ensureBootstrapPresidentAccount(
     return;
   }
 
+  const { hashPassword } = await import("@/lib/auth/password");
   authRepository.createAccount({
     herbalifeMemberId: "ROOT00001",
     passwordHash: await hashPassword("President123"),
     memberId: member.id,
     createdAt: new Date().toISOString(),
   });
-}
-
-export function logoutAccount(
-  storage: StorageAdapter = createLocalStorageAdapter(),
-): void {
-  createAuthRepository(storage).writeSession(null);
 }

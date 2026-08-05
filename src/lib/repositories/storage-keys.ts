@@ -20,4 +20,5 @@ export const STORAGE_KEYS = {
   appDataResetVersion: "baki-go:app-data-reset-version",
   pointRedemptions: "baki-go:point-redemptions",
   calendarReminderQueue: "baki-go:calendar-reminder-queue",
+  cloudMembersMode: "baki-go:cloud-members-mode",
 } as const;

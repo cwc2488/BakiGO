@@ -8,8 +8,8 @@ import type {
   MemberUpdateInput,
 } from "@/types/member";
 import type { EntityId } from "@/types";
-import type { StorageAdapter } from "./storage-adapter";
 import { STORAGE_KEYS } from "./storage-keys";
+import type { StorageAdapter } from "./storage-adapter";
 
 export interface MemberRepository {
   getAll(): Member[];
@@ -96,8 +96,16 @@ function normalizeStoredMembers(members: Member[]): { members: Member[]; changed
 export class LocalStorageMemberRepository implements MemberRepository {
   constructor(private readonly storage: StorageAdapter) {}
 
+  private isCloudMembersMode(): boolean {
+    return this.storage.getItem(STORAGE_KEYS.cloudMembersMode) === "1";
+  }
+
   getAll(): Member[] {
     const members = parseMembers(this.storage.getItem(STORAGE_KEYS.members));
+    if (this.isCloudMembersMode()) {
+      return members;
+    }
+
     if (members.length === 0) {
       const seeded = seedDefaultMembers();
       this.storage.setItem(STORAGE_KEYS.members, JSON.stringify(seeded));

@@ -4,7 +4,7 @@ import {
   getCurrentMember,
   getCurrentSession,
   logoutAccount,
-  ensureBootstrapPresidentAccount,
+  restoreCloudSession,
 } from "@/lib/auth/auth-service";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { AuthSession } from "@/types/auth";
@@ -22,8 +22,8 @@ interface AuthContextValue {
   session: AuthSession | null;
   member: Member | null;
   isLoading: boolean;
-  refresh: () => void;
-  signOut: () => void;
+  refresh: () => Promise<void>;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -33,23 +33,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [member, setMember] = useState<Member | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     const storage = createLocalStorageAdapter();
-    void ensureBootstrapPresidentAccount(storage).finally(() => {
-      setSession(getCurrentSession(storage));
-      setMember(getCurrentMember(storage));
+    setIsLoading(true);
+
+    try {
+      const restored = await restoreCloudSession(storage);
+      const nextSession = restored ?? getCurrentSession(storage);
+      setSession(nextSession);
+      setMember(nextSession ? getCurrentMember(storage) : null);
+    } catch {
+      setSession(null);
+      setMember(null);
+    } finally {
       setIsLoading(false);
-    });
+    }
   }, []);
 
   useEffect(() => {
     queueMicrotask(() => {
-      refresh();
+      void refresh();
     });
   }, [refresh]);
 
-  const signOut = useCallback(() => {
-    logoutAccount(createLocalStorageAdapter());
+  const signOut = useCallback(async () => {
+    await logoutAccount(createLocalStorageAdapter());
     setSession(null);
     setMember(null);
   }, []);

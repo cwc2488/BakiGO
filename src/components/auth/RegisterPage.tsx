@@ -2,26 +2,22 @@
 
 import { registerAccount } from "@/lib/auth/auth-service";
 import { useAuth } from "@/lib/auth/auth-context";
-import { getRegistrationRankOptions } from "@/lib/auth/registration-ranks";
-import { RANK_KEYS } from "@/lib/business-engine/rules/keys";
-import { todayISODate } from "@/lib/config/app-config";
+import { CLOUD_MEMBER_LEVELS } from "@/lib/cloud/member-levels";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { AuthError } from "@/types/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 export default function RegisterPage() {
   const router = useRouter();
   const { refresh } = useAuth();
-  const rankOptions = useMemo(() => getRegistrationRankOptions(), []);
-  const [displayName, setDisplayName] = useState("");
-  const [herbalifeMemberId, setHerbalifeMemberId] = useState("");
-  const [sponsorHerbalifeMemberId, setSponsorHerbalifeMemberId] = useState("");
-  const [rankKey, setRankKey] = useState<string>(RANK_KEYS.NEW_MEMBER);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [memberNumber, setMemberNumber] = useState("");
+  const [sponsorMemberNumber, setSponsorMemberNumber] = useState("");
+  const [currentLevel, setCurrentLevel] = useState<string>(CLOUD_MEMBER_LEVELS[0].value);
   const [password, setPassword] = useState("");
-  const [joinedAt, setJoinedAt] = useState(todayISODate());
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -33,17 +29,16 @@ export default function RegisterPage() {
     try {
       await registerAccount(
         {
-          displayName,
-          herbalifeMemberId,
-          sponsorHerbalifeMemberId,
+          name,
           email,
+          memberNumber,
+          sponsorMemberNumber: sponsorMemberNumber.trim() || undefined,
+          currentLevel,
           password,
-          joinedAt,
-          rankKey,
         },
         createLocalStorageAdapter(),
       );
-      refresh();
+      await refresh();
       router.replace("/daily-action");
     } catch (caught) {
       if (caught instanceof AuthError) {
@@ -62,7 +57,7 @@ export default function RegisterPage() {
         <header className="space-y-2">
           <h1 className="text-[2.5rem] font-semibold tracking-tight text-[#1d1d1f]">建立帳號</h1>
           <p className="text-[1rem] text-[#86868b]">
-            會員編號為唯一身份，推薦人必須已存在於組織中。
+            會員資料永久保存在 Supabase 雲端，任何裝置登入都看到同一份組織。
           </p>
         </header>
 
@@ -72,50 +67,13 @@ export default function RegisterPage() {
             <input
               className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
               required
-              value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
             />
           </label>
 
           <label className="block space-y-2">
-            <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">會員編號</span>
-            <input
-              className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
-              required
-              value={herbalifeMemberId}
-              onChange={(event) => setHerbalifeMemberId(event.target.value)}
-            />
-          </label>
-
-          <label className="block space-y-2">
-            <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">推薦人會員編號</span>
-            <input
-              className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
-              required
-              value={sponsorHerbalifeMemberId}
-              onChange={(event) => setSponsorHerbalifeMemberId(event.target.value)}
-            />
-            <span className="text-[0.8125rem] text-[#86868b]">若無推薦人可填 00000（虛擬上線）</span>
-          </label>
-
-          <label className="block space-y-2">
-            <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">位階</span>
-            <select
-              className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
-              required
-              value={rankKey}
-              onChange={(event) => setRankKey(event.target.value)}
-            >
-              {rankOptions.map((option) => (
-                <option key={option.key} value={option.key}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block space-y-2">
-            <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">電子郵件</span>
+            <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">Email</span>
             <input
               className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
               required
@@ -126,6 +84,42 @@ export default function RegisterPage() {
           </label>
 
           <label className="block space-y-2">
+            <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">賀寶芙會員編號</span>
+            <input
+              className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
+              required
+              value={memberNumber}
+              onChange={(event) => setMemberNumber(event.target.value)}
+            />
+          </label>
+
+          <label className="block space-y-2">
+            <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">推薦人會員編號</span>
+            <input
+              className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
+              value={sponsorMemberNumber}
+              onChange={(event) => setSponsorMemberNumber(event.target.value)}
+            />
+            <span className="text-[0.8125rem] text-[#86868b]">選填；有推薦人時會自動建立上下線關係</span>
+          </label>
+
+          <label className="block space-y-2">
+            <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">目前資格</span>
+            <select
+              className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
+              required
+              value={currentLevel}
+              onChange={(event) => setCurrentLevel(event.target.value)}
+            >
+              {CLOUD_MEMBER_LEVELS.map((level) => (
+                <option key={level.value} value={level.value}>
+                  {level.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block space-y-2">
             <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">密碼</span>
             <input
               className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
@@ -133,17 +127,6 @@ export default function RegisterPage() {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-            />
-          </label>
-
-          <label className="block space-y-2">
-            <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">加入日期</span>
-            <input
-              className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
-              required
-              type="date"
-              value={joinedAt}
-              onChange={(event) => setJoinedAt(event.target.value)}
             />
           </label>
 
