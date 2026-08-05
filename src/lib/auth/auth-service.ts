@@ -129,23 +129,6 @@ export async function registerAccount(
     throw new AuthError("invalid_credentials", "密碼至少需要 6 個字元");
   }
 
-  const existingNumber = await fetchCloudMemberByMemberNumber(memberNumber);
-  if (existingNumber) {
-    throw new AuthError("duplicate_member_number", "此賀寶芙會員編號已被使用");
-  }
-
-  const existingEmail = await fetchCloudMemberByEmail(email);
-  if (existingEmail) {
-    throw new AuthError("duplicate_email", "此 Email 已被使用");
-  }
-
-  if (sponsorMemberNumber) {
-    const sponsor = await fetchCloudMemberByMemberNumber(sponsorMemberNumber);
-    if (!sponsor) {
-      throw new AuthError("sponsor_not_found", "推薦人會員編號不存在");
-    }
-  }
-
   const supabase = createSupabaseBrowserClient();
   const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
     email,
@@ -164,6 +147,31 @@ export async function registerAccount(
       "invalid_credentials",
       "註冊成功但尚未完成 Email 驗證，請至信箱確認後再登入",
     );
+  }
+
+  const existingNumber = await fetchCloudMemberByMemberNumber(memberNumber);
+  if (existingNumber) {
+    await supabase.auth.signOut();
+    throw new AuthError("duplicate_member_number", "此賀寶芙會員編號已被使用");
+  }
+
+  const existingEmail = await fetchCloudMemberByEmail(email);
+  if (existingEmail) {
+    await supabase.auth.signOut();
+    throw new AuthError("duplicate_email", "此 Email 已被使用");
+  }
+
+  if (sponsorMemberNumber) {
+    const sponsor = await fetchCloudMemberByMemberNumber(sponsorMemberNumber);
+    if (!sponsor) {
+      await supabase.auth.signOut();
+      throw new AuthError(
+        "sponsor_not_found",
+        sponsorMemberNumber === "00000"
+          ? "虛擬上線 00000 尚未建立，請聯絡管理員在 Supabase 執行初始化 SQL"
+          : "推薦人會員編號不存在",
+      );
+    }
   }
 
   let cloudMember;
