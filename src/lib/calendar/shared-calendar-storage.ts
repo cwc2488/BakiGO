@@ -1,12 +1,21 @@
 import { defaultRecurrence } from "@/lib/calendar/recurrence";
 import { inferCalendarActivityTypeFromTitle } from "@/lib/calendar/calendar-activity-types";
 import { isSharedGoogleCalendarId, getSharedCalendarEventColor } from "@/lib/calendar/shared-calendars";
+import { getTodayDateString } from "@/lib/calendar/time-grid";
 import type { CalendarEvent, CalendarEventColor } from "@/types/calendar-event";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 
 /** 時區解析或儲存結構變更時遞增，強制清除舊快取 */
-export const SHARED_CALENDAR_DATA_VERSION = 4;
+export const SHARED_CALENDAR_DATA_VERSION = 5;
+
+export interface SharedCalendarCacheMeta {
+  syncedDate: string;
+  rangeStart: string;
+  rangeEnd: string;
+  memberId: string;
+  syncedAt: string;
+}
 
 function parseEvents(raw: string | null): CalendarEvent[] {
   if (!raw) {
@@ -20,16 +29,46 @@ function parseEvents(raw: string | null): CalendarEvent[] {
   }
 }
 
+function parseCacheMeta(raw: string | null): SharedCalendarCacheMeta | null {
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as SharedCalendarCacheMeta;
+  } catch {
+    return null;
+  }
+}
+
 export function loadSharedCalendarEvents(storage: StorageAdapter): CalendarEvent[] {
   return parseEvents(storage.getItem(STORAGE_KEYS.sharedCalendarEvents));
 }
 
-export function saveSharedCalendarEvents(storage: StorageAdapter, events: CalendarEvent[]): void {
+export function loadSharedCalendarCacheMeta(storage: StorageAdapter): SharedCalendarCacheMeta | null {
+  return parseCacheMeta(storage.getItem(STORAGE_KEYS.sharedCalendarCacheMeta));
+}
+
+export function saveSharedCalendarCache(
+  storage: StorageAdapter,
+  events: CalendarEvent[],
+  meta: SharedCalendarCacheMeta,
+): void {
   storage.setItem(STORAGE_KEYS.sharedCalendarEvents, JSON.stringify(events));
+  storage.setItem(STORAGE_KEYS.sharedCalendarCacheMeta, JSON.stringify(meta));
+  markSharedCalendarStorageFresh(storage);
+}
+
+export function isSharedCalendarCacheFresh(storage: StorageAdapter, memberId: string): boolean {
+  const meta = loadSharedCalendarCacheMeta(storage);
+  if (!meta) {
+    return false;
+  }
+  return meta.memberId === memberId && meta.syncedDate === getTodayDateString();
 }
 
 export function clearSharedCalendarEvents(storage: StorageAdapter): void {
   storage.removeItem(STORAGE_KEYS.sharedCalendarEvents);
+  storage.removeItem(STORAGE_KEYS.sharedCalendarCacheMeta);
 }
 
 export function migrateSharedCalendarStorageIfNeeded(storage: StorageAdapter): boolean {
@@ -42,7 +81,6 @@ export function migrateSharedCalendarStorageIfNeeded(storage: StorageAdapter): b
   return true;
 }
 
-/** 共用行程不再快取於 localStorage，僅清除殘留 */
 export function resetSharedCalendarCache(storage: StorageAdapter): void {
   clearSharedCalendarEvents(storage);
   storage.setItem(STORAGE_KEYS.sharedCalendarDataVersion, String(SHARED_CALENDAR_DATA_VERSION));

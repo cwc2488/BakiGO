@@ -1,9 +1,13 @@
+import { addDays } from "@/lib/calendar/recurrence";
 import { SHARED_GOOGLE_CALENDARS } from "@/lib/calendar/shared-calendars";
 import {
-  resetSharedCalendarCache,
+  isSharedCalendarCacheFresh,
+  loadSharedCalendarEvents,
+  saveSharedCalendarCache,
   sharedApiEventsToCalendarEvents,
   type SharedCalendarStoredEvent,
 } from "@/lib/calendar/shared-calendar-storage";
+import { getTodayDateString } from "@/lib/calendar/time-grid";
 import type { CalendarEvent, CalendarEventColor } from "@/types/calendar-event";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 
@@ -19,12 +23,41 @@ interface SharedCalendarApiEvent {
   color: CalendarEventColor;
 }
 
+/** 每日同步一次即可涵蓋一般瀏覽範圍 */
+export const SHARED_CALENDAR_SYNC_RANGE_DAYS = 180;
+
+export function getSharedCalendarSyncRange(referenceDate = getTodayDateString()): {
+  rangeStart: string;
+  rangeEnd: string;
+} {
+  return {
+    rangeStart: addDays(referenceDate, -SHARED_CALENDAR_SYNC_RANGE_DAYS),
+    rangeEnd: addDays(referenceDate, SHARED_CALENDAR_SYNC_RANGE_DAYS),
+  };
+}
+
+export function loadCachedSharedCalendarEvents(
+  storage: StorageAdapter,
+  memberId: string,
+): CalendarEvent[] {
+  if (!isSharedCalendarCacheFresh(storage, memberId)) {
+    return [];
+  }
+  return loadSharedCalendarEvents(storage);
+}
+
 export async function syncSharedGoogleCalendars(
   storage: StorageAdapter,
   memberId: string,
   rangeStart: string,
   rangeEnd: string,
-): Promise<{ count: number; events: CalendarEvent[] }> {
+  options?: { force?: boolean },
+): Promise<{ count: number; events: CalendarEvent[]; fromCache: boolean }> {
+  if (!options?.force && isSharedCalendarCacheFresh(storage, memberId)) {
+    const cached = loadSharedCalendarEvents(storage);
+    return { count: cached.length, events: cached, fromCache: true };
+  }
+
   const response = await fetch(
     `/api/calendar/shared/events?start=${encodeURIComponent(rangeStart)}&end=${encodeURIComponent(rangeEnd)}&v=4`,
     { cache: "no-store" },
@@ -57,9 +90,15 @@ export async function syncSharedGoogleCalendars(
   );
 
   const events = sharedApiEventsToCalendarEvents(memberId, apiEvents);
-  resetSharedCalendarCache(storage);
+  saveSharedCalendarCache(storage, events, {
+    syncedDate: getTodayDateString(),
+    rangeStart,
+    rangeEnd,
+    memberId,
+    syncedAt: new Date().toISOString(),
+  });
 
-  return { count: events.length, events };
+  return { count: events.length, events, fromCache: false };
 }
 
 export function getSharedCalendarIds(): Set<string> {

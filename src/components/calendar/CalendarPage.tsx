@@ -42,12 +42,14 @@ import {
   loadShowSharedCalendar,
   saveShowSharedCalendar,
 } from "@/lib/calendar/shared-calendar-preferences";
+import { getSharedCalendarIds, getSharedCalendarSyncRange, syncSharedGoogleCalendars } from "@/lib/calendar/sync-shared-calendars";
 import {
   isPersonalCalendarEvent,
+  isSharedCalendarCacheFresh,
+  loadSharedCalendarEvents,
   migrateSharedCalendarStorageIfNeeded,
   purgeSharedEventsFromPersonalStorage,
 } from "@/lib/calendar/shared-calendar-storage";
-import { getSharedCalendarIds, syncSharedGoogleCalendars } from "@/lib/calendar/sync-shared-calendars";
 import {
   formatChineseMonthDay,
   formatChineseWeekday,
@@ -102,7 +104,10 @@ export default function CalendarPage() {
   const [monthAnchor, setMonthAnchor] = useState(getMonthStart(getTodayDateString()));
   const [slotInterval, setSlotInterval] = useState<CalendarSlotInterval>(60);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [sharedEvents, setSharedEvents] = useState<CalendarEvent[]>([]);
+  const [sharedEvents, setSharedEvents] = useState<CalendarEvent[]>(() => {
+    migrateSharedCalendarStorageIfNeeded(storage);
+    return loadSharedCalendarEvents(storage);
+  });
   const [attendedSharedEvents, setAttendedSharedEvents] = useState<SharedCalendarAttendance[]>([]);
   const [showSharedCalendar, setShowSharedCalendar] = useState(() =>
     loadShowSharedCalendar(storage),
@@ -113,7 +118,9 @@ export default function CalendarPage() {
   const [formValues, setFormValues] = useState(() => buildDefaultFormValues(getTodayDateString()));
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(readCalendarOAuthStatusMessage);
-  const [sharedSyncState, setSharedSyncState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [sharedSyncState, setSharedSyncState] = useState<"idle" | "loading" | "done" | "error">(() =>
+    isSharedCalendarCacheFresh(storage, memberId) ? "done" : "idle",
+  );
   const [viewingExpandedEvent, setViewingExpandedEvent] = useState<ExpandedCalendarEvent | null>(null);
 
   const reloadAttendance = useCallback(() => {
@@ -137,27 +144,41 @@ export default function CalendarPage() {
 
   useEffect(() => {
     let cancelled = false;
-    const rangeStart = addDays(selectedDate, -62);
-    const rangeEnd = addDays(selectedDate, 62);
+
+    if (isSharedCalendarCacheFresh(storage, memberId)) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const { rangeStart, rangeEnd } = getSharedCalendarSyncRange();
+
+    queueMicrotask(() => {
+      if (loadSharedCalendarEvents(storage).length === 0) {
+        setSharedSyncState("loading");
+      }
+    });
 
     void (async () => {
-      setSharedSyncState("loading");
       try {
         const result = await syncSharedGoogleCalendars(storage, memberId, rangeStart, rangeEnd);
         if (!cancelled) {
           setSharedEvents(result.events);
           reloadEvents();
           setSharedSyncState("done");
-          if (result.count > 0) {
+          if (!result.fromCache && result.count > 0) {
             setStatusMessage(`已載入共用行事曆 ${result.count} 筆行程`);
           }
         }
       } catch (caught) {
         if (!cancelled) {
-          setSharedSyncState("error");
-          setStatusMessage(
-            caught instanceof Error ? caught.message : "共用行事曆載入失敗，請稍後再試",
-          );
+          const hasCachedEvents = loadSharedCalendarEvents(storage).length > 0;
+          setSharedSyncState(hasCachedEvents ? "done" : "error");
+          if (!hasCachedEvents) {
+            setStatusMessage(
+              caught instanceof Error ? caught.message : "共用行事曆載入失敗，請稍後再試",
+            );
+          }
         }
       }
     })();
@@ -165,7 +186,7 @@ export default function CalendarPage() {
     return () => {
       cancelled = true;
     };
-  }, [memberId, reloadEvents, selectedDate, storage]);
+  }, [memberId, reloadEvents, storage]);
 
   const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
   const weekRangeStart = weekDates[0];

@@ -9,7 +9,7 @@ import {
   saveGoogleCalendarConnection,
 } from "@/lib/calendar/google-calendar";
 import { DEFAULT_SHARED_GOOGLE_CALENDAR, SHARED_GOOGLE_CALENDARS } from "@/lib/calendar/shared-calendars";
-import { syncSharedGoogleCalendars } from "@/lib/calendar/sync-shared-calendars";
+import { getSharedCalendarSyncRange, syncSharedGoogleCalendars } from "@/lib/calendar/sync-shared-calendars";
 import { addDays } from "@/lib/calendar/recurrence";
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
@@ -73,10 +73,9 @@ export function GoogleCalendarPanel({
     queueMicrotask(refreshConnection);
   }, [refreshConnection]);
 
-  const syncSharedCalendars = useCallback(async () => {
-    const rangeStart = addDays(selectedDate, -31);
-    const rangeEnd = addDays(selectedDate, 31);
-    const result = await syncSharedGoogleCalendars(storage, memberId, rangeStart, rangeEnd);
+  const syncSharedCalendars = useCallback(async (force = false) => {
+    const { rangeStart, rangeEnd } = getSharedCalendarSyncRange(selectedDate);
+    const result = await syncSharedGoogleCalendars(storage, memberId, rangeStart, rangeEnd, { force });
     setSharedSyncedAt(new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }));
     onSharedEventsSynced?.(result.events);
     onSynced();
@@ -115,7 +114,7 @@ export function GoogleCalendarPanel({
     setLoading(true);
     setMessage(null);
     try {
-      const sharedResult = await syncSharedCalendars();
+      const sharedResult = await syncSharedCalendars(true);
       let googleCount = 0;
 
       if (

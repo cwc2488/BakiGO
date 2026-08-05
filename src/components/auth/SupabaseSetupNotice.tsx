@@ -1,6 +1,6 @@
 "use client";
 
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export function SupabaseSetupNotice() {
   if (isSupabaseConfigured()) {

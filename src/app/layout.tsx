@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { AppShell } from "@/components/navigation/AppShell";
 import { AuthProvider } from "@/lib/auth/auth-context";
+import { getSupabaseEnvScript } from "@/lib/supabase/env";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="zh-Hant" className={`${geistSans.variable} h-full antialiased`}>
       <head>
         <link href="/icon.svg" rel="apple-touch-icon" />
+        <script dangerouslySetInnerHTML={{ __html: getSupabaseEnvScript() }} />
       </head>
       <body className="min-h-full font-sans">
         <AuthProvider>

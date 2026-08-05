@@ -14,6 +14,7 @@ export const STORAGE_KEYS = {
   calendarEvents: "baki-go:calendar-events",
   calendarSharedAttendance: "baki-go:calendar-shared-attendance",
   sharedCalendarEvents: "baki-go:shared-calendar-events",
+  sharedCalendarCacheMeta: "baki-go:shared-calendar-cache-meta",
   sharedCalendarDataVersion: "baki-go:shared-calendar-data-version",
   showSharedCalendar: "baki-go:show-shared-calendar",
   googleCalendarAuth: "baki-go:google-calendar-auth",
