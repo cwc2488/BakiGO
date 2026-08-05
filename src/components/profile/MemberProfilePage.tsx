@@ -31,6 +31,7 @@ import {
   ProgressBar,
   StatRow,
 } from "./ui";
+import { ProfileAccountSection } from "./ProfileAccountSection";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -541,7 +542,13 @@ function TimelineSection({ metrics }: { metrics: MemberComputedMetrics }) {
   );
 }
 
-function ProfileView({ metrics }: { metrics: MemberComputedMetrics }) {
+function ProfileView({
+  metrics,
+  onSponsorUpdated,
+}: {
+  metrics: MemberComputedMetrics;
+  onSponsorUpdated: () => void;
+}) {
   const identity = getMemberProfileIdentity();
 
   return (
@@ -559,6 +566,7 @@ function ProfileView({ metrics }: { metrics: MemberComputedMetrics }) {
         </header>
 
         <BasicInfoSection metrics={metrics} />
+        <ProfileAccountSection onSponsorUpdated={onSponsorUpdated} />
         <GrowthSection metrics={metrics} />
         <BusinessSection metrics={metrics} />
         <OrganizationSection metrics={metrics} />
@@ -599,5 +607,5 @@ export default function MemberProfilePage() {
     return <ProfileError onRetry={loadMetrics} />;
   }
 
-  return <ProfileView metrics={metrics} />;
+  return <ProfileView metrics={metrics} onSponsorUpdated={loadMetrics} />;
 }

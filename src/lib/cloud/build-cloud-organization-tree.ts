@@ -42,6 +42,27 @@ function getDirectChildMemberNumbers(
   return Array.from(new Set([...fromRelationships, ...fromSponsorField]));
 }
 
+export function collectDownlineMemberNumbers(
+  rootMemberNumber: string,
+  members: CloudMember[],
+  relationships: CloudOrganizationRelationship[],
+): Set<string> {
+  const downline = new Set<string>();
+
+  function walk(parentMemberNumber: string) {
+    for (const childNumber of getDirectChildMemberNumbers(parentMemberNumber, members, relationships)) {
+      if (downline.has(childNumber)) {
+        continue;
+      }
+      downline.add(childNumber);
+      walk(childNumber);
+    }
+  }
+
+  walk(rootMemberNumber);
+  return downline;
+}
+
 export function buildCloudOrganizationTreeNode(
   memberNumber: string,
   membersByNumber: Map<string, CloudMember>,

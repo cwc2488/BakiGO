@@ -1,5 +1,6 @@
 import { cloudMembersToLocalMembers } from "@/lib/cloud/cloud-member-mapper";
 import { fetchCloudOrganizationData } from "@/lib/cloud/cloud-member-service";
+import { ensureVirtualUplineInMembers } from "@/lib/members/virtual-upline";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { CloudMember } from "@/types/cloud";
@@ -15,7 +16,9 @@ export function replaceLocalMembersFromCloud(
   storage: StorageAdapter,
   cloudMembers: CloudMember[],
 ): Member[] {
-  const localMembers = cloudMembersToLocalMembers(cloudMembers);
+  let localMembers = cloudMembersToLocalMembers(cloudMembers);
+  const withVirtual = ensureVirtualUplineInMembers(localMembers);
+  localMembers = withVirtual.members;
   storage.setItem(STORAGE_KEYS.cloudMembersMode, CLOUD_MEMBERS_MODE);
   storage.setItem(STORAGE_KEYS.members, JSON.stringify(localMembers));
   return localMembers;

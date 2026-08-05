@@ -1,4 +1,5 @@
 import { isValidCloudMemberLevel, resolveCloudMemberRole } from "@/lib/cloud/member-levels";
+import { isReservedCloudMemberNumber } from "@/lib/cloud/reserved-member-numbers";
 import {
   fetchCloudMemberByEmail,
   fetchCloudMemberByMemberNumber,
@@ -110,6 +111,10 @@ export async function registerAccount(
 
   if (!isValidMemberNumber(memberNumber)) {
     throw new AuthError("invalid_credentials", "請輸入賀寶芙會員編號");
+  }
+
+  if (isReservedCloudMemberNumber(memberNumber)) {
+    throw new AuthError("invalid_credentials", "此會員編號為系統保留，無法註冊");
   }
 
   if (!isValidEmail(email)) {

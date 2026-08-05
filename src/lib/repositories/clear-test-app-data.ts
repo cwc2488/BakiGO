@@ -7,7 +7,7 @@ import type { StorageAdapter } from "./storage-adapter";
 import { STORAGE_KEYS } from "./storage-keys";
 
 /** 遞增此版本號可在所有使用者下次開啟 App 時清除測試資料 */
-export const APP_DATA_RESET_VERSION = 1;
+export const APP_DATA_RESET_VERSION = 2;
 
 function parseMembers(raw: string | null): Member[] {
   if (!raw) {
@@ -83,6 +83,14 @@ export function clearTestAppData(storage: StorageAdapter): void {
   resetSharedCalendarCache(storage);
 }
 
+/** 清除本機登入與會員快取（雲端重置後使用） */
+export function clearLocalAuthAndMemberCache(storage: StorageAdapter): void {
+  storage.removeItem(STORAGE_KEYS.authSession);
+  storage.removeItem(STORAGE_KEYS.authAccounts);
+  storage.removeItem(STORAGE_KEYS.cloudMembersMode);
+  storage.removeItem(STORAGE_KEYS.members);
+}
+
 export function runAppDataResetIfNeeded(storage: StorageAdapter): boolean {
   const current = storage.getItem(STORAGE_KEYS.appDataResetVersion);
   if (current === String(APP_DATA_RESET_VERSION)) {
@@ -90,6 +98,9 @@ export function runAppDataResetIfNeeded(storage: StorageAdapter): boolean {
   }
 
   clearTestAppData(storage);
+  if (Number(current ?? 0) < 2) {
+    clearLocalAuthAndMemberCache(storage);
+  }
   storage.setItem(STORAGE_KEYS.appDataResetVersion, String(APP_DATA_RESET_VERSION));
   return true;
 }

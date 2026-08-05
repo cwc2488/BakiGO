@@ -1,5 +1,4 @@
 import { APP_IDS } from "@/lib/config/app-config";
-import { RANK_KEYS } from "@/lib/business-engine/rules/keys";
 import { ensureVirtualUplineInMembers, createVirtualUplineMember } from "@/lib/members/virtual-upline";
 import { normalizeHerbalifeMemberId } from "@/types/auth";
 import type {
@@ -41,26 +40,7 @@ function createId(): string {
 }
 
 function seedDefaultMembers(): Member[] {
-  const now = new Date().toISOString();
-  const virtualUpline = createVirtualUplineMember(now);
-  const president: Member = {
-    id: APP_IDS.currentMemberId,
-    createdAt: now,
-    updatedAt: now,
-    organizationId: APP_IDS.organizationId,
-    herbalifeMemberId: "ROOT00001",
-    displayName: "巴其哥",
-    nickname: "巴其哥",
-    email: "root@baki-go.local",
-    joinedAt: "2026-01-15",
-    sponsorMemberId: virtualUpline.id,
-    status: "active",
-    tags: [],
-    rankKey: RANK_KEYS.PRESIDENT,
-    roleKey: "president",
-  };
-
-  return [virtualUpline, president];
+  return [createVirtualUplineMember()];
 }
 
 function normalizeStoredMembers(members: Member[]): { members: Member[]; changed: boolean } {

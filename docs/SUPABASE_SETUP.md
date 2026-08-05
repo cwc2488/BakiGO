@@ -19,6 +19,24 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 ```
 
+## 重置所有帳號並建立虛擬上線 00000
+
+在 **SQL Editor** 執行 `supabase/migrations/002_reset_and_seed_virtual_member.sql`。
+
+此腳本會：
+1. 清空 `organization_relationships`
+2. 清空 `members`（含巴其等所有會員）
+3. 清空 `auth.users`（所有登入帳號）
+4. 新增編號 **00000** 的「虛擬上線」
+
+執行後所有裝置需重新註冊；推薦人可填 `00000`。
+
+## 修改上線（需額外 migration）
+
+若要用「修改上線」功能，請在 SQL Editor 執行：
+
+`supabase/migrations/003_sponsor_update_policies.sql`
+
 ## 4. 驗收流程
 
 1. `/register` 建立會員 A（無推薦人）

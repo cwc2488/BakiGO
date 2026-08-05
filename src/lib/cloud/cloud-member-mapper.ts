@@ -1,4 +1,5 @@
 import { APP_IDS } from "@/lib/config/app-config";
+import { isReservedCloudMemberNumber } from "@/lib/cloud/reserved-member-numbers";
 import { resolveCloudMemberRole } from "@/lib/cloud/member-levels";
 import type { CloudMember, CloudOrganizationRelationship } from "@/types/cloud";
 import type { Member } from "@/types/member";
@@ -51,20 +52,29 @@ export function cloudMemberToLocalMember(
     ? membersByNumber.get(cloudMember.sponsorMemberNumber)
     : undefined;
 
+  const isVirtual = isReservedCloudMemberNumber(cloudMember.memberNumber);
+  const sponsorMemberId = cloudMember.sponsorMemberNumber
+    ? isReservedCloudMemberNumber(cloudMember.sponsorMemberNumber)
+      ? APP_IDS.virtualUplineMemberId
+      : sponsor?.id
+    : undefined;
+
   return {
-    id: cloudMember.id,
+    id: isVirtual ? APP_IDS.virtualUplineMemberId : cloudMember.id,
     createdAt: cloudMember.createdAt,
     updatedAt: cloudMember.createdAt,
     organizationId: APP_IDS.organizationId,
     herbalifeMemberId: cloudMember.memberNumber,
-    displayName: cloudMember.name,
+    displayName: isVirtual ? "虛擬上線" : cloudMember.name,
+    nickname: isVirtual ? "虛擬上線" : cloudMember.name,
     email: cloudMember.email,
     joinedAt: cloudMember.createdAt,
-    sponsorMemberId: sponsor?.id,
+    sponsorMemberId,
     status: "active",
-    tags: [],
+    tags: isVirtual ? ["virtual"] : [],
     rankKey: cloudMember.currentLevel,
     roleKey: cloudMember.role || resolveCloudMemberRole(cloudMember.currentLevel),
+    metadata: isVirtual ? { virtualUpline: true } : undefined,
   };
 }
 
