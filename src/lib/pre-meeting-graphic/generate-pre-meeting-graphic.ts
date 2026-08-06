@@ -383,3 +383,33 @@ export function downloadBlob(blob: Blob, filename: string) {
   anchor.click();
   URL.revokeObjectURL(url);
 }
+
+export function canSaveBlobToPhotoLibrary(): boolean {
+  if (typeof navigator === "undefined" || !navigator.canShare) {
+    return false;
+  }
+
+  try {
+    const probe = new File([new Blob(["x"], { type: "image/png" })], "probe.png", {
+      type: "image/png",
+    });
+    return navigator.canShare({ files: [probe] });
+  } catch {
+    return false;
+  }
+}
+
+export async function saveGraphicBlob(
+  blob: Blob,
+  filename: string,
+): Promise<"photo-library" | "download"> {
+  const file = new File([blob], filename, { type: blob.type || "image/png" });
+
+  if (navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ files: [file], title: filename.replace(/\.png$/i, "") });
+    return "photo-library";
+  }
+
+  downloadBlob(blob, filename);
+  return "download";
+}

@@ -1,9 +1,10 @@
 "use client";
 
 import {
-  downloadBlob,
+  canSaveBlobToPhotoLibrary,
   generatePreMeetingGraphicBlob,
   loadImageFromFile,
+  saveGraphicBlob,
 } from "@/lib/pre-meeting-graphic/generate-pre-meeting-graphic";
 import {
   EMPTY_PRE_MEETING_GRAPHIC_INPUT,
@@ -63,6 +64,7 @@ export default function PreMeetingGraphicPage() {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const canGenerate = Boolean(photoFile && form.customerName.trim());
+  const canSaveToPhotoLibrary = useMemo(() => canSaveBlobToPhotoLibrary(), []);
 
   const layoutOptions = useMemo(
     () =>
@@ -112,7 +114,7 @@ export default function PreMeetingGraphicPage() {
     }
   }
 
-  async function handleDownload() {
+  async function handleSave() {
     if (!photoFile) {
       return;
     }
@@ -122,10 +124,19 @@ export default function PreMeetingGraphicPage() {
       const photo = await loadImageFromFile(photoFile);
       const blob = await generatePreMeetingGraphicBlob({ photo, form, layout });
       const safeName = form.customerName.trim() || "會前會";
-      downloadBlob(blob, `${safeName}-會前會圖.png`);
-      setStatusMessage("圖片已下載");
+      const filename = `${safeName}-會前會圖.png`;
+      const method = await saveGraphicBlob(blob, filename);
+      setStatusMessage(
+        method === "photo-library"
+          ? "請在分享選單選「儲存影像」，即可加入照片庫"
+          : "圖片已下載",
+      );
     } catch (caught) {
-      setStatusMessage(caught instanceof Error ? caught.message : "下載失敗");
+      if (caught instanceof DOMException && caught.name === "AbortError") {
+        setStatusMessage(null);
+        return;
+      }
+      setStatusMessage(caught instanceof Error ? caught.message : "儲存失敗");
     } finally {
       setIsGenerating(false);
     }
@@ -222,10 +233,10 @@ export default function PreMeetingGraphicPage() {
           <button
             className="flex-1 rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5 text-[0.9375rem] font-semibold text-[#1d1d1f] disabled:opacity-50"
             disabled={!canGenerate || isGenerating}
-            onClick={() => void handleDownload()}
+            onClick={() => void handleSave()}
             type="button"
           >
-            下載圖片
+            {canSaveToPhotoLibrary ? "儲存到照片庫" : "下載圖片"}
           </button>
         </div>
 
