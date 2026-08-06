@@ -7,6 +7,7 @@ import type { EntityId } from "@/types";
 import type { LeaderboardPeriod, PointsLeaderboardEntry } from "@/types/points";
 import Link from "next/link";
 import { LeaderboardRankBadge } from "./LeaderboardRankBadge";
+import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 
 const PERIOD_LABELS: Record<LeaderboardPeriod, string> = {
   weekly: "本週前五",
@@ -119,14 +120,19 @@ function LeaderboardRankRow({
     >
       <LeaderboardRankBadge rank={entry.rank} />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[0.9375rem] font-semibold text-[#1d1d1f]">
-          {entry.displayName}
-          {highlight ? (
-            <span className="ml-1.5 text-[0.75rem] font-medium text-[var(--brand-primary-dark)]">
-              你
-            </span>
-          ) : null}
-        </p>
+        <MemberNameWithAvatar
+          avatarUrl={entry.avatarUrl}
+          name={entry.displayName}
+          nameClassName="truncate text-[0.9375rem] font-semibold text-[#1d1d1f]"
+          suffix={
+            highlight ? (
+              <span className="ml-1.5 text-[0.75rem] font-medium text-[var(--brand-primary-dark)]">
+                你
+              </span>
+            ) : null
+          }
+          size="sm"
+        />
         <p className="text-[0.75rem] text-[#86868b]">
           歷史 {formatPointsValue(entry.lifetimePoints)} 分
           {entry.streakMultiplier > 1 ? ` · 連擊 ×${entry.streakMultiplier.toFixed(2)}` : ""}

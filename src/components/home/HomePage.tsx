@@ -4,6 +4,7 @@ import { buildGoalCenter } from "@/lib/goal-center/build-goal-center";
 import {
   formatDisplayDate,
   formatTimeGreeting,
+  getMemberAvatarUrl,
   getMemberDisplayName,
   loadMissionControlMetrics,
 } from "@/lib/mission-control/format";
@@ -15,6 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { APP_EMOJI, WORK_HUB_EMOJIS } from "@/lib/ui/app-emojis";
 import { EmptyState, HomeErrorState, HomeLoadingSkeleton } from "./states";
 import { Card, ProgressBar, SectionLabel } from "./ui";
+import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -29,21 +31,26 @@ function hasAnyActivity(metrics: MemberComputedMetrics): boolean {
 function GreetingSection({ metrics }: { metrics: MemberComputedMetrics }) {
   const referenceDate = metrics.missions.referenceDate;
   const displayName = getMemberDisplayName();
+  const avatarUrl = getMemberAvatarUrl();
 
   return (
     <header className="home-section space-y-2 sm:space-y-3">
       <p className="text-[2rem] font-semibold leading-tight tracking-tight text-[#1d1d1f] sm:text-[2.125rem]">
         {formatDisplayDate(referenceDate)}
       </p>
-      <h1 className="text-[1.625rem] font-semibold leading-snug tracking-tight text-[#1d1d1f] sm:text-[1.875rem]">
-        {formatTimeGreeting()}，
-        <Link
-          className="underline decoration-[#d1d1d6] underline-offset-4 transition-colors duration-200 hover:text-[var(--brand-primary-dark)] hover:decoration-[var(--brand-primary-dark)]/30"
-          href="/profile"
-        >
-          {displayName}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <h1 className="text-[1.625rem] font-semibold leading-snug tracking-tight text-[#1d1d1f] sm:text-[1.875rem]">
+          {formatTimeGreeting()}，
+        </h1>
+        <Link href="/profile">
+          <MemberNameWithAvatar
+            avatarUrl={avatarUrl}
+            name={displayName}
+            nameClassName="text-[1.625rem] font-semibold leading-snug tracking-tight text-[#1d1d1f] underline decoration-[#d1d1d6] underline-offset-4 transition-colors duration-200 hover:text-[var(--brand-primary-dark)] hover:decoration-[var(--brand-primary-dark)]/30 sm:text-[1.875rem]"
+            size="md"
+          />
         </Link>
-      </h1>
+      </div>
     </header>
   );
 }

@@ -26,6 +26,7 @@ export interface PointsLeaderboardEntry {
   memberId: EntityId;
   displayName: string;
   nickname?: string;
+  avatarUrl?: string | null;
   /** Points counted for this leaderboard period. */
   periodPoints: number;
   monthlyPoints: number;

@@ -8,6 +8,7 @@ import {
 import {
   getCoachName,
   getMemberDisplayName,
+  getMemberAvatarUrl,
   getMemberProfileFields,
   getReferrerName,
   loadAllMembers,
@@ -32,6 +33,7 @@ import { InBodySection, parseInBodyNumber } from "./workspace/InBodySection";
 import { MemberDashboard } from "./workspace/MemberDashboard";
 import { MemberTimelineSection } from "./workspace/MemberTimelineSection";
 import { ProgressPhotoSection } from "./workspace/ProgressPhotoSection";
+import { MemberNameWithAvatar } from "./MemberNameWithAvatar";
 
 type LoadState = "loading" | "ready" | "error" | "not-found";
 
@@ -135,11 +137,14 @@ export default function MemberDetailPage({ memberId }: { memberId: string }) {
             ← 返回會員列表
           </Link>
           <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-[2rem] font-semibold tracking-tight text-[#1d1d1f]">
-                {getMemberDisplayName(member)}
-              </h1>
-              <p className="mt-1 text-[1rem] text-[#86868b]">
+            <div className="min-w-0">
+              <MemberNameWithAvatar
+                avatarUrl={getMemberAvatarUrl(member)}
+                name={getMemberDisplayName(member)}
+                nameClassName="text-[2rem] font-semibold tracking-tight text-[#1d1d1f]"
+                size="lg"
+              />
+              <p className="mt-2 pl-[5.5rem] text-[1rem] text-[#86868b]">
                 {profile.rankLabel} · {profile.statusLabel}
               </p>
             </div>

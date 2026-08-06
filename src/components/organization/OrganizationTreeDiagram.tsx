@@ -1,6 +1,6 @@
 "use client";
 
-import { MemberAvatar } from "@/components/members/MemberAvatar";
+import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import type { OrganizationMemberView, OrganizationTreeNode } from "@/types/organization-center";
 import { useMemo, useState } from "react";
 
@@ -44,11 +44,14 @@ function NodeCard({
           title={member.metMonthlyVp2500 ? "本月 VP 達標" : "本月 VP 未達標"}
         />
         <div className="flex justify-center">
-          <MemberAvatar avatarUrl={member.avatarUrl} name={member.name} size="sm" />
+          <MemberNameWithAvatar
+            avatarUrl={member.avatarUrl}
+            name={member.name}
+            nameClassName="truncate text-[0.8125rem] font-semibold leading-snug text-[#1d1d1f]"
+            size="sm"
+            stack
+          />
         </div>
-        <p className="mt-2 pr-3 text-[0.8125rem] font-semibold leading-snug text-[#1d1d1f]">
-          {member.name}
-        </p>
         <p className="mt-0.5 truncate text-[0.625rem] text-[#86868b]">{member.qualificationLabel}</p>
         <p className="mt-1 text-[0.6875rem] font-medium text-[#636366]">{member.monthlyVp} VP</p>
         {hasChildren ? (

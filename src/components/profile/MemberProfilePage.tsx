@@ -12,13 +12,13 @@ import { useCallback, useEffect, useState } from "react";
 import {
   MetricTile,
   ProfileCard,
-  ProfileHeroTitle,
   ProfileSectionTitle,
   ProgressBar,
   StatRow,
 } from "./ui";
 import { ProfileAccountSection } from "./ProfileAccountSection";
 import { ProfileAvatarSection } from "./ProfileAvatarSection";
+import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -68,7 +68,17 @@ function BasicInfoSection({ metrics }: { metrics: MemberComputedMetrics }) {
     <ProfileCard>
       <ProfileSectionTitle emoji={APP_EMOJI.page.profile}>會員資料</ProfileSectionTitle>
       <dl className="mt-4">
-        <StatRow label="姓名" value={identity.displayName} />
+        <StatRow
+          label="姓名"
+          value={
+            <MemberNameWithAvatar
+              avatarUrl={identity.avatarUrl}
+              name={identity.displayName}
+              nameClassName="text-[1rem] font-medium text-[#1d1d1f]"
+              size="sm"
+            />
+          }
+        />
         <StatRow label="會員編號" value={identity.herbalifeMemberId} />
         <StatRow label="推薦人會員編號" value={identity.sponsorHerbalifeMemberId} />
         <StatRow label="目前資格" value={promotion.currentRankName || identity.qualificationLabel} />
@@ -158,7 +168,12 @@ function ProfileView({
           >
             ← 返回首頁
           </Link>
-          <ProfileHeroTitle>{APP_EMOJI.page.profile} {identity.displayName}</ProfileHeroTitle>
+          <MemberNameWithAvatar
+            avatarUrl={identity.avatarUrl}
+            name={`${APP_EMOJI.page.profile} ${identity.displayName}`}
+            nameClassName="text-[2rem] font-semibold leading-tight tracking-tight text-[#1d1d1f] sm:text-[2.25rem]"
+            size="lg"
+          />
         </header>
 
         <ProfileAvatarSection onAvatarUpdated={onSponsorUpdated} />

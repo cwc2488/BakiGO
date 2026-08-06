@@ -1,6 +1,9 @@
 "use client";
 
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
+import { getMemberAvatarUrl } from "@/lib/members/member-service";
+import { createMemberRepository } from "@/lib/repositories/member-repository";
 import { redeemDownlinePoints } from "@/lib/points/redeem-downline-points";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { formatPointsValue } from "@/lib/points/streak-multiplier";
@@ -9,6 +12,7 @@ import { useMemo, useState } from "react";
 export function PointRedemptionModal({
   downlineMemberId,
   downlineName,
+  downlineAvatarUrl,
   availablePoints,
   open,
   onClose,
@@ -16,6 +20,7 @@ export function PointRedemptionModal({
 }: {
   downlineMemberId: string;
   downlineName: string;
+  downlineAvatarUrl?: string | null;
   availablePoints: number;
   open: boolean;
   onClose: () => void;
@@ -67,8 +72,19 @@ export function PointRedemptionModal({
         aria-modal="true"
       >
         <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">積分兌換</h2>
-        <p className="mt-1 text-[0.875rem] text-[#86868b]">
-          扣除 {downlineName} 的積分 · 可兌換 {formatPointsValue(availablePoints)} 分
+        <div className="mt-3">
+          <MemberNameWithAvatar
+            avatarUrl={
+              downlineAvatarUrl ??
+              getMemberAvatarUrl(createMemberRepository(storage).getById(downlineMemberId))
+            }
+            name={downlineName}
+            nameClassName="text-[0.9375rem] font-semibold text-[#1d1d1f]"
+            size="sm"
+          />
+        </div>
+        <p className="mt-2 text-[0.875rem] text-[#86868b]">
+          扣除積分 · 可兌換 {formatPointsValue(availablePoints)} 分
         </p>
 
         <div className="mt-5 space-y-4">

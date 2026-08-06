@@ -1,6 +1,6 @@
 import { todayISODate } from "@/lib/config/app-config";
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
-import { getMemberDisplayName as resolveMemberName } from "@/lib/members/member-service";
+import { getMemberAvatarUrl as resolveMemberAvatarUrl, getMemberDisplayName as resolveMemberName } from "@/lib/members/member-service";
 import { createMemberRepository } from "@/lib/repositories/member-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
@@ -49,6 +49,16 @@ export function getMemberDisplayName(
     memberId ?? resolveAuthenticatedMemberId(storage),
   );
   return resolveMemberName(member);
+}
+
+export function getMemberAvatarUrl(
+  memberId?: EntityId,
+  storage: StorageAdapter = createLocalStorageAdapter(),
+): string | null {
+  const member = createMemberRepository(storage).getById(
+    memberId ?? resolveAuthenticatedMemberId(storage),
+  );
+  return resolveMemberAvatarUrl(member);
 }
 
 export function formatJoinedDate(joinedAt: string): string {

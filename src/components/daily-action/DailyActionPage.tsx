@@ -15,6 +15,7 @@ import { logTodayActivity, logTodayRecruit } from "@/lib/daily-action/log-today-
 import {
   formatDisplayDate,
   formatTimeGreeting,
+  getMemberAvatarUrl,
   getMemberDisplayName,
   loadMissionControlMetrics,
 } from "@/lib/mission-control/format";
@@ -33,6 +34,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal";
 import { QuickRecruitModal } from "@/components/daily-action/QuickRecruitModal";
 import { SuperLeagueAddModal } from "@/components/daily-action/SuperLeagueAddModal";
+import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import {
   addSuperLeagueEntry,
   removeSuperLeagueEntry,
@@ -272,6 +274,7 @@ function DailyActionView({
     return buildCalendarDayPlan([...personal, ...attended], snapshot.referenceDate);
   }, [memberId, refreshKey, snapshot.referenceDate, storage]);
   const displayName = getMemberDisplayName();
+  const avatarUrl = getMemberAvatarUrl();
   const [recruitModalOpen, setRecruitModalOpen] = useState(false);
   const [superLeagueModalOpen, setSuperLeagueModalOpen] = useState(false);
   const [editingSuperLeagueEntryId, setEditingSuperLeagueEntryId] = useState<string | null>(null);
@@ -372,9 +375,15 @@ function DailyActionView({
           <p className="text-[1.75rem] font-semibold tracking-tight text-[#1d1d1f]">
             {formatDisplayDate(snapshot.referenceDate)}
           </p>
-          <h1 className="text-[1.375rem] font-semibold text-[#1d1d1f]">
-            {formatTimeGreeting()}，{displayName}
-          </h1>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h1 className="text-[1.375rem] font-semibold text-[#1d1d1f]">{formatTimeGreeting()}，</h1>
+            <MemberNameWithAvatar
+              avatarUrl={avatarUrl}
+              name={displayName}
+              nameClassName="text-[1.375rem] font-semibold text-[#1d1d1f]"
+              size="md"
+            />
+          </div>
         </header>
 
         <TodayCalendarPlanCard plan={todayPlan} />

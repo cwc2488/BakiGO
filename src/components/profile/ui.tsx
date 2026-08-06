@@ -42,7 +42,7 @@ export function StatRow({
   value,
 }: {
   label: string;
-  value: string | number | null;
+  value: React.ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-[#f2f2f7] py-4 last:border-b-0">

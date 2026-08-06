@@ -3,9 +3,11 @@
 import {
   formatDisplayDate,
   formatTimeGreeting,
+  getMemberAvatarUrl,
   getMemberDisplayName,
   loadMissionControlMetrics,
 } from "@/lib/mission-control/format";
+import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import { buildGoalCenter } from "@/lib/goal-center/build-goal-center";
 import { GOAL_KPI_DEFINITIONS } from "@/types/goal-center";
 import Link from "next/link";
@@ -70,9 +72,17 @@ export default function GoalCenterPage() {
           <p className="text-[2rem] font-semibold leading-tight tracking-tight text-[#1d1d1f]">
             {formatDisplayDate(goalCenter.referenceDate)}
           </p>
-          <h1 className="text-[1.75rem] font-semibold leading-snug tracking-tight text-[#1d1d1f]">
-            目標中心 · {formatTimeGreeting()}，{getMemberDisplayName()}
-          </h1>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h1 className="text-[1.75rem] font-semibold leading-snug tracking-tight text-[#1d1d1f]">
+              目標中心 · {formatTimeGreeting()}，
+            </h1>
+            <MemberNameWithAvatar
+              avatarUrl={getMemberAvatarUrl()}
+              name={getMemberDisplayName()}
+              nameClassName="text-[1.75rem] font-semibold leading-snug tracking-tight text-[#1d1d1f]"
+              size="md"
+            />
+          </div>
           <p className="text-[1rem] leading-relaxed text-[#636366]">
             距離目標還差多少 — 所有 KPI 皆來自業務規則。
           </p>

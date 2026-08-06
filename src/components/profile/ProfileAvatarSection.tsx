@@ -5,7 +5,7 @@ import { getMemberProfileIdentity } from "@/lib/config/app-config";
 import { uploadMemberAvatarBlob } from "@/lib/members/member-avatar";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
-import { MemberAvatar } from "@/components/members/MemberAvatar";
+import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import { AvatarCropModal } from "@/components/profile/AvatarCropModal";
 import { useRef, useState } from "react";
 import { ProfileCard, ProfileSectionTitle } from "./ui";
@@ -80,9 +80,13 @@ export function ProfileAvatarSection({ onAvatarUpdated }: { onAvatarUpdated?: ()
       <ProfileCard>
         <ProfileSectionTitle emoji="🙂">個人頭像</ProfileSectionTitle>
         <div className="mt-4 flex items-center gap-4">
-          <MemberAvatar avatarUrl={avatarUrl} name={identity.displayName} size="lg" />
+          <MemberNameWithAvatar
+            avatarUrl={avatarUrl}
+            name={identity.displayName}
+            nameClassName="text-[0.9375rem] font-medium text-[#1d1d1f]"
+            size="lg"
+          />
           <div className="min-w-0 flex-1">
-            <p className="text-[0.9375rem] font-medium text-[#1d1d1f]">{identity.displayName}</p>
             <p className="mt-1 text-[0.8125rem] text-[#86868b]">
               上傳後可裁切與選擇尺寸，組織圖也會顯示這張頭像。
             </p>

@@ -18,6 +18,10 @@ export function getMemberDisplayName(
   return member.nickname ?? member.displayName;
 }
 
+export function getMemberAvatarUrl(member: Member | undefined): string | null {
+  return member?.avatarUrl ?? null;
+}
+
 export function getMemberRankLabel(rankKey: string): string {
   return DEFAULT_BUSINESS_RULES.ranks.labels[rankKey] ?? rankKey;
 }

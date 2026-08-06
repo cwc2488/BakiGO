@@ -34,6 +34,7 @@ function scoreEntry(
     memberId: member.id,
     displayName: getMemberDisplayName(member),
     nickname: member.nickname,
+    avatarUrl: member.avatarUrl ?? null,
     periodPoints: period === "monthly" ? monthlyPoints : weeklyPoints,
     monthlyPoints,
     weeklyPoints,

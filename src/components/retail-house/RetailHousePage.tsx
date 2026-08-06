@@ -8,9 +8,11 @@ import {
   formatTransactionDate,
 } from "@/lib/retail-house/format-report";
 import {
+  getMemberAvatarUrl,
   getMemberDisplayName,
   loadMissionControlMetrics,
 } from "@/lib/mission-control/format";
+import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import { APP_EMOJI, QUADRANT_EMOJIS } from "@/lib/ui/app-emojis";
 import type { RetailHouseQuadrantView } from "@/types/retail-house";
@@ -136,12 +138,14 @@ function FourQuadrantPresentation({
   weekStartDate,
   weekEndDate,
   displayName,
+  avatarUrl,
   onExit,
 }: {
   quadrants: RetailHouseQuadrantView[];
   weekStartDate: string;
   weekEndDate: string;
   displayName: string;
+  avatarUrl: string | null;
   onExit: () => void;
 }) {
   const quadrantByKey = useMemo(
@@ -156,9 +160,12 @@ function FourQuadrantPresentation({
           <p className="text-[0.8125rem] font-medium text-[#86868b]">
             {APP_EMOJI.action.presentation} 零售屋簡報
           </p>
-          <p className="truncate text-[1.0625rem] font-semibold text-[#1d1d1f]">
-            {displayName} · 本週 {formatReportDateRange(weekStartDate, weekEndDate)}
-          </p>
+          <MemberNameWithAvatar
+            avatarUrl={avatarUrl}
+            name={`${displayName} · 本週 ${formatReportDateRange(weekStartDate, weekEndDate)}`}
+            nameClassName="truncate text-[1.0625rem] font-semibold text-[#1d1d1f]"
+            size="sm"
+          />
         </div>
         <button
           className="shrink-0 rounded-xl bg-[#1d1d1f] px-4 py-2.5 text-[0.875rem] font-semibold text-white"
@@ -239,6 +246,7 @@ function RetailHouseView({
 }) {
   const snapshot = useMemo(() => buildRetailHouseSnapshot(metrics), [metrics]);
   const displayName = getMemberDisplayName();
+  const avatarUrl = getMemberAvatarUrl();
   const orderedQuadrants = useMemo(
     () =>
       PRESENTATION_QUADRANT_LAYOUT.map((key) =>
@@ -265,6 +273,7 @@ function RetailHouseView({
   if (presentationMode) {
     return (
       <FourQuadrantPresentation
+        avatarUrl={avatarUrl}
         displayName={displayName}
         onExit={onExitPresentationMode}
         quadrants={snapshot.quadrants}
@@ -288,7 +297,12 @@ function RetailHouseView({
           <h1 className="text-[2rem] font-semibold tracking-tight text-[#1d1d1f]">
             {APP_EMOJI.page.retailHouse} 零售屋
           </h1>
-          <p className="text-[1rem] text-[#636366]">{displayName} 的工作現場</p>
+          <MemberNameWithAvatar
+            avatarUrl={avatarUrl}
+            name={`${displayName} 的工作現場`}
+            nameClassName="text-[1rem] text-[#636366]"
+            size="sm"
+          />
           <p className="text-[0.9375rem] text-[#86868b]">
             本週 {formatReportDateRange(snapshot.weekStartDate, snapshot.weekEndDate)}
           </p>
