@@ -43,13 +43,13 @@ function NodeCard({
           }`}
           title={member.metMonthlyVp2500 ? "本月 VP 達標" : "本月 VP 未達標"}
         />
-        <div className="flex justify-center">
+        <div className="flex justify-center pt-1">
           <MemberNameWithAvatar
             avatarUrl={member.avatarUrl}
             name={member.name}
             nameClassName="truncate text-[0.8125rem] font-semibold leading-snug text-[#1d1d1f]"
-            size="sm"
-            stack
+            size="xs"
+            variant="stack"
           />
         </div>
         <p className="mt-0.5 truncate text-[0.625rem] text-[#86868b]">{member.qualificationLabel}</p>

@@ -162,9 +162,12 @@ function FourQuadrantPresentation({
           </p>
           <MemberNameWithAvatar
             avatarUrl={avatarUrl}
-            name={`${displayName} · 本週 ${formatReportDateRange(weekStartDate, weekEndDate)}`}
+            name={displayName}
             nameClassName="truncate text-[1.0625rem] font-semibold text-[#1d1d1f]"
             size="sm"
+            subtitle={`本週 ${formatReportDateRange(weekStartDate, weekEndDate)}`}
+            subtitleClassName="text-[0.8125rem] text-[#86868b]"
+            variant="hero"
           />
         </div>
         <button
@@ -300,12 +303,12 @@ function RetailHouseView({
           <MemberNameWithAvatar
             avatarUrl={avatarUrl}
             name={`${displayName} 的工作現場`}
-            nameClassName="text-[1rem] text-[#636366]"
-            size="sm"
+            nameClassName="text-[1.125rem] font-semibold text-[#1d1d1f]"
+            size="md"
+            subtitle={`本週 ${formatReportDateRange(snapshot.weekStartDate, snapshot.weekEndDate)}`}
+            subtitleClassName="text-[0.9375rem] text-[#86868b]"
+            variant="hero"
           />
-          <p className="text-[0.9375rem] text-[#86868b]">
-            本週 {formatReportDateRange(snapshot.weekStartDate, snapshot.weekEndDate)}
-          </p>
         </header>
 
         <RetailTransactionForm onMetricsChange={onMetricsChange} />

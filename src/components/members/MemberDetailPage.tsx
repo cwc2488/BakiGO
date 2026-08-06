@@ -137,16 +137,16 @@ export default function MemberDetailPage({ memberId }: { memberId: string }) {
             ← 返回會員列表
           </Link>
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <MemberNameWithAvatar
                 avatarUrl={getMemberAvatarUrl(member)}
                 name={getMemberDisplayName(member)}
                 nameClassName="text-[2rem] font-semibold tracking-tight text-[#1d1d1f]"
-                size="lg"
+                size="xl"
+                subtitle={`${profile.rankLabel} · ${profile.statusLabel}`}
+                subtitleClassName="text-[1rem] text-[#86868b]"
+                variant="hero"
               />
-              <p className="mt-2 pl-[5.5rem] text-[1rem] text-[#86868b]">
-                {profile.rankLabel} · {profile.statusLabel}
-              </p>
             </div>
             <Link
               className="rounded-full bg-[var(--brand-bg)] px-4 py-2 text-[0.875rem] font-medium text-[#636366]"

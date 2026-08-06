@@ -124,6 +124,14 @@ function LeaderboardRankRow({
           avatarUrl={entry.avatarUrl}
           name={entry.displayName}
           nameClassName="truncate text-[0.9375rem] font-semibold text-[#1d1d1f]"
+          size="sm"
+          subtitle={
+            <>
+              歷史 {formatPointsValue(entry.lifetimePoints)} 分
+              {entry.streakMultiplier > 1 ? ` · 連擊 ×${entry.streakMultiplier.toFixed(2)}` : ""}
+            </>
+          }
+          subtitleClassName="text-[0.75rem] text-[#86868b]"
           suffix={
             highlight ? (
               <span className="ml-1.5 text-[0.75rem] font-medium text-[var(--brand-primary-dark)]">
@@ -131,12 +139,7 @@ function LeaderboardRankRow({
               </span>
             ) : null
           }
-          size="sm"
         />
-        <p className="text-[0.75rem] text-[#86868b]">
-          歷史 {formatPointsValue(entry.lifetimePoints)} 分
-          {entry.streakMultiplier > 1 ? ` · 連擊 ×${entry.streakMultiplier.toFixed(2)}` : ""}
-        </p>
       </div>
       <p className="text-[1.125rem] font-bold text-[var(--brand-primary-dark)]">
         {formatPointsValue(entry.periodPoints)}

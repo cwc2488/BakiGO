@@ -74,23 +74,28 @@ export function OrganizationMemberDetail({
   return (
     <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="text-[0.8125rem] font-medium text-[#86868b]">夥伴詳情</p>
-            <MemberNameWithAvatar
-              avatarUrl={member.avatarUrl}
-              className="mt-1"
-              name={member.name}
-              nameClassName="text-[1.375rem] font-semibold text-[#1d1d1f]"
-              size="lg"
-            />
-            {member.memberNumber ? (
-              <p className="mt-1 text-[0.875rem] font-medium text-[var(--brand-primary-dark)]">
-                會員編號 {member.memberNumber}
-              </p>
-            ) : null}
-            <p className="mt-1 text-[0.9375rem] text-[#86868b]">{selectedRank || currentRankLabel}</p>
-          </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[0.8125rem] font-medium text-[#86868b]">夥伴詳情</p>
+          <MemberNameWithAvatar
+            avatarUrl={member.avatarUrl}
+            className="mt-2"
+            name={member.name}
+          nameClassName="text-[1.375rem] font-semibold text-[#1d1d1f]"
+          size="lg"
+          subtitle={
+            <>
+              {member.memberNumber ? (
+                <span className="font-medium text-[var(--brand-primary-dark)]">
+                  會員編號 {member.memberNumber}
+                  {" · "}
+                </span>
+              ) : null}
+              {selectedRank || currentRankLabel}
+            </>
+          }
+          subtitleClassName="text-[0.9375rem] text-[#86868b]"
+          variant="hero"
+        />
         </div>
         <span
           className={`shrink-0 rounded-full px-3 py-1.5 text-[0.8125rem] font-semibold ${

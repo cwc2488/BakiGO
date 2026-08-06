@@ -73,14 +73,14 @@ export default function GoalCenterPage() {
             {formatDisplayDate(goalCenter.referenceDate)}
           </p>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h1 className="text-[1.75rem] font-semibold leading-snug tracking-tight text-[#1d1d1f]">
-              目標中心 · {formatTimeGreeting()}，
-            </h1>
             <MemberNameWithAvatar
               avatarUrl={getMemberAvatarUrl()}
               name={getMemberDisplayName()}
               nameClassName="text-[1.75rem] font-semibold leading-snug tracking-tight text-[#1d1d1f]"
               size="md"
+              subtitle={`${formatTimeGreeting()} · 目標中心`}
+              subtitleClassName="text-[0.9375rem] font-medium text-[#86868b]"
+              variant="hero"
             />
           </div>
           <p className="text-[1rem] leading-relaxed text-[#636366]">

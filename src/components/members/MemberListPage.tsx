@@ -133,16 +133,19 @@ export default function MemberListPage() {
                       name={getMemberDisplayName(member)}
                       nameClassName="text-[1.125rem] font-semibold text-[#1d1d1f]"
                       size="md"
+                      subtitle={
+                        <>
+                          {getMemberRankLabel(member.rankKey)} · {MEMBER_STATUS_LABELS[member.status]}
+                          {member.phone ? (
+                            <>
+                              <br />
+                              <span className="text-[#aeaeb2]">{member.phone}</span>
+                            </>
+                          ) : null}
+                        </>
+                      }
                     />
-                    <span className="text-[1rem] text-[#c7c7cc]">→</span>
-                  </div>
-                  <div className="mt-2 pl-[3.75rem]">
-                    <p className="text-[0.875rem] text-[#86868b]">
-                      {getMemberRankLabel(member.rankKey)} · {MEMBER_STATUS_LABELS[member.status]}
-                    </p>
-                    {member.phone ? (
-                      <p className="mt-1 text-[0.8125rem] text-[#aeaeb2]">{member.phone}</p>
-                    ) : null}
+                    <span className="shrink-0 pt-1 text-[1rem] text-[#c7c7cc]">→</span>
                   </div>
                 </button>
                 <div className="mt-3 flex gap-2">

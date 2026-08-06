@@ -81,11 +81,11 @@ export function PointRedemptionModal({
             name={downlineName}
             nameClassName="text-[0.9375rem] font-semibold text-[#1d1d1f]"
             size="sm"
+            subtitle={`可兌換 ${formatPointsValue(availablePoints)} 分`}
+            subtitleClassName="text-[0.8125rem] text-[#86868b]"
           />
         </div>
-        <p className="mt-2 text-[0.875rem] text-[#86868b]">
-          扣除積分 · 可兌換 {formatPointsValue(availablePoints)} 分
-        </p>
+        <p className="mt-2 text-[0.875rem] text-[#86868b]">扣除積分</p>
 
         <div className="mt-5 space-y-4">
           <label className="block">

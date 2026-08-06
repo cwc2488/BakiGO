@@ -38,19 +38,17 @@ function GreetingSection({ metrics }: { metrics: MemberComputedMetrics }) {
       <p className="text-[2rem] font-semibold leading-tight tracking-tight text-[#1d1d1f] sm:text-[2.125rem]">
         {formatDisplayDate(referenceDate)}
       </p>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <h1 className="text-[1.625rem] font-semibold leading-snug tracking-tight text-[#1d1d1f] sm:text-[1.875rem]">
-          {formatTimeGreeting()}，
-        </h1>
-        <Link href="/profile">
-          <MemberNameWithAvatar
-            avatarUrl={avatarUrl}
-            name={displayName}
-            nameClassName="text-[1.625rem] font-semibold leading-snug tracking-tight text-[#1d1d1f] underline decoration-[#d1d1d6] underline-offset-4 transition-colors duration-200 hover:text-[var(--brand-primary-dark)] hover:decoration-[var(--brand-primary-dark)]/30 sm:text-[1.875rem]"
-            size="md"
-          />
-        </Link>
-      </div>
+      <Link className="block w-fit" href="/profile">
+        <MemberNameWithAvatar
+          avatarUrl={avatarUrl}
+          name={displayName}
+          nameClassName="text-[1.625rem] font-semibold leading-snug tracking-tight text-[#1d1d1f] underline decoration-[#d1d1d6] underline-offset-4 transition-colors duration-200 hover:text-[var(--brand-primary-dark)] hover:decoration-[var(--brand-primary-dark)]/30 sm:text-[1.875rem]"
+          size="lg"
+          subtitle={formatTimeGreeting()}
+          subtitleClassName="text-[1rem] font-medium text-[#86868b] sm:text-[1.0625rem]"
+          variant="hero"
+        />
+      </Link>
     </header>
   );
 }

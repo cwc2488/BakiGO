@@ -376,12 +376,14 @@ function DailyActionView({
             {formatDisplayDate(snapshot.referenceDate)}
           </p>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h1 className="text-[1.375rem] font-semibold text-[#1d1d1f]">{formatTimeGreeting()}，</h1>
             <MemberNameWithAvatar
               avatarUrl={avatarUrl}
               name={displayName}
               nameClassName="text-[1.375rem] font-semibold text-[#1d1d1f]"
               size="md"
+              subtitle={formatTimeGreeting()}
+              subtitleClassName="text-[0.875rem] font-medium text-[#86868b]"
+              variant="hero"
             />
           </div>
         </header>

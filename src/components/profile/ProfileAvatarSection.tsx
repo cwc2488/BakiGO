@@ -5,7 +5,7 @@ import { getMemberProfileIdentity } from "@/lib/config/app-config";
 import { uploadMemberAvatarBlob } from "@/lib/members/member-avatar";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
-import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
+import { MemberAvatar } from "@/components/members/MemberAvatar";
 import { AvatarCropModal } from "@/components/profile/AvatarCropModal";
 import { useRef, useState } from "react";
 import { ProfileCard, ProfileSectionTitle } from "./ui";
@@ -79,16 +79,14 @@ export function ProfileAvatarSection({ onAvatarUpdated }: { onAvatarUpdated?: ()
     <>
       <ProfileCard>
         <ProfileSectionTitle emoji="🙂">個人頭像</ProfileSectionTitle>
-        <div className="mt-4 flex items-center gap-4">
-          <MemberNameWithAvatar
-            avatarUrl={avatarUrl}
-            name={identity.displayName}
-            nameClassName="text-[0.9375rem] font-medium text-[#1d1d1f]"
-            size="lg"
-          />
+        <div className="mt-5 flex flex-col items-center text-center sm:flex-row sm:items-start sm:gap-6 sm:text-left">
+          <MemberAvatar avatarUrl={avatarUrl} name={identity.displayName} size="xl" />
           <div className="min-w-0 flex-1">
-            <p className="mt-1 text-[0.8125rem] text-[#86868b]">
-              上傳後可裁切與選擇尺寸，組織圖也會顯示這張頭像。
+            <p className="mt-4 text-[0.9375rem] font-medium text-[#1d1d1f] sm:mt-0">
+              更換個人照片
+            </p>
+            <p className="mt-1 text-[0.8125rem] leading-relaxed text-[#86868b]">
+              上傳後可裁切與選擇尺寸，組織圖與排行榜也會同步顯示。
             </p>
             <input
               ref={fileInputRef}
@@ -98,7 +96,7 @@ export function ProfileAvatarSection({ onAvatarUpdated }: { onAvatarUpdated?: ()
               type="file"
             />
             <button
-              className="mt-3 rounded-xl bg-[var(--brand-primary)] px-4 py-2.5 text-[0.875rem] font-semibold text-white disabled:opacity-50"
+              className="mt-4 rounded-xl bg-[var(--brand-primary)] px-4 py-2.5 text-[0.875rem] font-semibold text-white disabled:opacity-50"
               disabled={isUploading || !isSupabaseConfigured()}
               onClick={() => fileInputRef.current?.click()}
               type="button"
