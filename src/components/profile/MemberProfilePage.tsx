@@ -113,6 +113,7 @@ function GrowthSection({ metrics }: { metrics: MemberComputedMetrics }) {
 
 function ProfileQuickLinks() {
   const links = [
+    { href: "/leaderboard", label: "積分排行", emoji: "🏆" },
     { href: "/organization", label: "組織圖", emoji: "🌳" },
     { href: "/retail-house", label: "零售屋", emoji: "🏠" },
     { href: "/goals", label: "目標中心", emoji: "🎯" },

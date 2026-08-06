@@ -2,6 +2,7 @@
 
 import type { QuickActivityInput } from "@/lib/daily-action/log-today-action";
 import { RegionField } from "@/components/ui/RegionField";
+import { MobileFormModal } from "@/components/ui/MobileFormModal";
 import { useState } from "react";
 
 const EMPTY_FORM: QuickActivityInput = {
@@ -25,11 +26,7 @@ function QuickActivityModalForm({
   const [isSaving, setIsSaving] = useState(false);
 
   const title = activityType === "measurement" ? "快速量測" : "快速諮詢";
-  const submitLabel = activityType === "measurement" ? "儲存量測" : "儲存諮詢";
-
-  function resetAndClose() {
-    onClose();
-  }
+  const submitLabel = activityType === "measurement" ? "確認量測" : "確認諮詢";
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -57,74 +54,66 @@ function QuickActivityModalForm({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/30 p-0 sm:items-center sm:p-4">
-      <button aria-label="關閉" className="absolute inset-0" onClick={resetAndClose} type="button" />
-      <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-[1.75rem] bg-[var(--brand-surface)] p-6 shadow-xl sm:rounded-[1.75rem]">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">{title}</h2>
-          <button
-            className="text-[0.9375rem] font-medium text-[var(--brand-primary-dark)]"
-            onClick={resetAndClose}
-            type="button"
-          >
-            取消
-          </button>
-        </div>
+    <MobileFormModal
+      footer={
+        <button
+          className="w-full rounded-xl bg-[var(--brand-primary)] px-4 py-3.5 text-[1rem] font-semibold text-white disabled:opacity-50"
+          disabled={isSaving || !form.customerName.trim()}
+          form="quick-activity-form"
+          type="submit"
+        >
+          {isSaving ? "儲存中…" : submitLabel}
+        </button>
+      }
+      onClose={onClose}
+      open
+      title={title}
+    >
+      <form className="space-y-4" id="quick-activity-form" onSubmit={(event) => void handleSubmit(event)}>
+        <label className="block space-y-2">
+          <span className="text-[0.875rem] font-medium text-[#636366]">姓名</span>
+          <input
+            autoFocus
+            className="w-full rounded-xl border border-[var(--brand-border)] px-4 py-3 text-[1rem] outline-none focus:border-[var(--brand-primary)]"
+            onChange={(event) => setForm((current) => ({ ...current, customerName: event.target.value }))}
+            placeholder="對象姓名"
+            value={form.customerName}
+          />
+        </label>
 
-        <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
-          <label className="block space-y-2">
-            <span className="text-[0.875rem] font-medium text-[#636366]">姓名</span>
-            <input
-              autoFocus
-              className="w-full rounded-xl border border-[var(--brand-border)] px-4 py-3 text-[1rem] outline-none focus:border-[var(--brand-primary)]"
-              onChange={(event) => setForm((current) => ({ ...current, customerName: event.target.value }))}
-              placeholder="對象姓名"
-              value={form.customerName}
-            />
-          </label>
+        <label className="block space-y-2">
+          <span className="text-[0.875rem] font-medium text-[#636366]">電話</span>
+          <input
+            className="w-full rounded-xl border border-[var(--brand-border)] px-4 py-3 text-[1rem] outline-none focus:border-[var(--brand-primary)]"
+            inputMode="tel"
+            onChange={(event) => setForm((current) => ({ ...current, customerPhone: event.target.value }))}
+            placeholder="選填"
+            type="tel"
+            value={form.customerPhone ?? ""}
+          />
+        </label>
 
-          <label className="block space-y-2">
-            <span className="text-[0.875rem] font-medium text-[#636366]">電話</span>
-            <input
-              className="w-full rounded-xl border border-[var(--brand-border)] px-4 py-3 text-[1rem] outline-none focus:border-[var(--brand-primary)]"
-              inputMode="tel"
-              onChange={(event) => setForm((current) => ({ ...current, customerPhone: event.target.value }))}
-              placeholder="選填"
-              type="tel"
-              value={form.customerPhone ?? ""}
-            />
-          </label>
+        <label className="block space-y-2">
+          <span className="text-[0.875rem] font-medium text-[#636366]">地區</span>
+          <RegionField
+            onChange={(region) => setForm((current) => ({ ...current, region }))}
+            value={form.region ?? ""}
+          />
+        </label>
 
-          <label className="block space-y-2">
-            <span className="text-[0.875rem] font-medium text-[#636366]">地區</span>
-            <RegionField
-              onChange={(region) => setForm((current) => ({ ...current, region }))}
-              value={form.region ?? ""}
-            />
-          </label>
+        <label className="block space-y-2">
+          <span className="text-[0.875rem] font-medium text-[#636366]">備註</span>
+          <textarea
+            className="min-h-[4rem] w-full rounded-xl border border-[var(--brand-border)] px-4 py-3 text-[1rem] outline-none focus:border-[var(--brand-primary)]"
+            onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
+            placeholder="選填"
+            value={form.note ?? ""}
+          />
+        </label>
 
-          <label className="block space-y-2">
-            <span className="text-[0.875rem] font-medium text-[#636366]">備註</span>
-            <textarea
-              className="min-h-[4rem] w-full rounded-xl border border-[var(--brand-border)] px-4 py-3 text-[1rem] outline-none focus:border-[var(--brand-primary)]"
-              onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
-              placeholder="選填"
-              value={form.note ?? ""}
-            />
-          </label>
-
-          {error ? <p className="text-[0.875rem] text-[#ff375f]">{error}</p> : null}
-
-          <button
-            className="w-full rounded-xl bg-[var(--brand-primary)] px-4 py-3.5 text-[1rem] font-semibold text-white disabled:opacity-50"
-            disabled={isSaving}
-            type="submit"
-          >
-            {isSaving ? "儲存中…" : submitLabel}
-          </button>
-        </form>
-      </div>
-    </div>
+        {error ? <p className="text-[0.875rem] text-[#ff375f]">{error}</p> : null}
+      </form>
+    </MobileFormModal>
   );
 }
 

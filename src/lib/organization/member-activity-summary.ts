@@ -7,7 +7,7 @@ import type { EntityId } from "@/types";
 export interface MemberActivitySummary {
   monthlyConsultations: number;
   monthlyMeasurements: number;
-  recentMeetings: Array<{ title: string; date: string }>;
+  recentMeetings: Array<{ title: string; date: string; newFriendsCount: number }>;
 }
 
 function isInMonth(eventDate: string, yearMonth: string): boolean {
@@ -40,6 +40,7 @@ export function buildMemberActivitySummary(
     .map((item) => ({
       title: item.title,
       date: item.startAt.slice(0, 10),
+      newFriendsCount: item.newFriendsCount ?? 0,
     }));
 
   return {

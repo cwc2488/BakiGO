@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { APP_EMOJI, WORK_HUB_EMOJIS } from "@/lib/ui/app-emojis";
 import { EmptyState, HomeErrorState, HomeLoadingSkeleton } from "./states";
 import { Card, SectionLabel } from "./ui";
+import { HomeLeaderboardSection } from "@/components/leaderboard/HomeLeaderboardSection";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -116,6 +117,7 @@ function PresidentAISection({
 function WorkHubSection() {
   const hubs = [
     { href: "/daily-action", title: "今日行動", desc: "每天第一件事" },
+    { href: "/leaderboard", title: "積分排行", desc: "本週前五 · 本月前十" },
     { href: "/retail-pipeline", title: "名單流程", desc: "推進每位名單" },
     { href: "/retail-house", title: "零售屋", desc: "週分享與成交" },
     { href: "/organization", title: "組織圖", desc: "夥伴狀況一覽" },
@@ -173,6 +175,7 @@ function HomeView({
     <div className="min-h-full bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]">
       <main className="home-container flex flex-col gap-5 pb-24 pt-10 sm:pt-12">
         <GreetingSection metrics={metrics} />
+        <HomeLeaderboardSection metrics={metrics} />
         <WorkHubSection />
         <PresidentAISection goalCenter={goalCenter} firstUse={firstUse} />
         <AddTransactionButton />

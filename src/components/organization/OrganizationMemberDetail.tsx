@@ -146,6 +146,10 @@ export function OrganizationMemberDetail({
                 >
                   <span className="font-medium text-[#1d1d1f]">{meeting.title}</span>
                   <span className="text-[#86868b]"> · {meeting.date}</span>
+                  <span className="text-[var(--brand-primary-dark)]">
+                    {" "}
+                    · 帶 {meeting.newFriendsCount} 位新朋友
+                  </span>
                 </li>
               ))}
             </ul>
