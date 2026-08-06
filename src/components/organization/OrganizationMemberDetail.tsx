@@ -11,6 +11,7 @@ import { getRegistrationRankOptions } from "@/lib/auth/registration-ranks";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { OrganizationMemberView } from "@/types/organization-center";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { ProgressBar } from "@/components/home/ui";
 import { useMemo, useState } from "react";
 
 export function OrganizationMemberDetail({
@@ -39,12 +40,13 @@ export function OrganizationMemberDetail({
     () => buildMemberActivitySummary(member.memberId, todayISODate(), storage),
     [member.memberId, storage],
   );
-  const canRedeem =
-    Boolean(viewer) &&
-    viewer?.id !== member.memberId &&
-    member.availablePoints > 0;
+  const canRedeem = Boolean(viewer) && viewer?.id !== member.memberId;
 
   const currentRankLabel = member.qualificationLabel;
+  const monthlyVpPercent =
+    member.monthlyVpTarget && member.monthlyVpTarget > 0
+      ? Math.min(100, Math.round((member.monthlyVp / member.monthlyVpTarget) * 100))
+      : null;
 
   function handleRankSave() {
     if (!rankKey) {
@@ -99,6 +101,12 @@ export function OrganizationMemberDetail({
               </span>
             ) : null}
           </dd>
+          {monthlyVpPercent !== null ? (
+            <div className="mt-2">
+              <ProgressBar color="#77b539" percent={monthlyVpPercent} />
+              <p className="mt-1 text-[0.75rem] font-medium text-[#86868b]">{monthlyVpPercent}%</p>
+            </div>
+          ) : null}
         </div>
         <div className="rounded-2xl bg-[var(--brand-bg)] px-4 py-3">
           <dt className="text-[0.75rem] font-medium text-[#86868b]">本月積分</dt>
@@ -160,14 +168,22 @@ export function OrganizationMemberDetail({
       </div>
 
       {canRedeem ? (
-        <div className="mt-4">
+        <div className="mt-4 space-y-2">
           <button
-            className="w-full rounded-2xl bg-[var(--brand-primary)] px-4 py-3.5 text-[0.9375rem] font-semibold text-white"
+            className="w-full rounded-2xl bg-[var(--brand-primary)] px-4 py-3.5 text-[0.9375rem] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={member.availablePoints <= 0}
             onClick={() => setRedemptionOpen(true)}
             type="button"
           >
-            {APP_EMOJI.action.redeem} 積分兌換
+            {APP_EMOJI.action.redeem} 為 {member.name} 兌換積分
           </button>
+          {member.availablePoints <= 0 ? (
+            <p className="text-center text-[0.8125rem] text-[#86868b]">目前無可兌換積分</p>
+          ) : (
+            <p className="text-center text-[0.8125rem] text-[#86868b]">
+              可兌換 {formatPointsValue(member.availablePoints)} 分
+            </p>
+          )}
         </div>
       ) : null}
 

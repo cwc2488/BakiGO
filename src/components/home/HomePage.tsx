@@ -14,8 +14,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { APP_EMOJI, WORK_HUB_EMOJIS } from "@/lib/ui/app-emojis";
 import { EmptyState, HomeErrorState, HomeLoadingSkeleton } from "./states";
-import { Card, SectionLabel } from "./ui";
-import { HomeLeaderboardSection } from "@/components/leaderboard/HomeLeaderboardSection";
+import { Card, ProgressBar, SectionLabel } from "./ui";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -65,7 +64,10 @@ function PriorityCard({ priority, index }: { priority: Priority; index: number }
               {priority.score}%
             </span>
           </div>
-          <p className="mt-1 text-[0.875rem] leading-relaxed text-[#86868b]">
+          <div className="mt-2">
+            <ProgressBar color="#77b539" percent={priority.score} />
+          </div>
+          <p className="mt-2 text-[0.875rem] leading-relaxed text-[#86868b]">
             {priority.description}
           </p>
         </div>
@@ -175,7 +177,6 @@ function HomeView({
     <div className="min-h-full bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]">
       <main className="home-container flex flex-col gap-5 pb-24 pt-10 sm:pt-12">
         <GreetingSection metrics={metrics} />
-        <HomeLeaderboardSection metrics={metrics} />
         <WorkHubSection />
         <PresidentAISection goalCenter={goalCenter} firstUse={firstUse} />
         <AddTransactionButton />

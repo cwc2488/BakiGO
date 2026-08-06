@@ -98,14 +98,26 @@ function DetailCard({ line }: { line: MapUniverseLine }) {
         <dl className="mt-5 space-y-3.5 sm:mt-6 sm:space-y-4">
           <DetailRow label="目前 VP" value={line.vpTotal !== null ? `${line.vpTotal} VP` : "—"} />
           <DetailRow label="目前職級" value={line.rankName ?? "—"} />
-          <DetailRow
-            label="距離下一階"
-            value={
-              line.nextRankName
-                ? `${line.nextRankName}${line.promotionProgressPercent !== null ? ` · ${line.promotionProgressPercent}%` : ""}`
-                : (line.promotionDescription ?? "—")
-            }
-          />
+          {line.nextRankName ? (
+            <div>
+              <DetailRow label="距離下一階" value={line.nextRankName} />
+              {line.promotionProgressPercent !== null ? (
+                <div className="mt-2">
+                  <div className="h-2 overflow-hidden rounded-full bg-white/15">
+                    <div
+                      className="h-full rounded-full bg-[#77b539] transition-all duration-250 ease-out"
+                      style={{ width: `${line.promotionProgressPercent}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-[0.75rem] font-medium text-white/70">
+                    {line.promotionProgressPercent}%
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <DetailRow label="距離下一階" value={line.promotionDescription ?? "—"} />
+          )}
           <DetailRow label="總裁 AI 建議" value={line.presidentSuggestion ?? "—"} />
           <DetailRow label="最近成交" value={line.recentTransactionLabel ?? "—"} />
           <DetailRow

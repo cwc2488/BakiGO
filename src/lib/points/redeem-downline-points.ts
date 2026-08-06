@@ -1,7 +1,7 @@
 import { todayISODate } from "@/lib/config/app-config";
 import { recalculateMemberMetrics } from "@/lib/services/recalculate-member-metrics";
 import { createPointRedemption } from "@/lib/repositories/point-redemption-repository";
-import { getDirectDownline } from "@/lib/business-engine/utils";
+import { isDownlineMember } from "@/lib/auth/organization-access";
 import { loadAllMembers } from "@/lib/members/member-service";
 import type { EntityId } from "@/types";
 import type { PointRedemption } from "@/types/points";
@@ -25,10 +25,12 @@ export function redeemDownlinePoints(
     throw new Error("找不到下線夥伴");
   }
 
-  const directDownline = getDirectDownline(members, input.redeemedByMemberId);
-  const isDirectDownline = directDownline.some((member) => member.id === input.downlineMemberId);
-  if (!isDirectDownline && input.downlineMemberId !== input.redeemedByMemberId) {
-    throw new Error("只能兌換第一代下線的積分");
+  const isSelfRedemption = input.downlineMemberId === input.redeemedByMemberId;
+  if (
+    !isSelfRedemption &&
+    !isDownlineMember(input.redeemedByMemberId, input.downlineMemberId, members)
+  ) {
+    throw new Error("只能兌換組織下線的積分");
   }
 
   const metrics = recalculateMemberMetrics(

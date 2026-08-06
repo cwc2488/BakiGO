@@ -9,6 +9,7 @@ import { formatPointsValue } from "@/lib/points/streak-multiplier";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
 import type { PointsLeaderboardResult } from "@/types/points";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LeaderboardRankList } from "./LeaderboardRankList";
 
@@ -126,6 +127,23 @@ export default function LeaderboardPage() {
             yearMonth={monthly.yearMonth}
           />
         ) : null}
+
+        <Link
+          className="flex items-center justify-between rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] px-5 py-4 transition-colors active:bg-[var(--brand-primary-muted)]"
+          href="/organization"
+        >
+          <div>
+            <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">
+              {APP_EMOJI.action.redeem} 為下線兌換積分
+            </p>
+            <p className="mt-0.5 text-[0.8125rem] text-[#86868b]">
+              組織圖選取下線 · 支援所有世代
+            </p>
+          </div>
+          <span aria-hidden className="text-[1.125rem] text-[var(--brand-primary-dark)]">
+            →
+          </span>
+        </Link>
 
         <LeaderboardRankList
           displayLimit={weekly.displayLimit}

@@ -236,6 +236,7 @@ function SuperLeagueCard({
           {formatDailyActionPercent(superLeague.completionPercent)}
         </span>
       </div>
+      <ProgressBar color="#248a3d" percent={superLeague.completionPercent} />
     </section>
   );
 }

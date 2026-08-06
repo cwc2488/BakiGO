@@ -70,9 +70,16 @@ function RoadNodeCard({ node }: { node: PresidentRoadNode }) {
 function PriorityCard({ priority }: { priority: Priority }) {
   return (
     <article className="rounded-2xl bg-[var(--brand-bg)] px-5 py-5">
-      <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">{priority.title}</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">{priority.title}</p>
+        <p className="shrink-0 text-[0.875rem] font-semibold text-[var(--brand-primary-dark)]">
+          {priority.score}%
+        </p>
+      </div>
+      <div className="mt-3">
+        <ProgressBar color="#77b539" percent={priority.score} />
+      </div>
       <p className="mt-2 text-[0.9375rem] leading-relaxed text-[#86868b]">{priority.description}</p>
-      <p className="mt-3 text-[0.875rem] font-semibold text-[var(--brand-primary-dark)]">{priority.score}%</p>
     </article>
   );
 }

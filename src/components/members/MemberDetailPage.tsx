@@ -26,6 +26,7 @@ import type { MemberWorkspaceData } from "@/types/member-workspace";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CrmCard, CrmField, CrmSectionTitle } from "./ui";
+import { ProgressBar } from "@/components/home/ui";
 import { CoachNoteSection, parseFollowUpItems } from "./workspace/CoachNoteSection";
 import { InBodySection, parseInBodyNumber } from "./workspace/InBodySection";
 import { MemberDashboard } from "./workspace/MemberDashboard";
@@ -289,6 +290,11 @@ export default function MemberDetailPage({ memberId }: { memberId: string }) {
                     ? ` · ${result.overallProgressPercent}%`
                     : ""}
                 </p>
+                {result.overallProgressPercent !== null ? (
+                  <div className="mt-2">
+                    <ProgressBar color="#77b539" percent={result.overallProgressPercent} />
+                  </div>
+                ) : null}
               </article>
             ))}
           </div>

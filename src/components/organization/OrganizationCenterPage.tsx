@@ -208,6 +208,11 @@ export default function OrganizationCenterPage() {
 
         {selectedNode ? (
           <section className="home-section">
+            {selectedMemberId === viewer?.id ? (
+              <p className="mb-3 rounded-2xl bg-[var(--brand-primary-muted)] px-4 py-3 text-[0.875rem] text-[#636366]">
+                {APP_EMOJI.action.redeem} 點選組織圖中的下線夥伴，即可為其兌換積分（支援所有世代）。
+              </p>
+            ) : null}
             <OrganizationMemberDetail
               key={selectedNode.member.memberId}
               canAdjustRank={canAdjustSelectedRank}
