@@ -64,6 +64,7 @@ export function getMemberProfileIdentity(
     joinedAt: member?.joinedAt ?? null,
     statusLabel: member ? MEMBER_STATUS_LABELS[member.status] : null,
     sponsorName: sponsor?.nickname ?? sponsor?.displayName ?? null,
+    avatarUrl: member?.avatarUrl ?? null,
     retailHouseKey: APP_IDS.defaultRetailHouseKey,
   };
 }

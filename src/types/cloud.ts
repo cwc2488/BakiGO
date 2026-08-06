@@ -9,6 +9,7 @@ export interface CloudMember {
   role: string;
   currentLevel: string;
   sponsorMemberNumber: string | null;
+  avatarUrl: string | null;
   createdAt: ISODateString;
 }
 

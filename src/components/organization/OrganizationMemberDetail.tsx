@@ -6,6 +6,7 @@ import { todayISODate } from "@/lib/config/app-config";
 import { formatPointsValue } from "@/lib/points/streak-multiplier";
 import { loadRedemptionsForMember } from "@/lib/repositories/point-redemption-repository";
 import { PointRedemptionModal } from "@/components/points/PointRedemptionModal";
+import { MemberAvatar } from "@/components/members/MemberAvatar";
 import { getCurrentMember } from "@/lib/auth/auth-service";
 import { getRegistrationRankOptions } from "@/lib/auth/registration-ranks";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
@@ -73,15 +74,18 @@ export function OrganizationMemberDetail({
   return (
     <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[0.8125rem] font-medium text-[#86868b]">夥伴詳情</p>
-          <h2 className="mt-1 text-[1.375rem] font-semibold text-[#1d1d1f]">{member.name}</h2>
-          {member.memberNumber ? (
-            <p className="mt-1 text-[0.875rem] font-medium text-[var(--brand-primary-dark)]">
-              會員編號 {member.memberNumber}
-            </p>
-          ) : null}
-          <p className="mt-1 text-[0.9375rem] text-[#86868b]">{selectedRank || currentRankLabel}</p>
+        <div className="flex min-w-0 items-start gap-4">
+          <MemberAvatar avatarUrl={member.avatarUrl} name={member.name} size="lg" />
+          <div className="min-w-0">
+            <p className="text-[0.8125rem] font-medium text-[#86868b]">夥伴詳情</p>
+            <h2 className="mt-1 text-[1.375rem] font-semibold text-[#1d1d1f]">{member.name}</h2>
+            {member.memberNumber ? (
+              <p className="mt-1 text-[0.875rem] font-medium text-[var(--brand-primary-dark)]">
+                會員編號 {member.memberNumber}
+              </p>
+            ) : null}
+            <p className="mt-1 text-[0.9375rem] text-[#86868b]">{selectedRank || currentRankLabel}</p>
+          </div>
         </div>
         <span
           className={`shrink-0 rounded-full px-3 py-1.5 text-[0.8125rem] font-semibold ${

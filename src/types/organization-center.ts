@@ -10,6 +10,7 @@ export interface OrganizationMemberView {
   memberId: EntityId;
   memberNumber: string;
   name: string;
+  avatarUrl?: string | null;
   qualificationLabel: string;
   monthlyVp: number;
   metMonthlyVp2500: boolean;

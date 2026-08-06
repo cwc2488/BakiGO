@@ -51,6 +51,14 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 同步範圍：活動紀錄、名單流程、個人行事曆、促銷活動、會員工作區、積分兌換、Super League 名單等。  
 **不含**：Google 行事曆 OAuth（各裝置需分別授權）、共用行事曆快取。
 
+## 會員頭像（需額外 migration）
+
+若要在個人頁面上傳頭像，並在組織圖顯示，請在 SQL Editor 執行：
+
+`supabase/migrations/005_member_avatars.sql`
+
+此 migration 會新增 `members.avatar_url` 欄位，並建立 `member-avatars` Storage bucket。
+
 ## 4. 驗收流程
 
 1. `/register` 建立會員 A（無推薦人）
@@ -64,6 +72,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 - `members` — 會員主檔（member_number 唯一）
 - `organization_relationships` — parent → child 上下線關係
 - `member_app_data` — 跨裝置同步的業務資料（JSON 文件）
+- `members.avatar_url` — 會員頭像公開 URL（Storage `member-avatars`）
 
 ## 登入
 

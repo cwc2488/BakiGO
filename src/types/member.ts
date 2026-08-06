@@ -21,6 +21,8 @@ export interface Member extends StoredEntity {
 
   /** Legal / display name */
   displayName: string;
+  /** Public avatar image URL (Supabase Storage). */
+  avatarUrl?: string | null;
   nickname?: string;
   gender?: string;
   birthday?: ISODateString;
@@ -76,6 +78,7 @@ export interface MemberCreateInput {
 
 export interface MemberUpdateInput {
   displayName?: string;
+  avatarUrl?: string | null;
   nickname?: string;
   gender?: string;
   birthday?: ISODateString;

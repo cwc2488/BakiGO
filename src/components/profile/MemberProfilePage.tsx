@@ -18,6 +18,7 @@ import {
   StatRow,
 } from "./ui";
 import { ProfileAccountSection } from "./ProfileAccountSection";
+import { ProfileAvatarSection } from "./ProfileAvatarSection";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -160,6 +161,7 @@ function ProfileView({
           <ProfileHeroTitle>{APP_EMOJI.page.profile} {identity.displayName}</ProfileHeroTitle>
         </header>
 
+        <ProfileAvatarSection onAvatarUpdated={onSponsorUpdated} />
         <BasicInfoSection metrics={metrics} />
         <GrowthSection metrics={metrics} />
         <ProfileAccountSection onSponsorUpdated={onSponsorUpdated} />

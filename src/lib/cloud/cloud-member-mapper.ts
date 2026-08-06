@@ -12,6 +12,7 @@ type CloudMemberRow = {
   role: string;
   current_level: string;
   sponsor_member_number: string | null;
+  avatar_url: string | null;
   created_at: string;
 };
 
@@ -31,6 +32,7 @@ export function mapCloudMemberRow(row: CloudMemberRow): CloudMember {
     role: row.role,
     currentLevel: row.current_level,
     sponsorMemberNumber: row.sponsor_member_number,
+    avatarUrl: row.avatar_url,
     createdAt: row.created_at.slice(0, 10),
   };
 }
@@ -66,6 +68,7 @@ export function cloudMemberToLocalMember(
     organizationId: APP_IDS.organizationId,
     herbalifeMemberId: cloudMember.memberNumber,
     displayName: isVirtual ? "虛擬上線" : cloudMember.name,
+    avatarUrl: isVirtual ? null : cloudMember.avatarUrl,
     nickname: isVirtual ? "虛擬上線" : cloudMember.name,
     email: cloudMember.email,
     joinedAt: cloudMember.createdAt,

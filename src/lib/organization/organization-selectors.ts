@@ -108,6 +108,7 @@ export function buildOrganizationMemberView(
     memberId: member.id,
     memberNumber: member.herbalifeMemberId,
     name: getMemberDisplayName(member),
+    avatarUrl: member.avatarUrl ?? null,
     qualificationLabel: resolveOrganizationQualificationLabel(member, metrics),
     monthlyVp,
     metMonthlyVp2500:

@@ -127,3 +127,22 @@ export async function fetchCloudOrganizationData(): Promise<{
 
   return { members, relationships };
 }
+
+export async function updateCloudMemberAvatar(
+  memberId: string,
+  avatarUrl: string | null,
+): Promise<CloudMember> {
+  const supabase = createSupabaseBrowserClient();
+  const { data, error } = await supabase
+    .from("members")
+    .update({ avatar_url: avatarUrl })
+    .eq("id", memberId)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return mapCloudMemberRow(data as never);
+}
