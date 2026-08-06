@@ -1,4 +1,4 @@
-export type PreMeetingGraphicLayout = "overlay" | "circle";
+export type PreMeetingGraphicLayout = "bottom" | "split" | "circle";
 
 export interface PreMeetingGraphicInput {
   inviter: string;

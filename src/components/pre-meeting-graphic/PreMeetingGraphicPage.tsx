@@ -55,7 +55,7 @@ const FIELD_GROUPS: Array<{
 
 export default function PreMeetingGraphicPage() {
   const [form, setForm] = useState<PreMeetingGraphicInput>(EMPTY_PRE_MEETING_GRAPHIC_INPUT);
-  const [layout, setLayout] = useState<PreMeetingGraphicLayout>("overlay");
+  const [layout, setLayout] = useState<PreMeetingGraphicLayout>("bottom");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -67,7 +67,8 @@ export default function PreMeetingGraphicPage() {
   const layoutOptions = useMemo(
     () =>
       [
-        { value: "overlay" as const, label: "照片底圖 + 白框文字" },
+        { value: "bottom" as const, label: "照片上方 + 下方 1/3 粗體文字" },
+        { value: "split" as const, label: "左圖右文（不遮臉）" },
         { value: "circle" as const, label: "圓形照片 + 下方文字" },
       ] as const,
     [],
