@@ -121,6 +121,7 @@ function WorkHubSection() {
     { href: "/daily-action", title: "今日行動", desc: "每天第一件事" },
     { href: "/leaderboard", title: "積分排行", desc: "本週前五 · 本月前十" },
     { href: "/retail-pipeline", title: "名單流程", desc: "推進每位名單" },
+    { href: "/pre-meeting-graphic", title: "會前會圖", desc: "資料合併輸出" },
     { href: "/retail-house", title: "零售屋", desc: "週分享與成交" },
     { href: "/organization", title: "組織圖", desc: "夥伴狀況一覽" },
     { href: "/promotions", title: "促銷專欄", desc: "獎勵與挑戰" },

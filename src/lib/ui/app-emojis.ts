@@ -16,6 +16,7 @@ export const APP_EMOJI = {
     promotions: "🎁",
     calendar: "📅",
     events: "📌",
+    preMeetingGraphic: "🖼️",
   },
   section: {
     presidentAi: "🧠",
@@ -45,6 +46,7 @@ export const APP_EMOJI = {
     leaderboard: "🏆",
     organization: "🌳",
     pipeline: "📋",
+    preMeetingGraphic: "🖼️",
     events: "📌",
     profile: "👤",
   },
@@ -88,6 +90,7 @@ export const WORK_HUB_EMOJIS: Record<string, string> = {
   "/promotions": APP_EMOJI.hub.promotions,
   "/calendar": APP_EMOJI.hub.calendar,
   "/events": APP_EMOJI.hub.events,
+  "/pre-meeting-graphic": APP_EMOJI.hub.preMeetingGraphic,
 };
 
 export const QUADRANT_EMOJIS: Record<string, string> = {

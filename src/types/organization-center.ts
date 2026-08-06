@@ -8,6 +8,7 @@ export interface OrganizationNextQualificationView {
 
 export interface OrganizationMemberView {
   memberId: EntityId;
+  memberNumber: string;
   name: string;
   qualificationLabel: string;
   monthlyVp: number;

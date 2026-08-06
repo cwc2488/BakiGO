@@ -47,7 +47,16 @@ export interface RetailLeadRepository {
   create(input: RetailPipelineLeadCreateInput): RetailPipelineLead;
   updateStage(leadId: EntityId, stageKey: RetailPipelineStageKey): RetailPipelineLead;
   updateScheduledDate(leadId: EntityId, scheduledDate: ISODateString | undefined): RetailPipelineLead;
+  updateSchedule(
+    leadId: EntityId,
+    input: {
+      scheduledDate?: ISODateString;
+      scheduledTime?: string;
+      calendarEventId?: EntityId;
+    },
+  ): RetailPipelineLead;
   updateRegion(leadId: EntityId, region: string | undefined): RetailPipelineLead;
+  delete(leadId: EntityId): void;
 }
 
 export class LocalStorageRetailLeadRepository implements RetailLeadRepository {
@@ -112,6 +121,17 @@ export class LocalStorageRetailLeadRepository implements RetailLeadRepository {
     leadId: EntityId,
     scheduledDate: ISODateString | undefined,
   ): RetailPipelineLead {
+    return this.updateSchedule(leadId, { scheduledDate });
+  }
+
+  updateSchedule(
+    leadId: EntityId,
+    input: {
+      scheduledDate?: ISODateString;
+      scheduledTime?: string;
+      calendarEventId?: EntityId;
+    },
+  ): RetailPipelineLead {
     const leads = this.getAll();
     const index = leads.findIndex((lead) => lead.id === leadId);
     if (index < 0) {
@@ -119,16 +139,32 @@ export class LocalStorageRetailLeadRepository implements RetailLeadRepository {
     }
 
     const now = new Date().toISOString();
+    const current = leads[index];
     const updated: RetailPipelineLead = {
-      ...leads[index],
-      scheduledDate: scheduledDate || undefined,
+      ...current,
+      scheduledDate:
+        input.scheduledDate === undefined ? current.scheduledDate : input.scheduledDate || undefined,
+      scheduledTime:
+        input.scheduledTime === undefined ? current.scheduledTime : input.scheduledTime || undefined,
+      calendarEventId:
+        input.calendarEventId === undefined ? current.calendarEventId : input.calendarEventId || undefined,
       updatedAt: now,
     };
+
+    if (!updated.scheduledDate) {
+      updated.scheduledTime = undefined;
+      updated.calendarEventId = undefined;
+    }
 
     const next = [...leads];
     next[index] = updated;
     this.storage.setItem(STORAGE_KEYS.retailPipelineLeads, JSON.stringify(next));
     return updated;
+  }
+
+  delete(leadId: EntityId): void {
+    const next = this.getAll().filter((lead) => lead.id !== leadId);
+    this.storage.setItem(STORAGE_KEYS.retailPipelineLeads, JSON.stringify(next));
   }
 
   updateRegion(leadId: EntityId, region: string | undefined): RetailPipelineLead {

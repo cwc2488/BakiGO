@@ -1,0 +1,243 @@
+import type {
+  PreMeetingGraphicInput,
+  PreMeetingGraphicLayout,
+} from "@/types/pre-meeting-graphic";
+
+const WIDTH = 1080;
+const HEIGHT = 1350;
+
+type TextLine = { text: string; bold?: boolean; gapAfter?: number };
+
+function buildTextLines(input: PreMeetingGraphicInput): TextLine[] {
+  const lines: TextLine[] = [
+    { text: `邀約人：${input.inviter}` },
+    { text: `邀約店家：${input.invitingStore}` },
+    { text: `諮詢店家：${input.consultingStore}` },
+    { text: `上線績優：${input.uplinePerformance}` },
+    { text: `邀約日期：${input.appointmentDateTime}`, gapAfter: 8 },
+    { text: `客人名字：${input.customerName}` },
+    { text: `電話：${input.phone}` },
+    { text: `居住地區：${input.region}` },
+    { text: `背景：${input.background}` },
+    { text: `年齡：${input.age}` },
+    { text: `來源：${input.source}` },
+    { text: `需求：${input.need}` },
+    { text: `身高/體重：${input.heightWeight}` },
+  ];
+
+  if (input.targetWeightLoss.trim()) {
+    lines.push({ text: `想減的體重數：${input.targetWeightLoss}` });
+  }
+
+  lines.push(
+    { text: `決心：${input.determination}`, gapAfter: 8 },
+    { text: `身體哪裡不滿意：${input.bodyDissatisfaction}` },
+    { text: `試過：${input.triedBefore}`, gapAfter: 8 },
+    { text: `希望締結：${input.closingGoal}` },
+  );
+
+  if (input.additionalNotes.trim()) {
+    lines.push({ text: input.additionalNotes.trim(), gapAfter: 0 });
+  }
+
+  return lines.filter((line) => {
+    const colonIndex = line.text.indexOf("：");
+    if (colonIndex < 0) {
+      return line.text.trim().length > 0;
+    }
+    return line.text.slice(colonIndex + 1).trim().length > 0;
+  });
+}
+
+function wrapParagraph(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+): string[] {
+  ctx.font = `${fontSize}px "PingFang TC", "Noto Sans TC", sans-serif`;
+  const paragraphs = text.split("\n");
+  const wrapped: string[] = [];
+
+  for (const paragraph of paragraphs) {
+    if (!paragraph.trim()) {
+      wrapped.push("");
+      continue;
+    }
+
+    let current = "";
+    for (const char of paragraph) {
+      const next = current + char;
+      if (ctx.measureText(next).width > maxWidth && current) {
+        wrapped.push(current);
+        current = char;
+      } else {
+        current = next;
+      }
+    }
+    if (current) {
+      wrapped.push(current);
+    }
+  }
+
+  return wrapped;
+}
+
+function drawCoverImage(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  width: number,
+  height: number,
+) {
+  const scale = Math.max(width / image.width, height / image.height);
+  const drawWidth = image.width * scale;
+  const drawHeight = image.height * scale;
+  const offsetX = (width - drawWidth) / 2;
+  const offsetY = (height - drawHeight) / 2;
+  ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+}
+
+function drawCenteredTextBlock(
+  ctx: CanvasRenderingContext2D,
+  lines: TextLine[],
+  box: { x: number; y: number; width: number },
+  fontSize: number,
+) {
+  const lineHeight = Math.round(fontSize * 1.45);
+  const maxTextWidth = box.width - 80;
+  const renderedLines: Array<{ text: string; gapAfter: number }> = [];
+
+  for (const line of lines) {
+    const colonIndex = line.text.indexOf("：");
+    const prefix = colonIndex >= 0 ? line.text.slice(0, colonIndex + 1) : "";
+    const body = colonIndex >= 0 ? line.text.slice(colonIndex + 1) : line.text;
+    const wrapped = wrapParagraph(ctx, body, maxTextWidth - ctx.measureText(prefix).width, fontSize);
+
+    wrapped.forEach((part, index) => {
+      renderedLines.push({
+        text: index === 0 ? `${prefix}${part}` : part,
+        gapAfter: index === wrapped.length - 1 ? line.gapAfter ?? 0 : 0,
+      });
+    });
+  }
+
+  const contentHeight =
+    renderedLines.reduce((sum, line) => sum + lineHeight + line.gapAfter, 0) + 64;
+  const boxY = Math.min(Math.max(80, box.y), HEIGHT - contentHeight - 80);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.roundRect(box.x, boxY, box.width, contentHeight, 24);
+  ctx.fill();
+
+  ctx.fillStyle = "#1d1d1f";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.font = `${fontSize}px "PingFang TC", "Noto Sans TC", sans-serif`;
+
+  let cursorY = boxY + 32;
+  for (const line of renderedLines) {
+    ctx.fillText(line.text, box.x + box.width / 2, cursorY, maxTextWidth);
+    cursorY += lineHeight + line.gapAfter;
+  }
+}
+
+function drawCircleLayout(ctx: CanvasRenderingContext2D, image: HTMLImageElement, lines: TextLine[]) {
+  const gradient = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+  gradient.addColorStop(0, "#dbeafe");
+  gradient.addColorStop(1, "#f5f3ff");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  const diameter = 420;
+  const circleX = WIDTH / 2;
+  const circleY = 250;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(circleX, circleY, diameter / 2, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+  const scale = Math.max(diameter / image.width, diameter / image.height);
+  const drawWidth = image.width * scale;
+  const drawHeight = image.height * scale;
+  ctx.drawImage(image, circleX - drawWidth / 2, circleY - drawHeight / 2, drawWidth, drawHeight);
+  ctx.restore();
+
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.arc(circleX, circleY, diameter / 2, 0, Math.PI * 2);
+  ctx.stroke();
+
+  drawCenteredTextBlock(ctx, lines, { x: 72, y: 520, width: WIDTH - 144 }, 28);
+}
+
+function drawOverlayLayout(ctx: CanvasRenderingContext2D, image: HTMLImageElement, lines: TextLine[]) {
+  drawCoverImage(ctx, image, WIDTH, HEIGHT);
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.12)";
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  drawCenteredTextBlock(ctx, lines, { x: 90, y: 420, width: WIDTH - 180 }, 30);
+}
+
+export async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("無法讀取照片"));
+      image.src = url;
+    });
+    return image;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+export async function generatePreMeetingGraphicBlob(input: {
+  photo: HTMLImageElement;
+  form: PreMeetingGraphicInput;
+  layout: PreMeetingGraphicLayout;
+}): Promise<Blob> {
+  const canvas = document.createElement("canvas");
+  canvas.width = WIDTH;
+  canvas.height = HEIGHT;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("無法建立畫布");
+  }
+
+  const lines = buildTextLines(input.form);
+  if (input.layout === "circle") {
+    drawCircleLayout(ctx, input.photo, lines);
+  } else {
+    drawOverlayLayout(ctx, input.photo, lines);
+  }
+
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("輸出圖片失敗"));
+          return;
+        }
+        resolve(blob);
+      },
+      "image/png",
+      1,
+    );
+  });
+}
+
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}

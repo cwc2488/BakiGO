@@ -4,8 +4,9 @@ import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import {
   advancePipelineLead,
   createPipelineLead,
+  deletePipelineLead,
   updatePipelineLeadRegion,
-  updatePipelineLeadScheduledDate,
+  updatePipelineLeadSchedule,
 } from "@/lib/retail-pipeline/advance-pipeline-lead";
 import { RegionField } from "@/components/ui/RegionField";
 import { buildRetailPipelineSnapshot } from "@/lib/retail-pipeline/pipeline-selectors";
@@ -42,24 +43,52 @@ function formatScheduledDateHint(scheduledDate: string | undefined): string | nu
   return null;
 }
 
+function formatScheduledLabel(scheduledDate?: string, scheduledTime?: string): string | null {
+  if (!scheduledDate) {
+    return null;
+  }
+  const monthDay = `${Number(scheduledDate.slice(5, 7))}/${Number(scheduledDate.slice(8, 10))}`;
+  return scheduledTime ? `${monthDay} ${scheduledTime}` : monthDay;
+}
+
 function LeadCard({
   lead,
   onAdvance,
-  onScheduledDateChange,
+  onScheduleChange,
   onRegionChange,
+  onDelete,
   isAdvancing,
 }: {
   lead: RetailPipelineLeadView;
   onAdvance: (leadId: string) => void;
-  onScheduledDateChange: (leadId: string, scheduledDate: string) => void;
+  onScheduleChange: (leadId: string, scheduledDate: string, scheduledTime: string) => void;
   onRegionChange: (leadId: string, region: string) => void;
+  onDelete: (leadId: string) => void;
   isAdvancing: boolean;
 }) {
   const scheduleHint = formatScheduledDateHint(lead.scheduledDate);
+  const scheduleLabel = formatScheduledLabel(lead.scheduledDate, lead.scheduledTime);
 
   return (
     <article className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-primary-muted)] p-4">
-      <p className="text-[1rem] font-semibold text-[#1d1d1f]">{lead.displayName}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[1rem] font-semibold text-[#1d1d1f]">{lead.displayName}</p>
+          {scheduleLabel ? (
+            <p className="mt-1 text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]">
+              排定 {scheduleLabel}
+              {lead.calendarEventId ? " · 已同步行事曆" : ""}
+            </p>
+          ) : null}
+        </div>
+        <button
+          className="shrink-0 rounded-lg px-2 py-1 text-[0.75rem] font-medium text-[#ff375f]"
+          onClick={() => onDelete(lead.leadId)}
+          type="button"
+        >
+          刪除
+        </button>
+      </div>
 
       <label className="mt-3 block space-y-1.5">
         <span className="text-[0.75rem] font-medium text-[#86868b]">地區</span>
@@ -69,24 +98,39 @@ function LeadCard({
         />
       </label>
 
-      <label className="mt-3 block space-y-1.5">
-        <span className="text-[0.75rem] font-medium text-[#86868b]">排定執行日期</span>
-        <input
-          className="date-input w-full"
-          onChange={(event) => onScheduledDateChange(lead.leadId, event.target.value)}
-          type="date"
-          value={lead.scheduledDate ?? ""}
-        />
-        {scheduleHint ? (
-          <span
-            className={`text-[0.75rem] font-medium ${
-              scheduleHint === "已逾期" ? "text-[#ff375f]" : "text-[var(--brand-primary-dark)]"
-            }`}
-          >
-            {scheduleHint}
-          </span>
-        ) : null}
-      </label>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <label className="block space-y-1.5">
+          <span className="text-[0.75rem] font-medium text-[#86868b]">排定日期</span>
+          <input
+            className="date-input w-full"
+            onChange={(event) =>
+              onScheduleChange(lead.leadId, event.target.value, lead.scheduledTime ?? "")
+            }
+            type="date"
+            value={lead.scheduledDate ?? ""}
+          />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-[0.75rem] font-medium text-[#86868b]">排定時間</span>
+          <input
+            className="date-input w-full"
+            onChange={(event) =>
+              onScheduleChange(lead.leadId, lead.scheduledDate ?? "", event.target.value)
+            }
+            type="time"
+            value={lead.scheduledTime ?? ""}
+          />
+        </label>
+      </div>
+      {scheduleHint ? (
+        <span
+          className={`mt-1 inline-block text-[0.75rem] font-medium ${
+            scheduleHint === "已逾期" ? "text-[#ff375f]" : "text-[var(--brand-primary-dark)]"
+          }`}
+        >
+          {scheduleHint}
+        </span>
+      ) : null}
 
       {lead.nextStepLabel ? (
         <p className="mt-1.5 text-[0.8125rem] text-[#86868b]">
@@ -114,15 +158,17 @@ function PipelineStageSection({
   stageIndex,
   advancingLeadId,
   onAdvance,
-  onScheduledDateChange,
+  onScheduleChange,
   onRegionChange,
+  onDelete,
 }: {
   column: RetailPipelineColumnView;
   stageIndex: number;
   advancingLeadId: string | null;
   onAdvance: (leadId: string) => void;
-  onScheduledDateChange: (leadId: string, scheduledDate: string) => void;
+  onScheduleChange: (leadId: string, scheduledDate: string, scheduledTime: string) => void;
   onRegionChange: (leadId: string, region: string) => void;
+  onDelete: (leadId: string) => void;
 }) {
   const hasLeads = column.leads.length > 0;
 
@@ -152,8 +198,9 @@ function PipelineStageSection({
                 isAdvancing={advancingLeadId === lead.leadId}
                 lead={lead}
                 onAdvance={onAdvance}
+                onDelete={onDelete}
                 onRegionChange={onRegionChange}
-                onScheduledDateChange={onScheduledDateChange}
+                onScheduleChange={onScheduleChange}
               />
             ))}
           </div>
@@ -200,14 +247,34 @@ export default function RetailPipelinePage() {
     [refresh, storage],
   );
 
-  const handleScheduledDateChange = useCallback(
-    (leadId: string, scheduledDate: string) => {
+  const handleScheduleChange = useCallback(
+    (leadId: string, scheduledDate: string, scheduledTime: string) => {
       setError(null);
       try {
-        updatePipelineLeadScheduledDate(leadId, scheduledDate || undefined, storage);
+        updatePipelineLeadSchedule(
+          leadId,
+          {
+            scheduledDate: scheduledDate || undefined,
+            scheduledTime: scheduledTime || undefined,
+          },
+          storage,
+        );
         refresh();
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "無法更新排定日期");
+        setError(caught instanceof Error ? caught.message : "無法更新排定時間");
+      }
+    },
+    [refresh, storage],
+  );
+
+  const handleDeleteLead = useCallback(
+    (leadId: string) => {
+      setError(null);
+      try {
+        deletePipelineLead(leadId, storage);
+        refresh();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "無法刪除名單");
       }
     },
     [refresh, storage],
@@ -251,7 +318,7 @@ export default function RetailPipelinePage() {
             {APP_EMOJI.page.pipeline} 名單流程
           </h1>
           <p className="text-[0.9375rem] text-[#86868b]">
-            共 {snapshot.totalLeads} 位名單 · 每位只會在一個階段
+            共 {snapshot.totalLeads} 位名單 · 排定後自動加入行事曆
           </p>
         </header>
 
@@ -286,8 +353,9 @@ export default function RetailPipelinePage() {
               advancingLeadId={advancingLeadId}
               column={column}
               onAdvance={handleAdvance}
+              onDelete={handleDeleteLead}
               onRegionChange={handleRegionChange}
-              onScheduledDateChange={handleScheduledDateChange}
+              onScheduleChange={handleScheduleChange}
               stageIndex={index}
             />
           ))}

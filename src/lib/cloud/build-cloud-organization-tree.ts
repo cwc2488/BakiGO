@@ -8,6 +8,7 @@ function buildMemberView(
 ): OrganizationMemberView {
   return {
     memberId: member.id,
+    memberNumber: member.memberNumber,
     name: member.name,
     qualificationLabel: getCloudMemberLevelLabel(member.currentLevel),
     monthlyVp: 0,

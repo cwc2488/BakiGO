@@ -5,6 +5,11 @@ import {
   getNextPipelineStageKey,
   getPipelineStageDefinition,
 } from "@/lib/retail-pipeline/pipeline-stages";
+import {
+  removePipelineLeadCalendarEvent,
+  syncPipelineLeadCalendarEvent,
+} from "@/lib/retail-pipeline/sync-pipeline-lead-calendar";
+import { refreshCalendarReminderSchedule } from "@/lib/calendar/calendar-reminder-runner";
 import { createRetailLeadRepository } from "@/lib/repositories/retail-lead-repository";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
@@ -133,6 +138,14 @@ export function updatePipelineLeadScheduledDate(
   scheduledDate: string | undefined,
   storage: StorageAdapter,
 ): RetailPipelineLead {
+  return updatePipelineLeadSchedule(leadId, { scheduledDate: scheduledDate?.trim() || undefined }, storage);
+}
+
+export function updatePipelineLeadSchedule(
+  leadId: EntityId,
+  input: { scheduledDate?: string; scheduledTime?: string },
+  storage: StorageAdapter,
+): RetailPipelineLead {
   const repository = createRetailLeadRepository(storage);
   const lead = repository.getById(leadId);
   if (!lead) {
@@ -144,5 +157,41 @@ export function updatePipelineLeadScheduledDate(
     throw new Error("無權限操作此名單");
   }
 
-  return repository.updateScheduledDate(leadId, scheduledDate?.trim() || undefined);
+  const previousCalendarEventId = lead.calendarEventId;
+  let updated = repository.updateSchedule(leadId, {
+    scheduledDate: input.scheduledDate?.trim() || undefined,
+    scheduledTime: input.scheduledTime?.trim() || undefined,
+    calendarEventId: undefined,
+  });
+
+  if (!updated.scheduledDate) {
+    if (previousCalendarEventId) {
+      removePipelineLeadCalendarEvent({ ...updated, calendarEventId: previousCalendarEventId }, storage);
+    }
+    updated = repository.updateSchedule(leadId, { calendarEventId: undefined });
+    void refreshCalendarReminderSchedule(storage);
+    return updated;
+  }
+
+  const calendarEventId = syncPipelineLeadCalendarEvent(updated, storage);
+  updated = repository.updateSchedule(leadId, { calendarEventId });
+  void refreshCalendarReminderSchedule(storage);
+  return updated;
+}
+
+export function deletePipelineLead(leadId: EntityId, storage: StorageAdapter): void {
+  const repository = createRetailLeadRepository(storage);
+  const lead = repository.getById(leadId);
+  if (!lead) {
+    throw new Error("找不到名單");
+  }
+
+  const ownerMemberId = resolveAuthenticatedMemberId(storage);
+  if (lead.ownerMemberId !== ownerMemberId) {
+    throw new Error("無權限操作此名單");
+  }
+
+  removePipelineLeadCalendarEvent(lead, storage);
+  repository.delete(leadId);
+  void refreshCalendarReminderSchedule(storage);
 }

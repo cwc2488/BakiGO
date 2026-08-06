@@ -76,6 +76,11 @@ export function OrganizationMemberDetail({
         <div>
           <p className="text-[0.8125rem] font-medium text-[#86868b]">夥伴詳情</p>
           <h2 className="mt-1 text-[1.375rem] font-semibold text-[#1d1d1f]">{member.name}</h2>
+          {member.memberNumber ? (
+            <p className="mt-1 text-[0.875rem] font-medium text-[var(--brand-primary-dark)]">
+              會員編號 {member.memberNumber}
+            </p>
+          ) : null}
           <p className="mt-1 text-[0.9375rem] text-[#86868b]">{selectedRank || currentRankLabel}</p>
         </div>
         <span

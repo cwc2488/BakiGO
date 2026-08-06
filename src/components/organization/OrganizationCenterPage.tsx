@@ -37,6 +37,7 @@ function mergeCloudTreeWithLocalMetrics(
   const mergedMember = metrics
     ? {
         ...node.member,
+        memberNumber: node.member.memberNumber || localMember?.herbalifeMemberId || "",
         monthlyVp: metrics.vp.totalVp,
         metMonthlyVp2500: node.member.monthlyVpTarget
           ? metrics.vp.totalVp >= node.member.monthlyVpTarget
@@ -46,7 +47,10 @@ function mergeCloudTreeWithLocalMetrics(
         availablePoints: metrics.gamification.points.availablePoints,
         streakMultiplier: metrics.gamification.points.streakMultiplier,
       }
-    : node.member;
+    : {
+        ...node.member,
+        memberNumber: node.member.memberNumber || localMember?.herbalifeMemberId || "",
+      };
 
   return {
     member: mergedMember,
