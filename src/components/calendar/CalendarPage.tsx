@@ -566,6 +566,33 @@ export default function CalendarPage() {
     }
   }
 
+  async function handleEventReschedule(
+    expanded: ExpandedCalendarEvent,
+    newStartAt: string,
+    newEndAt: string,
+  ) {
+    const repository = createCalendarEventRepository(storage);
+    const existing = repository.getById(expanded.sourceEventId);
+    if (!existing) {
+      return;
+    }
+
+    try {
+      await syncToGoogle(
+        repository.update(expanded.sourceEventId, {
+          startAt: newStartAt,
+          endAt: newEndAt,
+        }),
+        "update",
+      );
+      reloadEvents();
+      await refreshCalendarReminderSchedule(storage);
+      setStatusMessage(`行程已移至 ${newStartAt.slice(11, 16)}`);
+    } catch (caught) {
+      setStatusMessage(caught instanceof Error ? caught.message : "移動失敗");
+    }
+  }
+
   async function handleDelete() {
     if (!editingEventId) {
       return;
@@ -797,6 +824,9 @@ export default function CalendarPage() {
               dayDate={selectedDate}
               events={dayEvents}
               intervalMinutes={slotInterval}
+              onEventReschedule={(event, startAt, endAt) =>
+                void handleEventReschedule(event, startAt, endAt)
+              }
               onEventSelect={openEdit}
               onSlotSelect={openCreate}
               swipeHandlers={daySwipeHandlers}

@@ -1,13 +1,17 @@
 "use client";
 
+import { canDragCalendarEvent } from "@/lib/calendar/can-drag-calendar-event";
 import {
+  clampDragTopPx,
+  eventDurationMinutes,
+  formatEventTimeRange,
   formatTimeLabel,
   getGridHeightPx,
   getSlotCount,
   getSlotHeightPx,
   layoutTimedEvents,
+  rescheduleTimesFromGridTop,
   slotIndexToTime,
-  formatEventTimeRange,
 } from "@/lib/calendar/time-grid";
 import { getCalendarEventSurfaceStyle } from "@/lib/calendar/event-styles";
 import {
@@ -17,6 +21,11 @@ import {
   type ExpandedCalendarEvent,
 } from "@/types/calendar-event";
 import type { SwipeHandlers } from "@/lib/hooks/use-swipe-navigation";
+import { useRef, useState } from "react";
+
+const DRAG_THRESHOLD_PX = 8;
+
+type TimedEventLayout = ReturnType<typeof layoutTimedEvents>[number];
 
 function CurrentTimeIndicator({
   dayDate,
@@ -48,12 +57,182 @@ function CurrentTimeIndicator({
   );
 }
 
+function DraggableTimedEvent({
+  dayDate,
+  intervalMinutes,
+  layout,
+  onEventSelect,
+  onEventReschedule,
+  onDragActiveChange,
+}: {
+  dayDate: string;
+  intervalMinutes: CalendarSlotInterval;
+  layout: TimedEventLayout;
+  onEventSelect: (event: ExpandedCalendarEvent) => void;
+  onEventReschedule?: (
+    event: ExpandedCalendarEvent,
+    startAt: string,
+    endAt: string,
+  ) => void;
+  onDragActiveChange: (active: boolean) => void;
+}) {
+  const dragRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    originTopPx: number;
+    moved: boolean;
+  } | null>(null);
+  const [previewTopPx, setPreviewTopPx] = useState<number | null>(null);
+  const draggable = canDragCalendarEvent(layout.event) && Boolean(onEventReschedule);
+  const topPx = previewTopPx ?? layout.topPx;
+  const isDragging = previewTopPx !== null;
+
+  const insetPx = 4;
+  const gapPx = 2;
+  const totalColumns = Math.round(100 / layout.widthPercent);
+  const columnIndex = Math.round(layout.leftPercent / layout.widthPercent);
+  const trackWidth = `(100% - ${insetPx * 2}px - ${Math.max(0, totalColumns - 1) * gapPx}px)`;
+
+  function resetDrag() {
+    dragRef.current = null;
+    setPreviewTopPx(null);
+    onDragActiveChange(false);
+  }
+
+  function commitDrag(clientY: number) {
+    const drag = dragRef.current;
+    if (!drag?.moved || !onEventReschedule) {
+      return;
+    }
+
+    const deltaY = clientY - drag.startClientY;
+    const nextTopPx = clampDragTopPx(
+      drag.originTopPx + deltaY,
+      layout.heightPx,
+      intervalMinutes,
+    );
+    const durationMinutes = eventDurationMinutes(layout.event.startAt, layout.event.endAt);
+    const nextTimes = rescheduleTimesFromGridTop({
+      dayDate,
+      topPx: nextTopPx,
+      durationMinutes,
+      intervalMinutes,
+    });
+
+    if (
+      nextTimes.startAt !== layout.event.startAt ||
+      nextTimes.endAt !== layout.event.endAt
+    ) {
+      onEventReschedule(layout.event, nextTimes.startAt, nextTimes.endAt);
+    }
+  }
+
+  return (
+    <button
+      className={`absolute box-border overflow-hidden rounded-[4px] px-1.5 py-1 text-left transition-shadow ${
+        isDragging ? "z-30 cursor-grabbing shadow-lg ring-2 ring-[var(--cal-primary)]/40" : "z-10"
+      } ${draggable ? "touch-none cursor-grab active:cursor-grabbing" : ""}`}
+      onClick={(clickEvent) => {
+        if (dragRef.current?.moved) {
+          clickEvent.preventDefault();
+          clickEvent.stopPropagation();
+          return;
+        }
+        clickEvent.stopPropagation();
+        onEventSelect(layout.event);
+      }}
+      onPointerCancel={() => {
+        resetDrag();
+      }}
+      onPointerDown={(event) => {
+        if (!draggable) {
+          return;
+        }
+        dragRef.current = {
+          pointerId: event.pointerId,
+          startClientX: event.clientX,
+          startClientY: event.clientY,
+          originTopPx: layout.topPx,
+          moved: false,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) {
+          return;
+        }
+
+        const deltaY = event.clientY - drag.startClientY;
+        const deltaX = event.clientX - drag.startClientX;
+
+        if (!drag.moved) {
+          if (Math.abs(deltaY) < DRAG_THRESHOLD_PX && Math.abs(deltaX) < DRAG_THRESHOLD_PX) {
+            return;
+          }
+          if (Math.abs(deltaX) > Math.abs(deltaY)) {
+            resetDrag();
+            event.currentTarget.releasePointerCapture(event.pointerId);
+            return;
+          }
+          drag.moved = true;
+          onDragActiveChange(true);
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        setPreviewTopPx(
+          clampDragTopPx(drag.originTopPx + deltaY, layout.heightPx, intervalMinutes),
+        );
+      }}
+      onPointerUp={(event) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) {
+          return;
+        }
+
+        event.currentTarget.releasePointerCapture(event.pointerId);
+
+        if (drag.moved) {
+          event.preventDefault();
+          event.stopPropagation();
+          commitDrag(event.clientY);
+          window.setTimeout(resetDrag, 0);
+          return;
+        }
+
+        resetDrag();
+      }}
+      style={{
+        top: topPx,
+        height: layout.heightPx,
+        left: `calc(${insetPx}px + ${trackWidth} * ${columnIndex / totalColumns} + ${columnIndex * gapPx}px)`,
+        width: `calc(${trackWidth} * ${layout.widthPercent / 100})`,
+        zIndex: isDragging ? 30 + columnIndex : 10 + columnIndex,
+        ...getCalendarEventSurfaceStyle(layout.event.color, {
+          attended: layout.event.attendedFromShared,
+        }),
+      }}
+      type="button"
+    >
+      <p className="truncate text-[0.75rem] font-semibold leading-tight">{layout.event.title}</p>
+      {layout.heightPx >= 36 ? (
+        <p className="truncate text-[0.625rem] leading-tight text-[#636366]">
+          {formatEventTimeRange(layout.event.startAt, layout.event.endAt, layout.event.allDay)}
+        </p>
+      ) : null}
+    </button>
+  );
+}
+
 export function DayTimeGrid({
   dayDate,
   events,
   intervalMinutes,
   onSlotSelect,
   onEventSelect,
+  onEventReschedule,
   swipeHandlers,
 }: {
   dayDate: string;
@@ -61,8 +240,15 @@ export function DayTimeGrid({
   intervalMinutes: CalendarSlotInterval;
   onSlotSelect: (startAt: string) => void;
   onEventSelect: (event: ExpandedCalendarEvent) => void;
+  onEventReschedule?: (
+    event: ExpandedCalendarEvent,
+    startAt: string,
+    endAt: string,
+  ) => void;
   swipeHandlers?: SwipeHandlers;
 }) {
+  const [isDraggingEvent, setIsDraggingEvent] = useState(false);
+
   const slotCount = getSlotCount(intervalMinutes);
   const slotHeight = getSlotHeightPx(intervalMinutes);
   const gridHeight = getGridHeightPx(intervalMinutes);
@@ -77,10 +263,12 @@ export function DayTimeGrid({
     return { index, hour, minute, label: minute === 0 ? formatTimeLabel(hour, 0) : "" };
   });
 
+  const gridSwipeHandlers = isDraggingEvent ? undefined : swipeHandlers;
+
   return (
     <div
       className="touch-pan-y overflow-hidden rounded-[1.25rem] border border-[var(--cal-border)] bg-[var(--cal-surface)]"
-      {...swipeHandlers}
+      {...gridSwipeHandlers}
     >
       {allDayEvents.length > 0 ? (
         <div className="border-b border-[var(--cal-border)] px-4 py-3">
@@ -133,43 +321,25 @@ export function DayTimeGrid({
 
           <CurrentTimeIndicator dayDate={dayDate} intervalMinutes={intervalMinutes} />
 
-          {timedLayouts.map((layout) => {
-            const insetPx = 4;
-            const gapPx = 2;
-            const totalColumns = Math.round(100 / layout.widthPercent);
-            const columnIndex = Math.round(layout.leftPercent / layout.widthPercent);
-            const trackWidth = `(100% - ${insetPx * 2}px - ${Math.max(0, totalColumns - 1) * gapPx}px)`;
-            return (
-              <button
-                key={layout.event.occurrenceId}
-                className="absolute box-border overflow-hidden rounded-[4px] px-1.5 py-1 text-left"
-                onClick={(clickEvent) => {
-                  clickEvent.stopPropagation();
-                  onEventSelect(layout.event);
-                }}
-                style={{
-                  top: layout.topPx,
-                  height: layout.heightPx,
-                  left: `calc(${insetPx}px + ${trackWidth} * ${columnIndex / totalColumns} + ${columnIndex * gapPx}px)`,
-                  width: `calc(${trackWidth} * ${layout.widthPercent / 100})`,
-                  zIndex: 10 + columnIndex,
-                  ...getCalendarEventSurfaceStyle(layout.event.color, {
-                    attended: layout.event.attendedFromShared,
-                  }),
-                }}
-                type="button"
-              >
-                <p className="truncate text-[0.75rem] font-semibold leading-tight">{layout.event.title}</p>
-                {layout.heightPx >= 36 ? (
-                  <p className="truncate text-[0.625rem] leading-tight text-[#636366]">
-                    {formatEventTimeRange(layout.event.startAt, layout.event.endAt, layout.event.allDay)}
-                  </p>
-                ) : null}
-              </button>
-            );
-          })}
+          {timedLayouts.map((layout) => (
+            <DraggableTimedEvent
+              key={layout.event.occurrenceId}
+              dayDate={dayDate}
+              intervalMinutes={intervalMinutes}
+              layout={layout}
+              onDragActiveChange={setIsDraggingEvent}
+              onEventReschedule={onEventReschedule}
+              onEventSelect={onEventSelect}
+            />
+          ))}
         </div>
       </div>
+
+      {onEventReschedule ? (
+        <p className="border-t border-[var(--cal-border)] px-4 py-2 text-center text-[0.6875rem] text-[var(--cal-hint)]">
+          拖曳行程可調整時間
+        </p>
+      ) : null}
     </div>
   );
 }

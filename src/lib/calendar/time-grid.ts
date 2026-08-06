@@ -314,3 +314,57 @@ export function formatEventTimeRange(startAt: string, endAt: string, allDay: boo
   }
   return `${startAt.slice(11, 16)} – ${endAt.slice(11, 16)}`;
 }
+
+export function eventDurationMinutes(startAt: string, endAt: string): number {
+  const startClock = parseWallClockDateTime(startAt);
+  const endClock = parseWallClockDateTime(endAt);
+  if (!startClock || !endClock) {
+    return 60;
+  }
+
+  const startDate = parseLocalDateTime(startAt);
+  const endDate = parseLocalDateTime(endAt);
+  return Math.max(15, Math.round((endDate.getTime() - startDate.getTime()) / 60_000));
+}
+
+export function shiftWallClockDateTime(value: string, deltaMinutes: number): string {
+  const date = parseLocalDateTime(value);
+  date.setMinutes(date.getMinutes() + deltaMinutes);
+  return formatLocalDateTime(date);
+}
+
+export function snapTopPxToGridMinutes(
+  topPx: number,
+  intervalMinutes: CalendarSlotInterval,
+): number {
+  const slotHeight = getSlotHeightPx(intervalMinutes);
+  const slotIndex = Math.round(topPx / slotHeight);
+  return slotIndex * intervalMinutes;
+}
+
+export function rescheduleTimesFromGridTop(input: {
+  dayDate: string;
+  topPx: number;
+  durationMinutes: number;
+  intervalMinutes: CalendarSlotInterval;
+}): { startAt: string; endAt: string } {
+  const gridTotalMinutes = (CALENDAR_DAY_END_HOUR - CALENDAR_DAY_START_HOUR) * 60;
+  const snappedMinutes = snapTopPxToGridMinutes(input.topPx, input.intervalMinutes);
+  const maxStartMinutes = Math.max(0, gridTotalMinutes - input.durationMinutes);
+  const clampedMinutes = Math.max(0, Math.min(maxStartMinutes, snappedMinutes));
+  const slotIndex = clampedMinutes / input.intervalMinutes;
+  const startAt = slotIndexToTime(input.dayDate, slotIndex, input.intervalMinutes);
+  const endAt = shiftWallClockDateTime(startAt, input.durationMinutes);
+  return { startAt, endAt };
+}
+
+export function clampDragTopPx(
+  topPx: number,
+  heightPx: number,
+  intervalMinutes: CalendarSlotInterval,
+): number {
+  const slotHeight = getSlotHeightPx(intervalMinutes);
+  const snappedTop = Math.round(topPx / slotHeight) * slotHeight;
+  const maxTop = getGridHeightPx(intervalMinutes) - heightPx;
+  return Math.max(0, Math.min(maxTop, snappedTop));
+}
