@@ -37,17 +37,33 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 
 `supabase/migrations/003_sponsor_update_policies.sql`
 
+## 跨裝置資料同步（需額外 migration）
+
+若要在手機／電腦／平板之間同步業務資料（活動紀錄、名單流程、行事曆等），請在 SQL Editor 執行：
+
+`supabase/migrations/004_member_app_data.sql`
+
+登入後會自動：
+1. 從雲端下載你的資料至本機
+2. 若雲端尚無資料，會上傳本機既有資料
+3. 之後每次新增／修改，約 1.5 秒後自動上傳
+
+同步範圍：活動紀錄、名單流程、個人行事曆、促銷活動、會員工作區、積分兌換、Super League 名單等。  
+**不含**：Google 行事曆 OAuth（各裝置需分別授權）、共用行事曆快取。
+
 ## 4. 驗收流程
 
 1. `/register` 建立會員 A（無推薦人）
 2. `/register` 建立會員 B，推薦人填 A 的會員編號
 3. 登入 A → **組織圖** 應看到自己與 B（第一代）
-4. 換瀏覽器／電腦，用 A 的 Email 登入 → 資料仍存在
+4. 換瀏覽器／電腦，用 A 的 Email 登入 → 組織與業務資料（活動、名單等）應仍存在
+5. 在 A 手機新增一筆活動 → 用 A 帳號登入另一台裝置 → 應看到相同資料
 
 ## 資料表
 
 - `members` — 會員主檔（member_number 唯一）
 - `organization_relationships` — parent → child 上下線關係
+- `member_app_data` — 跨裝置同步的業務資料（JSON 文件）
 
 ## 登入
 

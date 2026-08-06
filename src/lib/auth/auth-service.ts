@@ -10,11 +10,13 @@ import {
   clearCloudMembersMode,
   syncCloudMembersToLocalStorage,
 } from "@/lib/cloud/sync-cloud-members-to-local";
+import { syncAppDataOnLogin } from "@/lib/cloud/sync-app-data-on-login";
 import { APP_IDS } from "@/lib/config/app-config";
 import { createAuthRepository } from "@/lib/repositories/auth-repository";
 import { createMemberRepository } from "@/lib/repositories/member-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
+import { flushPendingCloudSync } from "@/lib/repositories/syncing-storage-adapter";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import {
   AuthError,
@@ -59,10 +61,11 @@ async function finalizeCloudAuth(
 ): Promise<AuthSession> {
   try {
     await syncCloudMembersToLocalStorage(storage);
+    await syncAppDataOnLogin(storage, member.id);
   } catch (error) {
     throw new AuthError(
       "cloud_sync_failed",
-      error instanceof Error ? error.message : "無法同步雲端會員資料",
+      error instanceof Error ? error.message : "無法同步雲端資料",
     );
   }
 
@@ -268,6 +271,8 @@ export async function restoreCloudSession(
 export async function logoutAccount(
   storage: StorageAdapter = createLocalStorageAdapter(),
 ): Promise<void> {
+  flushPendingCloudSync();
+
   if (isSupabaseConfigured()) {
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.signOut();

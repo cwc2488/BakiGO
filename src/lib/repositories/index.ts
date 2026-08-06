@@ -1,5 +1,6 @@
 export type { StorageAdapter } from "./storage-adapter";
-export { createLocalStorageAdapter, LocalStorageAdapter } from "./storage-adapter";
+export { createLocalStorageAdapter } from "./storage-adapter";
+export { LocalStorageAdapter } from "./local-storage-adapter";
 export type { RetailRepository } from "./retail-repository";
 export {
   createRetailRepository,

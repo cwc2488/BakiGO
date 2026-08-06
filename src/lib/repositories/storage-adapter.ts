@@ -1,32 +1,14 @@
+import { LocalStorageAdapter } from "./local-storage-adapter";
+import { createSyncingStorageAdapter } from "./syncing-storage-adapter";
+
 export interface StorageAdapter {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
 }
 
-export class LocalStorageAdapter implements StorageAdapter {
-  getItem(key: string): string | null {
-    if (typeof window === "undefined") {
-      return null;
-    }
-    return window.localStorage.getItem(key);
-  }
-
-  setItem(key: string, value: string): void {
-    if (typeof window === "undefined") {
-      return;
-    }
-    window.localStorage.setItem(key, value);
-  }
-
-  removeItem(key: string): void {
-    if (typeof window === "undefined") {
-      return;
-    }
-    window.localStorage.removeItem(key);
-  }
-}
+export { LocalStorageAdapter } from "./local-storage-adapter";
 
 export function createLocalStorageAdapter(): StorageAdapter {
-  return new LocalStorageAdapter();
+  return createSyncingStorageAdapter(new LocalStorageAdapter());
 }
