@@ -1,3 +1,4 @@
+import { isCloudDatabaseMemberId, filterCloudDatabaseMemberIds } from "@/lib/cloud/cloud-member-ids";
 import { SYNCABLE_STORAGE_KEYS } from "@/lib/cloud/syncable-storage-keys";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { EntityId } from "@/types";
@@ -26,7 +27,7 @@ function mapRow(row: MemberAppDataDbRow): CloudAppDataRow {
 }
 
 export async function fetchCloudAppData(memberId: EntityId): Promise<CloudAppDataRow[]> {
-  if (!isSupabaseConfigured()) {
+  if (!isSupabaseConfigured() || !isCloudDatabaseMemberId(memberId)) {
     return [];
   }
 
@@ -47,7 +48,8 @@ export async function fetchCloudAppDataBatch(
   memberIds: EntityId[],
   dataKeys?: string[],
 ): Promise<CloudAppDataRow[]> {
-  if (!isSupabaseConfigured() || memberIds.length === 0) {
+  const cloudMemberIds = filterCloudDatabaseMemberIds(memberIds);
+  if (!isSupabaseConfigured() || cloudMemberIds.length === 0) {
     return [];
   }
 
@@ -55,7 +57,7 @@ export async function fetchCloudAppDataBatch(
   let query = supabase
     .from("member_app_data")
     .select("member_id, data_key, payload, updated_at")
-    .in("member_id", memberIds);
+    .in("member_id", cloudMemberIds);
 
   if (dataKeys && dataKeys.length > 0) {
     query = query.in("data_key", dataKeys);
@@ -74,7 +76,7 @@ export async function upsertCloudAppDataRow(input: {
   dataKey: string;
   payload: unknown;
 }): Promise<void> {
-  if (!isSupabaseConfigured()) {
+  if (!isSupabaseConfigured() || !isCloudDatabaseMemberId(input.memberId)) {
     return;
   }
 

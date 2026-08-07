@@ -1,4 +1,5 @@
 import { fetchCloudAppDataBatch } from "@/lib/cloud/cloud-app-data-service";
+import { filterCloudDatabaseMemberIds } from "@/lib/cloud/cloud-member-ids";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import type { BakiEvent } from "@/types/baki-event";
 import type { OrganizationTreeNode } from "@/types/organization-center";
@@ -36,7 +37,9 @@ export async function fetchDownlineCloudData(
   memberIds: EntityId[],
   viewerMemberId: EntityId,
 ): Promise<DownlineCloudDataCache> {
-  const targetIds = memberIds.filter((id) => id !== viewerMemberId);
+  const targetIds = filterCloudDatabaseMemberIds(
+    memberIds.filter((id) => id !== viewerMemberId),
+  );
   if (targetIds.length === 0) {
     return new Map();
   }

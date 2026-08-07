@@ -1,3 +1,4 @@
+import { isCloudDatabaseMemberId } from "@/lib/cloud/cloud-member-ids";
 import { upsertCloudAppDataRow, fetchCloudAppDataBatch } from "@/lib/cloud/cloud-app-data-service";
 import { updateCloudMemberName } from "@/lib/cloud/cloud-member-service";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
@@ -138,6 +139,10 @@ export async function persistMemberProfile(
   memberId: EntityId,
   member: Member,
 ): Promise<void> {
+  if (!isCloudDatabaseMemberId(memberId)) {
+    return;
+  }
+
   const extension = extractMemberProfileExtension(member);
 
   if (isSupabaseConfigured()) {
