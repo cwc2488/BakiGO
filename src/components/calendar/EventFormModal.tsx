@@ -23,6 +23,7 @@ export interface EventFormValues {
   title: string;
   notes: string;
   date: string;
+  endDate: string;
   startTime: string;
   endTime: string;
   allDay: boolean;
@@ -62,6 +63,7 @@ export function buildDefaultFormValues(date: string, startTime = "09:00"): Event
     title: "",
     notes: "",
     date,
+    endDate: date,
     startTime,
     endTime: addHoursToTime(startTime, 1),
     allDay: false,
@@ -81,6 +83,7 @@ export function eventToFormValues(event: CalendarEvent): EventFormValues {
     title: event.title,
     notes: event.notes ?? "",
     date: event.startAt.slice(0, 10),
+    endDate: event.endAt.slice(0, 10),
     startTime: event.startAt.slice(11, 16),
     endTime: event.endAt.slice(11, 16),
     allDay: event.allDay,
@@ -100,6 +103,7 @@ export function expandedEventToFormValues(event: ExpandedCalendarEvent): EventFo
     title: event.title,
     notes: event.notes ?? "",
     date: event.startAt.slice(0, 10),
+    endDate: event.endAt.slice(0, 10),
     startTime: event.startAt.slice(11, 16),
     endTime: event.endAt.slice(11, 16),
     allDay: event.allDay,
@@ -116,7 +120,9 @@ export function expandedEventToFormValues(event: ExpandedCalendarEvent): EventFo
 
 export function formValuesToPayload(values: EventFormValues) {
   const startAt = values.allDay ? `${values.date}T00:00` : `${values.date}T${values.startTime}`;
-  const endAt = values.allDay ? `${values.date}T23:59` : `${values.date}T${values.endTime}`;
+  const endAt = values.allDay
+    ? `${values.endDate}T23:59`
+    : `${values.endDate}T${values.endTime}`;
 
   return {
     title: values.title.trim(),
@@ -144,7 +150,10 @@ export function validateEventFormValues(values: EventFormValues): string | null 
   if (!values.title.trim()) {
     return "請輸入標題";
   }
-  if (!values.allDay && values.endTime <= values.startTime) {
+  if (values.endDate < values.date) {
+    return "結束日期不可早於開始日期";
+  }
+  if (!values.allDay && values.endDate === values.date && values.endTime <= values.startTime) {
     return "結束時間必須晚於開始時間";
   }
   if (
@@ -415,16 +424,36 @@ export function EventFormModal({
             <span className="text-[0.9375rem] text-[#1d1d1f]">全天</span>
           </label>
 
-          <label className="block space-y-2">
-            <span className="text-[0.875rem] font-medium text-[#636366]">日期</span>
-            <input
-              className="w-full rounded-xl border border-[var(--cal-border)] px-4 py-3 disabled:bg-[var(--cal-primary-muted)] disabled:text-[var(--cal-text)]"
-              disabled={readOnly}
-              onChange={(event) => onChange({ ...values, date: event.target.value })}
-              type="date"
-              value={values.date}
-            />
-          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block space-y-2">
+              <span className="text-[0.875rem] font-medium text-[#636366]">開始日期</span>
+              <input
+                className="w-full rounded-xl border border-[var(--cal-border)] px-4 py-3 disabled:bg-[var(--cal-primary-muted)] disabled:text-[var(--cal-text)]"
+                disabled={readOnly}
+                onChange={(event) => {
+                  const date = event.target.value;
+                  onChange({
+                    ...values,
+                    date,
+                    endDate: values.endDate < date ? date : values.endDate,
+                  });
+                }}
+                type="date"
+                value={values.date}
+              />
+            </label>
+            <label className="block space-y-2">
+              <span className="text-[0.875rem] font-medium text-[#636366]">結束日期</span>
+              <input
+                className="w-full rounded-xl border border-[var(--cal-border)] px-4 py-3 disabled:bg-[var(--cal-primary-muted)] disabled:text-[var(--cal-text)]"
+                disabled={readOnly}
+                min={values.date}
+                onChange={(event) => onChange({ ...values, endDate: event.target.value })}
+                type="date"
+                value={values.endDate}
+              />
+            </label>
+          </div>
 
           {!values.allDay ? (
             <div className="grid grid-cols-2 gap-3">
@@ -438,7 +467,10 @@ export function EventFormModal({
                     onChange({
                       ...values,
                       startTime,
-                      endTime: addHoursToTime(startTime, 1),
+                      endTime:
+                        values.endDate === values.date
+                          ? addHoursToTime(startTime, 1)
+                          : values.endTime,
                     });
                   }}
                   type="time"

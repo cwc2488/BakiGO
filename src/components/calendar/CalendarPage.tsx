@@ -4,6 +4,7 @@ import { CalendarStatsPanel } from "@/components/calendar/CalendarStatsPanel";
 import { NotificationPermissionBanner } from "@/components/calendar/NotificationPermissionBanner";
 import { refreshCalendarReminderSchedule } from "@/lib/calendar/calendar-reminder-runner";
 import { DayTimeGrid } from "@/components/calendar/DayTimeGrid";
+import { RecurrenceScopeModal } from "@/components/calendar/RecurrenceScopeModal";
 import {
   EventFormModal,
   buildDefaultFormValues,
@@ -32,6 +33,13 @@ import {
 } from "@/lib/calendar/calendar-attendance-storage";
 import { getMonthStart, shiftMonth, shiftWeek } from "@/lib/calendar/calendar-stats";
 import { addDays, expandEventsForDay, expandEventsForRange, getMonthGridDates, getWeekDates } from "@/lib/calendar/recurrence";
+import {
+  getOccurrenceDateFromExpanded,
+  isRecurringSeries,
+  planRecurringDelete,
+  planRecurringUpdate,
+  type RecurrenceMutationResult,
+} from "@/lib/calendar/recurrence-scope";
 import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,
@@ -70,7 +78,7 @@ import { createCalendarEventRepository } from "@/lib/repositories/calendar-event
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { useSwipeNavigation } from "@/lib/hooks/use-swipe-navigation";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
-import type { CalendarEvent, CalendarSlotInterval, ExpandedCalendarEvent } from "@/types/calendar-event";
+import type { CalendarEvent, CalendarSlotInterval, ExpandedCalendarEvent, RecurrenceEditScope } from "@/types/calendar-event";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type CalendarViewMode = "day" | "week" | "month" | "stats";
@@ -131,6 +139,8 @@ export default function CalendarPage() {
   const [formReadOnly, setFormReadOnly] = useState(false);
   const [formValues, setFormValues] = useState(() => buildDefaultFormValues(getTodayDateString()));
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [editingOccurrence, setEditingOccurrence] = useState<ExpandedCalendarEvent | null>(null);
+  const [recurrenceScopeMode, setRecurrenceScopeMode] = useState<"edit" | "delete" | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(() =>
     readCalendarOAuthStatusMessage(storage),
   );
@@ -437,7 +447,18 @@ export default function CalendarPage() {
     setFormMode("edit");
     setFormReadOnly(false);
     setEditingEventId(source.id);
-    setFormValues(eventToFormValues(source));
+    setEditingOccurrence(expanded);
+    setFormValues({
+      ...eventToFormValues(source),
+      date: expanded.startAt.slice(0, 10),
+      endDate: expanded.endAt.slice(0, 10),
+      startTime: expanded.startAt.slice(11, 16),
+      endTime: expanded.endAt.slice(11, 16),
+      allDay: expanded.allDay,
+      title: expanded.title,
+      notes: expanded.notes ?? "",
+      activityTypeKey: expanded.activityTypeKey ?? source.activityTypeKey ?? formValues.activityTypeKey,
+    });
     setPersonalEventLogged(
       isPersonalCalendarEventLogged(storage, memberId, source.id, expanded.startAt.slice(0, 10)),
     );
@@ -547,6 +568,119 @@ export default function CalendarPage() {
     return event;
   }
 
+  async function applyRecurrenceMutation(plan: RecurrenceMutationResult): Promise<CalendarEvent | null> {
+    const repository = createCalendarEventRepository(storage);
+
+    if (plan.action === "delete") {
+      const existing = repository.getById(plan.eventId);
+      if (existing) {
+        await syncToGoogle(existing, "delete");
+      }
+      repository.delete(plan.eventId);
+      return null;
+    }
+
+    if (plan.action === "update") {
+      const updated = repository.update(plan.eventId, plan.input);
+      return syncToGoogle(updated, "update");
+    }
+
+    if (plan.updateParent) {
+      repository.update(plan.updateParent.eventId, plan.updateParent.input);
+    }
+    const created = repository.create(plan.input);
+    return syncToGoogle(created, "create");
+  }
+
+  function needsRecurrenceScopePrompt(source: CalendarEvent | undefined): boolean {
+    if (!source || !editingOccurrence) {
+      return false;
+    }
+    return isRecurringSeries(source);
+  }
+
+  async function finalizeEdit(scope?: RecurrenceEditScope) {
+    const repository = createCalendarEventRepository(storage);
+    const payload = formValuesToPayload(formValues);
+
+    if (formMode === "create") {
+      await syncToGoogle(repository.create({ memberId, ...payload }), "create");
+      setFormOpen(false);
+      reloadEvents();
+      await refreshCalendarReminderSchedule(storage);
+      setStatusMessage("行程已新增");
+      return;
+    }
+
+    if (!editingEventId) {
+      return;
+    }
+
+    const source = repository.getById(editingEventId);
+    if (!source) {
+      return;
+    }
+
+    if (needsRecurrenceScopePrompt(source)) {
+      if (!scope) {
+        setRecurrenceScopeMode("edit");
+        return;
+      }
+      const occurrenceDate =
+        getOccurrenceDateFromExpanded(editingOccurrence!, source) ?? formValues.date;
+      const plan = planRecurringUpdate(source, occurrenceDate, scope, payload);
+      await applyRecurrenceMutation(plan);
+    } else {
+      await syncToGoogle(repository.update(editingEventId, payload), "update");
+    }
+
+    setFormOpen(false);
+    setEditingOccurrence(null);
+    setRecurrenceScopeMode(null);
+    reloadEvents();
+    await refreshCalendarReminderSchedule(storage);
+    setStatusMessage("行程已更新");
+  }
+
+  async function finalizeDelete(scope?: RecurrenceEditScope) {
+    if (!editingEventId) {
+      return;
+    }
+
+    const repository = createCalendarEventRepository(storage);
+    const existing = repository.getById(editingEventId);
+    if (!existing) {
+      return;
+    }
+
+    if (needsRecurrenceScopePrompt(existing)) {
+      if (!scope) {
+        setRecurrenceScopeMode("delete");
+        return;
+      }
+      const occurrenceDate =
+        getOccurrenceDateFromExpanded(editingOccurrence!, existing) ?? formValues.date;
+      await applyRecurrenceMutation(planRecurringDelete(existing, occurrenceDate, scope));
+      removeBakiEventForPersonalCalendarEvent(storage, memberId, editingEventId, occurrenceDate);
+    } else {
+      await syncToGoogle(existing, "delete");
+      removeBakiEventForPersonalCalendarEvent(
+        storage,
+        memberId,
+        editingEventId,
+        existing.startAt.slice(0, 10),
+      );
+      repository.delete(editingEventId);
+    }
+
+    setFormOpen(false);
+    setEditingOccurrence(null);
+    setRecurrenceScopeMode(null);
+    reloadEvents();
+    await refreshCalendarReminderSchedule(storage);
+    setStatusMessage("行程已刪除");
+  }
+
   async function handleSubmit() {
     const validationError = validateEventFormValues(formValues);
     if (validationError) {
@@ -554,21 +688,31 @@ export default function CalendarPage() {
       return;
     }
 
-    const repository = createCalendarEventRepository(storage);
-    const payload = formValuesToPayload(formValues);
-
     try {
-      if (formMode === "create") {
-        await syncToGoogle(repository.create({ memberId, ...payload }), "create");
-      } else if (editingEventId) {
-        await syncToGoogle(repository.update(editingEventId, payload), "update");
-      }
-      setFormOpen(false);
-      reloadEvents();
-      await refreshCalendarReminderSchedule(storage);
-      setStatusMessage(formMode === "create" ? "行程已新增" : "行程已更新");
+      await finalizeEdit();
     } catch (caught) {
       setStatusMessage(caught instanceof Error ? caught.message : "儲存失敗");
+    }
+  }
+
+  async function handleDelete() {
+    try {
+      await finalizeDelete();
+    } catch (caught) {
+      setStatusMessage(caught instanceof Error ? caught.message : "刪除失敗");
+    }
+  }
+
+  async function handleRecurrenceScopeConfirm(scope: RecurrenceEditScope) {
+    try {
+      if (recurrenceScopeMode === "delete") {
+        await finalizeDelete(scope);
+      } else {
+        await finalizeEdit(scope);
+      }
+    } catch (caught) {
+      setStatusMessage(caught instanceof Error ? caught.message : "操作失敗");
+      setRecurrenceScopeMode(null);
     }
   }
 
@@ -596,34 +740,6 @@ export default function CalendarPage() {
       setStatusMessage(`行程已移至 ${newStartAt.slice(11, 16)}`);
     } catch (caught) {
       setStatusMessage(caught instanceof Error ? caught.message : "移動失敗");
-    }
-  }
-
-  async function handleDelete() {
-    if (!editingEventId) {
-      return;
-    }
-    const repository = createCalendarEventRepository(storage);
-    const existing = repository.getById(editingEventId);
-    if (!existing) {
-      return;
-    }
-
-    try {
-      await syncToGoogle(existing, "delete");
-      removeBakiEventForPersonalCalendarEvent(
-        storage,
-        memberId,
-        editingEventId,
-        existing.startAt.slice(0, 10),
-      );
-      repository.delete(editingEventId);
-      setFormOpen(false);
-      reloadEvents();
-      await refreshCalendarReminderSchedule(storage);
-      setStatusMessage("行程已刪除");
-    } catch (caught) {
-      setStatusMessage(caught instanceof Error ? caught.message : "刪除失敗");
     }
   }
 
@@ -891,6 +1007,8 @@ export default function CalendarPage() {
         onClose={() => {
           setFormOpen(false);
           setViewingExpandedEvent(null);
+          setEditingOccurrence(null);
+          setRecurrenceScopeMode(null);
         }}
         onDelete={formMode === "edit" ? () => void handleDelete() : undefined}
         onSubmit={() => void handleSubmit()}
@@ -899,6 +1017,13 @@ export default function CalendarPage() {
         readOnly={formReadOnly}
         sharedContext={formSharedContext}
         values={formValues}
+      />
+
+      <RecurrenceScopeModal
+        mode={recurrenceScopeMode === "delete" ? "delete" : "edit"}
+        onClose={() => setRecurrenceScopeMode(null)}
+        onConfirm={(scope) => void handleRecurrenceScopeConfirm(scope)}
+        open={recurrenceScopeMode !== null}
       />
     </div>
   );

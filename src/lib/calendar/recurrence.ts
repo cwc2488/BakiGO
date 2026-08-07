@@ -2,10 +2,39 @@ import { addDays, formatDateOnly, parseLocalDateTime } from "@/lib/calendar/time
 import type {
   CalendarEvent,
   ExpandedCalendarEvent,
+  RecurrenceException,
   RecurrenceRule,
 } from "@/types/calendar-event";
 
 const MAX_OCCURRENCES = 366;
+
+function applyOverrideToOccurrence(
+  base: ExpandedCalendarEvent,
+  override: NonNullable<RecurrenceException["override"]>,
+): ExpandedCalendarEvent {
+  return {
+    ...base,
+    title: override.title ?? base.title,
+    notes: override.notes ?? base.notes,
+    startAt: override.startAt ?? base.startAt,
+    endAt: override.endAt ?? base.endAt,
+    allDay: override.allDay ?? base.allDay,
+    color: override.color ?? base.color,
+    activityTypeKey: override.activityTypeKey ?? base.activityTypeKey,
+  };
+}
+
+function findRecurrenceException(
+  event: CalendarEvent,
+  occurrenceDate: string,
+): RecurrenceException | undefined {
+  return event.recurrenceExceptions?.find((item) => item.occurrenceDate === occurrenceDate);
+}
+
+function formatOccurrenceDate(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
 function cloneOccurrence(
   event: CalendarEvent,
@@ -129,10 +158,19 @@ export function expandEventOccurrences(
   let index = 0;
 
   while (!shouldStop(event.recurrence, index, cursor)) {
-    const occurrenceEnd = new Date(cursor.getTime() + durationMs);
+    const occurrenceDate = formatOccurrenceDate(cursor);
+    const exception = findRecurrenceException(event, occurrenceDate);
 
-    if (matchesWeekday(cursor, event.recurrence.weekdays) && isWithinRange(cursor, rangeStart, rangeEnd)) {
-      results.push(cloneOccurrence(event, cursor, occurrenceEnd, index));
+    if (!exception?.deleted) {
+      const occurrenceEnd = new Date(cursor.getTime() + durationMs);
+
+      if (matchesWeekday(cursor, event.recurrence.weekdays) && isWithinRange(cursor, rangeStart, rangeEnd)) {
+        let occurrence = cloneOccurrence(event, cursor, occurrenceEnd, index);
+        if (exception?.override) {
+          occurrence = applyOverrideToOccurrence(occurrence, exception.override);
+        }
+        results.push(occurrence);
+      }
     }
 
     if (cursor > rangeEnd && index > 0) {

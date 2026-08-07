@@ -25,6 +25,25 @@ export interface RecurrenceRule {
   weekdays?: number[];
 }
 
+/** 重複行程的單次例外（刪除或覆寫某一個 occurrence） */
+export interface RecurrenceException {
+  /** 該次 occurrence 的日期 YYYY-MM-DD */
+  occurrenceDate: ISODateString;
+  deleted?: boolean;
+  override?: {
+    title?: string;
+    notes?: string;
+    startAt?: string;
+    endAt?: string;
+    allDay?: boolean;
+    color?: CalendarEventColor;
+    activityTypeKey?: CalendarActivityTypeKey;
+    reminderMinutes?: number[];
+  };
+}
+
+export type RecurrenceEditScope = "this" | "this_and_future";
+
 export interface CalendarEvent extends StoredEntity {
   memberId: EntityId;
   title: string;
@@ -35,6 +54,7 @@ export interface CalendarEvent extends StoredEntity {
   allDay: boolean;
   color: CalendarEventColor;
   recurrence: RecurrenceRule;
+  recurrenceExceptions?: RecurrenceException[];
   /** 行程種類：量測、諮詢、會議等，供統計使用 */
   activityTypeKey?: CalendarActivityTypeKey;
   /** 從共用行事曆標記「會參加」後固定顯示 */
@@ -54,6 +74,7 @@ export interface CalendarEventCreateInput {
   allDay?: boolean;
   color: CalendarEventColor;
   recurrence?: RecurrenceRule;
+  recurrenceExceptions?: RecurrenceException[];
   activityTypeKey?: CalendarActivityTypeKey;
   attendedFromShared?: boolean;
   googleEventId?: string;
@@ -69,6 +90,7 @@ export interface CalendarEventUpdateInput {
   allDay?: boolean;
   color?: CalendarEventColor;
   recurrence?: RecurrenceRule;
+  recurrenceExceptions?: RecurrenceException[];
   activityTypeKey?: CalendarActivityTypeKey;
   attendedFromShared?: boolean;
   googleEventId?: string;

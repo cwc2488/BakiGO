@@ -66,6 +66,7 @@ export class LocalStorageCalendarEventRepository implements CalendarEventReposit
       allDay: input.allDay ?? false,
       color: input.color,
       recurrence: input.recurrence ?? defaultRecurrence(),
+      recurrenceExceptions: input.recurrenceExceptions,
       activityTypeKey: input.activityTypeKey,
       attendedFromShared: input.attendedFromShared,
       googleEventId: input.googleEventId,
