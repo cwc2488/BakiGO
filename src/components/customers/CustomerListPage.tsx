@@ -12,6 +12,7 @@ import {
 import { createCustomerRepository } from "@/lib/repositories/customer-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { PageShell } from "@/components/ui/PageShell";
+import { CrmButton } from "@/components/members/ui";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -23,7 +24,13 @@ interface CustomerListItem extends Customer {
   followUpUrgency?: "high" | "medium" | "low";
 }
 
-function CustomerCard({ customer }: { customer: CustomerListItem }) {
+function CustomerCard({
+  customer,
+  onDelete,
+}: {
+  customer: CustomerListItem;
+  onDelete: (customer: CustomerListItem) => void;
+}) {
   const urgencyStyles = {
     high: "bg-[#fff1f0] text-[#cf1322]",
     medium: "bg-[#fff7e6] text-[#d46b08]",
@@ -31,37 +38,48 @@ function CustomerCard({ customer }: { customer: CustomerListItem }) {
   };
 
   return (
-    <Link
-      className="block rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5 transition-transform duration-200 active:scale-[0.99]"
-      href={`/customers/${customer.id}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[1rem] font-semibold text-[#1d1d1f]">{customer.displayName}</p>
-          {customer.latestRecordDate ? (
-            <p className="mt-1 text-[0.8125rem] text-[#86868b]">
-              上次量測 {customer.latestRecordDate}
-            </p>
-          ) : (
-            <p className="mt-1 text-[0.8125rem] text-[#86868b]">尚無量測紀錄</p>
-          )}
-          {customer.lastContactDate ? (
-            <p className="mt-0.5 text-[0.8125rem] text-[#86868b]">
-              上次聯絡 {customer.lastContactDate}
-            </p>
+    <article className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
+      <Link
+        className="block transition-transform duration-200 active:scale-[0.99]"
+        href={`/customers/${customer.id}`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[1rem] font-semibold text-[#1d1d1f]">{customer.displayName}</p>
+            {customer.latestRecordDate ? (
+              <p className="mt-1 text-[0.8125rem] text-[#86868b]">
+                上次量測 {customer.latestRecordDate}
+              </p>
+            ) : (
+              <p className="mt-1 text-[0.8125rem] text-[#86868b]">尚無量測紀錄</p>
+            )}
+            {customer.lastContactDate ? (
+              <p className="mt-0.5 text-[0.8125rem] text-[#86868b]">
+                上次聯絡 {customer.lastContactDate}
+              </p>
+            ) : null}
+          </div>
+          {customer.followUpReason ? (
+            <span
+              className={`shrink-0 rounded-full px-2.5 py-1 text-[0.75rem] font-medium ${
+                urgencyStyles[customer.followUpUrgency ?? "low"]
+              }`}
+            >
+              {customer.followUpReason}
+            </span>
           ) : null}
         </div>
-        {customer.followUpReason ? (
-          <span
-            className={`shrink-0 rounded-full px-2.5 py-1 text-[0.75rem] font-medium ${
-              urgencyStyles[customer.followUpUrgency ?? "low"]
-            }`}
-          >
-            {customer.followUpReason}
-          </span>
-        ) : null}
+      </Link>
+      <div className="mt-3">
+        <button
+          className="rounded-full bg-[#fff1f0] px-4 py-2 text-[0.8125rem] font-medium text-[#cf1322]"
+          onClick={() => onDelete(customer)}
+          type="button"
+        >
+          刪除
+        </button>
       </div>
-    </Link>
+    </article>
   );
 }
 
@@ -78,6 +96,7 @@ export default function CustomerListPage() {
   const [heightCm, setHeightCm] = useState("");
   const [birthYear, setBirthYear] = useState("");
   const [query, setQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<CustomerListItem | null>(null);
   const [notificationState, setNotificationState] = useState(() =>
     typeof window === "undefined" ? "default" : getNotificationPermissionState(),
   );
@@ -161,6 +180,16 @@ export default function CustomerListPage() {
     setHeightCm("");
     setBirthYear("");
     setShowForm(false);
+    reload();
+  };
+
+  const handleDelete = () => {
+    if (!deleteTarget || !ownerMemberId || deleteTarget.ownerMemberId !== ownerMemberId) {
+      return;
+    }
+
+    repo.deleteCustomer(deleteTarget.id);
+    setDeleteTarget(null);
     reload();
   };
 
@@ -295,7 +324,9 @@ export default function CustomerListPage() {
 
         <div className="mt-4 space-y-3">
           {visibleCustomers.length > 0 ? (
-            visibleCustomers.map((customer) => <CustomerCard customer={customer} key={customer.id} />)
+            visibleCustomers.map((customer) => (
+              <CustomerCard customer={customer} key={customer.id} onDelete={setDeleteTarget} />
+            ))
           ) : customers.length > 0 ? (
             <p className="text-[0.9375rem] text-[#86868b]">找不到符合的顧客，試試其他關鍵字。</p>
           ) : (
@@ -303,6 +334,25 @@ export default function CustomerListPage() {
           )}
         </div>
       </section>
+
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-5 sm:items-center">
+          <div className="w-full max-w-sm rounded-[1.75rem] bg-[var(--brand-surface)] p-6">
+            <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">刪除顧客？</p>
+            <p className="mt-2 text-[0.9375rem] text-[#86868b]">
+              將刪除 {deleteTarget.displayName} 的所有資料，包含量測、照片與顧客連結。
+            </p>
+            <div className="mt-5 space-y-2">
+              <CrmButton onClick={handleDelete} variant="danger">
+                確認刪除
+              </CrmButton>
+              <CrmButton onClick={() => setDeleteTarget(null)} variant="secondary">
+                取消
+              </CrmButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </PageShell>
   );
 }

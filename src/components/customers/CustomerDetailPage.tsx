@@ -11,7 +11,7 @@ import {
   CustomerProgressPhotoSection,
   type CustomerProgressPhotoFormValues,
 } from "@/components/customers/CustomerProgressPhotoSection";
-import { CrmCard, CrmField, CrmInput, CrmSectionTitle } from "@/components/members/ui";
+import { CrmButton, CrmCard, CrmField, CrmInput, CrmSectionTitle } from "@/components/members/ui";
 import { PageShell } from "@/components/ui/PageShell";
 import { getCurrentMember } from "@/lib/auth/auth-service";
 import {
@@ -42,8 +42,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BodyCompositionRecord, Customer, CustomerPortalToken, CustomerProgressPhoto } from "@/types/customer";
 import type { Member } from "@/types/member";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function CustomerDetailPage({ customerId }: { customerId: string }) {
+  const router = useRouter();
   const storage = useMemo(() => createLocalStorageAdapter(), []);
   const repo = useMemo(() => createCustomerRepository(storage), [storage]);
   const today = todayISODate();
@@ -59,6 +61,9 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
   const [portalBusy, setPortalBusy] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [linkErrorMessage, setLinkErrorMessage] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const viewer = useMemo(() => getCurrentMember(storage), [storage]);
   const allMembers = useMemo(() => loadAllMembers(storage), [storage]);
@@ -298,6 +303,25 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
     }
   };
 
+  const handleDeleteCustomer = async () => {
+    if (!customer || !viewer || customer.ownerMemberId !== viewer.id) {
+      return;
+    }
+
+    setDeleteError(null);
+    setDeleteBusy(true);
+    try {
+      if (portalStatus === "active") {
+        await revokeCustomerPortalToken(customerId).catch(() => undefined);
+      }
+      repo.deleteCustomer(customerId);
+      router.push("/customers");
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "無法刪除顧客");
+      setDeleteBusy(false);
+    }
+  };
+
   if (!customer) {
     return (
       <PageShell backHref="/customers" backLabel="返回顧客列表" title="顧客關懷" variant="plain">
@@ -519,6 +543,50 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
         records={records}
         today={today}
       />
+
+      <section className="rounded-[1.75rem] border border-[#ffd6d6] bg-[#fffafa] p-5">
+        <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#cf1322]">
+          危險操作
+        </p>
+        <p className="mt-2 text-[0.875rem] leading-relaxed text-[#86868b]">
+          刪除後將一併移除量測紀錄、進度照片與 Magic Link，且無法復原。
+        </p>
+        <button
+          className="mt-4 w-full rounded-2xl bg-[#fff1f0] px-4 py-3.5 text-[0.9375rem] font-semibold text-[#cf1322]"
+          onClick={() => setShowDeleteConfirm(true)}
+          type="button"
+        >
+          刪除顧客
+        </button>
+        {deleteError ? <p className="mt-2 text-[0.8125rem] text-[#cf1322]">{deleteError}</p> : null}
+      </section>
+
+      {showDeleteConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-5 sm:items-center">
+          <div className="w-full max-w-sm rounded-[1.75rem] bg-[var(--brand-surface)] p-6">
+            <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">刪除顧客？</p>
+            <p className="mt-2 text-[0.9375rem] text-[#86868b]">
+              將刪除 {customer.displayName} 的所有資料，包含量測、照片與顧客連結。
+            </p>
+            <div className="mt-5 space-y-2">
+              <CrmButton
+                disabled={deleteBusy}
+                onClick={() => void handleDeleteCustomer()}
+                variant="danger"
+              >
+                {deleteBusy ? "刪除中…" : "確認刪除"}
+              </CrmButton>
+              <CrmButton
+                disabled={deleteBusy}
+                onClick={() => setShowDeleteConfirm(false)}
+                variant="secondary"
+              >
+                取消
+              </CrmButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </PageShell>
   );
 }
