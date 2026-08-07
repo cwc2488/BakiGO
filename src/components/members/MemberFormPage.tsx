@@ -102,7 +102,6 @@ export default function MemberFormPage({
   const storage = useMemo(() => createLocalStorageAdapter(), []);
   const isSelfProfile = mode === "edit" && memberId === resolveAuthenticatedMemberId(storage);
   const viewer = getCurrentMember(storage);
-  const canManageMembers = canAccessMemberManagement(viewer);
   const [form, setForm] = useState<MemberFormValues>(emptyForm);
   const [members, setMembers] = useState<Member[]>(() => {
     if (typeof window === "undefined") {
@@ -110,6 +109,7 @@ export default function MemberFormPage({
     }
     return loadAllMembers(createLocalStorageAdapter());
   });
+  const canManageMembers = canAccessMemberManagement(viewer, members);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 

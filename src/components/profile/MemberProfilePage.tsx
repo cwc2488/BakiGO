@@ -13,8 +13,9 @@ import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-me
 import { IconLabel } from "@/components/ui/AppIcon";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { getCurrentMember, resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
-import { canAccessMemberManagement } from "@/lib/auth/member-management-access";
+import { hasPartnerCareDownline } from "@/lib/auth/member-management-access";
 import { buildDailyFollowUpSnapshot } from "@/lib/customers/customer-follow-up-reminder";
+import { loadAllMembers } from "@/lib/members/member-service";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -128,7 +129,12 @@ function ProfileQuickLinks() {
     () => buildDailyFollowUpSnapshot(storage, resolveAuthenticatedMemberId(storage)).count,
     [storage],
   );
-  const showPartnerCare = canAccessMemberManagement(viewer);
+  const showPartnerCare = useMemo(() => {
+    if (!viewer) {
+      return false;
+    }
+    return hasPartnerCareDownline(viewer, loadAllMembers(storage));
+  }, [storage, viewer]);
 
   const links = [
     {
