@@ -6,33 +6,22 @@ import {
   listGoogleCalendars,
   loadGoogleCalendarConnection,
   mapGoogleEventToLocal,
+  pickDefaultPersonalCalendar,
   saveGoogleCalendarConnection,
 } from "@/lib/calendar/google-calendar";
-import { DEFAULT_SHARED_GOOGLE_CALENDAR, SHARED_GOOGLE_CALENDARS } from "@/lib/calendar/shared-calendars";
+import { DEFAULT_SHARED_GOOGLE_CALENDAR, isSharedGoogleCalendarId } from "@/lib/calendar/shared-calendars";
 import { getSharedCalendarSyncRange, syncSharedGoogleCalendars } from "@/lib/calendar/sync-shared-calendars";
 import { addDays } from "@/lib/calendar/recurrence";
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { GoogleCalendarConnection } from "@/types/calendar-event";
 import type { CalendarEvent } from "@/types/calendar-event";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-function mergeCalendarOptions(
-  remoteCalendars: Array<{ id: string; summary: string }>,
-): Array<{ id: string; summary: string }> {
-  const preset = SHARED_GOOGLE_CALENDARS.map((calendar) => ({
-    id: calendar.id,
-    summary: calendar.name,
-  }));
-  const merged = [...preset];
-  for (const calendar of remoteCalendars) {
-    const presetMatch = SHARED_GOOGLE_CALENDARS.find((item) => item.id === calendar.id);
-    const summary = presetMatch?.name ?? (calendar.summary?.trim() || "Google 日曆");
-    if (!merged.some((item) => item.id === calendar.id)) {
-      merged.push({ id: calendar.id, summary });
-    }
-  }
-  return merged;
+const INITIAL_SYNC_KEY = "baki-go:google-calendar-initial-sync";
+
+function isPersonalCalendarSelection(calendarId: string | undefined): boolean {
+  return Boolean(calendarId && !isSharedGoogleCalendarId(calendarId));
 }
 
 export function GoogleCalendarPanel({
@@ -54,19 +43,24 @@ export function GoogleCalendarPanel({
 }) {
   const storage = useMemo(() => createLocalStorageAdapter(), []);
   const [connection, setConnection] = useState<GoogleCalendarConnection | null>(null);
-  const [calendars, setCalendars] = useState<Array<{ id: string; summary: string }>>(
-    SHARED_GOOGLE_CALENDARS.map((calendar) => ({ id: calendar.id, summary: calendar.name })),
+  const [personalCalendars, setPersonalCalendars] = useState<Array<{ id: string; summary: string }>>(
+    [],
   );
   const [selectedCalendarId, setSelectedCalendarId] = useState(DEFAULT_SHARED_GOOGLE_CALENDAR.id);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [sharedSyncedAt, setSharedSyncedAt] = useState<string | null>(null);
+  const setupAttemptedRef = useRef(false);
 
   const refreshConnection = useCallback(() => {
     const current = loadGoogleCalendarConnection(storage);
-    if (current?.selectedCalendarId) {
+    if (current?.selectedCalendarId && isPersonalCalendarSelection(current.selectedCalendarId)) {
       setSelectedCalendarId(current.selectedCalendarId);
+    } else if (current?.accessToken) {
+      setSelectedCalendarId("");
+    } else {
+      setSelectedCalendarId(DEFAULT_SHARED_GOOGLE_CALENDAR.id);
     }
     setConnection(current);
   }, [storage]);
@@ -84,31 +78,124 @@ export function GoogleCalendarPanel({
     return result;
   }, [memberId, onSharedEventsSynced, onSynced, selectedDate, storage]);
 
-  const loadCalendars = useCallback(async () => {
-    if (!connection?.accessToken) {
-      return;
+  const saveCalendarSelection = useCallback(
+    (calendarId: string, calendars: Array<{ id: string; summary: string }>, current: GoogleCalendarConnection) => {
+      const selected = calendars.find((item) => item.id === calendarId);
+      const next = {
+        ...current,
+        selectedCalendarId: calendarId,
+        selectedCalendarName: selected?.summary,
+      };
+      saveGoogleCalendarConnection(storage, next);
+      setConnection(next);
+      setSelectedCalendarId(calendarId);
+    },
+    [storage],
+  );
+
+  const syncPersonalCalendar = useCallback(
+    async (current: GoogleCalendarConnection, calendarId: string) => {
+      const rangeStart = addDays(selectedDate, -31);
+      const rangeEnd = addDays(selectedDate, 31);
+      const googleEvents = await fetchGoogleCalendarEvents(
+        current,
+        calendarId,
+        rangeStart,
+        rangeEnd,
+        storage,
+      );
+      const repository = createCalendarEventRepository(storage);
+      googleEvents.forEach((item) => {
+        repository.upsertGoogleEvent(mapGoogleEventToLocal(item, memberId, calendarId));
+      });
+      saveGoogleCalendarConnection(storage, current);
+      return googleEvents.length;
+    },
+    [memberId, selectedDate, storage],
+  );
+
+  const ensurePersonalCalendarReady = useCallback(async () => {
+    const current = loadGoogleCalendarConnection(storage);
+    if (!current?.accessToken) {
+      return null;
     }
+
     setLoading(true);
     setMessage(null);
     try {
-      const items = await listGoogleCalendars(connection);
-      const merged = mergeCalendarOptions(items.map((item) => ({ id: item.id, summary: item.summary })));
-      setCalendars(merged);
-      if (connection.selectedCalendarId) {
-        setSelectedCalendarId(connection.selectedCalendarId);
+      const items = await listGoogleCalendars(current, storage);
+      const remote = items.map((item) => ({
+        id: item.id,
+        summary: item.summary?.trim() || "Google 日曆",
+      }));
+      setPersonalCalendars(remote);
+
+      let calendarId = current.selectedCalendarId;
+      if (!isPersonalCalendarSelection(calendarId)) {
+        const primary = pickDefaultPersonalCalendar(items);
+        calendarId = primary?.id;
+        if (calendarId) {
+          saveCalendarSelection(calendarId, remote, current);
+        }
+      } else {
+        setSelectedCalendarId(calendarId!);
       }
+
+      return calendarId ? { connection: loadGoogleCalendarConnection(storage)!, calendarId } : null;
     } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : "無法讀取日曆");
+      setMessage(caught instanceof Error ? caught.message : "無法讀取 Google 日曆");
+      return null;
     } finally {
       setLoading(false);
     }
-  }, [connection]);
+  }, [saveCalendarSelection, storage]);
+
+  useEffect(() => {
+    if (!connection?.accessToken || setupAttemptedRef.current) {
+      return;
+    }
+    setupAttemptedRef.current = true;
+    void ensurePersonalCalendarReady();
+  }, [connection?.accessToken, ensurePersonalCalendarReady]);
+
+  useEffect(() => {
+    if (!connection?.accessToken || typeof window === "undefined") {
+      return;
+    }
+    if (sessionStorage.getItem(INITIAL_SYNC_KEY) !== "1") {
+      return;
+    }
+    sessionStorage.removeItem(INITIAL_SYNC_KEY);
+
+    void (async () => {
+      setLoading(true);
+      setMessage(null);
+      try {
+        const ready = await ensurePersonalCalendarReady();
+        const sharedResult = await syncSharedCalendars(true);
+        let googleCount = 0;
+        if (ready) {
+          googleCount = await syncPersonalCalendar(ready.connection, ready.calendarId);
+        }
+        setMessage(
+          googleCount > 0
+            ? `已連接 ${ready?.connection.email ?? "Google 帳號"}，同步共用 ${sharedResult.count} 筆、個人 ${googleCount} 筆`
+            : `已連接 ${ready?.connection.email ?? "Google 帳號"}，同步共用 ${sharedResult.count} 筆`,
+        );
+        onSynced();
+      } catch (caught) {
+        setMessage(caught instanceof Error ? caught.message : "初次同步失敗");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [connection?.accessToken, ensurePersonalCalendarReady, onSynced, syncPersonalCalendar, syncSharedCalendars]);
 
   async function handleToggleExpanded() {
     const next = !expanded;
     setExpanded(next);
     if (next && connection?.accessToken) {
-      await loadCalendars();
+      await ensurePersonalCalendarReady();
     }
   }
 
@@ -119,31 +206,21 @@ export function GoogleCalendarPanel({
       const sharedResult = await syncSharedCalendars(true);
       let googleCount = 0;
 
-      if (
-        connection?.accessToken &&
-        selectedCalendarId &&
-        selectedCalendarId !== DEFAULT_SHARED_GOOGLE_CALENDAR.id
-      ) {
-        const rangeStart = addDays(selectedDate, -31);
-        const rangeEnd = addDays(selectedDate, 31);
-        const googleEvents = await fetchGoogleCalendarEvents(
-          connection,
-          selectedCalendarId,
-          rangeStart,
-          rangeEnd,
-        );
-        const repository = createCalendarEventRepository(storage);
-        googleEvents.forEach((item) => {
-          repository.upsertGoogleEvent(mapGoogleEventToLocal(item, memberId, selectedCalendarId));
-        });
-        saveGoogleCalendarConnection(storage, connection);
-        googleCount = googleEvents.length;
+      if (connection?.accessToken && isPersonalCalendarSelection(selectedCalendarId)) {
+        googleCount = await syncPersonalCalendar(connection, selectedCalendarId);
+      } else if (connection?.accessToken) {
+        const ready = await ensurePersonalCalendarReady();
+        if (ready) {
+          googleCount = await syncPersonalCalendar(ready.connection, ready.calendarId);
+        }
       }
 
       setMessage(
         googleCount > 0
-          ? `已同步共用 ${sharedResult.count} 筆、Google ${googleCount} 筆`
-          : `已同步共用行事曆 ${sharedResult.count} 筆`,
+          ? `已同步共用 ${sharedResult.count} 筆、個人 Google ${googleCount} 筆`
+          : connection?.accessToken
+            ? `已同步共用 ${sharedResult.count} 筆（請選擇個人 Google 日曆以同步個人行程）`
+            : `已同步共用行事曆 ${sharedResult.count} 筆`,
       );
       onSynced();
     } catch (caught) {
@@ -156,31 +233,31 @@ export function GoogleCalendarPanel({
   function handleDisconnect() {
     clearGoogleCalendarConnection(storage);
     setConnection(null);
+    setPersonalCalendars([]);
     setSelectedCalendarId(DEFAULT_SHARED_GOOGLE_CALENDAR.id);
-    setCalendars(
-      SHARED_GOOGLE_CALENDARS.map((calendar) => ({ id: calendar.id, summary: calendar.name })),
-    );
+    setupAttemptedRef.current = false;
     setMessage("已中斷 Google 個人帳號連接（共用行事曆仍會自動載入）");
   }
 
   function handleSelectCalendar(calendarId: string) {
     setSelectedCalendarId(calendarId);
-    if (!connection?.accessToken) {
+    if (!connection?.accessToken || isSharedGoogleCalendarId(calendarId)) {
       return;
     }
-    const selected = calendars.find((item) => item.id === calendarId);
-    const next = {
-      ...connection,
-      selectedCalendarId: calendarId,
-      selectedCalendarName: selected?.summary,
-    };
-    saveGoogleCalendarConnection(storage, next);
-    setConnection(next);
+    saveCalendarSelection(calendarId, personalCalendars, connection);
   }
 
-  const selectedCalendarName =
-    calendars.find((item) => item.id === selectedCalendarId)?.summary ??
-    DEFAULT_SHARED_GOOGLE_CALENDAR.name;
+  const selectedCalendarName = isPersonalCalendarSelection(selectedCalendarId)
+    ? (personalCalendars.find((item) => item.id === selectedCalendarId)?.summary ??
+      connection?.selectedCalendarName ??
+      "個人 Google 日曆")
+    : DEFAULT_SHARED_GOOGLE_CALENDAR.name;
+
+  const connectionSummary = connection?.accessToken
+    ? connection.email
+      ? `已連接 ${connection.email}`
+      : "已連接 Google 帳號"
+    : "尚未連接個人 Google 帳號";
 
   return (
     <section className="overflow-hidden rounded-[1.25rem] border border-[var(--cal-border)] border-t-4 border-t-[var(--cal-primary)] bg-[var(--cal-surface)]">
@@ -208,11 +285,11 @@ export function GoogleCalendarPanel({
         onClick={() => void handleToggleExpanded()}
         type="button"
       >
-        <div>
-          <p className="text-[0.875rem] font-medium text-[#1d1d1f]">{selectedCalendarName}</p>
-          <p className="mt-0.5 text-[0.8125rem] text-[#86868b]">點擊管理同步設定</p>
+        <div className="min-w-0">
+          <p className="truncate text-[0.875rem] font-medium text-[#1d1d1f]">{selectedCalendarName}</p>
+          <p className="mt-0.5 truncate text-[0.8125rem] text-[#86868b]">{connectionSummary}</p>
         </div>
-        <span className="text-[0.8125rem] text-[var(--cal-primary-dark)]">{expanded ? "收合" : "設定"}</span>
+        <span className="shrink-0 text-[0.8125rem] text-[var(--cal-primary-dark)]">{expanded ? "收合" : "設定"}</span>
       </button>
 
       {expanded ? (
@@ -234,19 +311,40 @@ export function GoogleCalendarPanel({
             </a>
           </div>
 
+          {connection?.accessToken ? (
+            <div className="rounded-xl border border-[var(--cal-border)] bg-[var(--brand-bg)] px-3 py-3">
+              <p className="text-[0.8125rem] font-medium text-[#636366]">已連接的 Google 帳號</p>
+              <p className="mt-1 text-[0.9375rem] font-semibold text-[#1d1d1f]">
+                {connection.email ?? "（無法讀取電郵）"}
+              </p>
+              <p className="mt-1 text-[0.8125rem] leading-relaxed text-[#86868b]">
+                若有多個 Google 帳號，請先中斷再重新連接，並在 Google 畫面選擇正確帳號。
+              </p>
+            </div>
+          ) : null}
+
           <label className="block space-y-1.5">
-            <span className="text-[0.8125rem] font-medium text-[#636366]">同步來源</span>
-            <select
-              className="w-full rounded-xl border border-[var(--cal-border)] px-3 py-2.5 text-[0.9375rem]"
-              onChange={(event) => handleSelectCalendar(event.target.value)}
-              value={selectedCalendarId}
-            >
-              {calendars.map((calendar) => (
-                <option key={calendar.id} value={calendar.id}>
-                  {calendar.summary}
+            <span className="text-[0.8125rem] font-medium text-[#636366]">個人 Google 日曆（雙向同步）</span>
+            {connection?.accessToken ? (
+              <select
+                className="w-full rounded-xl border border-[var(--cal-border)] px-3 py-2.5 text-[0.9375rem]"
+                onChange={(event) => handleSelectCalendar(event.target.value)}
+                value={isPersonalCalendarSelection(selectedCalendarId) ? selectedCalendarId : ""}
+              >
+                <option disabled value="">
+                  請選擇要同步的個人日曆
                 </option>
-              ))}
-            </select>
+                {personalCalendars.map((calendar) => (
+                  <option key={calendar.id} value={calendar.id}>
+                    {calendar.summary}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="rounded-xl border border-dashed border-[var(--cal-border)] px-3 py-2.5 text-[0.8125rem] text-[#86868b]">
+                連接 Google 帳號後，可選擇個人日曆並雙向同步行程。
+              </p>
+            )}
           </label>
 
           <div className="flex flex-wrap gap-2">
@@ -278,7 +376,7 @@ export function GoogleCalendarPanel({
 
           {!connection?.accessToken ? (
             <p className="text-[0.8125rem] leading-relaxed text-[#636366]">
-              共用行事曆已預先載入，無需登入 Google。若需同步個人日曆，可另外連接 Google 帳號。
+              共用行事曆已預先載入，無需登入 Google。若需同步個人日曆，請連接 Google 帳號並在 Google 畫面選擇正確帳號（非預設帳號也可）。
             </p>
           ) : null}
 

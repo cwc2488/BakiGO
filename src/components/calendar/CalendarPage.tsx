@@ -82,7 +82,7 @@ const VIEW_OPTIONS: Array<{ value: CalendarViewMode; label: string }> = [
   { value: "stats", label: "統計" },
 ];
 
-function readCalendarOAuthStatusMessage(): string | null {
+function readCalendarOAuthStatusMessage(storage: ReturnType<typeof createLocalStorageAdapter>): string | null {
   if (typeof window === "undefined") {
     return null;
   }
@@ -90,11 +90,15 @@ function readCalendarOAuthStatusMessage(): string | null {
   const params = new URLSearchParams(window.location.search);
   if (params.get("google_connected") === "1") {
     window.history.replaceState({}, "", "/calendar");
+    const connection = loadGoogleCalendarConnection(storage);
+    if (connection?.email) {
+      return `Google 日曆已連接：${connection.email}`;
+    }
     return "Google 日曆已連接";
   }
   if (params.get("google_error") === "1") {
     window.history.replaceState({}, "", "/calendar");
-    return "Google 日曆連接失敗";
+    return "Google 日曆連接失敗，請重新連接並選擇正確帳號";
   }
   return null;
 }
@@ -127,7 +131,9 @@ export default function CalendarPage() {
   const [formReadOnly, setFormReadOnly] = useState(false);
   const [formValues, setFormValues] = useState(() => buildDefaultFormValues(getTodayDateString()));
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(readCalendarOAuthStatusMessage);
+  const [statusMessage, setStatusMessage] = useState<string | null>(() =>
+    readCalendarOAuthStatusMessage(storage),
+  );
   const [sharedSyncState, setSharedSyncState] = useState<"idle" | "loading" | "done" | "error">(() =>
     isSharedCalendarCacheFresh(storage, memberId) ? "done" : "idle",
   );
@@ -507,7 +513,7 @@ export default function CalendarPage() {
     }
 
     if (mode === "delete" && event.googleEventId) {
-      await deleteGoogleCalendarEvent(connection, calendarId, event.googleEventId);
+      await deleteGoogleCalendarEvent(connection, calendarId, event.googleEventId, storage);
       return event;
     }
 
@@ -521,7 +527,7 @@ export default function CalendarPage() {
     };
 
     if (mode === "create") {
-      const googleEventId = await createGoogleCalendarEvent(connection, calendarId, payload);
+      const googleEventId = await createGoogleCalendarEvent(connection, calendarId, payload, storage);
       return createCalendarEventRepository(storage).update(event.id, {
         googleEventId,
         googleCalendarId: calendarId,
@@ -529,9 +535,9 @@ export default function CalendarPage() {
     }
 
     if (event.googleEventId) {
-      await updateGoogleCalendarEvent(connection, calendarId, event.googleEventId, payload);
+      await updateGoogleCalendarEvent(connection, calendarId, event.googleEventId, payload, storage);
     } else {
-      const googleEventId = await createGoogleCalendarEvent(connection, calendarId, payload);
+      const googleEventId = await createGoogleCalendarEvent(connection, calendarId, payload, storage);
       return createCalendarEventRepository(storage).update(event.id, {
         googleEventId,
         googleCalendarId: calendarId,

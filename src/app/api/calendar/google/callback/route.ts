@@ -1,4 +1,4 @@
-import { exchangeGoogleAuthCode } from "@/lib/calendar/google-calendar";
+import { exchangeGoogleAuthCode, finalizeGoogleCalendarConnection } from "@/lib/calendar/google-calendar";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -12,7 +12,8 @@ export async function GET(request: Request) {
 
   try {
     const connection = await exchangeGoogleAuthCode(code, url.origin);
-    const tokenPayload = Buffer.from(JSON.stringify(connection)).toString("base64url");
+    const finalized = await finalizeGoogleCalendarConnection(connection);
+    const tokenPayload = Buffer.from(JSON.stringify(finalized)).toString("base64url");
     return NextResponse.redirect(
       new URL(`/calendar/oauth-complete?payload=${tokenPayload}`, url.origin),
     );

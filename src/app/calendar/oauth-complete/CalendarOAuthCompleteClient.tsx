@@ -23,6 +23,7 @@ export default function CalendarOAuthCompletePage() {
     try {
       const connection = JSON.parse(decodeBase64Url(payload)) as GoogleCalendarConnection;
       saveGoogleCalendarConnection(storage, connection);
+      sessionStorage.setItem("baki-go:google-calendar-initial-sync", "1");
       router.replace("/calendar?google_connected=1");
     } catch {
       queueMicrotask(() => setMessage("連接失敗，無法解析授權資料"));

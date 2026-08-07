@@ -38,6 +38,7 @@ export function getGoogleOAuthRedirectUri(origin: string): string {
 const SCOPES = [
   "https://www.googleapis.com/auth/calendar.readonly",
   "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/userinfo.email",
 ].join(" ");
 
 export function buildGoogleAuthUrl(origin: string): string {
@@ -101,7 +102,7 @@ export async function refreshGoogleAccessToken(
   connection: GoogleCalendarConnection,
 ): Promise<GoogleCalendarConnection> {
   if (!connection.refreshToken) {
-    return connection;
+    throw new Error("Google 授權已過期，請重新連接");
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -139,11 +140,75 @@ export async function refreshGoogleAccessToken(
 
 export async function ensureGoogleAccessToken(
   connection: GoogleCalendarConnection,
+  storage?: StorageAdapter,
 ): Promise<GoogleCalendarConnection> {
   if (connection.expiresAt > Date.now() + 60_000) {
     return connection;
   }
-  return refreshGoogleAccessToken(connection);
+
+  let refreshed: GoogleCalendarConnection;
+  if (typeof window !== "undefined") {
+    const response = await fetch("/api/calendar/google/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: connection.refreshToken }),
+    });
+    if (!response.ok) {
+      throw new Error("Google 授權已過期，請重新連接");
+    }
+    const payload = (await response.json()) as { accessToken: string; expiresAt: number };
+    refreshed = {
+      ...connection,
+      accessToken: payload.accessToken,
+      expiresAt: payload.expiresAt,
+    };
+  } else {
+    refreshed = await refreshGoogleAccessToken(connection);
+  }
+
+  if (storage) {
+    saveGoogleCalendarConnection(storage, refreshed);
+  }
+  return refreshed;
+}
+
+export async function fetchGoogleUserEmail(
+  connection: GoogleCalendarConnection,
+): Promise<string | undefined> {
+  const auth = await ensureGoogleAccessToken(connection);
+  const response = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+    headers: { Authorization: `Bearer ${auth.accessToken}` },
+  });
+  if (!response.ok) {
+    return undefined;
+  }
+  const payload = (await response.json()) as { email?: string };
+  return payload.email;
+}
+
+export function pickDefaultPersonalCalendar(
+  calendars: GoogleCalendarListItem[],
+): GoogleCalendarListItem | undefined {
+  return (
+    calendars.find((item) => item.primary) ??
+    calendars.find((item) => item.accessRole === "owner") ??
+    calendars[0]
+  );
+}
+
+export async function finalizeGoogleCalendarConnection(
+  connection: GoogleCalendarConnection,
+): Promise<GoogleCalendarConnection> {
+  const calendars = await listGoogleCalendars(connection);
+  const primary = pickDefaultPersonalCalendar(calendars);
+  const email = (await fetchGoogleUserEmail(connection)) ?? primary?.id;
+
+  return {
+    ...connection,
+    email,
+    selectedCalendarId: primary?.id,
+    selectedCalendarName: primary?.summary,
+  };
 }
 
 export interface GoogleCalendarListItem {
@@ -155,8 +220,9 @@ export interface GoogleCalendarListItem {
 
 export async function listGoogleCalendars(
   connection: GoogleCalendarConnection,
+  storage?: StorageAdapter,
 ): Promise<GoogleCalendarListItem[]> {
-  const auth = await ensureGoogleAccessToken(connection);
+  const auth = await ensureGoogleAccessToken(connection, storage);
   const response = await fetch(
     "https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader",
     {
@@ -206,8 +272,9 @@ export async function fetchGoogleCalendarEvents(
   calendarId: string,
   timeMin: string,
   timeMax: string,
+  storage?: StorageAdapter,
 ): Promise<GoogleCalendarEventItem[]> {
-  const auth = await ensureGoogleAccessToken(connection);
+  const auth = await ensureGoogleAccessToken(connection, storage);
   const params = new URLSearchParams({
     timeMin: `${timeMin}T00:00:00+08:00`,
     timeMax: `${timeMax}T23:59:59+08:00`,
@@ -283,8 +350,9 @@ export async function createGoogleCalendarEvent(
     allDay: boolean;
     reminderMinutes?: number[];
   },
+  storage?: StorageAdapter,
 ): Promise<string> {
-  const auth = await ensureGoogleAccessToken(connection);
+  const auth = await ensureGoogleAccessToken(connection, storage);
   const reminders = buildGoogleReminders(input.reminderMinutes);
   const body = input.allDay
     ? {
@@ -334,8 +402,9 @@ export async function updateGoogleCalendarEvent(
     allDay: boolean;
     reminderMinutes?: number[];
   },
+  storage?: StorageAdapter,
 ): Promise<void> {
-  const auth = await ensureGoogleAccessToken(connection);
+  const auth = await ensureGoogleAccessToken(connection, storage);
   const reminders = buildGoogleReminders(input.reminderMinutes);
   const body = input.allDay
     ? {
@@ -374,8 +443,9 @@ export async function deleteGoogleCalendarEvent(
   connection: GoogleCalendarConnection,
   calendarId: string,
   eventId: string,
+  storage?: StorageAdapter,
 ): Promise<void> {
-  const auth = await ensureGoogleAccessToken(connection);
+  const auth = await ensureGoogleAccessToken(connection, storage);
   const response = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
     {
