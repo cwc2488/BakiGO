@@ -41,6 +41,7 @@ function cloneOccurrence(
   start: Date,
   end: Date,
   index: number,
+  occurrenceDate: string,
 ): ExpandedCalendarEvent {
   const pad = (n: number) => String(n).padStart(2, "0");
   const startAt = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}T${pad(start.getHours())}:${pad(start.getMinutes())}`;
@@ -49,6 +50,7 @@ function cloneOccurrence(
   return {
     occurrenceId: `${event.id}:${index}`,
     sourceEventId: event.id,
+    occurrenceDate,
     title: event.title,
     notes: event.notes,
     startAt,
@@ -134,6 +136,7 @@ export function expandEventOccurrences(
       {
         occurrenceId: `${event.id}:0`,
         sourceEventId: event.id,
+        occurrenceDate: event.startAt.slice(0, 10),
         title: event.title,
         notes: event.notes,
         startAt: event.startAt,
@@ -165,7 +168,7 @@ export function expandEventOccurrences(
       const occurrenceEnd = new Date(cursor.getTime() + durationMs);
 
       if (matchesWeekday(cursor, event.recurrence.weekdays) && isWithinRange(cursor, rangeStart, rangeEnd)) {
-        let occurrence = cloneOccurrence(event, cursor, occurrenceEnd, index);
+        let occurrence = cloneOccurrence(event, cursor, occurrenceEnd, index, occurrenceDate);
         if (exception?.override) {
           occurrence = applyOverrideToOccurrence(occurrence, exception.override);
         }

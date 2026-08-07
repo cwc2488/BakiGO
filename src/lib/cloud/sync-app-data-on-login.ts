@@ -10,6 +10,10 @@ import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import { awaitPendingCloudSync, setCloudSyncPaused } from "@/lib/repositories/syncing-storage-adapter";
+import {
+  mergeCalendarEventsOnLogin,
+  readCalendarEventDeletionTombstoneIds,
+} from "@/lib/calendar/calendar-event-deletion-tombstones";
 import type { EntityId } from "@/types";
 
 /** Pull cloud app data on login; upload local data when cloud is empty. */
@@ -41,7 +45,22 @@ export async function syncAppDataOnLogin(
     for (const key of SYNCABLE_STORAGE_KEYS) {
       const cloudRow = cloudByKey.get(key);
       if (cloudRow) {
-        storage.setItem(key, serializeCloudPayload(cloudRow.payload));
+        if (key === STORAGE_KEYS.calendarEvents) {
+          const tombstoneIds = readCalendarEventDeletionTombstoneIds(storage);
+          const merged = mergeCalendarEventsOnLogin(
+            storage.getItem(key),
+            serializeCloudPayload(cloudRow.payload),
+            tombstoneIds,
+          );
+          const mergedRaw = JSON.stringify(merged);
+          storage.setItem(key, mergedRaw);
+          await pushCloudAppDataKeys({
+            memberId,
+            entries: [{ dataKey: key, rawValue: mergedRaw }],
+          });
+        } else {
+          storage.setItem(key, serializeCloudPayload(cloudRow.payload));
+        }
         continue;
       }
 

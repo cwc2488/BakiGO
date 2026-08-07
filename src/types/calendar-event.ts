@@ -102,6 +102,8 @@ export interface CalendarEventUpdateInput {
 export interface ExpandedCalendarEvent {
   occurrenceId: string;
   sourceEventId: EntityId;
+  /** 重複序列中的原始日期（例外刪除/修改用，不受 override 時間影響） */
+  occurrenceDate: string;
   title: string;
   notes?: string;
   startAt: string;

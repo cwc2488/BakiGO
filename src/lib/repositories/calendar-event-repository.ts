@@ -7,6 +7,8 @@ import type {
 import type { EntityId } from "@/types";
 import type { StorageAdapter } from "./storage-adapter";
 import { STORAGE_KEYS } from "./storage-keys";
+import { addCalendarEventDeletionTombstone } from "@/lib/calendar/calendar-event-deletion-tombstones";
+import { flushPendingCloudSync } from "@/lib/repositories/syncing-storage-adapter";
 
 export interface CalendarEventRepository {
   getAll(): CalendarEvent[];
@@ -100,8 +102,11 @@ export class LocalStorageCalendarEventRepository implements CalendarEventReposit
   }
 
   delete(eventId: EntityId): void {
+    addCalendarEventDeletionTombstone(this.storage, eventId);
+
     const next = this.getAll().filter((event) => event.id !== eventId);
     this.storage.setItem(STORAGE_KEYS.calendarEvents, JSON.stringify(next));
+    flushPendingCloudSync();
   }
 
   upsertGoogleEvent(input: CalendarEventCreateInput & { id?: EntityId }): CalendarEvent {

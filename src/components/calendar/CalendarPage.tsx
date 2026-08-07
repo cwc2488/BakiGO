@@ -163,6 +163,19 @@ export default function CalendarPage() {
   const [attendanceRefreshKey, setAttendanceRefreshKey] = useState(0);
   const [personalEventLogged, setPersonalEventLogged] = useState(false);
   const [isLoggingPersonalEvent, setIsLoggingPersonalEvent] = useState(false);
+  const [interactionResetKey, setInteractionResetKey] = useState(0);
+
+  const resetCalendarInteraction = useCallback(() => {
+    setInteractionResetKey((current) => current + 1);
+  }, []);
+
+  const closeEventForm = useCallback(() => {
+    setFormOpen(false);
+    setViewingExpandedEvent(null);
+    setEditingOccurrence(null);
+    setRecurrenceScopeMode(null);
+    resetCalendarInteraction();
+  }, [resetCalendarInteraction]);
 
   const reloadAttendance = useCallback(() => {
     migrateSharedAttendanceColors(storage);
@@ -666,6 +679,7 @@ export default function CalendarPage() {
         await awaitPendingCloudSync();
         googleWarning = await syncToGoogleWithWarning(created, "create");
         setFormOpen(false);
+        resetCalendarInteraction();
         setStatusMessage(googleWarning ? `行程已新增（${googleWarning}）` : "行程已新增");
         return;
       }
@@ -697,10 +711,11 @@ export default function CalendarPage() {
       setFormOpen(false);
       setEditingOccurrence(null);
       setRecurrenceScopeMode(null);
+      resetCalendarInteraction();
       setStatusMessage(googleWarning ? `行程已更新（${googleWarning}）` : "行程已更新");
     } catch (caught) {
       setStatusMessage(caught instanceof Error ? caught.message : "儲存失敗");
-      setRecurrenceScopeMode(null);
+      closeEventForm();
     } finally {
       reloadEvents();
       void refreshCalendarReminderSchedule(storage);
@@ -759,10 +774,11 @@ export default function CalendarPage() {
       setFormOpen(false);
       setEditingOccurrence(null);
       setRecurrenceScopeMode(null);
+      resetCalendarInteraction();
       setStatusMessage(googleWarning ? `行程已刪除（${googleWarning}）` : "行程已刪除");
     } catch (caught) {
       setStatusMessage(caught instanceof Error ? caught.message : "刪除失敗");
-      setRecurrenceScopeMode(null);
+      closeEventForm();
     } finally {
       reloadEvents();
       void refreshCalendarReminderSchedule(storage);
@@ -800,7 +816,7 @@ export default function CalendarPage() {
       }
     } catch (caught) {
       setStatusMessage(caught instanceof Error ? caught.message : "操作失敗");
-      setRecurrenceScopeMode(null);
+      closeEventForm();
     }
   }
 
@@ -819,7 +835,7 @@ export default function CalendarPage() {
 
     try {
       if (isRecurringSeries(existing)) {
-        const occurrenceDate = expanded.startAt.slice(0, 10);
+        const occurrenceDate = expanded.occurrenceDate;
         googleWarning = await applyRecurrenceMutation(
           planRecurringUpdate(existing, occurrenceDate, "this", {
             startAt: newStartAt,
@@ -844,6 +860,7 @@ export default function CalendarPage() {
       setStatusMessage(caught instanceof Error ? caught.message : "移動失敗");
     } finally {
       reloadEvents();
+      resetCalendarInteraction();
       void refreshCalendarReminderSchedule(storage);
     }
   }
@@ -1025,6 +1042,7 @@ export default function CalendarPage() {
             <DayTimeGrid
               dayDates={dayViewDates}
               eventsByDate={dayEventsByDate}
+              interactionResetKey={interactionResetKey}
               intervalMinutes={slotInterval}
               onEventReschedule={(event, startAt, endAt) =>
                 void handleEventReschedule(event, startAt, endAt)
@@ -1084,12 +1102,7 @@ export default function CalendarPage() {
       <EventFormModal
         mode={formMode}
         onChange={handleFormChange}
-        onClose={() => {
-          setFormOpen(false);
-          setViewingExpandedEvent(null);
-          setEditingOccurrence(null);
-          setRecurrenceScopeMode(null);
-        }}
+        onClose={closeEventForm}
         onDelete={formMode === "edit" ? () => void handleDelete() : undefined}
         onSubmit={() => void handleSubmit()}
         open={formOpen}
@@ -1101,7 +1114,10 @@ export default function CalendarPage() {
 
       <RecurrenceScopeModal
         mode={recurrenceScopeMode === "delete" ? "delete" : "edit"}
-        onClose={() => setRecurrenceScopeMode(null)}
+        onClose={() => {
+          setRecurrenceScopeMode(null);
+          resetCalendarInteraction();
+        }}
         onConfirm={(scope) => void handleRecurrenceScopeConfirm(scope)}
         open={recurrenceScopeMode !== null}
       />

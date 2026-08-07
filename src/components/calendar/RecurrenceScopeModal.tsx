@@ -1,8 +1,6 @@
 "use client";
 
-import { useRef } from "react";
 import { createPortal } from "react-dom";
-import { useBodyScrollLock } from "@/lib/ui/use-body-scroll-lock";
 import type { RecurrenceEditScope } from "@/types/calendar-event";
 
 export function RecurrenceScopeModal({
@@ -16,9 +14,6 @@ export function RecurrenceScopeModal({
   onClose: () => void;
   onConfirm: (scope: RecurrenceEditScope) => void;
 }) {
-  const modalRootRef = useRef<HTMLDivElement>(null);
-  useBodyScrollLock(open, modalRootRef);
-
   if (!open) {
     return null;
   }
@@ -27,8 +22,7 @@ export function RecurrenceScopeModal({
 
   return createPortal(
     <div
-      ref={modalRootRef}
-      className="fixed inset-0 z-[130] flex items-end justify-center overflow-hidden overscroll-none touch-none sm:items-center sm:p-4"
+      className="fixed inset-0 z-[130] flex items-end justify-center overflow-hidden overscroll-none sm:items-center sm:p-4"
     >
       <button
         aria-label="關閉"

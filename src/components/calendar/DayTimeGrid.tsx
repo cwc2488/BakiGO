@@ -23,7 +23,7 @@ import {
   type ExpandedCalendarEvent,
 } from "@/types/calendar-event";
 import type { SwipeHandlers } from "@/lib/hooks/use-swipe-navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const DRAG_THRESHOLD_PX = 8;
 const LONG_PRESS_MS = 450;
@@ -77,6 +77,7 @@ function DraggableTimedEvent({
   onEventSelect,
   onEventReschedule,
   onDragActiveChange,
+  interactionResetKey,
 }: {
   dayDate: string;
   intervalMinutes: CalendarSlotInterval;
@@ -88,6 +89,7 @@ function DraggableTimedEvent({
     endAt: string,
   ) => void;
   onDragActiveChange: (active: boolean) => void;
+  interactionResetKey: number;
 }) {
   const dragRef = useRef<DragSession | null>(null);
   const [previewTopPx, setPreviewTopPx] = useState<number | null>(null);
@@ -119,6 +121,10 @@ function DraggableTimedEvent({
     setIsLongPressReady(false);
     onDragActiveChange(false);
   }
+
+  useEffect(() => {
+    resetDrag();
+  }, [interactionResetKey]);
 
   function commitDrag(clientY: number) {
     const drag = dragRef.current;
@@ -284,6 +290,7 @@ function DayTimedColumn({
   onEventSelect,
   onEventReschedule,
   onDragActiveChange,
+  interactionResetKey,
 }: {
   dayDate: string;
   events: ExpandedCalendarEvent[];
@@ -299,6 +306,7 @@ function DayTimedColumn({
     endAt: string,
   ) => void;
   onDragActiveChange: (active: boolean) => void;
+  interactionResetKey: number;
 }) {
   const timedEvents = events.filter((event) => !event.allDay);
   const timedLayouts = layoutTimedEvents(timedEvents, dayDate, intervalMinutes);
@@ -321,6 +329,7 @@ function DayTimedColumn({
         <DraggableTimedEvent
           key={layout.event.occurrenceId}
           dayDate={dayDate}
+          interactionResetKey={interactionResetKey}
           intervalMinutes={intervalMinutes}
           layout={layout}
           onDragActiveChange={onDragActiveChange}
@@ -378,6 +387,7 @@ export function DayTimeGrid({
   onEventSelect,
   onEventReschedule,
   swipeHandlers,
+  interactionResetKey,
 }: {
   dayDates: string[];
   eventsByDate: Map<string, ExpandedCalendarEvent[]>;
@@ -390,9 +400,14 @@ export function DayTimeGrid({
     endAt: string,
   ) => void;
   swipeHandlers?: SwipeHandlers;
+  interactionResetKey: number;
 }) {
   const [isDraggingEvent, setIsDraggingEvent] = useState(false);
   const showMultiDay = dayDates.length > 1;
+
+  useEffect(() => {
+    setIsDraggingEvent(false);
+  }, [interactionResetKey]);
 
   const slotCount = getSlotCount(intervalMinutes);
   const slotHeight = getSlotHeightPx(intervalMinutes);
@@ -495,6 +510,7 @@ export function DayTimeGrid({
               dayDate={date}
               events={eventsByDate.get(date) ?? []}
               gridHeight={gridHeight}
+              interactionResetKey={interactionResetKey}
               intervalMinutes={intervalMinutes}
               onDragActiveChange={setIsDraggingEvent}
               onEventReschedule={onEventReschedule}

@@ -138,11 +138,11 @@ export function planRecurringUpdate(
 }
 
 export function getOccurrenceDateFromExpanded(
-  expanded: { startAt: string; isRecurringInstance: boolean },
+  expanded: { occurrenceDate?: string; startAt: string },
   source: CalendarEvent,
 ): string | null {
   if (!isRecurringSeries(source)) {
     return null;
   }
-  return expanded.startAt.slice(0, 10);
+  return expanded.occurrenceDate ?? expanded.startAt.slice(0, 10);
 }
