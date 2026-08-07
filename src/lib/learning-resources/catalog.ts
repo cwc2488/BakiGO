@@ -1,4 +1,5 @@
 import type { LearningResource } from "@/types/learning-resource";
+import { LEARNING_STUCK_POINT_LABELS } from "@/types/learning-resource";
 
 /** 組織提供的業務教學 YouTube 片單 — 依標題對應卡關點。 */
 export const LEARNING_RESOURCE_CATALOG: LearningResource[] = [
@@ -63,6 +64,53 @@ export const LEARNING_RESOURCE_CATALOG: LearningResource[] = [
   },
 ];
 
+export const LEARNING_SERIES_LABELS: Record<string, string> = {
+  dream_quartet: "圓夢四部曲",
+  objection_handling: "異議處理",
+  general: "事業基礎",
+};
+
+export interface LearningResourceGroup {
+  key: string;
+  title: string;
+  resources: LearningResource[];
+}
+
 export function getLearningResourceById(id: string): LearningResource | undefined {
   return LEARNING_RESOURCE_CATALOG.find((resource) => resource.id === id);
+}
+
+export function formatLearningStuckPoints(resource: LearningResource): string[] {
+  return resource.stuckPoints.map((point) => LEARNING_STUCK_POINT_LABELS[point]);
+}
+
+const GROUP_ORDER = ["dream_quartet", "objection_handling", "general"] as const;
+
+export function groupLearningResources(): LearningResourceGroup[] {
+  const buckets = new Map<string, LearningResource[]>();
+
+  for (const resource of LEARNING_RESOURCE_CATALOG) {
+    const key = resource.seriesKey ?? "general";
+    const list = buckets.get(key) ?? [];
+    list.push(resource);
+    buckets.set(key, list);
+  }
+
+  for (const [key, resources] of buckets) {
+    resources.sort((left, right) => {
+      const leftPart = left.seriesPart ?? 999;
+      const rightPart = right.seriesPart ?? 999;
+      if (leftPart !== rightPart) {
+        return leftPart - rightPart;
+      }
+      return left.title.localeCompare(right.title, "zh-Hant");
+    });
+    buckets.set(key, resources);
+  }
+
+  return GROUP_ORDER.filter((key) => buckets.has(key)).map((key) => ({
+    key,
+    title: LEARNING_SERIES_LABELS[key] ?? key,
+    resources: buckets.get(key) ?? [],
+  }));
 }
