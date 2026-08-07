@@ -218,6 +218,45 @@ export function collectPriorityCandidates(input: PresidentAIInput): PriorityCand
     });
   });
 
+  input.memberGoals.forEach((goal) => {
+    if (goal.remaining <= 0) {
+      return;
+    }
+
+    const category =
+      goal.type === "monthly_vp"
+        ? "VP"
+        : goal.type === "monthly_new_customers"
+          ? "RETAIL"
+          : "RETAIL";
+
+    pushCandidate(candidates, {
+      sourceKey: `member_goal_${goal.goalId}`,
+      title: goal.title,
+      description: goal.description,
+      category,
+      current: goal.current,
+      target: goal.target,
+      remaining: goal.remaining,
+      progressPercent: goal.progressPercent,
+      enginePriority: goal.horizon === "short" ? 3000 : goal.horizon === "medium" ? 2000 : 1500,
+    });
+  });
+
+  if (input.careerGoal && input.careerGoal.remaining > 0) {
+    pushCandidate(candidates, {
+      sourceKey: input.careerGoal.sourceKey,
+      title: input.careerGoal.title,
+      description: input.careerGoal.description,
+      category: "PROMOTION",
+      current: input.careerGoal.current,
+      target: input.careerGoal.target,
+      remaining: input.careerGoal.remaining,
+      progressPercent: input.careerGoal.progressPercent,
+      enginePriority: 2500,
+    });
+  }
+
   return candidates;
 }
 

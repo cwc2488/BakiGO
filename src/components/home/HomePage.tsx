@@ -123,6 +123,7 @@ function PresidentAISection({
 function WorkHubSection() {
   const hubs = [
     { href: "/daily-action", title: "今日行動", desc: "每天第一件事" },
+    { href: "/goals", title: "目標中心", desc: "設定 VP、收入、新客" },
     { href: "/leaderboard", title: "積分排行", desc: "本週前五 · 本月前十" },
     { href: "/retail-pipeline", title: "名單流程", desc: "推進每位名單" },
     { href: "/pre-meeting-graphic", title: "會前會圖", desc: "資料合併輸出" },

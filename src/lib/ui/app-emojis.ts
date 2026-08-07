@@ -9,6 +9,7 @@ export const APP_EMOJI = {
   },
   hub: {
     dailyAction: "⚡",
+    goals: "🎯",
     leaderboard: "🏆",
     pipeline: "📝",
     retailHouse: "🛒",
@@ -83,6 +84,7 @@ export const APP_EMOJI = {
 
 export const WORK_HUB_EMOJIS: Record<string, string> = {
   "/daily-action": APP_EMOJI.hub.dailyAction,
+  "/goals": APP_EMOJI.hub.goals,
   "/leaderboard": APP_EMOJI.hub.leaderboard,
   "/retail-pipeline": APP_EMOJI.hub.pipeline,
   "/retail-house": APP_EMOJI.hub.retailHouse,

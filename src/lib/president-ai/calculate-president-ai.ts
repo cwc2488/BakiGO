@@ -1,11 +1,13 @@
 import type { FocusMode, PresidentAIResult, Priority } from "@/types/president-ai";
 import { DEFAULT_MISSION_RULES } from "@/lib/mission-engine/rules";
-import type { PresidentAIInput } from "./types";
+import type { PresidentAIInput, PriorityCandidate } from "./types";
 import { candidatesToPriorities, collectPriorityCandidates } from "./collect-candidates";
 import { collectOpportunities, collectWarnings } from "./collect-insights";
 import { resolveFocusModeFromCategory } from "./map-category";
 import { formatFocusModeLabel, formatPriorityCategoryLabel } from "./display-labels";
 import { sortCandidates } from "./score-priority";
+
+const HORIZON_ORDER = { short: 0, medium: 1, long: 2 } as const;
 
 function buildReasoning(
   topPriorities: Priority[],
@@ -59,6 +61,47 @@ function selectFocusMode(
   };
 }
 
+function pickTodayPriority(
+  scored: Array<PriorityCandidate & { score: number }>,
+  input: PresidentAIInput,
+): (PriorityCandidate & { score: number }) | null {
+  if (scored.length === 0) {
+    return null;
+  }
+
+  const incompleteGoals = input.memberGoals.filter((goal) => goal.remaining > 0);
+  if (incompleteGoals.length > 0) {
+    const prioritized = [...incompleteGoals].sort((left, right) => {
+      const horizonDiff = HORIZON_ORDER[left.horizon] - HORIZON_ORDER[right.horizon];
+      if (horizonDiff !== 0) {
+        return horizonDiff;
+      }
+      if (left.progressPercent !== right.progressPercent) {
+        return left.progressPercent - right.progressPercent;
+      }
+      return right.remaining - left.remaining;
+    });
+    const topGoal = prioritized[0];
+    const matched = scored.find((item) => item.sourceKey === `member_goal_${topGoal.goalId}`);
+    if (matched) {
+      return matched;
+    }
+  }
+
+  if (input.careerGoal && input.careerGoal.remaining > 0) {
+    const matched =
+      scored.find((item) => item.sourceKey === input.careerGoal!.sourceKey) ??
+      scored.find(
+        (item) => item.category === "PROMOTION" && item.sourceKey.startsWith("promotion_"),
+      );
+    if (matched) {
+      return matched;
+    }
+  }
+
+  return scored[0] ?? null;
+}
+
 /**
  * President AI — decision layer above all Business Engines.
  * Reads computed metrics only; never recalculates KPIs or invents thresholds.
@@ -69,8 +112,12 @@ export function calculatePresidentAI(
 ): PresidentAIResult {
   const rawCandidates = collectPriorityCandidates(input);
   const scored = sortCandidates(candidatesToPriorities(rawCandidates));
+  const todayPick = pickTodayPriority(scored, input);
+  const ordered = todayPick
+    ? [todayPick, ...scored.filter((item) => item.sourceKey !== todayPick.sourceKey)]
+    : scored;
 
-  const topPriorities: Priority[] = scored.slice(0, maxPriorities).map((candidate) => ({
+  const topPriorities: Priority[] = ordered.slice(0, maxPriorities).map((candidate) => ({
     title: candidate.title,
     description: candidate.description,
     score: candidate.score,

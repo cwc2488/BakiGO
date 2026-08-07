@@ -99,6 +99,28 @@ export interface PresidentAIInput {
   ruleMissing: {
     entries: Array<{ ruleKey: string; engine: string }>;
   };
+  memberGoals: Array<{
+    goalId: string;
+    type: string;
+    horizon: "short" | "medium" | "long";
+    title: string;
+    description: string;
+    current: number;
+    target: number;
+    remaining: number;
+    progressPercent: number;
+    todayNeeded: number | null;
+    unit: string;
+  }>;
+  careerGoal: {
+    title: string;
+    description: string;
+    current: number;
+    target: number;
+    remaining: number;
+    progressPercent: number;
+    sourceKey: string;
+  } | null;
 }
 
 export interface PriorityCandidate {

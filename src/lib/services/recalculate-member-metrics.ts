@@ -58,6 +58,11 @@ import { buildMapUniverse, type MapUniverseResult } from "./build-map-universe";
 import { calculatePresidentAI, toPresidentAIInput } from "@/lib/president-ai";
 import { clampPercent } from "@/lib/business-engine/utils";
 import type { BakiEvent } from "@/types/baki-event";
+import { loadActiveMemberGoals } from "@/lib/member-goals/member-goal-storage";
+import {
+  buildCareerBlueprintView,
+  buildMemberGoalProgressView,
+} from "@/lib/member-goals/calculate-member-goal-progress";
 
 export interface MemberComputedMetrics {
   memberId: EntityId;
@@ -290,7 +295,27 @@ export function recalculateMemberMetrics(
     ruleMissing: createRuleMissingState(auditAllRules()),
   };
 
-  const presidentAI = calculatePresidentAI(toPresidentAIInput(snapshotCore));
+  const goalMetricsContext = {
+    referenceDate: input.referenceDate,
+    yearMonth,
+    vp,
+    monthlyChallenge,
+    promotionProgress,
+  };
+  const activeMemberGoals = loadActiveMemberGoals(storage, input.memberId, yearMonth);
+  const memberGoalViews = activeMemberGoals.map((goal) =>
+    buildMemberGoalProgressView(goal, goalMetricsContext, memberTransactions),
+  );
+  const careerGoalView = buildCareerBlueprintView(goalMetricsContext);
+
+  const presidentAI = calculatePresidentAI(
+    toPresidentAIInput({
+      ...snapshotCore,
+      referenceDate: input.referenceDate,
+      memberGoals: memberGoalViews,
+      careerGoal: careerGoalView,
+    }),
+  );
 
   const retailWeeklyReport = buildRetailWeeklyReport({
     memberId: input.memberId,

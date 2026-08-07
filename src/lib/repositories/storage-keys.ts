@@ -23,4 +23,5 @@ export const STORAGE_KEYS = {
   calendarReminderQueue: "baki-go:calendar-reminder-queue",
   cloudMembersMode: "baki-go:cloud-members-mode",
   superLeagueEntries: "baki-go:super-league-entries",
+  memberGoals: "baki-go:member-goals",
 } as const;

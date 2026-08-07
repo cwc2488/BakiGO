@@ -106,11 +106,25 @@ function resolveFromCategory(category: PriorityCategory): PresidentAiAction {
   }
 }
 
+function resolveMemberGoalAction(category: PriorityCategory): PresidentAiAction {
+  if (category === "VP") {
+    return { kind: "navigate", href: "/events", label: "新增成交紀錄" };
+  }
+  if (category === "RETAIL") {
+    return { kind: "navigate", href: "/retail-pipeline", label: "前往名單流程" };
+  }
+  return { kind: "navigate", href: "/goals", label: "查看目標進度" };
+}
+
 export function resolvePresidentAiAction(
   priority: Priority | null | undefined,
 ): PresidentAiAction | null {
   if (!priority) {
     return null;
+  }
+
+  if (priority.sourceKey.startsWith("member_goal_")) {
+    return resolveMemberGoalAction(priority.category);
   }
 
   return resolveFromSourceKey(priority.sourceKey) ?? resolveFromCategory(priority.category);

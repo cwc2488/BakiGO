@@ -1,8 +1,9 @@
 import type { PresidentAIInput } from "./types";
+import type { CareerBlueprintView, MemberGoalProgressView } from "@/types/member-goal";
 
 export interface PresidentAIMetricsInput {
   memberId: string;
-  computedAt: string;
+  referenceDate: string;
   nextSteps: PresidentAIInput["nextSteps"];
   qualificationResults: PresidentAIInput["qualificationResults"];
   promotionProgress: PresidentAIInput["promotionProgress"];
@@ -12,12 +13,14 @@ export interface PresidentAIMetricsInput {
   missions: PresidentAIInput["missions"];
   gamification: PresidentAIInput["gamification"];
   ruleMissing: PresidentAIInput["ruleMissing"];
+  memberGoals?: MemberGoalProgressView[];
+  careerGoal?: CareerBlueprintView | null;
 }
 
 export function toPresidentAIInput(metrics: PresidentAIMetricsInput): PresidentAIInput {
   return {
     memberId: metrics.memberId,
-    referenceDate: metrics.computedAt.slice(0, 10),
+    referenceDate: metrics.referenceDate,
     nextSteps: metrics.nextSteps,
     qualificationResults: metrics.qualificationResults,
     promotionProgress: metrics.promotionProgress,
@@ -46,5 +49,29 @@ export function toPresidentAIInput(metrics: PresidentAIMetricsInput): PresidentA
       },
     },
     ruleMissing: metrics.ruleMissing,
+    memberGoals: (metrics.memberGoals ?? []).map((goal) => ({
+      goalId: goal.goalId,
+      type: goal.type,
+      horizon: goal.horizon,
+      title: goal.title,
+      description: goal.description,
+      current: goal.current,
+      target: goal.target,
+      remaining: goal.remaining,
+      progressPercent: goal.progressPercent,
+      todayNeeded: goal.todayNeeded,
+      unit: goal.unit,
+    })),
+    careerGoal: metrics.careerGoal
+      ? {
+          title: metrics.careerGoal.title,
+          description: metrics.careerGoal.description,
+          current: metrics.careerGoal.current,
+          target: metrics.careerGoal.target,
+          remaining: metrics.careerGoal.remaining,
+          progressPercent: metrics.careerGoal.progressPercent,
+          sourceKey: metrics.careerGoal.sourceKey,
+        }
+      : null,
   };
 }
