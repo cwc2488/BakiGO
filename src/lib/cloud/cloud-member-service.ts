@@ -146,3 +146,16 @@ export async function updateCloudMemberAvatar(
 
   return mapCloudMemberRow(data as never);
 }
+
+export async function updateCloudMemberName(memberId: string, name: string): Promise<void> {
+  const supabase = createSupabaseBrowserClient();
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return;
+  }
+
+  const { error } = await supabase.from("members").update({ name: trimmed }).eq("id", memberId);
+  if (error) {
+    throw new Error(error.message);
+  }
+}

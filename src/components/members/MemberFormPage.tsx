@@ -10,6 +10,7 @@ import {
   MEMBER_STATUS_LABELS,
 } from "@/lib/members/member-service";
 import { createMemberRepository } from "@/lib/repositories/member-repository";
+import { persistMemberProfile } from "@/lib/members/member-profile-sync";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { Member, MemberStatus } from "@/types/member";
 import Link from "next/link";
@@ -159,60 +160,66 @@ export default function MemberFormPage({
 
     setIsSaving(true);
 
-    try {
-      const storage = createLocalStorageAdapter();
-      const repository = createMemberRepository(storage);
-      const basePayload = {
-        displayName: form.displayName.trim(),
-        nickname: form.nickname.trim() || undefined,
-        gender: form.gender.trim() || undefined,
-        birthday: form.birthday || undefined,
-        phone: form.phone.trim() || undefined,
-        lineId: form.lineId.trim() || undefined,
-        instagram: form.instagram.trim() || undefined,
-        email: form.email.trim() || undefined,
-        goal: form.goal.trim() || undefined,
-        occupation: form.occupation.trim() || undefined,
-        city: form.city.trim() || undefined,
-        notes: form.notes.trim() || undefined,
-        tags: form.tags
-          .split(",")
-          .map((tag) => tag.trim())
-          .filter(Boolean),
-      };
+    void (async () => {
+      try {
+        const storage = createLocalStorageAdapter();
+        const repository = createMemberRepository(storage);
+        const basePayload = {
+          displayName: form.displayName.trim(),
+          nickname: form.nickname.trim() || undefined,
+          gender: form.gender.trim() || undefined,
+          birthday: form.birthday || undefined,
+          phone: form.phone.trim() || undefined,
+          lineId: form.lineId.trim() || undefined,
+          instagram: form.instagram.trim() || undefined,
+          email: form.email.trim() || undefined,
+          goal: form.goal.trim() || undefined,
+          occupation: form.occupation.trim() || undefined,
+          city: form.city.trim() || undefined,
+          notes: form.notes.trim() || undefined,
+          tags: form.tags
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+        };
 
-      const adminFields = {
-        joinedAt: form.joinedAt,
-        sponsorMemberId: form.sponsorMemberId || undefined,
-        coachId: form.coachId || undefined,
-        status: form.status,
-        rankKey: form.rankKey,
-        roleKey: form.roleKey,
-      };
+        const adminFields = {
+          joinedAt: form.joinedAt,
+          sponsorMemberId: form.sponsorMemberId || undefined,
+          coachId: form.coachId || undefined,
+          status: form.status,
+          rankKey: form.rankKey,
+          roleKey: form.roleKey,
+        };
 
-      if (mode === "create") {
-        const created = repository.create({
-          organizationId: APP_IDS.organizationId,
-          herbalifeMemberId: form.herbalifeMemberId.trim(),
-          ...basePayload,
-          ...adminFields,
-        });
-        router.push(`/members/${created.id}`);
-        return;
+        if (mode === "create") {
+          const created = repository.create({
+            organizationId: APP_IDS.organizationId,
+            herbalifeMemberId: form.herbalifeMemberId.trim(),
+            ...basePayload,
+            ...adminFields,
+          });
+          router.push(`/members/${created.id}`);
+          return;
+        }
+
+        if (!memberId) {
+          setError("找不到會員");
+          return;
+        }
+
+        const updated = repository.update(
+          memberId,
+          isSelfProfile ? basePayload : { ...basePayload, ...adminFields },
+        );
+        await persistMemberProfile(memberId, updated);
+        router.push(isSelfProfile ? "/profile" : `/members/${memberId}`);
+      } catch {
+        setError("儲存失敗，請稍後再試");
+      } finally {
+        setIsSaving(false);
       }
-
-      if (!memberId) {
-        setError("找不到會員");
-        return;
-      }
-
-      repository.update(memberId, isSelfProfile ? basePayload : { ...basePayload, ...adminFields });
-      router.push(isSelfProfile ? "/profile" : `/members/${memberId}`);
-    } catch {
-      setError("儲存失敗，請稍後再試");
-    } finally {
-      setIsSaving(false);
-    }
+    })();
   }
 
   if (mode === "create" && !canManageMembers) {
