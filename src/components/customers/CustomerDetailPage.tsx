@@ -11,6 +11,10 @@ import {
   CustomerProgressPhotoSection,
   type CustomerProgressPhotoFormValues,
 } from "@/components/customers/CustomerProgressPhotoSection";
+import {
+  CustomerReceiptPhotoSection,
+  type CustomerReceiptPhotoFormValues,
+} from "@/components/customers/CustomerReceiptPhotoSection";
 import { CrmButton, CrmCard, CrmField, CrmInput, CrmSectionTitle } from "@/components/members/ui";
 import { PageShell } from "@/components/ui/PageShell";
 import { getCurrentMember } from "@/lib/auth/auth-service";
@@ -39,7 +43,7 @@ import { createCustomerRepository } from "@/lib/repositories/customer-repository
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { BodyCompositionRecord, Customer, CustomerPortalToken, CustomerProgressPhoto } from "@/types/customer";
+import type { BodyCompositionRecord, Customer, CustomerPortalToken, CustomerProgressPhoto, CustomerReceiptPhoto } from "@/types/customer";
 import type { Member } from "@/types/member";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -53,6 +57,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [records, setRecords] = useState<BodyCompositionRecord[]>([]);
   const [photos, setPhotos] = useState<CustomerProgressPhoto[]>([]);
+  const [receipts, setReceipts] = useState<CustomerReceiptPhoto[]>([]);
   const [portalLink, setPortalLink] = useState<string | null>(null);
   const [portalToken, setPortalToken] = useState<CustomerPortalToken | null>(null);
   const [portalExpiry, setPortalExpiry] = useState("");
@@ -105,6 +110,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
     setCustomer(found ?? null);
     setRecords(found ? repo.getBodyRecordsByCustomer(customerId) : []);
     setPhotos(found ? repo.getProgressPhotosByCustomer(customerId) : []);
+    setReceipts(found ? repo.getReceiptPhotosByCustomer(customerId) : []);
   }, [customerId, repo]);
 
   useEffect(() => {
@@ -168,6 +174,20 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
       photoDate: values.photoDate,
       imageDataUrl: values.imageDataUrl,
       note: values.note,
+    });
+    reload();
+  };
+
+  const handleCreateReceipt = (values: CustomerReceiptPhotoFormValues) => {
+    if (!values.imageDataUrl) {
+      return;
+    }
+
+    repo.createReceiptPhoto({
+      customerId,
+      receiptDate: values.receiptDate,
+      imageDataUrl: values.imageDataUrl,
+      note: values.note || undefined,
     });
     reload();
   };
@@ -393,6 +413,8 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
 
       <CustomerProgressPhotoSection onCreate={handleCreatePhoto} photos={photos} today={today} />
 
+      <CustomerReceiptPhotoSection onCreate={handleCreateReceipt} receipts={receipts} today={today} />
+
       <CrmCard>
         <CrmSectionTitle>基本資料</CrmSectionTitle>
         <dl className="mt-4">
@@ -549,7 +571,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
           危險操作
         </p>
         <p className="mt-2 text-[0.875rem] leading-relaxed text-[#86868b]">
-          刪除後將一併移除量測紀錄、進度照片與 Magic Link，且無法復原。
+          刪除後將一併移除量測紀錄、進度照片、收據與 Magic Link，且無法復原。
         </p>
         <button
           className="mt-4 w-full rounded-2xl bg-[#fff1f0] px-4 py-3.5 text-[0.9375rem] font-semibold text-[#cf1322]"
@@ -566,7 +588,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
           <div className="w-full max-w-sm rounded-[1.75rem] bg-[var(--brand-surface)] p-6">
             <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">刪除顧客？</p>
             <p className="mt-2 text-[0.9375rem] text-[#86868b]">
-              將刪除 {customer.displayName} 的所有資料，包含量測、照片與顧客連結。
+              將刪除 {customer.displayName} 的所有資料，包含量測、照片、收據與顧客連結。
             </p>
             <div className="mt-5 space-y-2">
               <CrmButton

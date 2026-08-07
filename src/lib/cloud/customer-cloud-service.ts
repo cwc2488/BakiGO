@@ -7,11 +7,14 @@ import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import { setCloudSyncPaused } from "@/lib/repositories/syncing-storage-adapter";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
+import { isReceiptExpired } from "@/lib/customers/customer-receipt-retention";
+import { todayISODate } from "@/lib/config/app-config";
 import type {
   BodyCompositionRecord,
   Customer,
   CustomerPortalToken,
   CustomerProgressPhoto,
+  CustomerReceiptPhoto,
 } from "@/types/customer";
 import type { EntityId } from "@/types";
 
@@ -60,6 +63,17 @@ interface ProgressPhotoDbRow {
   photo_date: string;
   image_data_url: string | null;
   note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ReceiptPhotoDbRow {
+  id: string;
+  customer_id: string;
+  receipt_date: string;
+  image_data_url: string;
+  note: string | null;
+  retain_until: string;
   created_at: string;
   updated_at: string;
 }
@@ -113,6 +127,19 @@ function mapProgressPhoto(row: ProgressPhotoDbRow): CustomerProgressPhoto {
     photoDate: row.photo_date,
     imageDataUrl: row.image_data_url,
     note: row.note ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapReceiptPhoto(row: ReceiptPhotoDbRow): CustomerReceiptPhoto {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    receiptDate: row.receipt_date,
+    imageDataUrl: row.image_data_url,
+    note: row.note ?? undefined,
+    retainUntil: row.retain_until,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -176,6 +203,20 @@ function progressPhotoToDbRow(photo: CustomerProgressPhoto): ProgressPhotoDbRow 
   };
 }
 
+function receiptPhotoToDbRow(receipt: CustomerReceiptPhoto): ReceiptPhotoDbRow {
+  return {
+    id: receipt.id,
+    customer_id: receipt.customerId,
+    receipt_date: receipt.receiptDate,
+    image_data_url: receipt.imageDataUrl,
+    note: receipt.note ?? null,
+    retain_until: receipt.retainUntil,
+    created_at:
+      typeof receipt.createdAt === "string" ? receipt.createdAt : receipt.createdAt.toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
 export async function fetchCloudCustomers(ownerMemberId: EntityId): Promise<Customer[]> {
   if (!isSupabaseConfigured() || !isCloudDatabaseMemberId(ownerMemberId)) {
     return [];
@@ -235,11 +276,33 @@ export async function fetchCloudProgressPhotos(
   return (data ?? []).map((row) => mapProgressPhoto(row as ProgressPhotoDbRow));
 }
 
+export async function fetchCloudReceiptPhotos(
+  customerIds: EntityId[],
+): Promise<CustomerReceiptPhoto[]> {
+  if (!isSupabaseConfigured() || customerIds.length === 0) {
+    return [];
+  }
+
+  const supabase = createSupabaseBrowserClient();
+  const { data, error } = await supabase
+    .from("customer_receipt_photos")
+    .select("*")
+    .in("customer_id", customerIds)
+    .order("receipt_date", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).map((row) => mapReceiptPhoto(row as ReceiptPhotoDbRow));
+}
+
 export async function pushCustomersToCloud(
   ownerMemberId: EntityId,
   customers: Customer[],
   records: BodyCompositionRecord[],
   photos: CustomerProgressPhoto[] = [],
+  receipts: CustomerReceiptPhoto[] = [],
 ): Promise<void> {
   if (!isSupabaseConfigured() || !isCloudDatabaseMemberId(ownerMemberId)) {
     return;
@@ -281,6 +344,20 @@ export async function pushCustomersToCloud(
       throw new Error(photoError.message);
     }
   }
+
+  const ownedReceipts = receipts.filter(
+    (receipt) =>
+      ownedCustomerIds.has(receipt.customerId) && !isReceiptExpired(receipt, todayISODate()),
+  );
+  if (ownedReceipts.length > 0) {
+    const { error: receiptError } = await supabase
+      .from("customer_receipt_photos")
+      .upsert(ownedReceipts.map(receiptPhotoToDbRow), { onConflict: "id" });
+
+    if (receiptError) {
+      throw new Error(receiptError.message);
+    }
+  }
 }
 
 function mergeById<T extends { id: EntityId; updatedAt: string | Date }>(
@@ -314,10 +391,12 @@ function localHasCustomerData(storage: StorageAdapter): boolean {
   const customers = storage.getItem(STORAGE_KEYS.customers);
   const records = storage.getItem(STORAGE_KEYS.customerBodyRecords);
   const photos = storage.getItem(STORAGE_KEYS.customerProgressPhotos);
+  const receipts = storage.getItem(STORAGE_KEYS.customerReceiptPhotos);
   return (
     Boolean(customers && customers !== "[]") ||
     Boolean(records && records !== "[]") ||
-    Boolean(photos && photos !== "[]")
+    Boolean(photos && photos !== "[]") ||
+    Boolean(receipts && receipts !== "[]")
   );
 }
 
@@ -343,6 +422,7 @@ export async function syncCustomersOnLogin(
         repo.getAllCustomers(),
         repo.getAllBodyRecords(),
         repo.getAllProgressPhotos(),
+        repo.getAllReceiptPhotos(),
       );
       return;
     }
@@ -367,9 +447,24 @@ export async function syncCustomersOnLogin(
       const mergedPhotos = mergeById(localPhotos, cloudPhotos);
       storage.setItem(STORAGE_KEYS.customerProgressPhotos, JSON.stringify(mergedPhotos));
 
+      const cloudReceipts = await fetchCloudReceiptPhotos(customerIds);
+      const localReceipts = repo
+        .getAllReceiptPhotos()
+        .filter((receipt) => customerIds.includes(receipt.customerId));
+      const mergedReceipts = mergeById(localReceipts, cloudReceipts);
+      storage.setItem(STORAGE_KEYS.customerReceiptPhotos, JSON.stringify(mergedReceipts));
+
       if (localHasData) {
-        await pushCustomersToCloud(ownerMemberId, mergedCustomers, mergedRecords, mergedPhotos);
+        await pushCustomersToCloud(
+          ownerMemberId,
+          mergedCustomers,
+          mergedRecords,
+          mergedPhotos,
+          mergedReceipts,
+        );
       }
+
+      repo.purgeExpiredReceiptPhotos();
     }
   } finally {
     setCloudSyncPaused(false);
@@ -388,6 +483,7 @@ export async function pushLocalCustomersToCloud(storage: StorageAdapter): Promis
     repo.getAllCustomers(),
     repo.getAllBodyRecords(),
     repo.getAllProgressPhotos(),
+    repo.getAllReceiptPhotos(),
   );
 }
 

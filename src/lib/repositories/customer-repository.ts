@@ -5,12 +5,19 @@ import type {
   CustomerCreateInput,
   CustomerProgressPhoto,
   CustomerProgressPhotoCreateInput,
+  CustomerReceiptPhoto,
+  CustomerReceiptPhotoCreateInput,
   CustomerUpdateInput,
 } from "@/types/customer";
 import type { EntityId } from "@/types";
 import type { StorageAdapter } from "./storage-adapter";
 import { STORAGE_KEYS } from "./storage-keys";
 import { scheduleCustomerCloudPush } from "@/lib/cloud/customer-cloud-sync";
+import {
+  computeReceiptRetainUntil,
+  isReceiptExpired,
+} from "@/lib/customers/customer-receipt-retention";
+import { todayISODate } from "@/lib/config/app-config";
 
 function createId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -48,6 +55,11 @@ export interface CustomerRepository {
   getProgressPhotosByCustomer(customerId: EntityId): CustomerProgressPhoto[];
   createProgressPhoto(input: CustomerProgressPhotoCreateInput): CustomerProgressPhoto;
   deleteProgressPhoto(photoId: EntityId): void;
+  getAllReceiptPhotos(): CustomerReceiptPhoto[];
+  getReceiptPhotosByCustomer(customerId: EntityId): CustomerReceiptPhoto[];
+  createReceiptPhoto(input: CustomerReceiptPhotoCreateInput): CustomerReceiptPhoto;
+  deleteReceiptPhoto(receiptId: EntityId): void;
+  purgeExpiredReceiptPhotos(referenceDate?: string): void;
 }
 
 export class LocalStorageCustomerRepository implements CustomerRepository {
@@ -138,6 +150,9 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
 
     const nextPhotos = this.getAllProgressPhotos().filter((photo) => photo.customerId !== customerId);
     this.storage.setItem(STORAGE_KEYS.customerProgressPhotos, JSON.stringify(nextPhotos));
+
+    const nextReceipts = this.getAllReceiptPhotos().filter((receipt) => receipt.customerId !== customerId);
+    this.storage.setItem(STORAGE_KEYS.customerReceiptPhotos, JSON.stringify(nextReceipts));
     scheduleCustomerCloudPush();
   }
 
@@ -216,6 +231,51 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
   deleteProgressPhoto(photoId: EntityId): void {
     const next = this.getAllProgressPhotos().filter((photo) => photo.id !== photoId);
     this.storage.setItem(STORAGE_KEYS.customerProgressPhotos, JSON.stringify(next));
+    scheduleCustomerCloudPush();
+  }
+
+  getAllReceiptPhotos(): CustomerReceiptPhoto[] {
+    return parseArray<CustomerReceiptPhoto>(this.storage.getItem(STORAGE_KEYS.customerReceiptPhotos));
+  }
+
+  purgeExpiredReceiptPhotos(referenceDate: string = todayISODate()): void {
+    const current = this.getAllReceiptPhotos();
+    const active = current.filter((receipt) => !isReceiptExpired(receipt, referenceDate));
+    if (active.length !== current.length) {
+      this.storage.setItem(STORAGE_KEYS.customerReceiptPhotos, JSON.stringify(active));
+      scheduleCustomerCloudPush();
+    }
+  }
+
+  getReceiptPhotosByCustomer(customerId: EntityId): CustomerReceiptPhoto[] {
+    this.purgeExpiredReceiptPhotos();
+    return this.getAllReceiptPhotos()
+      .filter((receipt) => receipt.customerId === customerId)
+      .sort((left, right) => right.receiptDate.localeCompare(left.receiptDate));
+  }
+
+  createReceiptPhoto(input: CustomerReceiptPhotoCreateInput): CustomerReceiptPhoto {
+    const now = new Date().toISOString();
+    const receipt: CustomerReceiptPhoto = {
+      id: createId(),
+      createdAt: now,
+      updatedAt: now,
+      customerId: input.customerId,
+      receiptDate: input.receiptDate,
+      imageDataUrl: input.imageDataUrl,
+      note: input.note?.trim() || undefined,
+      retainUntil: computeReceiptRetainUntil(input.receiptDate),
+    };
+
+    const next = [...this.getAllReceiptPhotos(), receipt];
+    this.storage.setItem(STORAGE_KEYS.customerReceiptPhotos, JSON.stringify(next));
+    scheduleCustomerCloudPush();
+    return receipt;
+  }
+
+  deleteReceiptPhoto(receiptId: EntityId): void {
+    const next = this.getAllReceiptPhotos().filter((receipt) => receipt.id !== receiptId);
+    this.storage.setItem(STORAGE_KEYS.customerReceiptPhotos, JSON.stringify(next));
     scheduleCustomerCloudPush();
   }
 }

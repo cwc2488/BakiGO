@@ -103,6 +103,22 @@ export interface CustomerProgressPhotoCreateInput {
   note?: string;
 }
 
+export interface CustomerReceiptPhoto extends StoredEntity {
+  customerId: EntityId;
+  receiptDate: ISODateString;
+  imageDataUrl: string;
+  note?: string;
+  /** Inclusive last day this receipt should be kept (receipt date + 2 years). */
+  retainUntil: ISODateString;
+}
+
+export interface CustomerReceiptPhotoCreateInput {
+  customerId: EntityId;
+  receiptDate: ISODateString;
+  imageDataUrl: string;
+  note?: string;
+}
+
 export interface CustomerPortalToken extends StoredEntity {
   customerId: EntityId;
   token: string;

@@ -340,7 +340,7 @@ export default function CustomerListPage() {
           <div className="w-full max-w-sm rounded-[1.75rem] bg-[var(--brand-surface)] p-6">
             <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">刪除顧客？</p>
             <p className="mt-2 text-[0.9375rem] text-[#86868b]">
-              將刪除 {deleteTarget.displayName} 的所有資料，包含量測、照片與顧客連結。
+              將刪除 {deleteTarget.displayName} 的所有資料，包含量測、照片、收據與顧客連結。
             </p>
             <div className="mt-5 space-y-2">
               <CrmButton onClick={handleDelete} variant="danger">
