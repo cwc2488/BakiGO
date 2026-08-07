@@ -131,6 +131,8 @@ export interface PresidentAIInput {
   } | null;
   detectedStuckPoints: import("@/types/learning-resource").LearningStuckPointKey[];
   pipelinePushSteps: Array<{ label: string; detail: string; href?: string }>;
+  viewerRankKey: string;
+  downlinePartnerSuggestions: import("@/types/downline-partner").DownlinePartnerSuggestion[];
 }
 
 export interface PriorityCandidate {

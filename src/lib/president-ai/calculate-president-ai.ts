@@ -6,6 +6,8 @@ import { collectOpportunities, collectWarnings } from "./collect-insights";
 import { resolveFocusModeFromCategory } from "./map-category";
 import { formatFocusModeLabel, formatPriorityCategoryLabel } from "./display-labels";
 import { sortCandidates } from "./score-priority";
+import { isCareerRankAtOrAbove } from "@/lib/auth/career-rank-order";
+import { RANK_KEYS } from "@/lib/business-engine/rules/keys";
 
 const HORIZON_ORDER = { short: 0, medium: 1, long: 2 } as const;
 
@@ -69,6 +71,26 @@ function pickTodayPriority(
     return null;
   }
 
+  const isOrganizationViewer = isCareerRankAtOrAbove(
+    input.viewerRankKey,
+    RANK_KEYS.PROMOTION_GROUP,
+  );
+
+  if (isOrganizationViewer) {
+    const meetingSignal = scored.find((item) =>
+      item.sourceKey.startsWith("downline_no_meetings_"),
+    );
+    if (meetingSignal) {
+      return meetingSignal;
+    }
+    const customerSignal = scored.find((item) =>
+      item.sourceKey.startsWith("downline_no_new_customers_"),
+    );
+    if (customerSignal) {
+      return customerSignal;
+    }
+  }
+
   const incompleteGoals = input.memberGoals.filter((goal) => goal.remaining > 0);
   if (incompleteGoals.length > 0) {
     const prioritized = [...incompleteGoals].sort((left, right) => {
@@ -88,7 +110,7 @@ function pickTodayPriority(
     }
   }
 
-  if (input.detectedStuckPoints.length > 0 && input.pipelinePushSteps.length > 0) {
+  if (input.pipelinePushSteps.length > 0) {
     const matched = scored.find((item) => item.sourceKey.startsWith("pipeline_push_"));
     if (matched) {
       return matched;

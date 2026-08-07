@@ -1,6 +1,7 @@
 import type { PriorityCandidate, PresidentAIInput } from "./types";
 import { isPromotionCoveredByNextSteps } from "@/lib/business-engine/next-step/promotion-step-dedupe";
 import { collectPipelinePushCandidates } from "./collect-pipeline-candidates";
+import { collectDownlinePartnerCandidates } from "./collect-downline-candidates";
 import {
   resolveCategoryFromCriterionKey,
   resolveCategoryFromMetric,
@@ -37,6 +38,12 @@ function dedupeCandidatesByTitle(candidates: PriorityCandidate[]): PriorityCandi
   }
 
   return result;
+}
+
+function firstActionStep(
+  steps: Array<{ label: string; detail: string; href?: string }>,
+): { label: string; detail: string; href?: string } | null {
+  return steps[0] ?? null;
 }
 
 export function collectPriorityCandidates(input: PresidentAIInput): PriorityCandidate[] {
@@ -247,17 +254,19 @@ export function collectPriorityCandidates(input: PresidentAIInput): PriorityCand
           ? "RETAIL"
           : "RETAIL";
 
+    const firstStep = firstActionStep(goal.actionSteps);
+
     pushCandidate(candidates, {
       sourceKey: `member_goal_${goal.goalId}`,
-      title: goal.title,
-      description: goal.description,
+      title: firstStep?.label ?? goal.title,
+      description: firstStep?.detail ?? goal.description,
       category,
       current: goal.current,
       target: goal.target,
       remaining: goal.remaining,
       progressPercent: goal.progressPercent,
       enginePriority: goal.horizon === "short" ? 3000 : goal.horizon === "medium" ? 2000 : 1500,
-      actionHref: goal.actionSteps[0]?.href,
+      actionHref: firstStep?.href,
     });
   });
 
@@ -266,37 +275,43 @@ export function collectPriorityCandidates(input: PresidentAIInput): PriorityCand
       (step) => step.stepKey === input.careerGoal!.sourceKey,
     );
     if (!coveredByNextStep) {
+      const firstStep = firstActionStep(input.careerGoal.actionSteps);
       pushCandidate(candidates, {
         sourceKey: input.careerGoal.sourceKey,
-        title: input.careerGoal.title,
-        description: input.careerGoal.description,
+        title: firstStep?.label ?? input.careerGoal.title,
+        description: firstStep?.detail ?? input.careerGoal.description,
         category: "PROMOTION",
         current: input.careerGoal.current,
         target: input.careerGoal.target,
         remaining: input.careerGoal.remaining,
         progressPercent: input.careerGoal.progressPercent,
         enginePriority: 2500,
-        actionHref: input.careerGoal.actionSteps[0]?.href,
+        actionHref: firstStep?.href,
       });
     }
   }
 
   if (input.rankGuidance && input.rankGuidance.actionSteps.length > 0) {
+    const firstStep = firstActionStep(input.rankGuidance.actionSteps);
     pushCandidate(candidates, {
       sourceKey: "rank_daily_guidance",
-      title: input.rankGuidance.title,
-      description: input.rankGuidance.description,
+      title: firstStep?.label ?? input.rankGuidance.title,
+      description: firstStep?.detail ?? input.rankGuidance.description,
       category: input.rankGuidance.mode === "organization" ? "PROMOTION" : "ACTIVE",
       current: 0,
       target: 1,
       remaining: 1,
       progressPercent: 0,
       enginePriority: input.rankGuidance.mode === "organization" ? 2600 : 2400,
-      actionHref: input.rankGuidance.actionSteps[0]?.href,
+      actionHref: firstStep?.href,
     });
   }
 
   collectPipelinePushCandidates(input.pipelinePushSteps).forEach((candidate) =>
+    pushCandidate(candidates, candidate),
+  );
+
+  collectDownlinePartnerCandidates(input.downlinePartnerSuggestions).forEach((candidate) =>
     pushCandidate(candidates, candidate),
   );
 

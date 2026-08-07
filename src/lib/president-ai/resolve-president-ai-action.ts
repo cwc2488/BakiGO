@@ -122,17 +122,25 @@ function resolvePlaybookHref(href: string, label: string): PresidentAiAction {
   return { kind: "navigate", href, label };
 }
 
-function resolveMemberGoalAction(
-  category: PriorityCategory,
-  actionHref?: string,
-): PresidentAiAction {
-  if (actionHref) {
-    return resolvePlaybookHref(actionHref, "執行今日建議");
+function resolveActionHref(
+  priority: Priority,
+  fallbackLabel: string,
+): PresidentAiAction | null {
+  if (!priority.actionHref) {
+    return null;
   }
-  if (category === "VP") {
+  return resolvePlaybookHref(priority.actionHref, priority.title || fallbackLabel);
+}
+
+function resolveMemberGoalAction(priority: Priority): PresidentAiAction {
+  const fromHref = resolveActionHref(priority, "執行今日建議");
+  if (fromHref) {
+    return fromHref;
+  }
+  if (priority.category === "VP") {
     return { kind: "navigate", href: "/events", label: "新增成交紀錄" };
   }
-  if (category === "RETAIL") {
+  if (priority.category === "RETAIL") {
     return { kind: "navigate", href: "/retail-pipeline", label: "前往名單流程" };
   }
   return { kind: "navigate", href: "/goals", label: "查看目標進度" };
@@ -145,20 +153,22 @@ export function resolvePresidentAiAction(
     return null;
   }
 
-  if (priority.sourceKey.startsWith("pipeline_push_") && priority.actionHref) {
-    return resolvePlaybookHref(priority.actionHref, "前往名單流程");
+  if (
+    priority.sourceKey.startsWith("pipeline_push_") ||
+    priority.sourceKey.startsWith("downline_no_meetings_") ||
+    priority.sourceKey.startsWith("downline_no_new_customers_") ||
+    priority.sourceKey.startsWith("member_goal_") ||
+    priority.sourceKey === "rank_daily_guidance" ||
+    priority.sourceKey.startsWith("promotion_")
+  ) {
+    const fromHref = resolveActionHref(priority, "執行今日建議");
+    if (fromHref) {
+      return fromHref;
+    }
   }
 
   if (priority.sourceKey.startsWith("member_goal_")) {
-    return resolveMemberGoalAction(priority.category, priority.actionHref);
-  }
-
-  if (priority.sourceKey === "rank_daily_guidance" && priority.actionHref) {
-    return resolvePlaybookHref(priority.actionHref, "執行今日建議");
-  }
-
-  if (priority.sourceKey.startsWith("promotion_") && priority.actionHref) {
-    return resolvePlaybookHref(priority.actionHref, "執行今日建議");
+    return resolveMemberGoalAction(priority);
   }
 
   return resolveFromSourceKey(priority.sourceKey) ?? resolveFromCategory(priority.category);

@@ -68,6 +68,8 @@ import {
 import { buildRetailPipelineSnapshot } from "@/lib/retail-pipeline/pipeline-selectors";
 import { buildPipelinePushSteps } from "@/lib/retail-pipeline/build-pipeline-push-steps";
 import { buildRankGuidance } from "@/lib/member-goals/build-rank-guidance-playbook";
+import { collectDownlinePartnerSignals } from "@/lib/organization/collect-downline-partner-signals";
+import { loadAllMembers } from "@/lib/members/member-service";
 import {
   detectStuckPoints,
   recommendLearningResources,
@@ -94,6 +96,7 @@ export interface MemberComputedMetrics {
   eventCenter: EventCenterResult;
   learningRecommendations: LearningRecommendation[];
   pipelinePushReminders: MemberGoalActionStep[];
+  downlinePartnerSuggestions: import("@/types/downline-partner").DownlinePartnerSuggestion[];
 }
 
 export interface RecalculateMemberMetricsInput {
@@ -102,6 +105,7 @@ export interface RecalculateMemberMetricsInput {
   activities?: ActivityEvent[];
   /** Cloud-synced events for downline members viewed by an upline. */
   supplementalEvents?: BakiEvent[];
+  downlineCloudCache?: import("@/lib/cloud/downline-cloud-data").DownlineCloudDataCache;
 }
 
 function saveComputedMetrics(
@@ -296,6 +300,7 @@ export function recalculateMemberMetrics(
     | "eventCenter"
     | "learningRecommendations"
     | "pipelinePushReminders"
+    | "downlinePartnerSuggestions"
   > = {
     memberId: input.memberId,
     yearMonth,
@@ -346,6 +351,16 @@ export function recalculateMemberMetrics(
   const detectedStuckPoints = detectStuckPoints(stuckPointInput);
   const pipelinePushReminders = buildPipelinePushSteps(pipelineSnapshot);
 
+  const downlinePartnerSuggestions = collectDownlinePartnerSignals({
+    viewerMemberId: input.memberId,
+    viewerRankKey: currentMember?.rankKey ?? RANK_KEYS.NEW_MEMBER,
+    members: loadAllMembers(storage),
+    referenceDate: input.referenceDate,
+    storage,
+    downlineCache: input.downlineCloudCache,
+    maxGenerations: 3,
+  });
+
   const learningRecommendations = recommendLearningResources(stuckPointInput);
 
   const presidentAI = calculatePresidentAI(
@@ -357,6 +372,8 @@ export function recalculateMemberMetrics(
       rankGuidance: rankGuidanceView,
       detectedStuckPoints,
       pipelinePushSteps: pipelinePushReminders,
+      viewerRankKey: currentMember?.rankKey ?? RANK_KEYS.NEW_MEMBER,
+      downlinePartnerSuggestions,
     }),
   );
 
@@ -409,6 +426,7 @@ export function recalculateMemberMetrics(
     eventCenter,
     learningRecommendations,
     pipelinePushReminders,
+    downlinePartnerSuggestions,
   };
 
   saveComputedMetrics(storage, snapshot);

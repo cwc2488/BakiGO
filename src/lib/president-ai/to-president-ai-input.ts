@@ -2,6 +2,7 @@ import type { PresidentAIInput } from "./types";
 import type { CareerBlueprintView, MemberGoalActionStep, MemberGoalProgressView } from "@/types/member-goal";
 import type { RankGuidanceView } from "@/lib/member-goals/build-rank-guidance-playbook";
 import type { LearningStuckPointKey } from "@/types/learning-resource";
+import type { DownlinePartnerSuggestion } from "@/types/downline-partner";
 
 export interface PresidentAIMetricsInput {
   memberId: string;
@@ -20,6 +21,8 @@ export interface PresidentAIMetricsInput {
   rankGuidance?: RankGuidanceView | null;
   detectedStuckPoints?: LearningStuckPointKey[];
   pipelinePushSteps?: MemberGoalActionStep[];
+  viewerRankKey?: string;
+  downlinePartnerSuggestions?: DownlinePartnerSuggestion[];
 }
 
 export function toPresidentAIInput(metrics: PresidentAIMetricsInput): PresidentAIInput {
@@ -90,5 +93,7 @@ export function toPresidentAIInput(metrics: PresidentAIMetricsInput): PresidentA
       : null,
     detectedStuckPoints: metrics.detectedStuckPoints ?? [],
     pipelinePushSteps: metrics.pipelinePushSteps ?? [],
+    viewerRankKey: metrics.viewerRankKey ?? "",
+    downlinePartnerSuggestions: metrics.downlinePartnerSuggestions ?? [],
   };
 }

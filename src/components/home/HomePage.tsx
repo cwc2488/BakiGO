@@ -10,7 +10,7 @@ import {
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import type { Priority, PresidentAIResult } from "@/types/president-ai";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { APP_EMOJI, WORK_HUB_EMOJIS } from "@/lib/ui/app-emojis";
 import {
   getHomeDisplayMode,
@@ -23,6 +23,15 @@ import { Card, ProgressBar, SectionLabel } from "./ui";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import { TodayStepCard } from "@/components/president-ai/TodayStepCard";
 import { LearningResourceSuggestions } from "@/components/learning/LearningResourceSuggestions";
+import { DownlinePartnerSuggestions } from "@/components/organization/DownlinePartnerSuggestions";
+import { isCareerRankAtOrAbove } from "@/lib/auth/career-rank-order";
+import { getCurrentMember } from "@/lib/auth/auth-service";
+import { fetchDownlineCloudData } from "@/lib/cloud/downline-cloud-data";
+import { todayISODate } from "@/lib/config/app-config";
+import { loadAllMembers } from "@/lib/members/member-service";
+import { collectDownlineByDepth } from "@/lib/organization/collect-downline-by-depth";
+import { recalculateMemberMetrics } from "@/lib/services/recalculate-member-metrics";
+import { RANK_KEYS } from "@/lib/business-engine/rules/keys";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -286,6 +295,7 @@ function SimpleHomeView({
         priority={topPriority}
         showFocusMode={false}
       />
+      <DownlinePartnerSuggestions suggestions={metrics.downlinePartnerSuggestions} />
       <QuickLinksSection links={SIMPLE_QUICK_LINKS} />
       <MoreFeaturesSection />
       <HomeModeToggle mode="simple" onChange={onModeChange} />
@@ -311,6 +321,7 @@ function FullHomeView({
         priority={topPriority}
         showFocusMode={false}
       />
+      <DownlinePartnerSuggestions suggestions={metrics.downlinePartnerSuggestions} />
       <LearningResourceSuggestions
         pipelinePushReminders={metrics.pipelinePushReminders}
         recommendations={metrics.learningRecommendations}
@@ -347,12 +358,14 @@ function HomeView({
 
 export default function HomePage() {
   const storage = useMemo(() => createLocalStorageAdapter(), []);
+  const downlineCloudSyncedRef = useRef(false);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [metrics, setMetrics] = useState<MemberComputedMetrics | null>(null);
   const [displayMode, setDisplayMode] = useState<HomeDisplayMode>("simple");
   const [errorMessage, setErrorMessage] = useState<string>("資料載入失敗，請稍後再試。");
 
   const loadMetrics = useCallback(() => {
+    downlineCloudSyncedRef.current = false;
     setLoadState("loading");
     setMetrics(null);
     setErrorMessage("資料載入失敗，請稍後再試。");
@@ -381,6 +394,55 @@ export default function HomePage() {
       loadMetrics();
     });
   }, [loadMetrics]);
+
+  useEffect(() => {
+    if (loadState !== "ready" || !metrics || downlineCloudSyncedRef.current) {
+      return;
+    }
+
+    const viewer = getCurrentMember(storage);
+    if (!viewer || !isCareerRankAtOrAbove(viewer.rankKey, RANK_KEYS.PROMOTION_GROUP)) {
+      downlineCloudSyncedRef.current = true;
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const members = loadAllMembers(storage);
+        const downlineIds = collectDownlineByDepth(members, viewer.id, 3).map(
+          (item) => item.memberId,
+        );
+        if (downlineIds.length === 0) {
+          downlineCloudSyncedRef.current = true;
+          return;
+        }
+
+        const cache = await fetchDownlineCloudData(downlineIds, viewer.id);
+        if (cancelled) {
+          return;
+        }
+
+        const refreshed = recalculateMemberMetrics(
+          {
+            memberId: viewer.id,
+            referenceDate: todayISODate(),
+            downlineCloudCache: cache,
+          },
+          storage,
+        );
+        setMetrics(refreshed);
+      } catch {
+        // Keep local-only downline signals if cloud sync fails.
+      } finally {
+        downlineCloudSyncedRef.current = true;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadState, metrics, storage]);
 
   if (loadState === "loading") {
     return <HomeLoadingSkeleton />;

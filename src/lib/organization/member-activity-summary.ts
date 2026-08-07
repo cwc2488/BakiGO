@@ -1,4 +1,6 @@
 import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
+import { MEETING_KEY_LIST } from "@/lib/event-center/meeting-types";
+import { RETAIL_TRANSACTION_TYPE_KEYS } from "@/lib/business-engine/rules/keys";
 import { loadMemberSharedCalendarAttendance } from "@/lib/calendar/calendar-attendance-storage";
 import { createEventRepository } from "@/lib/repositories/event-repository";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
@@ -8,8 +10,12 @@ import type { EntityId } from "@/types";
 export interface MemberActivitySummary {
   monthlyConsultations: number;
   monthlyMeasurements: number;
+  monthlyMeetings: number;
+  monthlyNewCustomers: number;
   recentMeetings: Array<{ title: string; date: string; newFriendsCount: number }>;
 }
+
+const MEETING_KEY_SET = new Set<string>(MEETING_KEY_LIST);
 
 function isInMonth(eventDate: string, yearMonth: string): boolean {
   return eventDate.startsWith(yearMonth);
@@ -46,6 +52,22 @@ export function buildMemberActivitySummary(
       isInMonth(event.eventDate, yearMonth),
   ).length;
 
+  const monthlyMeetingsFromEvents = events.filter(
+    (event) => MEETING_KEY_SET.has(event.eventTypeKey) && isInMonth(event.eventDate, yearMonth),
+  ).length;
+
+  const calendarMeetingsThisMonth = loadMemberSharedCalendarAttendance(storage, memberId).filter(
+    (item) => isInMonth(item.startAt.slice(0, 10), yearMonth),
+  ).length;
+
+  const monthlyMeetings = monthlyMeetingsFromEvents + calendarMeetingsThisMonth;
+
+  const monthlyNewCustomers = events.filter(
+    (event) =>
+      event.eventTypeKey === RETAIL_TRANSACTION_TYPE_KEYS.NEW_CUSTOMER_NTD &&
+      isInMonth(event.eventDate, yearMonth),
+  ).length;
+
   const recentMeetings = loadMemberSharedCalendarAttendance(storage, memberId)
     .sort((left, right) => right.startAt.localeCompare(left.startAt))
     .slice(0, 5)
@@ -58,6 +80,8 @@ export function buildMemberActivitySummary(
   return {
     monthlyConsultations,
     monthlyMeasurements,
+    monthlyMeetings,
+    monthlyNewCustomers,
     recentMeetings,
   };
 }
