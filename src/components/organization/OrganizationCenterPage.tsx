@@ -21,8 +21,10 @@ import { findMemberSubtree } from "@/lib/organization/organization-selectors";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { OrganizationCenterSnapshot, OrganizationTreeNode } from "@/types/organization-center";
 import type { Member } from "@/types/member";
+import { PageShell } from "@/components/ui/PageShell";
+import { PageErrorState, PageLoadingState } from "@/components/ui/PageStates";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
-import Link from "next/link";
+import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { OrganizationMemberDetail } from "./OrganizationMemberDetail";
 import {
@@ -184,41 +186,20 @@ export default function OrganizationCenterPage() {
   }, []);
 
   if (loadState === "loading") {
-    return (
-      <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] text-[#86868b]">
-        載入組織圖…
-      </div>
-    );
+    return <PageLoadingState message="載入組織圖…" />;
   }
 
   if (loadState === "error" || !snapshot) {
     return (
-      <div className="flex min-h-full flex-col items-center justify-center gap-4 bg-[var(--brand-bg)] px-6">
-        <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">
-          {APP_EMOJI.mood.error} 無法載入組織圖
-        </p>
-        <button className="text-[var(--brand-primary-dark)]" onClick={() => void load()} type="button">
-          重新載入
-        </button>
-      </div>
+      <PageErrorState message="無法載入組織圖" onRetry={() => void load()} title="載入失敗" />
     );
   }
 
   return (
-    <div className="min-h-full bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]">
-      <main className="home-container flex flex-col gap-5 pb-24 pt-10 sm:pt-12">
-        <header className="home-section space-y-3">
-          <Link className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)]" href="/">
-            ← 返回首頁
-          </Link>
-          <h1 className="text-[2rem] font-semibold tracking-tight text-[#1d1d1f]">
-            {APP_EMOJI.page.organization} 組織圖
-          </h1>
-          <p className="text-[1rem] leading-relaxed text-[#636366]">
-            共 {snapshot.totalMembers} 位夥伴 · 雲端同步 · 自己 → 第一代 → 第二代…
-          </p>
-        </header>
-
+    <PageShell
+      subtitle={`共 ${snapshot.totalMembers} 位夥伴 · 雲端同步 · 自己 → 第一代 → 第二代…`}
+      title={`${APP_EMOJI.page.organization} ${PARTNER_LABELS.organization}`}
+    >
         <section className="home-section">
           <OrganizationTreeDiagram
             expandedIds={expandedIds}
@@ -246,7 +227,6 @@ export default function OrganizationCenterPage() {
             />
           </section>
         ) : null}
-      </main>
-    </div>
+    </PageShell>
   );
 }

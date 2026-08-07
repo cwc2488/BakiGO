@@ -118,7 +118,7 @@ function DetailCard({ line }: { line: MapUniverseLine }) {
           ) : (
             <DetailRow label="距離下一階" value={line.promotionDescription ?? "—"} />
           )}
-          <DetailRow label="總裁 AI 建議" value={line.presidentSuggestion ?? "—"} />
+          <DetailRow label="今日建議" value={line.presidentSuggestion ?? "—"} />
           <DetailRow label="最近成交" value={line.recentTransactionLabel ?? "—"} />
           <DetailRow
             label="活躍督導"

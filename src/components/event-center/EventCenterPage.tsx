@@ -16,8 +16,10 @@ import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import type { BakiEventCategory } from "@/types/baki-event";
 import type { EventTimelineEntry } from "@/types/event-center";
+import { PageShell } from "@/components/ui/PageShell";
+import { PageErrorState, PageLoadingState } from "@/components/ui/PageStates";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
-import Link from "next/link";
+import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const TIMELINE_CATEGORY_LABELS: Record<BakiEventCategory, string> = {
@@ -295,45 +297,22 @@ export default function EventCenterPage() {
   }
 
   if (loadState === "loading") {
-    return (
-      <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] text-[#86868b]">
-        載入中…
-      </div>
-    );
+    return <PageLoadingState />;
   }
 
   if (loadState === "error" || !metrics) {
     return (
-      <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] px-6">
-        <div className="w-full max-w-sm rounded-[1.75rem] border border-[var(--brand-border)] p-8 text-center">
-          <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">無法載入紀錄中心</p>
-          <button
-            className="mt-6 w-full rounded-2xl bg-[var(--brand-primary)] px-4 py-3.5 text-[1rem] font-semibold text-white"
-            onClick={loadMetrics}
-            type="button"
-          >
-            重新載入
-          </button>
-        </div>
-      </div>
+      <PageErrorState message="無法載入紀錄中心" onRetry={loadMetrics} title="載入失敗" />
     );
   }
 
   return (
-    <div className="min-h-full bg-[var(--brand-bg)]">
-      <main className="profile-container flex flex-col gap-6 pb-24 pt-10 sm:pt-12">
-        <header className="space-y-3">
-          <Link className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)]" href="/">
-            ← 返回首頁
-          </Link>
-          <h1 className="text-[2rem] font-semibold tracking-tight text-[#1d1d1f] sm:text-[2.25rem]">
-            {APP_EMOJI.page.events} 紀錄中心
-          </h1>
-          <p className="text-[1.0625rem] text-[#86868b]">
-            登記日常活動與 MAP 會議。行事曆標記「會參加」或「完成並登記」的行程會自動出現於此；成交請至零售屋；晉升資格由下線達標自動計算。
-          </p>
-        </header>
-
+    <PageShell
+      containerClassName="profile-container"
+      subtitle={PARTNER_LABELS.recordCenterHint}
+      title={`${APP_EMOJI.page.events} ${PARTNER_LABELS.recordCenter}`}
+      variant="plain"
+    >
         <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6 sm:p-7">
           <h2 className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">
             {APP_EMOJI.action.addRecord} 新增紀錄
@@ -418,7 +397,6 @@ export default function EventCenterPage() {
             </div>
           )}
         </section>
-      </main>
-    </div>
+    </PageShell>
   );
 }

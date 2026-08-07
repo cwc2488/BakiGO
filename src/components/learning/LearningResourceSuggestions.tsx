@@ -15,7 +15,7 @@ function PipelinePushReminders({ steps }: { steps: MemberGoalActionStep[] }) {
         名單也要推
       </p>
       <p className="mt-1 text-[0.8125rem] leading-relaxed text-[#636366]">
-        學完記得回到名單流程，把這些名單推進下一階段。
+        學完記得回到名單，把這些名單推進下一階段。
       </p>
       <ul className="mt-3 space-y-2">
         {steps.map((step) => (
@@ -47,7 +47,7 @@ export function LearningResourceSuggestions({
     return null;
   }
 
-  const primaryStuckPoint = recommendations[0]?.stuckPointLabel ?? "名單流程";
+  const primaryStuckPoint = recommendations[0]?.stuckPointLabel ?? "名單";
 
   return (
     <section
@@ -97,7 +97,7 @@ export function LearningResourceSuggestions({
         </>
       ) : null}
 
-      {recommendations.length > 0 && pipelinePushReminders.length > 0 ? (
+      {pipelinePushReminders.length > 0 ? (
         <PipelinePushReminders steps={pipelinePushReminders} />
       ) : null}
     </section>

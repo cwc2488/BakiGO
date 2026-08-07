@@ -48,7 +48,7 @@ function resolveFromSourceKey(sourceKey: string): PresidentAiAction | null {
     return { kind: "navigate", href: "/organization", label: "查看組織圖" };
   }
   if (includesAny(sourceKey, ["retail_house", "retail_new", "retail_returning"])) {
-    return { kind: "navigate", href: "/retail-pipeline", label: "前往名單流程" };
+    return { kind: "navigate", href: "/retail-pipeline", label: "前往名單" };
   }
   if (sourceKey.startsWith("promotion_") || sourceKey.startsWith("promotion_ready_")) {
     return { kind: "navigate", href: "/president-road", label: "查看晉升路徑" };
@@ -91,7 +91,7 @@ function resolveFromCategory(category: PriorityCategory): PresidentAiAction {
     case "ACTIVE":
       return resolveQuickLog("measurement");
     case "RETAIL":
-      return { kind: "navigate", href: "/retail-pipeline", label: "前往名單流程" };
+      return { kind: "navigate", href: "/retail-pipeline", label: "前往名單" };
     case "MAP":
       return { kind: "navigate", href: "/organization", label: "查看組織圖" };
     case "PROMOTION":
@@ -141,7 +141,7 @@ function resolveMemberGoalAction(priority: Priority): PresidentAiAction {
     return { kind: "navigate", href: "/events", label: "新增成交紀錄" };
   }
   if (priority.category === "RETAIL") {
-    return { kind: "navigate", href: "/retail-pipeline", label: "前往名單流程" };
+    return { kind: "navigate", href: "/retail-pipeline", label: "前往名單" };
   }
   return { kind: "navigate", href: "/goals", label: "查看目標進度" };
 }

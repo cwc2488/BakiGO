@@ -47,7 +47,7 @@ function buildCalendarTitle(lead: RetailPipelineLead): string {
 }
 
 function buildCalendarNotes(lead: RetailPipelineLead): string {
-  const parts = ["名單流程"];
+  const parts = ["名單"];
   if (lead.region) {
     parts.push(`地區：${lead.region}`);
   }

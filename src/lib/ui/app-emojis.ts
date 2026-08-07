@@ -52,6 +52,7 @@ export const APP_EMOJI = {
     events: "📌",
     profile: "👤",
     learning: "📚",
+    presidentRoad: "🛤️",
   },
   action: {
     measurement: "📏",
@@ -96,6 +97,7 @@ export const WORK_HUB_EMOJIS: Record<string, string> = {
   "/events": APP_EMOJI.hub.events,
   "/pre-meeting-graphic": APP_EMOJI.hub.preMeetingGraphic,
   "/learning": APP_EMOJI.hub.learning,
+  "/president-road": APP_EMOJI.page.presidentRoad,
 };
 
 export const QUADRANT_EMOJIS: Record<string, string> = {

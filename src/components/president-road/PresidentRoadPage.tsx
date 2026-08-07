@@ -11,7 +11,10 @@ import {
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { PresidentRoadNode } from "@/types/president-road";
 import type { Priority } from "@/types/president-ai";
-import Link from "next/link";
+import { PageShell } from "@/components/ui/PageShell";
+import { PageErrorState, PageLoadingState } from "@/components/ui/PageStates";
+import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import { useCallback, useEffect, useState } from "react";
 
 type LoadState = "loading" | "ready" | "error";
@@ -110,37 +113,21 @@ export default function PresidentRoadPage() {
   }, [load]);
 
   if (loadState === "loading") {
-    return (
-      <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] text-[#86868b]">
-        載入總裁之路…
-      </div>
-    );
+    return <PageLoadingState message="載入升級路線…" />;
   }
 
   if (loadState === "error" || !road) {
     return (
-      <div className="flex min-h-full flex-col items-center justify-center gap-4 bg-[var(--brand-bg)] px-6">
-        <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">無法載入總裁之路</p>
-        <button className="text-[var(--brand-primary-dark)]" onClick={load} type="button">
-          重新載入
-        </button>
-      </div>
+      <PageErrorState message="無法載入升級路線" onRetry={load} title="載入失敗" />
     );
   }
 
   return (
-    <div className="min-h-full bg-[var(--brand-bg)]">
-      <main className="mx-auto flex w-full max-w-lg flex-col gap-8 px-5 pb-28 pt-12 sm:px-6">
-        <header className="space-y-3">
-          <Link className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)]" href="/">
-            ← 返回首頁
-          </Link>
-          <h1 className="text-[2.5rem] font-semibold tracking-tight text-[#1d1d1f]">總裁之路</h1>
-          <p className="text-[1rem] leading-relaxed text-[#86868b]">
-            從會員到總裁組的完整路線，完全依照業務規則顯示。
-          </p>
-        </header>
-
+    <PageShell
+      subtitle="從會員到總裁組的完整路線，依業務規則顯示你的進度。"
+      title={`${APP_EMOJI.page.presidentRoad} ${PARTNER_LABELS.upgradePath}`}
+      variant="plain"
+    >
         <section className="rounded-[2rem] bg-[var(--brand-bg)] px-6 py-8 sm:px-8 sm:py-10">
           <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.12em] text-[#86868b]">
             總裁進度
@@ -173,7 +160,7 @@ export default function PresidentRoadPage() {
 
         <section className="rounded-[2rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] px-6 py-7 sm:px-8">
           <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.12em] text-[#86868b]">
-            總裁 AI 建議
+            {PARTNER_LABELS.todaySuggestions}
           </p>
           <p className="mt-2 text-[1.0625rem] font-medium text-[#636366]">
             {road.presidentAI.focusMode.label}
@@ -207,7 +194,6 @@ export default function PresidentRoadPage() {
             <p className="mt-4 text-[1rem] text-white/75">今日沒有下一個步驟</p>
           )}
         </section>
-      </main>
-    </div>
+    </PageShell>
   );
 }

@@ -12,11 +12,13 @@ import type { Priority, PresidentAIResult } from "@/types/president-ai";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { APP_EMOJI, WORK_HUB_EMOJIS } from "@/lib/ui/app-emojis";
+import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import {
   getHomeDisplayMode,
   setHomeDisplayMode,
   type HomeDisplayMode,
 } from "@/lib/ui/home-display-mode";
+import { SIMPLE_QUICK_LINKS, WORK_HUB_LINKS } from "@/lib/ui/work-hub-links";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { EmptyState, HomeErrorState, HomeLoadingSkeleton } from "./states";
 import { Card, ProgressBar, SectionLabel } from "./ui";
@@ -34,27 +36,6 @@ import { recalculateMemberMetrics } from "@/lib/services/recalculate-member-metr
 import { RANK_KEYS } from "@/lib/business-engine/rules/keys";
 
 type LoadState = "loading" | "ready" | "error";
-
-const SIMPLE_QUICK_LINKS = [
-  { href: "/retail-pipeline", title: "名單" },
-  { href: "/daily-action", title: "今日行動" },
-  { href: "/events", title: "新增紀錄" },
-  { href: "/learning", title: "學習" },
-] as const;
-
-const WORK_HUB_LINKS = [
-  { href: "/daily-action", title: "今日行動", desc: "每天第一件事" },
-  { href: "/goals", title: "目標中心", desc: "設定 VP、收入、新客" },
-  { href: "/learning", title: "學習庫", desc: "業務教學影片片單" },
-  { href: "/leaderboard", title: "積分排行", desc: "本週前五 · 本月前十" },
-  { href: "/retail-pipeline", title: "名單流程", desc: "推進每位名單" },
-  { href: "/pre-meeting-graphic", title: "會前會圖", desc: "資料合併輸出" },
-  { href: "/retail-house", title: "零售屋", desc: "週分享與成交" },
-  { href: "/organization", title: "組織圖", desc: "夥伴狀況一覽" },
-  { href: "/promotions", title: "促銷專欄", desc: "獎勵與挑戰" },
-  { href: "/calendar", title: "行事曆", desc: "行程與 Google 同步" },
-  { href: "/events", title: "紀錄中心", desc: "活動與會議" },
-] as const;
 
 function hasAnyActivity(metrics: MemberComputedMetrics): boolean {
   return (
@@ -213,7 +194,7 @@ function PresidentAISection({
 
   return (
     <Card>
-      <SectionLabel emoji={APP_EMOJI.section.presidentAi}>總裁 AI</SectionLabel>
+      <SectionLabel emoji={APP_EMOJI.section.presidentAi}>{PARTNER_LABELS.todaySuggestions}</SectionLabel>
       <p className="mt-1 text-[0.9375rem] text-[#86868b]">今日最重要三件事</p>
       <div className="mt-4 space-y-3">
         {priorities.length > 0 ? (
@@ -224,13 +205,13 @@ function PresidentAISection({
           <EmptyState
             emoji={APP_EMOJI.mood.welcome}
             title="歡迎使用 Baki GO"
-            description="完成第一筆成交後，總裁 AI 會為你排出今日最重要的三件事。"
+            description="完成第一筆成交後，系統會為你排出今日最重要的三件事。"
           />
         ) : (
           <EmptyState
             emoji={APP_EMOJI.mood.done}
             title="今日沒有優先事項"
-            description="所有關鍵目標都已完成，或相關規則尚待設定。"
+            description="所有關鍵目標都已完成，或相關設定尚待完成。"
           />
         )}
       </div>
@@ -318,6 +299,7 @@ function FullHomeView({
       <GreetingSection metrics={metrics} />
       <TodayStepCard
         focusMode={metrics.presidentAI.focusMode}
+        minimal
         priority={topPriority}
         showFocusMode={false}
       />

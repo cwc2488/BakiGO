@@ -26,6 +26,9 @@ import { createRetailRepository } from "@/lib/repositories/retail-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { buildRetailPipelineSnapshot } from "@/lib/retail-pipeline/pipeline-selectors";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
+import { PageShell } from "@/components/ui/PageShell";
+import { PageErrorState, PageLoadingState } from "@/components/ui/PageStates";
+import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import { GOAL_KPI_DEFINITIONS } from "@/types/goal-center";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -110,21 +113,12 @@ export default function GoalCenterPage() {
   );
 
   if (loadState === "loading") {
-    return (
-      <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] text-[#86868b]">
-        載入中…
-      </div>
-    );
+    return <PageLoadingState />;
   }
 
   if (loadState === "error" || !goalCenter || !blueprint) {
     return (
-      <div className="flex min-h-full flex-col items-center justify-center gap-4 bg-[var(--brand-bg)] px-6">
-        <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">無法載入目標中心</p>
-        <button className="text-[var(--brand-primary-dark)]" onClick={load} type="button">
-          重新載入
-        </button>
-      </div>
+      <PageErrorState message="無法載入目標中心" onRetry={load} title="載入失敗" />
     );
   }
 
@@ -134,32 +128,31 @@ export default function GoalCenterPage() {
   }));
 
   return (
-    <div className="min-h-full bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]">
-      <main className="home-container flex flex-col gap-5 pb-24 pt-10 sm:pt-12">
-        <header className="home-section space-y-3">
-          <Link className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)]" href="/">
-            ← 返回首頁
+    <>
+      <PageShell
+        headerExtra={
+          <Link
+            className="rounded-full bg-[var(--brand-primary-muted)] px-3 py-1.5 text-[0.8125rem] font-semibold text-[var(--brand-primary-dark)]"
+            href="/president-road"
+          >
+            {PARTNER_LABELS.upgradePathShort}
           </Link>
-          <p className="text-[2rem] font-semibold leading-tight tracking-tight text-[#1d1d1f]">
-            {formatDisplayDate(goalCenter.referenceDate)}
-          </p>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <MemberNameWithAvatar
-              avatarUrl={getMemberAvatarUrl()}
-              name={getMemberDisplayName()}
-              nameClassName="text-[1.75rem] font-semibold leading-snug tracking-tight text-[#1d1d1f]"
-              size="md"
-              subtitle={`${formatTimeGreeting()} · 目標中心`}
-              subtitleClassName="text-[0.9375rem] font-medium text-[#86868b]"
-              variant="hero"
-            />
-          </div>
-          <p className="text-[1rem] leading-relaxed text-[#636366]">
-            設定長中短期目標，AI 會依你的藍圖引導今日一步。
-          </p>
-        </header>
+        }
+        subtitle="設定目標，系統會依進度引導你今天的下一步。"
+        title="目標中心"
+      >
+        <div className="home-section">
+          <MemberNameWithAvatar
+            avatarUrl={getMemberAvatarUrl()}
+            name={getMemberDisplayName()}
+            nameClassName="text-[1.25rem] font-semibold text-[#1d1d1f]"
+            size="sm"
+            subtitle={`${formatTimeGreeting()} · ${formatDisplayDate(goalCenter.referenceDate)}`}
+            subtitleClassName="text-[0.875rem] text-[#86868b]"
+          />
+        </div>
 
-        <GoalCenterSection title="目標藍圖">
+        <GoalCenterSection title={PARTNER_LABELS.longTermDirection}>
           <UltimateGoalCard
             description={blueprint.ultimateGoal.description}
             title={blueprint.ultimateGoal.title}
@@ -178,13 +171,13 @@ export default function GoalCenterPage() {
           ) : null}
         </GoalCenterSection>
 
-        <GoalCenterSection title="我的目標">
+        <GoalCenterSection title={PARTNER_LABELS.myGoals}>
           <button
             className="w-full rounded-2xl bg-[#1d1d1f] px-4 py-3.5 text-[0.9375rem] font-semibold text-white"
             onClick={() => setAddModalOpen(true)}
             type="button"
           >
-            + 新增目標（VP / 收入 / 新客）
+            + {PARTNER_LABELS.addGoal}（VP / 收入 / 新客）
           </button>
           {blueprint.memberGoals.length > 0 ? (
             blueprint.memberGoals.map((goal) => (
@@ -202,29 +195,23 @@ export default function GoalCenterPage() {
         </GoalCenterSection>
 
         {goalCenter.goals.length > 0 ? (
-          <GoalCenterSection title="規則引擎目標">
-            {goalCenter.goals.map((goal) => (
-              <GoalCardView key={goal.id} goal={goal} />
-            ))}
-          </GoalCenterSection>
+          goalsByKpi.map((group) =>
+            group.goals.length > 0 ? (
+              <GoalCenterSection key={group.key} title={group.label}>
+                {group.goals.map((goal) => (
+                  <GoalCardView key={goal.id} goal={goal} />
+                ))}
+              </GoalCenterSection>
+            ) : null,
+          )
         ) : null}
-
-        {goalsByKpi.map((group) =>
-          group.goals.length > 0 ? (
-            <GoalCenterSection key={group.key} title={group.label}>
-              {group.goals.map((goal) => (
-                <GoalCardView key={goal.id} goal={goal} />
-              ))}
-            </GoalCenterSection>
-          ) : null,
-        )}
-      </main>
+      </PageShell>
 
       <AddMemberGoalModal
         onClose={() => setAddModalOpen(false)}
         onSubmit={handleAddGoal}
         open={addModalOpen}
       />
-    </div>
+    </>
   );
 }

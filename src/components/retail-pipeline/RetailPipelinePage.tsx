@@ -14,8 +14,9 @@ import { todayISODate } from "@/lib/config/app-config";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { RetailPipelineColumnView, RetailPipelineLeadView } from "@/types/retail-pipeline";
 import type { RetailPipelineStageKey } from "@/types/retail-pipeline";
+import { PageShell } from "@/components/ui/PageShell";
+import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const STAGE_DOT: Record<RetailPipelineStageKey, string> = {
@@ -316,20 +317,11 @@ export default function RetailPipelinePage() {
   }
 
   return (
-    <div className="min-h-full bg-[var(--brand-bg)]">
-      <main className="mx-auto flex w-full max-w-lg flex-col gap-4 px-5 pb-24 pt-12">
-        <header className="space-y-2">
-          <Link className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)]" href="/">
-            ← 返回首頁
-          </Link>
-          <h1 className="text-[1.75rem] font-semibold tracking-tight text-[#1d1d1f]">
-            {APP_EMOJI.page.pipeline} 名單流程
-          </h1>
-          <p className="text-[0.9375rem] text-[#86868b]">
-            共 {snapshot.totalLeads} 位名單 · 舊客/舊會員長期累積 · 新客/新會員下月自動轉舊
-          </p>
-        </header>
-
+    <PageShell
+      subtitle={`共 ${snapshot.totalLeads} 位名單 · 舊客/舊會員長期累積 · 新客/新會員下月自動轉舊`}
+      title={`${APP_EMOJI.page.pipeline} ${PARTNER_LABELS.memberList}`}
+      variant="plain"
+    >
         <form
           className="flex flex-col gap-3 rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5"
           onSubmit={handleCreateLead}
@@ -368,7 +360,6 @@ export default function RetailPipelinePage() {
             />
           ))}
         </div>
-      </main>
-    </div>
+    </PageShell>
   );
 }

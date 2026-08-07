@@ -34,7 +34,7 @@ export function MemberDashboard({ dashboard }: { dashboard: MemberDashboardSnaps
         <DashboardTile label="目前等級" value={dashboard.currentRank} />
         <DashboardTile label="VP" value={`${dashboard.vp} VP`} />
         <DashboardTile label="任務" value={dashboard.missionLabel} />
-        <DashboardTile label="總裁 AI" value={dashboard.presidentAiLabel} />
+        <DashboardTile label="今日建議" value={dashboard.presidentAiLabel} />
         <DashboardTile
           label="本月成交"
           value={`${dashboard.monthlyTransactionCount} 筆`}

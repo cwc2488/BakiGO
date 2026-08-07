@@ -6,15 +6,16 @@ import {
   type HomeDisplayMode,
 } from "@/lib/ui/home-display-mode";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import { useMemo, useState } from "react";
 import { ProfileCard, ProfileSectionTitle } from "./ui";
 
 export function ProfileHomeDisplaySection() {
-  const storage = createLocalStorageAdapter();
-  const mode = getHomeDisplayMode(storage);
+  const storage = useMemo(() => createLocalStorageAdapter(), []);
+  const [mode, setMode] = useState<HomeDisplayMode>(() => getHomeDisplayMode(storage));
 
   function handleChange(nextMode: HomeDisplayMode) {
     setHomeDisplayMode(nextMode, storage);
-    window.location.reload();
+    setMode(nextMode);
   }
 
   return (

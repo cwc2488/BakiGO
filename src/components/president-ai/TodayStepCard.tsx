@@ -7,7 +7,7 @@ import {
   type PresidentAiAction,
 } from "@/lib/president-ai/resolve-president-ai-action";
 import { formatFocusModeLabel } from "@/lib/president-ai/display-labels";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import type { FocusMode, Priority } from "@/types/president-ai";
 import Link from "next/link";
 
@@ -76,7 +76,7 @@ export function TodayStepCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.08em] text-[var(--brand-primary-dark)]">
-            {minimal ? "今天做這件" : `${APP_EMOJI.section.presidentAi} AI 今日一步`}
+            {PARTNER_LABELS.todayAction}
           </p>
           {!minimal && showFocusMode ? (
             <p className="mt-1 text-[0.8125rem] font-medium text-[#86868b]">

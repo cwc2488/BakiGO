@@ -19,6 +19,7 @@ import {
 import { ProfileAccountSection } from "./ProfileAccountSection";
 import { ProfileAvatarSection } from "./ProfileAvatarSection";
 import { ProfileHomeDisplaySection } from "./ProfileHomeDisplaySection";
+import { ProfileSetupSection } from "./ProfileSetupSection";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 
 type LoadState = "loading" | "ready" | "error";
@@ -153,29 +154,24 @@ function ProfileView({
     <div className="min-h-full bg-[var(--brand-bg)]">
       <main className="profile-container flex flex-col gap-6 pb-24 pt-10 sm:pt-12">
         <header className="space-y-3">
-          <Link
-            className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)] transition-opacity duration-200 hover:opacity-70"
-            href="/"
-          >
-            ← 返回首頁
-          </Link>
           <MemberNameWithAvatar
             avatarUrl={identity.avatarUrl}
             name={identity.displayName}
             nameClassName="text-[2rem] font-semibold leading-tight tracking-tight text-[#1d1d1f] sm:text-[2.25rem]"
             size="xl"
-            subtitle="個人頁"
+            subtitle="我的"
             subtitleClassName="text-[0.9375rem] font-medium text-[#86868b]"
             variant="hero"
           />
         </header>
 
+        <ProfileSetupSection />
         <ProfileAvatarSection onAvatarUpdated={onSponsorUpdated} />
-        <ProfileHomeDisplaySection />
         <BasicInfoSection metrics={metrics} />
         <GrowthSection metrics={metrics} />
-        <ProfileAccountSection onSponsorUpdated={onSponsorUpdated} />
+        <ProfileHomeDisplaySection />
         <ProfileQuickLinks />
+        <ProfileAccountSection onSponsorUpdated={onSponsorUpdated} />
       </main>
     </div>
   );

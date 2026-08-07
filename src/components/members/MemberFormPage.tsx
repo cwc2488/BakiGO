@@ -2,6 +2,7 @@
 
 import { DEFAULT_BUSINESS_RULES } from "@/lib/business-engine";
 import { RANK_KEYS } from "@/lib/business-engine/rules/keys";
+import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import { APP_IDS, todayISODate } from "@/lib/config/app-config";
 import {
   loadAllMembers,
@@ -96,6 +97,8 @@ export default function MemberFormPage({
   mode: "create" | "edit";
 }) {
   const router = useRouter();
+  const storage = useMemo(() => createLocalStorageAdapter(), []);
+  const isSelfProfile = mode === "edit" && memberId === resolveAuthenticatedMemberId(storage);
   const [form, setForm] = useState<MemberFormValues>(emptyForm);
   const [members, setMembers] = useState<Member[]>(() => {
     if (typeof window === "undefined") {
@@ -150,7 +153,7 @@ export default function MemberFormPage({
     try {
       const storage = createLocalStorageAdapter();
       const repository = createMemberRepository(storage);
-      const payload = {
+      const basePayload = {
         displayName: form.displayName.trim(),
         nickname: form.nickname.trim() || undefined,
         gender: form.gender.trim() || undefined,
@@ -159,10 +162,6 @@ export default function MemberFormPage({
         lineId: form.lineId.trim() || undefined,
         instagram: form.instagram.trim() || undefined,
         email: form.email.trim() || undefined,
-        joinedAt: form.joinedAt,
-        sponsorMemberId: form.sponsorMemberId || undefined,
-        coachId: form.coachId || undefined,
-        status: form.status,
         goal: form.goal.trim() || undefined,
         occupation: form.occupation.trim() || undefined,
         city: form.city.trim() || undefined,
@@ -171,6 +170,13 @@ export default function MemberFormPage({
           .split(",")
           .map((tag) => tag.trim())
           .filter(Boolean),
+      };
+
+      const adminFields = {
+        joinedAt: form.joinedAt,
+        sponsorMemberId: form.sponsorMemberId || undefined,
+        coachId: form.coachId || undefined,
+        status: form.status,
         rankKey: form.rankKey,
         roleKey: form.roleKey,
       };
@@ -179,7 +185,8 @@ export default function MemberFormPage({
         const created = repository.create({
           organizationId: APP_IDS.organizationId,
           herbalifeMemberId: form.herbalifeMemberId.trim(),
-          ...payload,
+          ...basePayload,
+          ...adminFields,
         });
         router.push(`/members/${created.id}`);
         return;
@@ -190,8 +197,8 @@ export default function MemberFormPage({
         return;
       }
 
-      repository.update(memberId, payload);
-      router.push(`/members/${memberId}`);
+      repository.update(memberId, isSelfProfile ? basePayload : { ...basePayload, ...adminFields });
+      router.push(isSelfProfile ? "/profile" : `/members/${memberId}`);
     } catch {
       setError("儲存失敗，請稍後再試");
     } finally {
@@ -205,13 +212,24 @@ export default function MemberFormPage({
         <header className="space-y-3">
           <Link
             className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)]"
-            href={mode === "edit" && memberId ? `/members/${memberId}` : "/members"}
+            href={
+              isSelfProfile
+                ? "/profile"
+                : mode === "edit" && memberId
+                  ? `/members/${memberId}`
+                  : "/members"
+            }
           >
             ← 返回
           </Link>
           <h1 className="text-[2rem] font-semibold tracking-tight text-[#1d1d1f]">
-            {mode === "create" ? "新增會員" : "編輯會員"}
+            {mode === "create" ? "新增會員" : isSelfProfile ? "個人資料" : "編輯會員"}
           </h1>
+          {isSelfProfile ? (
+            <p className="text-[0.9375rem] leading-relaxed text-[#86868b]">
+              填好後，上線在組織圖與會員頁都看得到。
+            </p>
+          ) : null}
         </header>
 
         <form className="space-y-5" onSubmit={handleSubmit}>
@@ -224,6 +242,7 @@ export default function MemberFormPage({
           <CrmInput
             label="會員編號"
             onChange={(event) => updateField("herbalifeMemberId", event.target.value)}
+            readOnly={isSelfProfile}
             required={mode === "create"}
             value={form.herbalifeMemberId}
           />
@@ -270,59 +289,63 @@ export default function MemberFormPage({
             type="email"
             value={form.email}
           />
-          <CrmInput
-            label="加入日期"
-            onChange={(event) => updateField("joinedAt", event.target.value)}
-            required
-            type="date"
-            value={form.joinedAt}
-          />
-          <CrmSelect
-            label="推薦人"
-            onChange={(event) => updateField("sponsorMemberId", event.target.value)}
-            value={form.sponsorMemberId}
-          >
-            <option value="">無</option>
-            {memberOptions.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.nickname ?? member.displayName}
-              </option>
-            ))}
-          </CrmSelect>
-          <CrmSelect
-            label="教練"
-            onChange={(event) => updateField("coachId", event.target.value)}
-            value={form.coachId}
-          >
-            <option value="">無</option>
-            {memberOptions.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.nickname ?? member.displayName}
-              </option>
-            ))}
-          </CrmSelect>
-          <CrmSelect
-            label="狀態"
-            onChange={(event) => updateField("status", event.target.value as MemberStatus)}
-            value={form.status}
-          >
-            {Object.entries(MEMBER_STATUS_LABELS).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </CrmSelect>
-          <CrmSelect
-            label="目前職級"
-            onChange={(event) => updateField("rankKey", event.target.value)}
-            value={form.rankKey}
-          >
-            {rankOptions.map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </CrmSelect>
+          {!isSelfProfile ? (
+            <>
+              <CrmInput
+                label="加入日期"
+                onChange={(event) => updateField("joinedAt", event.target.value)}
+                required
+                type="date"
+                value={form.joinedAt}
+              />
+              <CrmSelect
+                label="推薦人"
+                onChange={(event) => updateField("sponsorMemberId", event.target.value)}
+                value={form.sponsorMemberId}
+              >
+                <option value="">無</option>
+                {memberOptions.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.nickname ?? member.displayName}
+                  </option>
+                ))}
+              </CrmSelect>
+              <CrmSelect
+                label="教練"
+                onChange={(event) => updateField("coachId", event.target.value)}
+                value={form.coachId}
+              >
+                <option value="">無</option>
+                {memberOptions.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.nickname ?? member.displayName}
+                  </option>
+                ))}
+              </CrmSelect>
+              <CrmSelect
+                label="狀態"
+                onChange={(event) => updateField("status", event.target.value as MemberStatus)}
+                value={form.status}
+              >
+                {Object.entries(MEMBER_STATUS_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </CrmSelect>
+              <CrmSelect
+                label="目前職級"
+                onChange={(event) => updateField("rankKey", event.target.value)}
+                value={form.rankKey}
+              >
+                {rankOptions.map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </CrmSelect>
+            </>
+          ) : null}
           <CrmInput
             label="目標"
             onChange={(event) => updateField("goal", event.target.value)}

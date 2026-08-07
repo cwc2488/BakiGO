@@ -236,7 +236,7 @@ function buildColdStartPlaybook(
   return [
     {
       label: "今天新增 2 位名單",
-      detail: `名單流程還是空的，先建漏斗才有成交來源。${goalContext}`,
+      detail: `名單還是空的，先建漏斗才有成交來源。${goalContext}`,
       href: "/retail-pipeline",
     },
     {
@@ -245,7 +245,7 @@ function buildColdStartPlaybook(
       href: "/daily-action?action=measurement",
     },
     {
-      label: "到名單流程確認今日進度",
+      label: "到名單確認今日進度",
       detail: "養成每天固定補名單的習慣；有名單後，系統會改為推進累積舊客、舊會員回購與 MAP/督導等建議。",
       href: "/retail-pipeline",
     },
@@ -301,7 +301,7 @@ function buildPipelineVpStrategy(
   ) {
     pushUniqueStep(steps, {
       label: `名單有 ${composition.existingMemberPool} 位已會員，優先 follow-up MAP/新會員階段`,
-      detail: `已會員名單較多，到名單流程挑選 MAP 或本月新會員 follow-up${formatNameHint(composition.memberNames)}`,
+      detail: `已會員名單較多，到名單挑選 MAP 或本月新會員 follow-up${formatNameHint(composition.memberNames)}`,
       href: "/retail-pipeline",
     });
   }
@@ -380,7 +380,7 @@ function buildPipelineNewCustomerStrategy(
 ): void {
   if (composition.nearCloseNew > 0) {
     pushUniqueStep(steps, {
-      label: `從名單流程推進 ${Math.min(composition.nearCloseNew, todayNeeded)} 位新客成交`,
+      label: `從名單推進 ${Math.min(composition.nearCloseNew, todayNeeded)} 位新客成交`,
       detail: `已有 ${composition.nearCloseNew} 位在諮詢/成交/舊客階段，比從零找新客更快${formatNameHint(composition.nearCloseNames)}`,
       href: "/retail-pipeline",
     });
@@ -427,7 +427,7 @@ function buildVpFallbackSteps(
     });
   } else {
     pushUniqueStep(steps, {
-      label: "到名單流程整理客戶，或紀錄中心登記第一筆 VP 成交",
+      label: "到名單整理客戶，或紀錄中心登記第一筆 VP 成交",
       detail: `今天目標 ${todayNeeded.toLocaleString("zh-Hant")} VP，登記後系統會依你的客單與名單給更準建議。`,
       href: "/retail-pipeline",
     });
@@ -480,7 +480,7 @@ export function buildMemberGoalPlaybook(input: {
       );
       if (steps.length === 0) {
         pushUniqueStep(steps, {
-          label: "到名單流程或紀錄中心完成今日收入目標",
+          label: "到名單或紀錄中心完成今日收入目標",
           detail: `今天約需 ${todayNeeded.toLocaleString("zh-Hant")} 元。`,
           href: "/retail-pipeline",
         });
@@ -492,7 +492,7 @@ export function buildMemberGoalPlaybook(input: {
       if (steps.length === 0) {
         pushUniqueStep(steps, {
           label: todayNeeded === 1 ? "今天促成 1 位新客成交" : `今天促成 ${todayNeeded} 位新客成交`,
-          detail: "到名單流程新增或推進新客。",
+          detail: "到名單新增或推進新客。",
           href: "/retail-pipeline",
         });
       }

@@ -7,6 +7,7 @@ import { MemberAvatar } from "@/components/members/MemberAvatar";
 import { getMemberAvatarUrl, getMemberDisplayName } from "@/lib/mission-control/format";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { SIDE_NAV_EXTRA_LINKS } from "@/lib/ui/work-hub-links";
 import { useMemo } from "react";
 
 const NAV_ITEMS = [
@@ -93,6 +94,32 @@ export function AppSideNav() {
         {NAV_ITEMS.map((item) => (
           <NavLink key={item.href} item={item} layout="side" pathname={pathname} />
         ))}
+
+        <div className="my-2 border-t border-[var(--brand-border)]" />
+
+        <p className="mb-1 hidden px-3 text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-[#86868b] lg:block">
+          更多
+        </p>
+        {SIDE_NAV_EXTRA_LINKS.map((item) => {
+          const active = isActive(pathname, item.href);
+          return (
+            <Link
+              key={item.href}
+              className={`flex w-full items-center justify-center gap-3 rounded-xl px-3 py-2.5 transition-colors lg:justify-start ${
+                active
+                  ? "bg-[var(--brand-primary-muted)] text-[var(--brand-primary-dark)]"
+                  : "text-[#636366] hover:bg-[var(--brand-bg)] hover:text-[#1d1d1f]"
+              }`}
+              href={item.href}
+              title={item.title}
+            >
+              <span className="text-[1.125rem] leading-none" aria-hidden>
+                {item.emoji}
+              </span>
+              <span className="hidden text-[0.875rem] font-semibold lg:inline">{item.title}</span>
+            </Link>
+          );
+        })}
       </nav>
     </aside>
   );

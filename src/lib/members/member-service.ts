@@ -126,3 +126,27 @@ export function getMemberProfileFields(
     statusLabel: MEMBER_STATUS_LABELS[member.status],
   };
 }
+
+export interface MemberProfileCompleteness {
+  percent: number;
+  missingLabels: string[];
+  isComplete: boolean;
+}
+
+export function getMemberProfileCompleteness(member: Member): MemberProfileCompleteness {
+  const checks = [
+    { label: "電話", ok: Boolean(member.phone?.trim()) },
+    { label: "LINE", ok: Boolean(member.lineId?.trim()) },
+    { label: "目標", ok: Boolean(member.goal?.trim()) },
+    { label: "頭像", ok: Boolean(member.avatarUrl) },
+    { label: "城市", ok: Boolean(member.city?.trim()) },
+  ];
+  const missingLabels = checks.filter((check) => !check.ok).map((check) => check.label);
+  const percent = Math.round(((checks.length - missingLabels.length) / checks.length) * 100);
+
+  return {
+    percent,
+    missingLabels,
+    isComplete: missingLabels.length === 0,
+  };
+}

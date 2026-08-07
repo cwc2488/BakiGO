@@ -4,8 +4,9 @@ import {
   formatLearningStuckPoints,
   groupLearningResources,
 } from "@/lib/learning-resources/catalog";
+import { PageShell } from "@/components/ui/PageShell";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
-import Link from "next/link";
+import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 
 function ResourceCard({
   title,
@@ -54,20 +55,10 @@ export default function LearningLibraryPage() {
   const totalCount = groups.reduce((sum, group) => sum + group.resources.length, 0);
 
   return (
-    <div className="min-h-full bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]">
-      <main className="mx-auto flex w-full max-w-lg flex-col gap-5 px-4 pb-24 pt-10 sm:max-w-2xl sm:px-6 sm:pt-12">
-        <header className="space-y-2">
-          <Link className="text-[0.875rem] font-medium text-[#86868b] active:opacity-70" href="/">
-            ← 返回首頁
-          </Link>
-          <h1 className="text-[2rem] font-semibold tracking-tight text-[#1d1d1f] sm:text-[2.125rem]">
-            {APP_EMOJI.page.learning} 學習庫
-          </h1>
-          <p className="text-[0.9375rem] leading-relaxed text-[#86868b]">
-            共 {totalCount} 支業務教學影片 · 依系列整理，點擊在 YouTube 觀看
-          </p>
-        </header>
-
+    <PageShell
+      subtitle={`共 ${totalCount} 支業務教學影片 · 依系列整理，點擊在 YouTube 觀看`}
+      title={`${APP_EMOJI.page.learning} ${PARTNER_LABELS.learning}`}
+    >
         {groups.map((group) => (
           <section key={group.key} className="space-y-3">
             <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">{group.title}</h2>
@@ -84,7 +75,6 @@ export default function LearningLibraryPage() {
             </div>
           </section>
         ))}
-      </main>
-    </div>
+    </PageShell>
   );
 }
