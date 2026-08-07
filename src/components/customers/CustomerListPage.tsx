@@ -12,9 +12,11 @@ import {
 import { createCustomerRepository } from "@/lib/repositories/customer-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { PageShell } from "@/components/ui/PageShell";
-import { CrmButton } from "@/components/members/ui";
+import { CrmButton, CrmInput } from "@/components/members/ui";
+import { ImageUploadSectionButton } from "@/components/ui/ImageUploadButtons";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Customer } from "@/types/customer";
 
@@ -84,6 +86,7 @@ function CustomerCard({
 }
 
 export default function CustomerListPage() {
+  const router = useRouter();
   const storage = useMemo(() => createLocalStorageAdapter(), []);
   const repo = useMemo(() => createCustomerRepository(storage), [storage]);
   const today = todayISODate();
@@ -168,7 +171,7 @@ export default function CustomerListPage() {
       return;
     }
 
-    repo.createCustomer({
+    const customer = repo.createCustomer({
       ownerMemberId,
       displayName: name,
       phone: phone || undefined,
@@ -181,6 +184,7 @@ export default function CustomerListPage() {
     setBirthYear("");
     setShowForm(false);
     reload();
+    router.push(`/customers/${customer.id}`);
   };
 
   const handleDelete = () => {
@@ -249,59 +253,46 @@ export default function CustomerListPage() {
           <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">
             我的顧客
           </p>
-          <button
-            className="text-[0.875rem] font-medium text-[var(--brand-primary-dark)]"
+          <ImageUploadSectionButton
+            active={showForm}
+            inactiveLabel="新增顧客"
             onClick={() => setShowForm((current) => !current)}
-            type="button"
-          >
-            {showForm ? "取消" : "新增顧客"}
-          </button>
+          />
         </div>
 
         {showForm ? (
-          <form className="mt-4 space-y-3" onSubmit={handleCreate}>
-            <label className="block space-y-2">
-              <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">姓名</span>
-              <input
-                className="date-input w-full"
-                onChange={(event) => setName(event.target.value)}
-                required
-                value={name}
-              />
-            </label>
-            <label className="block space-y-2">
-              <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">電話（選填）</span>
-              <input
-                className="date-input w-full"
-                inputMode="tel"
-                onChange={(event) => setPhone(event.target.value)}
-                value={phone}
-              />
-            </label>
-            <label className="block space-y-2">
-              <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">身高 cm（選填，設定後固定）</span>
-              <input
-                className="date-input w-full"
+          <form className="mt-4 space-y-4" onSubmit={handleCreate}>
+            <CrmInput
+              label="姓名"
+              onChange={(event) => setName(event.target.value)}
+              required
+              value={name}
+            />
+            <CrmInput
+              inputMode="tel"
+              label="電話"
+              onChange={(event) => setPhone(event.target.value)}
+              value={phone}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <CrmInput
                 inputMode="decimal"
+                label="身高 cm"
                 onChange={(event) => setHeightCm(event.target.value)}
                 value={heightCm}
               />
-            </label>
-            <label className="block space-y-2">
-              <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">出生年（選填，自動算年齡）</span>
-              <input
-                className="date-input w-full"
+              <CrmInput
                 inputMode="numeric"
+                label="出生年"
                 onChange={(event) => setBirthYear(event.target.value)}
                 value={birthYear}
               />
-            </label>
-            <button
-              className="w-full rounded-2xl bg-[#1d1d1f] px-4 py-3.5 text-[1rem] font-semibold text-white"
-              type="submit"
-            >
-              建立顧客
-            </button>
+            </div>
+            <p className="text-[0.8125rem] text-[#86868b]">
+              身高設定後固定；有出生年時，量測會自動帶入年齡。
+            </p>
+
+            <CrmButton type="submit">建立並開始記錄</CrmButton>
           </form>
         ) : null}
 

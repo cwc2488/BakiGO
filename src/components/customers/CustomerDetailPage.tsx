@@ -155,7 +155,6 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
       age,
       weightKg,
       skeletalMuscleKg: parseCustomerBodyNumber(values.skeletalMuscleKg),
-      bodyFatKg: parseCustomerBodyNumber(values.bodyFatKg),
       bmi,
       bodyFatPercent: parseCustomerBodyNumber(values.bodyFatPercent),
       visceralFatLevel: parseCustomerBodyNumber(values.visceralFatLevel),
@@ -385,6 +384,14 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
         </section>
       ) : null}
 
+      <CustomerBodySection
+        birthYear={customer.birthYear}
+        heightCm={customer.heightCm}
+        onCreate={handleCreateRecord}
+        records={records}
+        today={today}
+      />
+
       <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -558,13 +565,6 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
           </div>
         )}
       </CrmCard>
-
-      <CustomerBodySection
-        birthYear={customer.birthYear}
-        onCreate={handleCreateRecord}
-        records={records}
-        today={today}
-      />
 
       <section className="rounded-[1.75rem] border border-[#ffd6d6] bg-[#fffafa] p-5">
         <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#cf1322]">
