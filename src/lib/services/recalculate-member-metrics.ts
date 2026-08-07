@@ -45,6 +45,7 @@ import { auditAllRules, createRuleMissingState } from "@/lib/rule-engine";
 import { resolvePromotionQualifiedRankIds } from "@/lib/business-engine/promotion/resolve-qualified-ranks";
 import type { EntityId, ISODateString, YearMonth } from "@/types";
 import type { RuleMissingState } from "@/types/rule-engine";
+import type { LearningRecommendation } from "@/types/learning-resource";
 import type { PresidentAIResult } from "@/types/president-ai";
 import type { RetailWeeklyReport } from "@/types/retail-weekly-report";
 import type { EventCenterResult } from "@/types/event-center";
@@ -66,6 +67,7 @@ import {
 } from "@/lib/member-goals/calculate-member-goal-progress";
 import { buildRetailPipelineSnapshot } from "@/lib/retail-pipeline/pipeline-selectors";
 import { buildRankGuidance } from "@/lib/member-goals/build-rank-guidance-playbook";
+import { recommendLearningResources } from "@/lib/learning-resources/recommend-learning-resources";
 
 export interface MemberComputedMetrics {
   memberId: EntityId;
@@ -85,6 +87,7 @@ export interface MemberComputedMetrics {
   retailWeeklyReport: RetailWeeklyReport;
   mapUniverse: MapUniverseResult;
   eventCenter: EventCenterResult;
+  learningRecommendations: LearningRecommendation[];
 }
 
 export interface RecalculateMemberMetricsInput {
@@ -281,7 +284,7 @@ export function recalculateMemberMetrics(
 
   const snapshotCore: Omit<
     MemberComputedMetrics,
-    "presidentAI" | "retailWeeklyReport" | "mapUniverse" | "eventCenter"
+    "presidentAI" | "retailWeeklyReport" | "mapUniverse" | "eventCenter" | "learningRecommendations"
   > = {
     memberId: input.memberId,
     yearMonth,
@@ -318,6 +321,16 @@ export function recalculateMemberMetrics(
     promotionProgress,
     vp,
     pipeline: pipelineSnapshot,
+  });
+
+  const learningRecommendations = recommendLearningResources({
+    rankKey: currentMember?.rankKey ?? RANK_KEYS.NEW_MEMBER,
+    rankGuidanceMode: rankGuidanceView?.mode ?? null,
+    pipeline: pipelineSnapshot,
+    qualificationResults,
+    promotionProgress,
+    vp,
+    monthlyChallenge,
   });
 
   const presidentAI = calculatePresidentAI(
@@ -377,6 +390,7 @@ export function recalculateMemberMetrics(
     retailWeeklyReport,
     mapUniverse,
     eventCenter,
+    learningRecommendations,
   };
 
   saveComputedMetrics(storage, snapshot);

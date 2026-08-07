@@ -16,6 +16,7 @@ import { EmptyState, HomeErrorState, HomeLoadingSkeleton } from "./states";
 import { Card, ProgressBar, SectionLabel } from "./ui";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import { TodayStepCard } from "@/components/president-ai/TodayStepCard";
+import { LearningResourceSuggestions } from "@/components/learning/LearningResourceSuggestions";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -183,6 +184,7 @@ function HomeView({ metrics }: { metrics: MemberComputedMetrics }) {
           priority={topPriority}
           reasoning={metrics.presidentAI.reasoning[0]}
         />
+        <LearningResourceSuggestions recommendations={metrics.learningRecommendations} />
         <WorkHubSection />
         <PresidentAISection firstUse={firstUse} presidentAI={metrics.presidentAI} />
         <AddTransactionButton />

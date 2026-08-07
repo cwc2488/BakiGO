@@ -22,6 +22,22 @@ function pushCandidate(
   candidates.push(candidate);
 }
 
+function dedupeCandidatesByTitle(candidates: PriorityCandidate[]): PriorityCandidate[] {
+  const seen = new Set<string>();
+  const result: PriorityCandidate[] = [];
+
+  for (const candidate of candidates) {
+    const key = candidate.title.trim();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(candidate);
+  }
+
+  return result;
+}
+
 export function collectPriorityCandidates(input: PresidentAIInput): PriorityCandidate[] {
   const candidates: PriorityCandidate[] = [];
 
@@ -233,10 +249,7 @@ export function collectPriorityCandidates(input: PresidentAIInput): PriorityCand
     pushCandidate(candidates, {
       sourceKey: `member_goal_${goal.goalId}`,
       title: goal.title,
-      description:
-        goal.actionSteps.length > 0
-          ? `${goal.description} → ${goal.actionSteps[0].label}`
-          : goal.description,
+      description: goal.description,
       category,
       current: goal.current,
       target: goal.target,
@@ -248,21 +261,23 @@ export function collectPriorityCandidates(input: PresidentAIInput): PriorityCand
   });
 
   if (input.careerGoal && input.careerGoal.remaining > 0) {
-    pushCandidate(candidates, {
-      sourceKey: input.careerGoal.sourceKey,
-      title: input.careerGoal.title,
-      description:
-        input.careerGoal.actionSteps.length > 0
-          ? `${input.careerGoal.description} → ${input.careerGoal.actionSteps[0].label}`
-          : input.careerGoal.description,
-      category: "PROMOTION",
-      current: input.careerGoal.current,
-      target: input.careerGoal.target,
-      remaining: input.careerGoal.remaining,
-      progressPercent: input.careerGoal.progressPercent,
-      enginePriority: 2500,
-      actionHref: input.careerGoal.actionSteps[0]?.href,
-    });
+    const coveredByNextStep = input.nextSteps.some(
+      (step) => step.stepKey === input.careerGoal!.sourceKey,
+    );
+    if (!coveredByNextStep) {
+      pushCandidate(candidates, {
+        sourceKey: input.careerGoal.sourceKey,
+        title: input.careerGoal.title,
+        description: input.careerGoal.description,
+        category: "PROMOTION",
+        current: input.careerGoal.current,
+        target: input.careerGoal.target,
+        remaining: input.careerGoal.remaining,
+        progressPercent: input.careerGoal.progressPercent,
+        enginePriority: 2500,
+        actionHref: input.careerGoal.actionSteps[0]?.href,
+      });
+    }
   }
 
   if (input.rankGuidance && input.rankGuidance.actionSteps.length > 0) {
@@ -280,7 +295,7 @@ export function collectPriorityCandidates(input: PresidentAIInput): PriorityCand
     });
   }
 
-  return candidates;
+  return dedupeCandidatesByTitle(candidates);
 }
 
 export function candidatesToPriorities(
