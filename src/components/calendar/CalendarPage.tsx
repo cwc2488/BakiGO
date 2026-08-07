@@ -110,6 +110,10 @@ function readCalendarOAuthStatusMessage(storage: ReturnType<typeof createLocalSt
     window.history.replaceState({}, "", "/calendar");
     return "Google 日曆連接失敗，請重新連接並選擇正確帳號";
   }
+  if (params.get("google_error") === "not_configured") {
+    window.history.replaceState({}, "", "/calendar");
+    return "Google 日曆同步尚未設定，請聯絡管理員完成後台設定";
+  }
   return null;
 }
 

@@ -1,6 +1,10 @@
 import type { GoogleCalendarConnection } from "@/types/calendar-event";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
+import {
+  scheduleGoogleCalendarCloudDelete,
+  scheduleGoogleCalendarCloudPush,
+} from "@/lib/cloud/google-calendar-cloud-service";
 
 export function loadGoogleCalendarConnection(
   storage: StorageAdapter,
@@ -21,10 +25,12 @@ export function saveGoogleCalendarConnection(
   connection: GoogleCalendarConnection,
 ): void {
   storage.setItem(STORAGE_KEYS.googleCalendarAuth, JSON.stringify(connection));
+  scheduleGoogleCalendarCloudPush(storage, connection);
 }
 
 export function clearGoogleCalendarConnection(storage: StorageAdapter): void {
   storage.removeItem(STORAGE_KEYS.googleCalendarAuth);
+  scheduleGoogleCalendarCloudDelete(storage);
 }
 
 export function isGoogleCalendarConfigured(): boolean {

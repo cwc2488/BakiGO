@@ -11,6 +11,7 @@ import {
   syncCloudMembersToLocalStorage,
 } from "@/lib/cloud/sync-cloud-members-to-local";
 import { syncCustomersOnLogin } from "@/lib/cloud/customer-cloud-service";
+import { syncGoogleCalendarConnectionOnLogin } from "@/lib/cloud/google-calendar-cloud-service";
 import { syncAppDataOnLogin } from "@/lib/cloud/sync-app-data-on-login";
 import { APP_IDS } from "@/lib/config/app-config";
 import { createAuthRepository } from "@/lib/repositories/auth-repository";
@@ -64,6 +65,7 @@ async function finalizeCloudAuth(
     await syncCloudMembersToLocalStorage(storage);
     await syncAppDataOnLogin(storage, member.id);
     await syncCustomersOnLogin(storage, member.id);
+    await syncGoogleCalendarConnectionOnLogin(storage, member.id);
   } catch (error) {
     throw new AuthError(
       "cloud_sync_failed",
