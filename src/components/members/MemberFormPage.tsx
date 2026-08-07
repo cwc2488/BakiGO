@@ -2,7 +2,8 @@
 
 import { DEFAULT_BUSINESS_RULES } from "@/lib/business-engine";
 import { RANK_KEYS } from "@/lib/business-engine/rules/keys";
-import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { getCurrentMember, resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { canAccessMemberManagement } from "@/lib/auth/member-management-access";
 import { APP_IDS, todayISODate } from "@/lib/config/app-config";
 import {
   loadAllMembers,
@@ -99,6 +100,8 @@ export default function MemberFormPage({
   const router = useRouter();
   const storage = useMemo(() => createLocalStorageAdapter(), []);
   const isSelfProfile = mode === "edit" && memberId === resolveAuthenticatedMemberId(storage);
+  const viewer = getCurrentMember(storage);
+  const canManageMembers = canAccessMemberManagement(viewer);
   const [form, setForm] = useState<MemberFormValues>(emptyForm);
   const [members, setMembers] = useState<Member[]>(() => {
     if (typeof window === "undefined") {
@@ -108,6 +111,12 @@ export default function MemberFormPage({
   });
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (mode === "create" && !canManageMembers) {
+      router.replace("/organization");
+    }
+  }, [mode, canManageMembers, router]);
 
   useEffect(() => {
     if (mode !== "edit" || !memberId) {
@@ -206,19 +215,29 @@ export default function MemberFormPage({
     }
   }
 
+  if (mode === "create" && !canManageMembers) {
+    return (
+      <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] text-[#86868b]">
+        正在導向組織圖…
+      </div>
+    );
+  }
+
+  const backHref = isSelfProfile
+    ? "/profile"
+    : mode === "edit" && memberId
+      ? `/members/${memberId}`
+      : canManageMembers
+        ? "/members"
+        : "/organization";
+
   return (
     <div className="min-h-full bg-[var(--brand-bg)]">
       <main className="profile-container flex flex-col gap-6 pb-24 pt-10 sm:pt-12">
         <header className="space-y-3">
           <Link
             className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)]"
-            href={
-              isSelfProfile
-                ? "/profile"
-                : mode === "edit" && memberId
-                  ? `/members/${memberId}`
-                  : "/members"
-            }
+            href={backHref}
           >
             ← 返回
           </Link>

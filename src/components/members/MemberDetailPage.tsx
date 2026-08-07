@@ -1,5 +1,6 @@
 "use client";
 
+import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import {
   formatJoinedDate,
   formatShortDate,
@@ -38,6 +39,12 @@ import { MemberNameWithAvatar } from "./MemberNameWithAvatar";
 type LoadState = "loading" | "ready" | "error" | "not-found";
 
 export default function MemberDetailPage({ memberId }: { memberId: string }) {
+  const storage = useMemo(() => createLocalStorageAdapter(), []);
+  const viewerId = resolveAuthenticatedMemberId(storage);
+  const isSelfView = memberId === viewerId;
+  const backHref = isSelfView ? "/profile" : "/organization";
+  const backLabel = isSelfView ? "返回我的" : "返回組織圖";
+
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [member, setMember] = useState<Member | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
@@ -108,8 +115,8 @@ export default function MemberDetailPage({ memberId }: { memberId: string }) {
     return (
       <div className="flex min-h-full flex-col items-center justify-center gap-4 bg-[var(--brand-bg)] px-6">
         <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">找不到會員</p>
-        <Link className="text-[var(--brand-primary-dark)]" href="/members">
-          返回會員列表
+        <Link className="text-[var(--brand-primary-dark)]" href={backHref}>
+          {backLabel}
         </Link>
       </div>
     );
@@ -133,8 +140,8 @@ export default function MemberDetailPage({ memberId }: { memberId: string }) {
     <div className="min-h-full bg-[var(--brand-bg)]">
       <main className="profile-container flex flex-col gap-6 pb-24 pt-10 sm:pt-12">
         <header className="space-y-3">
-          <Link className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)]" href="/members">
-            ← 返回會員列表
+          <Link className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)]" href={backHref}>
+            ← {backLabel}
           </Link>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
@@ -148,12 +155,14 @@ export default function MemberDetailPage({ memberId }: { memberId: string }) {
                 variant="hero"
               />
             </div>
-            <Link
-              className="rounded-full bg-[var(--brand-bg)] px-4 py-2 text-[0.875rem] font-medium text-[#636366]"
-              href={`/members/${member.id}/edit`}
-            >
-              編輯
-            </Link>
+            {!isSelfView ? (
+              <Link
+                className="rounded-full bg-[var(--brand-bg)] px-4 py-2 text-[0.875rem] font-medium text-[#636366]"
+                href={`/members/${member.id}/edit`}
+              >
+                編輯
+              </Link>
+            ) : null}
           </div>
         </header>
 
