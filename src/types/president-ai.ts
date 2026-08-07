@@ -24,6 +24,8 @@ export interface Priority {
   expectedImpact: number;
   /** Trace back to engine source — UI must not interpret. */
   sourceKey: string;
+  /** Playbook 第一步連結，供「今日一步」一鍵執行。 */
+  actionHref?: string;
 }
 
 export interface Warning {

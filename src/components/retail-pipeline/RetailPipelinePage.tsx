@@ -22,8 +22,10 @@ const STAGE_DOT: Record<RetailPipelineStageKey, string> = {
   stranger: "bg-[#aeaeb2]",
   measurement: "bg-[var(--brand-primary)]",
   consultation: "bg-[#bf5af2]",
-  transaction: "bg-[#ff9f0a]",
-  member: "bg-[#30d158]",
+  new_customer: "bg-[#ff9f0a]",
+  returning_customer: "bg-[#ff6482]",
+  new_member: "bg-[#30d158]",
+  returning_member: "bg-[#248a3d]",
   map: "bg-[#ff6482]",
   supervisor: "bg-[#ffd60a]",
   world_team: "bg-[var(--brand-primary)]",
@@ -132,13 +134,19 @@ function LeadCard({
         </span>
       ) : null}
 
+      {lead.autoRolloverHint ? (
+        <p className="mt-1.5 text-[0.8125rem] font-medium leading-relaxed text-[#5856d6]">
+          {lead.autoRolloverHint}
+        </p>
+      ) : null}
+
       {lead.nextStepLabel ? (
         <p className="mt-1.5 text-[0.8125rem] text-[#86868b]">
           下一步：<span className="font-medium text-[var(--brand-primary-dark)]">{lead.nextStepLabel}</span>
         </p>
-      ) : (
+      ) : !lead.autoRolloverHint ? (
         <p className="mt-1.5 text-[0.8125rem] font-medium text-[#248a3d]">已完成流程</p>
-      )}
+      ) : null}
       {lead.canAdvance ? (
         <button
           className="mt-3 w-full rounded-xl bg-[var(--brand-primary)] px-3 py-2.5 text-[0.875rem] font-semibold text-white disabled:opacity-60"
@@ -318,7 +326,7 @@ export default function RetailPipelinePage() {
             {APP_EMOJI.page.pipeline} 名單流程
           </h1>
           <p className="text-[0.9375rem] text-[#86868b]">
-            共 {snapshot.totalLeads} 位名單 · 排定後自動加入行事曆
+            共 {snapshot.totalLeads} 位名單 · 新客/新會員下月自動轉舊客/舊會員
           </p>
         </header>
 

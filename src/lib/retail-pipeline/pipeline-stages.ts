@@ -10,6 +10,9 @@ export interface RetailPipelineStageDefinition {
   nextStepLabel: string | null;
   entryEventTypeKey: string | null;
   entryEventCategory: BakiEventCategory | null;
+  /** 僅能透過每月自動轉換，不能手動「完成下一步」。 */
+  autoRolloverOnly?: boolean;
+  autoRolloverHint?: string;
 }
 
 export const RETAIL_PIPELINE_STAGES: RetailPipelineStageDefinition[] = [
@@ -30,22 +33,40 @@ export const RETAIL_PIPELINE_STAGES: RetailPipelineStageDefinition[] = [
   {
     key: "consultation",
     title: "諮詢",
-    nextStepLabel: "促成成交",
+    nextStepLabel: "促成新客成交",
     entryEventTypeKey: ACTIVITY_EVENT_KEYS.CONSULTATION,
     entryEventCategory: "activity",
   },
   {
-    key: "transaction",
-    title: "成交",
-    nextStepLabel: "招募會員",
+    key: "new_customer",
+    title: "本月新客",
+    nextStepLabel: null,
     entryEventTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.NEW_CUSTOMER_NTD,
+    entryEventCategory: "transaction",
+    autoRolloverOnly: true,
+    autoRolloverHint: "下月自動轉為舊客；舊客需手動招募才會成為會員",
+  },
+  {
+    key: "returning_customer",
+    title: "舊客",
+    nextStepLabel: "招募為新會員",
+    entryEventTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_CUSTOMER_NTD,
     entryEventCategory: "transaction",
   },
   {
-    key: "member",
-    title: "會員",
-    nextStepLabel: "推進 MAP",
+    key: "new_member",
+    title: "本月新會員",
+    nextStepLabel: null,
     entryEventTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.NEW_MEMBER_VP,
+    entryEventCategory: "transaction",
+    autoRolloverOnly: true,
+    autoRolloverHint: "下月自動轉為舊會員",
+  },
+  {
+    key: "returning_member",
+    title: "舊會員",
+    nextStepLabel: "推進 MAP",
+    entryEventTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_MEMBER_VP,
     entryEventCategory: "transaction",
   },
   {
@@ -88,10 +109,16 @@ export function getPipelineStageDefinition(
 export function getNextPipelineStageKey(
   stageKey: RetailPipelineStageKey,
 ): RetailPipelineStageKey | null {
+  const current = getPipelineStageDefinition(stageKey);
+  if (current.autoRolloverOnly) {
+    return null;
+  }
+
   const index = STAGE_INDEX.get(stageKey);
   if (index === undefined || index >= RETAIL_PIPELINE_STAGES.length - 1) {
     return null;
   }
+
   return RETAIL_PIPELINE_STAGES[index + 1]?.key ?? null;
 }
 

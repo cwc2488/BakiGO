@@ -24,6 +24,7 @@ import {
 } from "@/lib/mission-control/format";
 import { createRetailRepository } from "@/lib/repositories/retail-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import { buildRetailPipelineSnapshot } from "@/lib/retail-pipeline/pipeline-selectors";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import { GOAL_KPI_DEFINITIONS } from "@/types/goal-center";
 import Link from "next/link";
@@ -66,13 +67,14 @@ export default function GoalCenterPage() {
       const memberId = resolveAuthenticatedMemberId(storage);
       const goals = loadActiveMemberGoals(storage, memberId, metrics.yearMonth);
       const transactions = createRetailRepository(storage).getByMemberId(memberId);
+      const pipeline = buildRetailPipelineSnapshot(memberId, storage);
       return buildGoalBlueprint(goals, {
         referenceDate: metrics.missions.referenceDate,
         yearMonth: metrics.yearMonth,
         vp: metrics.vp,
         monthlyChallenge: metrics.monthlyChallenge,
         promotionProgress: metrics.promotionProgress,
-      }, transactions);
+      }, transactions, pipeline);
     } catch {
       return null;
     }
@@ -164,6 +166,7 @@ export default function GoalCenterPage() {
           />
           {blueprint.careerGoal ? (
             <CareerGoalCard
+              actionSteps={blueprint.careerGoal.actionSteps}
               current={blueprint.careerGoal.current}
               description={blueprint.careerGoal.description}
               progressPercent={blueprint.careerGoal.progressPercent}

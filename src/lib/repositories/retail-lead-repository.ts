@@ -6,6 +6,7 @@ import type {
 import type { EntityId, ISODateString } from "@/types";
 import type { StorageAdapter } from "./storage-adapter";
 import { STORAGE_KEYS } from "./storage-keys";
+import { todayISODate } from "@/lib/config/app-config";
 
 function createId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -14,10 +15,23 @@ function createId(): string {
   return `lead-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function normalizeStageKey(stageKey: string): RetailPipelineStageKey {
+function normalizeLegacyStageKey(
+  stageKey: string,
+  stageUpdatedAt: ISODateString,
+): RetailPipelineStageKey {
   if (stageKey === "trial_drink") {
     return "consultation";
   }
+  const referenceYearMonth = todayISODate().slice(0, 7);
+  const stageYearMonth = stageUpdatedAt.slice(0, 7);
+
+  if (stageKey === "transaction") {
+    return stageYearMonth < referenceYearMonth ? "returning_customer" : "new_customer";
+  }
+  if (stageKey === "member") {
+    return stageYearMonth < referenceYearMonth ? "returning_member" : "new_member";
+  }
+
   return stageKey as RetailPipelineStageKey;
 }
 
@@ -33,7 +47,7 @@ function parseLeads(raw: string | null): RetailPipelineLead[] {
     }
     return parsed.map((lead) => ({
       ...lead,
-      stageKey: normalizeStageKey(lead.stageKey),
+      stageKey: normalizeLegacyStageKey(lead.stageKey, lead.stageUpdatedAt),
     }));
   } catch {
     return [];

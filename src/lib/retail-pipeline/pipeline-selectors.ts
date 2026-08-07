@@ -4,6 +4,7 @@ import {
   getPipelineStageDefinition,
   RETAIL_PIPELINE_STAGES,
 } from "@/lib/retail-pipeline/pipeline-stages";
+import { applyPipelineMonthlyRollover } from "@/lib/retail-pipeline/apply-pipeline-monthly-rollover";
 import { createRetailLeadRepository } from "@/lib/repositories/retail-lead-repository";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type {
@@ -25,6 +26,7 @@ function toLeadView(lead: RetailPipelineLead): RetailPipelineLeadView {
     stageTitle: stage.title,
     nextStepLabel: stage.nextStepLabel,
     canAdvance: nextStageKey !== null,
+    autoRolloverHint: stage.autoRolloverHint ?? null,
     scheduledDate: lead.scheduledDate,
     scheduledTime: lead.scheduledTime,
     calendarEventId: lead.calendarEventId,
@@ -36,6 +38,8 @@ export function buildRetailPipelineSnapshot(
   ownerMemberId: EntityId,
   storage: StorageAdapter,
 ): RetailPipelineSnapshot {
+  applyPipelineMonthlyRollover(storage, todayISODate());
+
   const leads = createRetailLeadRepository(storage)
     .getByOwner(ownerMemberId)
     .map(toLeadView);

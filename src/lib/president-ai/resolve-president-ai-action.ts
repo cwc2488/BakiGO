@@ -106,7 +106,29 @@ function resolveFromCategory(category: PriorityCategory): PresidentAiAction {
   }
 }
 
-function resolveMemberGoalAction(category: PriorityCategory): PresidentAiAction {
+function resolvePlaybookHref(href: string, label: string): PresidentAiAction {
+  const measurementMatch = href.match(/[?&]action=measurement/);
+  if (measurementMatch) {
+    return resolveQuickLog("measurement");
+  }
+  const consultationMatch = href.match(/[?&]action=consultation/);
+  if (consultationMatch) {
+    return resolveQuickLog("consultation");
+  }
+  const recruitMatch = href.match(/[?&]action=recruit/);
+  if (recruitMatch) {
+    return resolveQuickLog("recruit");
+  }
+  return { kind: "navigate", href, label };
+}
+
+function resolveMemberGoalAction(
+  category: PriorityCategory,
+  actionHref?: string,
+): PresidentAiAction {
+  if (actionHref) {
+    return resolvePlaybookHref(actionHref, "執行今日建議");
+  }
   if (category === "VP") {
     return { kind: "navigate", href: "/events", label: "新增成交紀錄" };
   }
@@ -124,7 +146,7 @@ export function resolvePresidentAiAction(
   }
 
   if (priority.sourceKey.startsWith("member_goal_")) {
-    return resolveMemberGoalAction(priority.category);
+    return resolveMemberGoalAction(priority.category, priority.actionHref);
   }
 
   return resolveFromSourceKey(priority.sourceKey) ?? resolveFromCategory(priority.category);

@@ -18,6 +18,12 @@ import {
   MEMBER_GOAL_TYPE_LABELS,
   MEMBER_GOAL_TYPE_UNITS,
 } from "@/types/member-goal";
+import type { RetailPipelineSnapshot } from "@/types/retail-pipeline";
+import {
+  buildCareerGoalPlaybook,
+  buildMemberGoalPlaybook,
+  summarizePlaybook,
+} from "@/lib/member-goals/build-member-goal-playbook";
 
 export interface MemberGoalMetricsContext {
   referenceDate: ISODateString;
@@ -86,6 +92,7 @@ export function buildMemberGoalProgressView(
   goal: MemberGoal,
   metrics: MemberGoalMetricsContext,
   transactions: RetailTransaction[],
+  pipeline: RetailPipelineSnapshot | null = null,
 ): MemberGoalProgressView {
   const current = resolveGoalCurrentValue(goal.type, metrics, transactions);
   const target = goal.targetValue;
@@ -101,14 +108,27 @@ export function buildMemberGoalProgressView(
           resolveKpiCategory(goal.type),
         );
 
+  const actionSteps = buildMemberGoalPlaybook({
+    type: goal.type,
+    todayNeeded,
+    remaining,
+    yearMonth: metrics.yearMonth,
+    vp: metrics.vp,
+    transactions,
+    pipeline,
+  });
+  const playbookSummary = summarizePlaybook(actionSteps);
+
+  const progressLine = `目前 ${current.toLocaleString("zh-Hant")} / ${target.toLocaleString("zh-Hant")} ${unit}${
+    todayNeeded !== null && remaining > 0 ? ` · 今天建議 ${todayNeeded} ${unit}` : ""
+  }`;
+
   return {
     goalId: goal.id,
     type: goal.type,
     horizon: goal.horizon,
     title: buildGoalTitle(goal),
-    description: `目前 ${current.toLocaleString("zh-Hant")} / ${target.toLocaleString("zh-Hant")} ${unit}${
-      todayNeeded !== null && remaining > 0 ? ` · 今天建議 ${todayNeeded} ${unit}` : ""
-    }`,
+    description: playbookSummary ? `${progressLine} · ${playbookSummary}` : progressLine,
     current,
     target,
     remaining,
@@ -117,6 +137,8 @@ export function buildMemberGoalProgressView(
     todayNeeded,
     isComplete: remaining <= 0,
     yearMonth: goal.yearMonth,
+    actionSteps,
+    playbookSummary,
   };
 }
 
@@ -134,7 +156,7 @@ export function buildCareerBlueprintView(
     return null;
   }
 
-  return {
+  const career: CareerBlueprintView = {
     title: progress.nextRankName
       ? `晉升${progress.nextRankName}`
       : progress.description,
@@ -146,6 +168,12 @@ export function buildCareerBlueprintView(
     sourceKey: `promotion_${progress.ruleKey ?? progress.currentRankId}`,
     nextRankName: progress.nextRankName,
     ultimateRankName: "總裁",
+    actionSteps: [],
+  };
+
+  return {
+    ...career,
+    actionSteps: buildCareerGoalPlaybook(career),
   };
 }
 
@@ -153,10 +181,11 @@ export function buildGoalBlueprint(
   goals: MemberGoal[],
   metrics: MemberGoalMetricsContext,
   transactions: RetailTransaction[],
+  pipeline: RetailPipelineSnapshot | null = null,
 ): GoalBlueprintResult {
   const memberGoals = goals
     .filter((goal) => goal.isActive && goal.yearMonth === metrics.yearMonth)
-    .map((goal) => buildMemberGoalProgressView(goal, metrics, transactions))
+    .map((goal) => buildMemberGoalProgressView(goal, metrics, transactions, pipeline))
     .sort((left, right) => {
       const horizonOrder = { short: 0, medium: 1, long: 2 };
       if (horizonOrder[left.horizon] !== horizonOrder[right.horizon]) {

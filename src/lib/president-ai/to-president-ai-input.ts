@@ -61,6 +61,7 @@ export function toPresidentAIInput(metrics: PresidentAIMetricsInput): PresidentA
       progressPercent: goal.progressPercent,
       todayNeeded: goal.todayNeeded,
       unit: goal.unit,
+      actionSteps: goal.actionSteps,
     })),
     careerGoal: metrics.careerGoal
       ? {

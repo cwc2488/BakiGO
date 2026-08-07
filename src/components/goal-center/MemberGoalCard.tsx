@@ -1,7 +1,49 @@
 "use client";
 
 import { ProgressBar } from "@/components/home/ui";
-import type { MemberGoalProgressView } from "@/types/member-goal";
+import type { MemberGoalActionStep, MemberGoalProgressView } from "@/types/member-goal";
+import Link from "next/link";
+
+function GoalActionSteps({ steps }: { steps: MemberGoalActionStep[] }) {
+  if (steps.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 space-y-2">
+      <p className="text-[0.8125rem] font-semibold text-[#636366]">今天可以這樣做</p>
+      <ul className="space-y-2">
+        {steps.map((step) => {
+          const content = (
+            <>
+              <p className="text-[0.9375rem] font-semibold leading-snug text-[#1d1d1f]">{step.label}</p>
+              <p className="mt-1 text-[0.8125rem] leading-relaxed text-[#86868b]">{step.detail}</p>
+            </>
+          );
+
+          if (step.href) {
+            return (
+              <li key={step.label}>
+                <Link
+                  className="block rounded-2xl bg-[var(--brand-bg)] px-3 py-3 transition-colors active:bg-[var(--brand-primary-muted)]"
+                  href={step.href}
+                >
+                  {content}
+                </Link>
+              </li>
+            );
+          }
+
+          return (
+            <li key={step.label} className="rounded-2xl bg-[var(--brand-bg)] px-3 py-3">
+              {content}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 export function MemberGoalCard({
   goal,
@@ -56,6 +98,7 @@ export function MemberGoalCard({
               </dd>
             </div>
           </dl>
+          <GoalActionSteps steps={goal.actionSteps} />
         </>
       )}
     </article>
@@ -70,6 +113,7 @@ export function CareerGoalCard({
   remaining,
   progressPercent,
   unit,
+  actionSteps,
 }: {
   title: string;
   description: string;
@@ -78,6 +122,7 @@ export function CareerGoalCard({
   remaining: number;
   progressPercent: number;
   unit: string;
+  actionSteps: MemberGoalActionStep[];
 }) {
   return (
     <article className="rounded-2xl border border-[var(--brand-border)] bg-gradient-to-br from-[#f0faf3] to-[var(--brand-surface)] px-4 py-4">
@@ -95,6 +140,7 @@ export function CareerGoalCard({
       <p className="mt-3 text-[0.8125rem] font-medium text-[#ff375f]">
         還差 {remaining} {unit}
       </p>
+      <GoalActionSteps steps={actionSteps} />
     </article>
   );
 }

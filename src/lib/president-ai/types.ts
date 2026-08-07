@@ -111,6 +111,7 @@ export interface PresidentAIInput {
     progressPercent: number;
     todayNeeded: number | null;
     unit: string;
+    actionSteps: Array<{ label: string; detail: string; href?: string }>;
   }>;
   careerGoal: {
     title: string;
@@ -133,4 +134,5 @@ export interface PriorityCandidate {
   remaining: number;
   progressPercent: number | null;
   enginePriority: number;
+  actionHref?: string;
 }

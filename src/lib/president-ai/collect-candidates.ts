@@ -233,13 +233,17 @@ export function collectPriorityCandidates(input: PresidentAIInput): PriorityCand
     pushCandidate(candidates, {
       sourceKey: `member_goal_${goal.goalId}`,
       title: goal.title,
-      description: goal.description,
+      description:
+        goal.actionSteps.length > 0
+          ? `${goal.description} → ${goal.actionSteps[0].label}`
+          : goal.description,
       category,
       current: goal.current,
       target: goal.target,
       remaining: goal.remaining,
       progressPercent: goal.progressPercent,
       enginePriority: goal.horizon === "short" ? 3000 : goal.horizon === "medium" ? 2000 : 1500,
+      actionHref: goal.actionSteps[0]?.href,
     });
   });
 

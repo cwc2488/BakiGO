@@ -25,6 +25,12 @@ export interface MemberGoalCreateInput {
   label?: string;
 }
 
+export interface MemberGoalActionStep {
+  label: string;
+  detail: string;
+  href?: string;
+}
+
 export interface MemberGoalProgressView {
   goalId: string;
   type: MemberGoalType;
@@ -39,6 +45,8 @@ export interface MemberGoalProgressView {
   todayNeeded: number | null;
   isComplete: boolean;
   yearMonth: YearMonth;
+  actionSteps: MemberGoalActionStep[];
+  playbookSummary: string | null;
 }
 
 export interface CareerBlueprintView {
@@ -51,6 +59,7 @@ export interface CareerBlueprintView {
   sourceKey: string;
   nextRankName: string | null;
   ultimateRankName: string;
+  actionSteps: MemberGoalActionStep[];
 }
 
 export interface GoalBlueprintResult {

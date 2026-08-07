@@ -63,6 +63,7 @@ import {
   buildCareerBlueprintView,
   buildMemberGoalProgressView,
 } from "@/lib/member-goals/calculate-member-goal-progress";
+import { buildRetailPipelineSnapshot } from "@/lib/retail-pipeline/pipeline-selectors";
 
 export interface MemberComputedMetrics {
   memberId: EntityId;
@@ -303,8 +304,9 @@ export function recalculateMemberMetrics(
     promotionProgress,
   };
   const activeMemberGoals = loadActiveMemberGoals(storage, input.memberId, yearMonth);
+  const pipelineSnapshot = buildRetailPipelineSnapshot(input.memberId, storage);
   const memberGoalViews = activeMemberGoals.map((goal) =>
-    buildMemberGoalProgressView(goal, goalMetricsContext, memberTransactions),
+    buildMemberGoalProgressView(goal, goalMetricsContext, memberTransactions, pipelineSnapshot),
   );
   const careerGoalView = buildCareerBlueprintView(goalMetricsContext);
 

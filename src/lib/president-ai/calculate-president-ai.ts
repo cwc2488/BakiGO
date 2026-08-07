@@ -124,6 +124,7 @@ export function calculatePresidentAI(
     category: candidate.category,
     expectedImpact: candidate.remaining,
     sourceKey: candidate.sourceKey,
+    actionHref: candidate.actionHref,
   }));
 
   const warnings = collectWarnings(input);

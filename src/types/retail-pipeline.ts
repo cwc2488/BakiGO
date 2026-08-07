@@ -4,8 +4,10 @@ export type RetailPipelineStageKey =
   | "stranger"
   | "measurement"
   | "consultation"
-  | "transaction"
-  | "member"
+  | "new_customer"
+  | "returning_customer"
+  | "new_member"
+  | "returning_member"
   | "map"
   | "supervisor"
   | "world_team";
@@ -43,6 +45,7 @@ export interface RetailPipelineLeadView {
   stageTitle: string;
   nextStepLabel: string | null;
   canAdvance: boolean;
+  autoRolloverHint: string | null;
   scheduledDate?: ISODateString;
   scheduledTime?: string;
   calendarEventId?: EntityId;
