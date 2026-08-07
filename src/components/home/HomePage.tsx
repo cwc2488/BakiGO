@@ -26,6 +26,7 @@ import { Card, ProgressBar, SectionLabel } from "./ui";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import { TodayStepCard } from "@/components/president-ai/TodayStepCard";
 import { GreetingHeader } from "@/components/ui/GreetingHeader";
+import { IconAddRecord, IconChevronDown, QUICK_LINK_ICONS, type QuickLinkHref } from "@/components/ui/BrandIcons";
 import { TabRootShell } from "@/components/ui/TabRootShell";
 import { LearningResourceSuggestions } from "@/components/learning/LearningResourceSuggestions";
 import { DownlinePartnerSuggestions } from "@/components/organization/DownlinePartnerSuggestions";
@@ -99,22 +100,24 @@ function GreetingSection({ metrics }: { metrics: MemberComputedMetrics }) {
 function QuickLinksSection({ links }: { links: readonly { href: string; title: string }[] }) {
   return (
     <section className="home-section">
-      <SectionLabel>更多功能</SectionLabel>
+      <div className="flex items-center gap-1">
+        <SectionLabel>更多功能</SectionLabel>
+        <IconChevronDown className="text-[var(--brand-text-muted)]" size={16} />
+      </div>
       <div className="mt-3 grid grid-cols-2 gap-2.5">
-        {links.map((link) => (
-          <Link
-            key={link.href}
-            className="flex min-h-[4.5rem] items-center justify-center rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-4 text-center transition-colors active:bg-[var(--brand-primary-muted)] hover:border-[#d1d1d6]"
-            href={link.href}
-          >
-            <p className="text-[1rem] font-semibold text-[var(--brand-primary-dark)]">
-              <span aria-hidden className="mr-1.5">
-                {WORK_HUB_EMOJIS[link.href] ?? "📌"}
-              </span>
-              {link.title}
-            </p>
-          </Link>
-        ))}
+        {links.map((link) => {
+          const Icon = QUICK_LINK_ICONS[link.href as QuickLinkHref] ?? IconAddRecord;
+          return (
+            <Link
+              key={link.href}
+              className="flex min-h-[4.25rem] items-center gap-3 rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5 shadow-[0_4px_20px_rgba(36,138,61,0.05)] transition-colors active:bg-[var(--brand-primary-muted)] hover:border-[#d1d1d6]"
+              href={link.href}
+            >
+              <Icon className="shrink-0 text-[var(--brand-primary)]" size={26} />
+              <span className="text-[1rem] font-semibold text-[var(--brand-primary-dark)]">{link.title}</span>
+            </Link>
+          );
+        })}
       </div>
     </section>
   );
@@ -296,7 +299,7 @@ function HomeView({
   onModeChange: (mode: HomeDisplayMode) => void;
 }) {
   return (
-    <TabRootShell>
+    <TabRootShell decorated>
       {displayMode === "simple" ? (
         <SimpleHomeView metrics={metrics} onModeChange={onModeChange} />
       ) : (

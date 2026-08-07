@@ -4,18 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { MemberAvatar } from "@/components/members/MemberAvatar";
+import { NAV_ICONS, IconGoals, QUICK_LINK_ICONS, type NavHref, type QuickLinkHref } from "@/components/ui/BrandIcons";
 import { getMemberAvatarUrl, getMemberDisplayName } from "@/lib/mission-control/format";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
 import { SIDE_NAV_EXTRA_LINKS } from "@/lib/ui/work-hub-links";
 import { useMemo } from "react";
 
 const NAV_ITEMS = [
-  { href: "/", label: "首頁", shortLabel: "首頁", emoji: APP_EMOJI.nav.home },
-  { href: "/daily-action", label: "今日", shortLabel: "今日", emoji: APP_EMOJI.nav.daily },
-  { href: "/calendar", label: "行事曆", shortLabel: "行事曆", emoji: APP_EMOJI.nav.calendar },
-  { href: "/profile", label: "我的", shortLabel: "我的", emoji: APP_EMOJI.page.profile },
-] as const;
+  { href: "/", label: "首頁", shortLabel: "首頁" },
+  { href: "/daily-action", label: "今日", shortLabel: "今日" },
+  { href: "/calendar", label: "行事曆", shortLabel: "行事曆" },
+  { href: "/profile", label: "我的", shortLabel: "我的" },
+] as const satisfies ReadonlyArray<{ href: NavHref; label: string; shortLabel: string }>;
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") {
@@ -34,6 +34,7 @@ function NavLink({
   layout: "bottom" | "side";
 }) {
   const active = isActive(pathname, item.href);
+  const Icon = NAV_ICONS[item.href];
 
   if (layout === "side") {
     return (
@@ -45,9 +46,7 @@ function NavLink({
         }`}
         href={item.href}
       >
-        <span className="text-[1.125rem] leading-none" aria-hidden>
-          {item.emoji}
-        </span>
+        <Icon className="shrink-0" size={20} />
         <span className="text-[0.875rem] font-semibold">{item.label}</span>
       </Link>
     );
@@ -55,14 +54,17 @@ function NavLink({
 
   return (
     <Link
-      className={`flex flex-col items-center gap-0.5 px-1 py-2.5 text-center transition-colors ${
-        active ? "text-[var(--brand-primary-dark)]" : "text-[#86868b] hover:text-[#1d1d1f]"
+      className={`flex flex-col items-center gap-1 px-1 pb-2 pt-1.5 text-center transition-colors ${
+        active ? "text-[var(--brand-primary-dark)]" : "text-[var(--brand-text-muted)] hover:text-[var(--brand-text)]"
       }`}
       href={item.href}
     >
-      <span className="text-[1.125rem] leading-none" aria-hidden>
-        {item.emoji}
-      </span>
+      <span
+        className={`h-0.5 w-7 rounded-full transition-colors ${
+          active ? "bg-[var(--brand-primary)]" : "bg-transparent"
+        }`}
+      />
+      <Icon size={22} />
       <span className="text-[0.6875rem] font-semibold leading-tight sm:text-[0.75rem]">
         {item.shortLabel}
       </span>
@@ -102,6 +104,7 @@ export function AppSideNav() {
         </p>
         {SIDE_NAV_EXTRA_LINKS.map((item) => {
           const active = isActive(pathname, item.href);
+          const Icon = QUICK_LINK_ICONS[item.href as QuickLinkHref] ?? IconGoals;
           return (
             <Link
               key={item.href}
@@ -113,9 +116,7 @@ export function AppSideNav() {
               href={item.href}
               title={item.title}
             >
-              <span className="text-[1.125rem] leading-none" aria-hidden>
-                {item.emoji}
-              </span>
+              <Icon size={20} />
               <span className="hidden text-[0.875rem] font-semibold lg:inline">{item.title}</span>
             </Link>
           );

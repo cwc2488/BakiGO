@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { IconAddRecord, QUICK_LINK_ICONS, type QuickLinkHref } from "./BrandIcons";
 
 export const PAGE_GRADIENT_CLASS =
   "bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]";
@@ -92,29 +93,25 @@ export function PrimarySubmitButton({
 
 export function QuickLinkGrid({
   links,
-  emojiByHref,
 }: {
   links: readonly { href: string; label: string; emoji?: string }[];
   emojiByHref?: Record<string, string>;
 }) {
   return (
     <div className="grid grid-cols-2 gap-2.5">
-      {links.map((link) => (
-        <Link
-          key={link.href}
-          className="flex min-h-[4.5rem] items-center justify-center rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-4 text-center transition-colors active:bg-[var(--brand-primary-muted)] hover:border-[#d1d1d6]"
-          href={link.href}
-        >
-          <p className="text-[1rem] font-semibold text-[var(--brand-text)]">
-            {link.emoji ?? emojiByHref?.[link.href] ? (
-              <span aria-hidden className="mr-1.5">
-                {link.emoji ?? emojiByHref?.[link.href]}
-              </span>
-            ) : null}
-            {link.label}
-          </p>
-        </Link>
-      ))}
+      {links.map((link) => {
+        const Icon = QUICK_LINK_ICONS[link.href as QuickLinkHref] ?? IconAddRecord;
+        return (
+          <Link
+            key={link.href}
+            className="flex min-h-[4.25rem] items-center gap-3 rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5 shadow-[0_4px_20px_rgba(36,138,61,0.05)] transition-colors active:bg-[var(--brand-primary-muted)] hover:border-[#d1d1d6]"
+            href={link.href}
+          >
+            <Icon className="shrink-0 text-[var(--brand-primary)]" size={24} />
+            <span className="text-[0.9375rem] font-semibold text-[var(--brand-primary-dark)]">{link.label}</span>
+          </Link>
+        );
+      })}
     </div>
   );
 }
