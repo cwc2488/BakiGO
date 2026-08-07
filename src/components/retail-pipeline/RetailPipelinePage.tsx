@@ -2,6 +2,10 @@
 
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import {
+  createCustomerFromPipelineLead,
+  getCustomerForPipelineLead,
+} from "@/lib/customers/pipeline-customer-bridge";
+import {
   advancePipelineLead,
   createPipelineLead,
   deletePipelineLead,
@@ -18,6 +22,7 @@ import { PageShell } from "@/components/ui/PageShell";
 import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import { IconLabel } from "@/components/ui/AppIcon";
 import { APP_ICON } from "@/lib/ui/app-icons";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const STAGE_DOT: Record<RetailPipelineStageKey, string> = {
@@ -57,18 +62,24 @@ function formatScheduledLabel(scheduledDate?: string, scheduledTime?: string): s
 
 function LeadCard({
   lead,
+  customerId,
   onAdvance,
   onScheduleChange,
   onRegionChange,
   onDelete,
+  onCreateCustomer,
   isAdvancing,
+  isCreatingCustomer,
 }: {
   lead: RetailPipelineLeadView;
+  customerId?: string;
   onAdvance: (leadId: string) => void;
   onScheduleChange: (leadId: string, scheduledDate: string, scheduledTime: string) => void;
   onRegionChange: (leadId: string, region: string) => void;
   onDelete: (leadId: string) => void;
+  onCreateCustomer: (leadId: string) => void;
   isAdvancing: boolean;
+  isCreatingCustomer: boolean;
 }) {
   const scheduleHint = formatScheduledDateHint(lead.scheduledDate);
   const scheduleLabel = formatScheduledLabel(lead.scheduledDate, lead.scheduledTime);
@@ -159,6 +170,24 @@ function LeadCard({
           {isAdvancing ? "記錄中…" : "完成下一步"}
         </button>
       ) : null}
+
+      {customerId ? (
+        <Link
+          className="mt-3 block w-full rounded-xl border border-[var(--brand-border)] bg-white px-3 py-2.5 text-center text-[0.875rem] font-semibold text-[var(--brand-primary-dark)]"
+          href={`/customers/${customerId}`}
+        >
+          查看顧客檔案
+        </Link>
+      ) : (
+        <button
+          className="mt-3 w-full rounded-xl border border-[var(--brand-border)] bg-white px-3 py-2.5 text-[0.875rem] font-semibold text-[#1d1d1f] disabled:opacity-60"
+          disabled={isCreatingCustomer}
+          onClick={() => onCreateCustomer(lead.leadId)}
+          type="button"
+        >
+          {isCreatingCustomer ? "建立中…" : "建立顧客檔案"}
+        </button>
+      )}
     </article>
   );
 }
@@ -167,18 +196,24 @@ function PipelineStageSection({
   column,
   stageIndex,
   advancingLeadId,
+  creatingCustomerLeadId,
+  customerIdsByLead,
   onAdvance,
   onScheduleChange,
   onRegionChange,
   onDelete,
+  onCreateCustomer,
 }: {
   column: RetailPipelineColumnView;
   stageIndex: number;
   advancingLeadId: string | null;
+  creatingCustomerLeadId: string | null;
+  customerIdsByLead: Record<string, string>;
   onAdvance: (leadId: string) => void;
   onScheduleChange: (leadId: string, scheduledDate: string, scheduledTime: string) => void;
   onRegionChange: (leadId: string, region: string) => void;
   onDelete: (leadId: string) => void;
+  onCreateCustomer: (leadId: string) => void;
 }) {
   const hasLeads = column.leads.length > 0;
 
@@ -204,10 +239,13 @@ function PipelineStageSection({
           <div className="space-y-3">
             {column.leads.map((lead) => (
               <LeadCard
-                key={lead.leadId}
+                customerId={customerIdsByLead[lead.leadId]}
                 isAdvancing={advancingLeadId === lead.leadId}
+                isCreatingCustomer={creatingCustomerLeadId === lead.leadId}
+                key={lead.leadId}
                 lead={lead}
                 onAdvance={onAdvance}
+                onCreateCustomer={onCreateCustomer}
                 onDelete={onDelete}
                 onRegionChange={onRegionChange}
                 onScheduleChange={onScheduleChange}
@@ -228,6 +266,7 @@ export default function RetailPipelinePage() {
     buildRetailPipelineSnapshot(resolveAuthenticatedMemberId(storage), storage),
   );
   const [advancingLeadId, setAdvancingLeadId] = useState<string | null>(null);
+  const [creatingCustomerLeadId, setCreatingCustomerLeadId] = useState<string | null>(null);
   const [newLeadName, setNewLeadName] = useState("");
   const [newLeadRegion, setNewLeadRegion] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -239,6 +278,24 @@ export default function RetailPipelinePage() {
   useEffect(() => {
     queueMicrotask(refresh);
   }, [refresh]);
+
+  const customerIdsByLead = useMemo(() => {
+    const memberId = resolveAuthenticatedMemberId(storage);
+    if (!memberId) {
+      return {};
+    }
+
+    const map: Record<string, string> = {};
+    snapshot.columns.forEach((column) => {
+      column.leads.forEach((lead) => {
+        const customer = getCustomerForPipelineLead(lead.leadId, storage);
+        if (customer) {
+          map[lead.leadId] = customer.id;
+        }
+      });
+    });
+    return map;
+  }, [snapshot, storage]);
 
   const handleAdvance = useCallback(
     async (leadId: string) => {
@@ -303,6 +360,22 @@ export default function RetailPipelinePage() {
     [refresh, storage],
   );
 
+  const handleCreateCustomer = useCallback(
+    (leadId: string) => {
+      setError(null);
+      setCreatingCustomerLeadId(leadId);
+      try {
+        createCustomerFromPipelineLead(leadId, storage);
+        refresh();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "無法建立顧客檔案");
+      } finally {
+        setCreatingCustomerLeadId(null);
+      }
+    },
+    [refresh, storage],
+  );
+
   function handleCreateLead(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
@@ -354,7 +427,10 @@ export default function RetailPipelinePage() {
               key={column.stageKey}
               advancingLeadId={advancingLeadId}
               column={column}
+              creatingCustomerLeadId={creatingCustomerLeadId}
+              customerIdsByLead={customerIdsByLead}
               onAdvance={handleAdvance}
+              onCreateCustomer={handleCreateCustomer}
               onDelete={handleDeleteLead}
               onRegionChange={handleRegionChange}
               onScheduleChange={handleScheduleChange}

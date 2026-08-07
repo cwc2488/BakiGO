@@ -6,6 +6,11 @@ import {
   parseCustomerBodyNumber,
   type CustomerBodyFormValues,
 } from "@/components/customers/CustomerBodySection";
+import { CustomerPhotoCompareSection } from "@/components/customers/CustomerPhotoCompareSection";
+import {
+  CustomerProgressPhotoSection,
+  type CustomerProgressPhotoFormValues,
+} from "@/components/customers/CustomerProgressPhotoSection";
 import { CrmCard, CrmField, CrmInput, CrmSectionTitle } from "@/components/members/ui";
 import { PageShell } from "@/components/ui/PageShell";
 import { ensureCustomerPortalToken } from "@/lib/cloud/customer-cloud-service";
@@ -19,7 +24,7 @@ import { createCustomerRepository } from "@/lib/repositories/customer-repository
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { BodyCompositionRecord, Customer } from "@/types/customer";
+import type { BodyCompositionRecord, Customer, CustomerProgressPhoto } from "@/types/customer";
 
 export default function CustomerDetailPage({ customerId }: { customerId: string }) {
   const storage = useMemo(() => createLocalStorageAdapter(), []);
@@ -28,6 +33,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [records, setRecords] = useState<BodyCompositionRecord[]>([]);
+  const [photos, setPhotos] = useState<CustomerProgressPhoto[]>([]);
   const [portalLink, setPortalLink] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -36,6 +42,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
     const found = repo.getCustomerById(customerId);
     setCustomer(found ?? null);
     setRecords(found ? repo.getBodyRecordsByCustomer(customerId) : []);
+    setPhotos(found ? repo.getProgressPhotosByCustomer(customerId) : []);
   }, [customerId, repo]);
 
   useEffect(() => {
@@ -50,7 +57,6 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
       customerId,
       recordDate: values.recordDate,
       age: parseCustomerBodyNumber(values.age),
-      heightCm: parseCustomerBodyNumber(values.heightCm),
       weightKg: parseCustomerBodyNumber(values.weightKg),
       skeletalMuscleKg: parseCustomerBodyNumber(values.skeletalMuscleKg),
       bodyFatKg: parseCustomerBodyNumber(values.bodyFatKg),
@@ -60,6 +66,33 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
       basalMetabolicRate: parseCustomerBodyNumber(values.basalMetabolicRate),
       bodyAge: parseCustomerBodyNumber(values.bodyAge),
       note: values.note,
+    });
+    reload();
+  };
+
+  const handleCreatePhoto = (values: CustomerProgressPhotoFormValues) => {
+    repo.createProgressPhoto({
+      customerId,
+      phase: values.phase,
+      angle: values.angle,
+      photoDate: values.photoDate,
+      imageDataUrl: values.imageDataUrl,
+      note: values.note,
+    });
+    reload();
+  };
+
+  const handleHeightChange = (value: string) => {
+    const parsed = parseCustomerBodyNumber(value);
+    repo.updateCustomer(customerId, {
+      heightCm: parsed ?? undefined,
+    });
+    reload();
+  };
+
+  const handleFollowUpDateChange = (value: string) => {
+    repo.updateCustomer(customerId, {
+      nextFollowUpDate: value || undefined,
     });
     reload();
   };
@@ -80,13 +113,6 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
     } catch (error) {
       setLinkError(error instanceof Error ? error.message : "無法產生連結");
     }
-  };
-
-  const handleFollowUpDateChange = (value: string) => {
-    repo.updateCustomer(customerId, {
-      nextFollowUpDate: value || undefined,
-    });
-    reload();
   };
 
   if (!customer) {
@@ -134,15 +160,27 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
 
       <BodyCompositionTrendCharts seriesList={trendSeries} />
 
+      <CustomerPhotoCompareSection customerName={customer.displayName} photos={photos} />
+
+      <CustomerProgressPhotoSection onCreate={handleCreatePhoto} photos={photos} today={today} />
+
       <CrmCard>
         <CrmSectionTitle>基本資料</CrmSectionTitle>
         <dl className="mt-4">
           <CrmField label="電話" value={customer.phone} />
           <CrmField label="LINE" value={customer.lineId} />
           <CrmField label="出生年" value={customer.birthYear} />
+          <CrmField label="身高 (cm)" value={customer.heightCm} />
           <CrmField label="備註" value={customer.note} />
         </dl>
-        <div className="mt-5">
+        <div className="mt-5 space-y-4">
+          <CrmInput
+            label="身高 (cm)"
+            inputMode="decimal"
+            onChange={(event) => handleHeightChange(event.target.value)}
+            value={customer.heightCm?.toString() ?? ""}
+          />
+          <p className="text-[0.8125rem] text-[#86868b]">身高設定後固定，量測紀錄不會重複填寫。</p>
           <CrmInput
             label="下次追蹤日"
             onChange={(event) => handleFollowUpDateChange(event.target.value)}

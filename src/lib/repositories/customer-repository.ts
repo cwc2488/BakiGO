@@ -3,6 +3,8 @@ import type {
   BodyCompositionRecordCreateInput,
   Customer,
   CustomerCreateInput,
+  CustomerProgressPhoto,
+  CustomerProgressPhotoCreateInput,
   CustomerUpdateInput,
 } from "@/types/customer";
 import type { EntityId } from "@/types";
@@ -33,6 +35,7 @@ export interface CustomerRepository {
   getAllCustomers(): Customer[];
   getCustomersByOwner(ownerMemberId: EntityId): Customer[];
   getCustomerById(customerId: EntityId): Customer | undefined;
+  getCustomerByPipelineLeadId(pipelineLeadId: EntityId): Customer | undefined;
   createCustomer(input: CustomerCreateInput): Customer;
   updateCustomer(customerId: EntityId, input: CustomerUpdateInput): Customer;
   deleteCustomer(customerId: EntityId): void;
@@ -40,6 +43,10 @@ export interface CustomerRepository {
   getBodyRecordsByCustomer(customerId: EntityId): BodyCompositionRecord[];
   createBodyRecord(input: BodyCompositionRecordCreateInput): BodyCompositionRecord;
   deleteBodyRecord(recordId: EntityId): void;
+  getAllProgressPhotos(): CustomerProgressPhoto[];
+  getProgressPhotosByCustomer(customerId: EntityId): CustomerProgressPhoto[];
+  createProgressPhoto(input: CustomerProgressPhotoCreateInput): CustomerProgressPhoto;
+  deleteProgressPhoto(photoId: EntityId): void;
 }
 
 export class LocalStorageCustomerRepository implements CustomerRepository {
@@ -57,6 +64,10 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
     return this.getAllCustomers().find((customer) => customer.id === customerId);
   }
 
+  getCustomerByPipelineLeadId(pipelineLeadId: EntityId): Customer | undefined {
+    return this.getAllCustomers().find((customer) => customer.pipelineLeadId === pipelineLeadId);
+  }
+
   createCustomer(input: CustomerCreateInput): Customer {
     const now = new Date().toISOString();
     const customer: Customer = {
@@ -68,6 +79,7 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
       phone: input.phone?.trim() || undefined,
       lineId: input.lineId?.trim() || undefined,
       birthYear: input.birthYear,
+      heightCm: input.heightCm,
       status: "active",
       pipelineLeadId: input.pipelineLeadId,
       note: input.note?.trim() || undefined,
@@ -94,6 +106,7 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
       phone: input.phone === undefined ? current.phone : input.phone.trim() || undefined,
       lineId: input.lineId === undefined ? current.lineId : input.lineId.trim() || undefined,
       birthYear: input.birthYear === undefined ? current.birthYear : input.birthYear,
+      heightCm: input.heightCm === undefined ? current.heightCm : input.heightCm,
       status: input.status ?? current.status,
       note: input.note === undefined ? current.note : input.note.trim() || undefined,
       lastContactDate: input.lastContactDate === undefined ? current.lastContactDate : input.lastContactDate,
@@ -115,6 +128,9 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
 
     const nextRecords = this.getAllBodyRecords().filter((record) => record.customerId !== customerId);
     this.storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(nextRecords));
+
+    const nextPhotos = this.getAllProgressPhotos().filter((photo) => photo.customerId !== customerId);
+    this.storage.setItem(STORAGE_KEYS.customerProgressPhotos, JSON.stringify(nextPhotos));
     scheduleCustomerCloudPush();
   }
 
@@ -137,7 +153,6 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
       customerId: input.customerId,
       recordDate: input.recordDate,
       age: input.age ?? null,
-      heightCm: input.heightCm ?? null,
       weightKg: input.weightKg ?? null,
       skeletalMuscleKg: input.skeletalMuscleKg ?? null,
       bodyFatKg: input.bodyFatKg ?? null,
@@ -158,6 +173,42 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
   deleteBodyRecord(recordId: EntityId): void {
     const next = this.getAllBodyRecords().filter((record) => record.id !== recordId);
     this.storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(next));
+    scheduleCustomerCloudPush();
+  }
+
+  getAllProgressPhotos(): CustomerProgressPhoto[] {
+    return parseArray<CustomerProgressPhoto>(this.storage.getItem(STORAGE_KEYS.customerProgressPhotos));
+  }
+
+  getProgressPhotosByCustomer(customerId: EntityId): CustomerProgressPhoto[] {
+    return this.getAllProgressPhotos()
+      .filter((photo) => photo.customerId === customerId)
+      .sort((left, right) => right.photoDate.localeCompare(left.photoDate));
+  }
+
+  createProgressPhoto(input: CustomerProgressPhotoCreateInput): CustomerProgressPhoto {
+    const now = new Date().toISOString();
+    const photo: CustomerProgressPhoto = {
+      id: createId(),
+      createdAt: now,
+      updatedAt: now,
+      customerId: input.customerId,
+      phase: input.phase,
+      angle: input.angle,
+      photoDate: input.photoDate,
+      imageDataUrl: input.imageDataUrl ?? null,
+      note: input.note?.trim() || undefined,
+    };
+
+    const next = [...this.getAllProgressPhotos(), photo];
+    this.storage.setItem(STORAGE_KEYS.customerProgressPhotos, JSON.stringify(next));
+    scheduleCustomerCloudPush();
+    return photo;
+  }
+
+  deleteProgressPhoto(photoId: EntityId): void {
+    const next = this.getAllProgressPhotos().filter((photo) => photo.id !== photoId);
+    this.storage.setItem(STORAGE_KEYS.customerProgressPhotos, JSON.stringify(next));
     scheduleCustomerCloudPush();
   }
 }

@@ -8,7 +8,6 @@ import { CrmButton, CrmCard, CrmInput, CrmSectionTitle, CrmTextarea } from "@/co
 export interface CustomerBodyFormValues {
   recordDate: string;
   age: string;
-  heightCm: string;
   weightKg: string;
   skeletalMuscleKg: string;
   bodyFatKg: string;
@@ -24,7 +23,6 @@ function emptyForm(today: string): CustomerBodyFormValues {
   return {
     recordDate: today,
     age: "",
-    heightCm: "",
     weightKg: "",
     skeletalMuscleKg: "",
     bodyFatKg: "",
@@ -113,12 +111,6 @@ export function CustomerBodySection({
               onChange={(event) => updateField("age", event.target.value)}
             />
             <CrmInput
-              label="身高 (cm)"
-              inputMode="decimal"
-              value={form.heightCm}
-              onChange={(event) => updateField("heightCm", event.target.value)}
-            />
-            <CrmInput
               label="體重 (kg)"
               inputMode="decimal"
               value={form.weightKg}
@@ -193,12 +185,6 @@ export function CustomerBodySection({
                   <>
                     <dt>年齡</dt>
                     <dd className="text-right text-[#1d1d1f]">{record.age}</dd>
-                  </>
-                ) : null}
-                {record.heightCm !== null ? (
-                  <>
-                    <dt>身高</dt>
-                    <dd className="text-right text-[#1d1d1f]">{record.heightCm} cm</dd>
                   </>
                 ) : null}
                 {record.visceralFatLevel !== null ? (

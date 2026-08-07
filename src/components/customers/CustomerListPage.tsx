@@ -69,6 +69,7 @@ export default function CustomerListPage() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [heightCm, setHeightCm] = useState("");
   const [notificationState, setNotificationState] = useState(() =>
     typeof window === "undefined" ? "default" : getNotificationPermissionState(),
   );
@@ -139,9 +140,11 @@ export default function CustomerListPage() {
       ownerMemberId,
       displayName: name,
       phone: phone || undefined,
+      heightCm: heightCm ? Number(heightCm) : undefined,
     });
     setName("");
     setPhone("");
+    setHeightCm("");
     setShowForm(false);
     reload();
   };
@@ -229,6 +232,15 @@ export default function CustomerListPage() {
                 inputMode="tel"
                 onChange={(event) => setPhone(event.target.value)}
                 value={phone}
+              />
+            </label>
+            <label className="block space-y-2">
+              <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">身高 cm（選填，設定後固定）</span>
+              <input
+                className="date-input w-full"
+                inputMode="decimal"
+                onChange={(event) => setHeightCm(event.target.value)}
+                value={heightCm}
               />
             </label>
             <button

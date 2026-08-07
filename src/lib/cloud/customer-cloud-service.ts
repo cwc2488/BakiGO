@@ -11,6 +11,7 @@ import type {
   BodyCompositionRecord,
   Customer,
   CustomerPortalToken,
+  CustomerProgressPhoto,
 } from "@/types/customer";
 import type { EntityId } from "@/types";
 
@@ -21,6 +22,7 @@ interface CustomerDbRow {
   phone: string | null;
   line_id: string | null;
   birth_year: number | null;
+  height_cm: number | null;
   status: Customer["status"];
   pipeline_lead_id: string | null;
   linked_member_id: string | null;
@@ -50,6 +52,18 @@ interface BodyRecordDbRow {
   updated_at: string;
 }
 
+interface ProgressPhotoDbRow {
+  id: string;
+  customer_id: string;
+  phase: CustomerProgressPhoto["phase"];
+  angle: CustomerProgressPhoto["angle"];
+  photo_date: string;
+  image_data_url: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 function mapCustomer(row: CustomerDbRow): Customer {
   return {
     id: row.id,
@@ -58,6 +72,7 @@ function mapCustomer(row: CustomerDbRow): Customer {
     phone: row.phone ?? undefined,
     lineId: row.line_id ?? undefined,
     birthYear: row.birth_year ?? undefined,
+    heightCm: row.height_cm ?? undefined,
     status: row.status,
     pipelineLeadId: row.pipeline_lead_id ?? undefined,
     linkedMemberId: row.linked_member_id ?? undefined,
@@ -75,7 +90,6 @@ function mapBodyRecord(row: BodyRecordDbRow): BodyCompositionRecord {
     customerId: row.customer_id,
     recordDate: row.record_date,
     age: row.age,
-    heightCm: row.height_cm,
     weightKg: row.weight_kg,
     skeletalMuscleKg: row.skeletal_muscle_kg,
     bodyFatKg: row.body_fat_kg,
@@ -90,6 +104,20 @@ function mapBodyRecord(row: BodyRecordDbRow): BodyCompositionRecord {
   };
 }
 
+function mapProgressPhoto(row: ProgressPhotoDbRow): CustomerProgressPhoto {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    phase: row.phase,
+    angle: row.angle,
+    photoDate: row.photo_date,
+    imageDataUrl: row.image_data_url,
+    note: row.note ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function customerToDbRow(customer: Customer): CustomerDbRow {
   return {
     id: customer.id,
@@ -98,6 +126,7 @@ function customerToDbRow(customer: Customer): CustomerDbRow {
     phone: customer.phone ?? null,
     line_id: customer.lineId ?? null,
     birth_year: customer.birthYear ?? null,
+    height_cm: customer.heightCm ?? null,
     status: customer.status,
     pipeline_lead_id: customer.pipelineLeadId ?? null,
     linked_member_id: customer.linkedMemberId ?? null,
@@ -116,7 +145,7 @@ function bodyRecordToDbRow(record: BodyCompositionRecord): BodyRecordDbRow {
     customer_id: record.customerId,
     record_date: record.recordDate,
     age: record.age,
-    height_cm: record.heightCm,
+    height_cm: null,
     weight_kg: record.weightKg,
     skeletal_muscle_kg: record.skeletalMuscleKg,
     body_fat_kg: record.bodyFatKg,
@@ -128,6 +157,21 @@ function bodyRecordToDbRow(record: BodyCompositionRecord): BodyRecordDbRow {
     note: record.note ?? null,
     created_at:
       typeof record.createdAt === "string" ? record.createdAt : record.createdAt.toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function progressPhotoToDbRow(photo: CustomerProgressPhoto): ProgressPhotoDbRow {
+  return {
+    id: photo.id,
+    customer_id: photo.customerId,
+    phase: photo.phase,
+    angle: photo.angle,
+    photo_date: photo.photoDate,
+    image_data_url: photo.imageDataUrl,
+    note: photo.note ?? null,
+    created_at:
+      typeof photo.createdAt === "string" ? photo.createdAt : photo.createdAt.toISOString(),
     updated_at: new Date().toISOString(),
   };
 }
@@ -170,10 +214,32 @@ export async function fetchCloudBodyRecords(customerIds: EntityId[]): Promise<Bo
   return (data ?? []).map((row) => mapBodyRecord(row as BodyRecordDbRow));
 }
 
+export async function fetchCloudProgressPhotos(
+  customerIds: EntityId[],
+): Promise<CustomerProgressPhoto[]> {
+  if (!isSupabaseConfigured() || customerIds.length === 0) {
+    return [];
+  }
+
+  const supabase = createSupabaseBrowserClient();
+  const { data, error } = await supabase
+    .from("customer_progress_photos")
+    .select("*")
+    .in("customer_id", customerIds)
+    .order("photo_date", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).map((row) => mapProgressPhoto(row as ProgressPhotoDbRow));
+}
+
 export async function pushCustomersToCloud(
   ownerMemberId: EntityId,
   customers: Customer[],
   records: BodyCompositionRecord[],
+  photos: CustomerProgressPhoto[] = [],
 ): Promise<void> {
   if (!isSupabaseConfigured() || !isCloudDatabaseMemberId(ownerMemberId)) {
     return;
@@ -202,6 +268,17 @@ export async function pushCustomersToCloud(
 
     if (recordError) {
       throw new Error(recordError.message);
+    }
+  }
+
+  const ownedPhotos = photos.filter((photo) => ownedCustomerIds.has(photo.customerId));
+  if (ownedPhotos.length > 0) {
+    const { error: photoError } = await supabase
+      .from("customer_progress_photos")
+      .upsert(ownedPhotos.map(progressPhotoToDbRow), { onConflict: "id" });
+
+    if (photoError) {
+      throw new Error(photoError.message);
     }
   }
 }
@@ -236,7 +313,12 @@ function mergeById<T extends { id: EntityId; updatedAt: string | Date }>(
 function localHasCustomerData(storage: StorageAdapter): boolean {
   const customers = storage.getItem(STORAGE_KEYS.customers);
   const records = storage.getItem(STORAGE_KEYS.customerBodyRecords);
-  return Boolean(customers && customers !== "[]") || Boolean(records && records !== "[]");
+  const photos = storage.getItem(STORAGE_KEYS.customerProgressPhotos);
+  return (
+    Boolean(customers && customers !== "[]") ||
+    Boolean(records && records !== "[]") ||
+    Boolean(photos && photos !== "[]")
+  );
 }
 
 /** Pull coach customer CRM from dedicated tables (not member_app_data). */
@@ -256,7 +338,12 @@ export async function syncCustomersOnLogin(
     const localHasData = localHasCustomerData(storage);
 
     if (!cloudHasData && localHasData) {
-      await pushCustomersToCloud(ownerMemberId, repo.getAllCustomers(), repo.getAllBodyRecords());
+      await pushCustomersToCloud(
+        ownerMemberId,
+        repo.getAllCustomers(),
+        repo.getAllBodyRecords(),
+        repo.getAllProgressPhotos(),
+      );
       return;
     }
 
@@ -273,8 +360,15 @@ export async function syncCustomersOnLogin(
       const mergedRecords = mergeById(localRecords, cloudRecords);
       storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(mergedRecords));
 
-      if (localHasData && mergedCustomers.length > localCustomers.length) {
-        await pushCustomersToCloud(ownerMemberId, mergedCustomers, mergedRecords);
+      const cloudPhotos = await fetchCloudProgressPhotos(customerIds);
+      const localPhotos = repo
+        .getAllProgressPhotos()
+        .filter((photo) => customerIds.includes(photo.customerId));
+      const mergedPhotos = mergeById(localPhotos, cloudPhotos);
+      storage.setItem(STORAGE_KEYS.customerProgressPhotos, JSON.stringify(mergedPhotos));
+
+      if (localHasData) {
+        await pushCustomersToCloud(ownerMemberId, mergedCustomers, mergedRecords, mergedPhotos);
       }
     }
   } finally {
@@ -289,7 +383,12 @@ export async function pushLocalCustomersToCloud(storage: StorageAdapter): Promis
   }
 
   const repo = createCustomerRepository(storage);
-  await pushCustomersToCloud(memberId, repo.getAllCustomers(), repo.getAllBodyRecords());
+  await pushCustomersToCloud(
+    memberId,
+    repo.getAllCustomers(),
+    repo.getAllBodyRecords(),
+    repo.getAllProgressPhotos(),
+  );
 }
 
 export async function ensureCustomerPortalToken(customerId: EntityId): Promise<CustomerPortalToken | null> {
