@@ -4,6 +4,7 @@ import type { DownlineCloudDataCache } from "@/lib/cloud/downline-cloud-data";
 import { getDownlineEvents } from "@/lib/cloud/downline-cloud-data";
 import { getMemberDisplayName } from "@/lib/members/member-service";
 import { collectDownlineByDepth } from "@/lib/organization/collect-downline-by-depth";
+import type { DownlineMemberRef } from "@/lib/organization/collect-downline-by-depth";
 import { buildMemberActivitySummary } from "@/lib/organization/member-activity-summary";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { DownlinePartnerSuggestion } from "@/types/downline-partner";
@@ -32,21 +33,21 @@ export function collectDownlinePartnerSignals(input: {
   storage: StorageAdapter;
   downlineCache?: DownlineCloudDataCache;
   maxGenerations?: number;
+  /** 若提供，以組織圖下線為準（與雲端 relationship 一致）。 */
+  downlineRefs?: DownlineMemberRef[];
 }): DownlinePartnerSuggestion[] {
   if (!isCareerRankAtOrAbove(input.viewerRankKey, RANK_KEYS.PROMOTION_GROUP)) {
     return [];
   }
 
-  const downlineRefs = collectDownlineByDepth(
-    input.members,
-    input.viewerMemberId,
-    input.maxGenerations ?? 3,
-  );
+  const downlineRefs =
+    input.downlineRefs ??
+    collectDownlineByDepth(input.members, input.viewerMemberId, input.maxGenerations ?? 3);
   const signals: DownlinePartnerSuggestion[] = [];
 
   for (const { memberId, generation } of downlineRefs) {
     const member = input.members.find((item) => item.id === memberId);
-    if (!member) {
+    if (!member || member.status !== "active") {
       continue;
     }
 
@@ -87,8 +88,15 @@ export function collectDownlinePartnerSignals(input: {
     }
   }
 
-  return signals
-    .sort((left, right) => {
+  return Array.from(
+    signals.reduce<Map<string, DownlinePartnerSuggestion>>((byMember, signal) => {
+      const existing = byMember.get(signal.memberId);
+      if (!existing || signal.enginePriority > existing.enginePriority) {
+        byMember.set(signal.memberId, signal);
+      }
+      return byMember;
+    }, new Map()).values(),
+  ).sort((left, right) => {
       if (left.enginePriority !== right.enginePriority) {
         return right.enginePriority - left.enginePriority;
       }

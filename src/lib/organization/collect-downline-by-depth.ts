@@ -1,9 +1,30 @@
 import { getDirectDownline } from "@/lib/business-engine/utils";
+import type { OrganizationTreeNode } from "@/types/organization-center";
 import type { EntityId } from "@/types";
 
 export interface DownlineMemberRef {
   memberId: EntityId;
   generation: number;
+}
+
+/** 從組織圖（雲端 relationship）收集下線 — 與組織圖顯示一致。 */
+export function collectDownlineRefsFromTree(
+  node: OrganizationTreeNode,
+  maxDepth = 3,
+  currentGeneration = 0,
+): DownlineMemberRef[] {
+  const result: DownlineMemberRef[] = [];
+
+  for (const child of node.children) {
+    const generation = currentGeneration + 1;
+    if (generation > maxDepth) {
+      continue;
+    }
+    result.push({ memberId: child.member.memberId, generation });
+    result.push(...collectDownlineRefsFromTree(child, maxDepth, generation));
+  }
+
+  return result;
 }
 
 /** 收集下線成員，generation 1 = 直推，最多 maxDepth 代。 */

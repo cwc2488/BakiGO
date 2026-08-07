@@ -27,11 +27,16 @@ import { TodayStepCard } from "@/components/president-ai/TodayStepCard";
 import { LearningResourceSuggestions } from "@/components/learning/LearningResourceSuggestions";
 import { DownlinePartnerSuggestions } from "@/components/organization/DownlinePartnerSuggestions";
 import { isCareerRankAtOrAbove } from "@/lib/auth/career-rank-order";
-import { getCurrentMember } from "@/lib/auth/auth-service";
+import { getCurrentMember, getCurrentSession } from "@/lib/auth/auth-service";
+import { buildViewerCloudOrganizationSnapshot } from "@/lib/cloud/build-cloud-organization-tree";
+import { fetchCloudOrganizationData } from "@/lib/cloud/cloud-member-service";
 import { fetchDownlineCloudData } from "@/lib/cloud/downline-cloud-data";
+import { syncCloudMembersToLocalStorage } from "@/lib/cloud/sync-cloud-members-to-local";
 import { todayISODate } from "@/lib/config/app-config";
 import { loadAllMembers } from "@/lib/members/member-service";
-import { collectDownlineByDepth } from "@/lib/organization/collect-downline-by-depth";
+import {
+  collectDownlineRefsFromTree,
+} from "@/lib/organization/collect-downline-by-depth";
 import { recalculateMemberMetrics } from "@/lib/services/recalculate-member-metrics";
 import { RANK_KEYS } from "@/lib/business-engine/rules/keys";
 
@@ -391,10 +396,30 @@ export default function HomePage() {
     let cancelled = false;
     void (async () => {
       try {
+        const session = getCurrentSession(storage);
+        if (!session) {
+          downlineCloudSyncedRef.current = true;
+          return;
+        }
+
+        await syncCloudMembersToLocalStorage(storage);
         const members = loadAllMembers(storage);
-        const downlineIds = collectDownlineByDepth(members, viewer.id, 3).map(
-          (item) => item.memberId,
-        );
+        const { members: cloudMembers, relationships } = await fetchCloudOrganizationData();
+        const viewerCloud = cloudMembers.find((member) => member.id === session.memberId);
+        if (!viewerCloud) {
+          downlineCloudSyncedRef.current = true;
+          return;
+        }
+
+        const cloudSnapshot = buildViewerCloudOrganizationSnapshot({
+          viewerMemberNumber: viewerCloud.memberNumber,
+          members: cloudMembers,
+          relationships,
+          referenceDate: todayISODate(),
+        });
+        const downlineRefs = collectDownlineRefsFromTree(cloudSnapshot.roots[0], 3);
+        const downlineIds = downlineRefs.map((item) => item.memberId);
+
         if (downlineIds.length === 0) {
           downlineCloudSyncedRef.current = true;
           return;
@@ -410,6 +435,7 @@ export default function HomePage() {
             memberId: viewer.id,
             referenceDate: todayISODate(),
             downlineCloudCache: cache,
+            downlineRefs,
           },
           storage,
         );

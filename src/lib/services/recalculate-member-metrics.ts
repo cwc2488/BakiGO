@@ -106,6 +106,8 @@ export interface RecalculateMemberMetricsInput {
   /** Cloud-synced events for downline members viewed by an upline. */
   supplementalEvents?: BakiEvent[];
   downlineCloudCache?: import("@/lib/cloud/downline-cloud-data").DownlineCloudDataCache;
+  /** 組織圖下線清單 — 與雲端 relationship 一致，優先於 sponsor 鏈。 */
+  downlineRefs?: import("@/lib/organization/collect-downline-by-depth").DownlineMemberRef[];
 }
 
 function saveComputedMetrics(
@@ -358,6 +360,7 @@ export function recalculateMemberMetrics(
     referenceDate: input.referenceDate,
     storage,
     downlineCache: input.downlineCloudCache,
+    downlineRefs: input.downlineRefs,
     maxGenerations: 3,
   });
 
