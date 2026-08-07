@@ -308,7 +308,7 @@ export function recalculateMemberMetrics(
   const memberGoalViews = activeMemberGoals.map((goal) =>
     buildMemberGoalProgressView(goal, goalMetricsContext, memberTransactions, pipelineSnapshot),
   );
-  const careerGoalView = buildCareerBlueprintView(goalMetricsContext);
+  const careerGoalView = buildCareerBlueprintView(goalMetricsContext, pipelineSnapshot);
 
   const presidentAI = calculatePresidentAI(
     toPresidentAIInput({

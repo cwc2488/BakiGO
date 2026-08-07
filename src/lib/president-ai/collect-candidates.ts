@@ -251,13 +251,17 @@ export function collectPriorityCandidates(input: PresidentAIInput): PriorityCand
     pushCandidate(candidates, {
       sourceKey: input.careerGoal.sourceKey,
       title: input.careerGoal.title,
-      description: input.careerGoal.description,
+      description:
+        input.careerGoal.actionSteps.length > 0
+          ? `${input.careerGoal.description} → ${input.careerGoal.actionSteps[0].label}`
+          : input.careerGoal.description,
       category: "PROMOTION",
       current: input.careerGoal.current,
       target: input.careerGoal.target,
       remaining: input.careerGoal.remaining,
       progressPercent: input.careerGoal.progressPercent,
       enginePriority: 2500,
+      actionHref: input.careerGoal.actionSteps[0]?.href,
     });
   }
 

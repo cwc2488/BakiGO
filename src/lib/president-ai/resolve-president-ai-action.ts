@@ -149,6 +149,10 @@ export function resolvePresidentAiAction(
     return resolveMemberGoalAction(priority.category, priority.actionHref);
   }
 
+  if (priority.sourceKey.startsWith("promotion_") && priority.actionHref) {
+    return resolvePlaybookHref(priority.actionHref, "執行今日建議");
+  }
+
   return resolveFromSourceKey(priority.sourceKey) ?? resolveFromCategory(priority.category);
 }
 

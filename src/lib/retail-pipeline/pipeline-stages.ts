@@ -13,6 +13,8 @@ export interface RetailPipelineStageDefinition {
   /** 僅能透過每月自動轉換，不能手動「完成下一步」。 */
   autoRolloverOnly?: boolean;
   autoRolloverHint?: string;
+  /** 長期累積池提示（舊客/舊會員等不會每月清零）。 */
+  persistentPoolHint?: string;
 }
 
 export const RETAIL_PIPELINE_STAGES: RetailPipelineStageDefinition[] = [
@@ -52,6 +54,7 @@ export const RETAIL_PIPELINE_STAGES: RetailPipelineStageDefinition[] = [
     nextStepLabel: "招募為新會員",
     entryEventTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_CUSTOMER_NTD,
     entryEventCategory: "transaction",
+    persistentPoolHint: "舊客會長期累積，直到你招募為會員或對方停止消費",
   },
   {
     key: "new_member",
@@ -68,6 +71,7 @@ export const RETAIL_PIPELINE_STAGES: RetailPipelineStageDefinition[] = [
     nextStepLabel: "推進 MAP",
     entryEventTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_MEMBER_VP,
     entryEventCategory: "transaction",
+    persistentPoolHint: "舊會員會長期累積，可安排回購 VP 或推進 MAP/督導",
   },
   {
     key: "map",
@@ -75,6 +79,7 @@ export const RETAIL_PIPELINE_STAGES: RetailPipelineStageDefinition[] = [
     nextStepLabel: "推進督導",
     entryEventTypeKey: MEETING_KEYS.HOM,
     entryEventCategory: "activity",
+    persistentPoolHint: "MAP 客戶可培育為督導，計入組織晉升",
   },
   {
     key: "supervisor",
@@ -82,6 +87,7 @@ export const RETAIL_PIPELINE_STAGES: RetailPipelineStageDefinition[] = [
     nextStepLabel: "推進世界組",
     entryEventTypeKey: null,
     entryEventCategory: null,
+    persistentPoolHint: "名單中的督導可計入下線晉升條件",
   },
   {
     key: "world_team",

@@ -121,6 +121,7 @@ export interface PresidentAIInput {
     remaining: number;
     progressPercent: number;
     sourceKey: string;
+    actionSteps: Array<{ label: string; detail: string; href?: string }>;
   } | null;
 }
 

@@ -26,7 +26,7 @@ function toLeadView(lead: RetailPipelineLead): RetailPipelineLeadView {
     stageTitle: stage.title,
     nextStepLabel: stage.nextStepLabel,
     canAdvance: nextStageKey !== null,
-    autoRolloverHint: stage.autoRolloverHint ?? null,
+    autoRolloverHint: stage.autoRolloverHint ?? stage.persistentPoolHint ?? null,
     scheduledDate: lead.scheduledDate,
     scheduledTime: lead.scheduledTime,
     calendarEventId: lead.calendarEventId,

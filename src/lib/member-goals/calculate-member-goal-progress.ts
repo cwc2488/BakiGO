@@ -144,6 +144,7 @@ export function buildMemberGoalProgressView(
 
 export function buildCareerBlueprintView(
   metrics: MemberGoalMetricsContext,
+  pipeline: RetailPipelineSnapshot | null = null,
 ): CareerBlueprintView | null {
   const progress = metrics.promotionProgress;
   if (
@@ -173,7 +174,7 @@ export function buildCareerBlueprintView(
 
   return {
     ...career,
-    actionSteps: buildCareerGoalPlaybook(career),
+    actionSteps: buildCareerGoalPlaybook(career, pipeline),
   };
 }
 
@@ -194,7 +195,7 @@ export function buildGoalBlueprint(
       return left.progressPercent - right.progressPercent;
     });
 
-  const careerGoal = buildCareerBlueprintView(metrics);
+  const careerGoal = buildCareerBlueprintView(metrics, pipeline);
 
   return {
     referenceDate: metrics.referenceDate,

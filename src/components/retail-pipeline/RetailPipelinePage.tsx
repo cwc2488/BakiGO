@@ -326,7 +326,7 @@ export default function RetailPipelinePage() {
             {APP_EMOJI.page.pipeline} 名單流程
           </h1>
           <p className="text-[0.9375rem] text-[#86868b]">
-            共 {snapshot.totalLeads} 位名單 · 新客/新會員下月自動轉舊客/舊會員
+            共 {snapshot.totalLeads} 位名單 · 舊客/舊會員長期累積 · 新客/新會員下月自動轉舊
           </p>
         </header>
 

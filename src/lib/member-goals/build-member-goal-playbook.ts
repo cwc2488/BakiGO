@@ -11,9 +11,11 @@ const NEW_CUSTOMER_STAGES = [
   "measurement",
   "consultation",
   "new_customer",
-  "returning_customer",
 ] as const;
+const ACCUMULATED_CUSTOMER_STAGES = ["returning_customer"] as const;
 const EXISTING_MEMBER_STAGES = ["new_member", "returning_member", "map", "supervisor", "world_team"] as const;
+const REPURCHASE_MEMBER_STAGES = ["returning_member"] as const;
+const SUPERVISOR_PATH_STAGES = ["returning_member", "map", "supervisor"] as const;
 const NEAR_CLOSE_NEW_STAGES = ["consultation", "new_customer", "returning_customer"] as const;
 
 interface PipelineComposition {
@@ -21,8 +23,17 @@ interface PipelineComposition {
   existingMemberPool: number;
   nearCloseNew: number;
   earlyNew: number;
+  accumulatedCustomerCount: number;
+  repurchaseMemberCount: number;
+  mapCount: number;
+  supervisorCount: number;
+  worldTeamCount: number;
+  supervisorPathCount: number;
   returningCustomerCount: number;
   returningMemberCount: number;
+  accumulatedCustomerNames: string[];
+  repurchaseMemberNames: string[];
+  supervisorPathNames: string[];
   memberNames: string[];
   nearCloseNames: string[];
 }
@@ -70,13 +81,29 @@ function collectPipelineLeadNames(
 }
 
 function analyzePipeline(snapshot: RetailPipelineSnapshot | null): PipelineComposition {
+  const accumulatedCustomerCount = countPipelineStages(snapshot, ACCUMULATED_CUSTOMER_STAGES);
+  const repurchaseMemberCount = countPipelineStages(snapshot, REPURCHASE_MEMBER_STAGES);
+  const mapCount = countPipelineStages(snapshot, ["map"]);
+  const supervisorCount = countPipelineStages(snapshot, ["supervisor"]);
+  const worldTeamCount = countPipelineStages(snapshot, ["world_team"]);
+  const supervisorPathCount = countPipelineStages(snapshot, SUPERVISOR_PATH_STAGES);
+
   return {
     newCustomerPool: countPipelineStages(snapshot, NEW_CUSTOMER_STAGES),
     existingMemberPool: countPipelineStages(snapshot, EXISTING_MEMBER_STAGES),
     nearCloseNew: countPipelineStages(snapshot, NEAR_CLOSE_NEW_STAGES),
     earlyNew: countPipelineStages(snapshot, ["stranger", "measurement"]),
-    returningCustomerCount: countPipelineStages(snapshot, ["returning_customer"]),
-    returningMemberCount: countPipelineStages(snapshot, ["returning_member"]),
+    accumulatedCustomerCount,
+    repurchaseMemberCount,
+    mapCount,
+    supervisorCount,
+    worldTeamCount,
+    supervisorPathCount,
+    returningCustomerCount: accumulatedCustomerCount,
+    returningMemberCount: repurchaseMemberCount,
+    accumulatedCustomerNames: collectPipelineLeadNames(snapshot, ACCUMULATED_CUSTOMER_STAGES),
+    repurchaseMemberNames: collectPipelineLeadNames(snapshot, REPURCHASE_MEMBER_STAGES),
+    supervisorPathNames: collectPipelineLeadNames(snapshot, SUPERVISOR_PATH_STAGES),
     memberNames: collectPipelineLeadNames(snapshot, EXISTING_MEMBER_STAGES),
     nearCloseNames: collectPipelineLeadNames(snapshot, NEAR_CLOSE_NEW_STAGES),
   };
@@ -97,7 +124,87 @@ function formatNameHint(names: string[]): string {
 }
 
 function isPipelineColdStart(composition: PipelineComposition): boolean {
-  return composition.newCustomerPool === 0 && composition.existingMemberPool === 0;
+  return (
+    composition.newCustomerPool === 0 &&
+    composition.existingMemberPool === 0 &&
+    composition.accumulatedCustomerCount === 0
+  );
+}
+
+function buildAccumulatedCustomerSteps(
+  steps: MemberGoalActionStep[],
+  composition: PipelineComposition,
+  goalLabel: string,
+): void {
+  if (composition.accumulatedCustomerCount <= 0) {
+    return;
+  }
+
+  pushUniqueStep(steps, {
+    label: `從累積的 ${composition.accumulatedCustomerCount} 位舊客中招募新會員`,
+    detail: `舊客池會長期累積，不會每月清零；主動推進「招募為新會員」是${goalLabel}最穩的來源之一${formatNameHint(composition.accumulatedCustomerNames)}`,
+    href: "/retail-pipeline",
+  });
+}
+
+function buildRepurchaseMemberSteps(
+  steps: MemberGoalActionStep[],
+  composition: PipelineComposition,
+  todayNeeded: number,
+  avgReturning: number | null,
+  unitLabel: string,
+): void {
+  if (composition.repurchaseMemberCount <= 0) {
+    return;
+  }
+
+  const deals =
+    avgReturning && avgReturning > 0 ? Math.max(1, Math.ceil(todayNeeded / avgReturning)) : 1;
+
+  pushUniqueStep(steps, {
+    label: `安排 ${composition.repurchaseMemberCount} 位舊會員回購`,
+    detail:
+      avgReturning && avgReturning > 0
+        ? `舊會員池同樣長期累積；今天約需 ${todayNeeded.toLocaleString("zh-Hant")} ${unitLabel}，約 ${deals} 筆回購（平均 ${Math.round(avgReturning)} ${unitLabel}/筆）${formatNameHint(composition.repurchaseMemberNames)}`
+        : `舊會員會持續留在名單中，安排回購即可貢獻${unitLabel}${formatNameHint(composition.repurchaseMemberNames)}`,
+    href: "/retail-pipeline",
+  });
+}
+
+function buildSupervisorPathSteps(
+  steps: MemberGoalActionStep[],
+  composition: PipelineComposition,
+  context: "vp" | "career",
+): void {
+  if (composition.supervisorPathCount <= 0) {
+    return;
+  }
+
+  const parts: string[] = [];
+  if (composition.returningMemberCount > 0) {
+    parts.push(`${composition.returningMemberCount} 位舊會員`);
+  }
+  if (composition.mapCount > 0) {
+    parts.push(`${composition.mapCount} 位 MAP`);
+  }
+  if (composition.supervisorCount > 0) {
+    parts.push(`${composition.supervisorCount} 位督導`);
+  }
+
+  const poolLabel = parts.join("、");
+  const detail =
+    context === "career"
+      ? `舊會員可培育為 MAP → 督導，名單中的督導可計入下線晉升。再培養督導是組織目標的具體行動${formatNameHint(composition.supervisorPathNames)}`
+      : `推進 MAP/督導可同時累積組織深度；名單中已有 ${poolLabel}${formatNameHint(composition.supervisorPathNames)}`;
+
+  pushUniqueStep(steps, {
+    label:
+      context === "career"
+        ? `從名單培育 ${composition.supervisorPathCount} 位邁向督導`
+        : `名單中有 ${composition.supervisorPathCount} 位可推進 MAP/督導`,
+    detail,
+    href: "/retail-pipeline",
+  });
 }
 
 function buildColdStartGoalContext(
@@ -139,7 +246,7 @@ function buildColdStartPlaybook(
     },
     {
       label: "到名單流程確認今日進度",
-      detail: "養成每天固定補名單的習慣；有名單後，系統會改為推進舊客、舊會員等可衝目标的建議。",
+      detail: "養成每天固定補名單的習慣；有名單後，系統會改為推進累積舊客、舊會員回購與 MAP/督導等建議。",
       href: "/retail-pipeline",
     },
   ];
@@ -164,38 +271,13 @@ function buildPipelineVpStrategy(
     yearMonth,
   );
 
-  const memberHeavy =
-    composition.existingMemberPool > composition.newCustomerPool &&
-    composition.existingMemberPool >= 2;
-  const newCustomerScarce = composition.newCustomerPool <= 2;
   const hasNearClose = composition.nearCloseNew > 0;
+  const newCustomerScarce =
+    composition.newCustomerPool + composition.accumulatedCustomerCount <= 2;
 
-  if (memberHeavy) {
-    const deals =
-      avgReturning && avgReturning > 0
-        ? Math.max(1, Math.ceil(todayNeeded / avgReturning))
-        : 1;
-    pushUniqueStep(steps, {
-      label: `名單有 ${composition.existingMemberPool} 位已會員，優先從舊會員回購補 VP`,
-      detail:
-        avgReturning && avgReturning > 0
-          ? `今天約需 ${todayNeeded.toLocaleString("zh-Hant")} VP，約 ${deals} 筆舊會員回購（平均 ${Math.round(avgReturning)} VP/筆）${formatNameHint(composition.memberNames)}${
-              composition.returningMemberCount > 0
-                ? ` · ${composition.returningMemberCount} 位已在舊會員階段`
-                : ""
-            }`
-          : `已會員名單較多，到名單流程挑選 MAP/舊會員階段客戶 follow-up${formatNameHint(composition.memberNames)}`,
-      href: "/retail-pipeline",
-    });
-
-    if (composition.returningCustomerCount > 0) {
-      pushUniqueStep(steps, {
-        label: `另有 ${composition.returningCustomerCount} 位舊客可手動招募為新會員`,
-        detail: "舊客不會自動變會員，需你主動推進「招募為新會員」。",
-        href: "/retail-pipeline",
-      });
-    }
-  }
+  buildAccumulatedCustomerSteps(steps, composition, "VP");
+  buildRepurchaseMemberSteps(steps, composition, todayNeeded, avgReturning, "VP");
+  buildSupervisorPathSteps(steps, composition, "vp");
 
   if (hasNearClose) {
     const deals =
@@ -203,7 +285,7 @@ function buildPipelineVpStrategy(
         ? Math.max(1, Math.ceil(todayNeeded / avgNewMember))
         : 1;
     pushUniqueStep(steps, {
-      label: `推進 ${composition.nearCloseNew} 位接近成交的新客（諮詢/成交階段）`,
+      label: `推進 ${composition.nearCloseNew} 位接近成交的名單（諮詢/新客/舊客）`,
       detail:
         avgNewMember && avgNewMember > 0
           ? `新會員平均約 ${Math.round(avgNewMember)} VP/筆，今天約需 ${deals} 筆${formatNameHint(composition.nearCloseNames)}`
@@ -212,18 +294,22 @@ function buildPipelineVpStrategy(
     });
   }
 
-  if (newCustomerScarce && remaining > todayNeeded) {
+  if (
+    composition.existingMemberPool > composition.newCustomerPool + composition.accumulatedCustomerCount &&
+    composition.existingMemberPool >= 2 &&
+    composition.repurchaseMemberCount === 0
+  ) {
     pushUniqueStep(steps, {
-      label: "新客名單偏少，今天先新增 1–2 位名單並安排量測",
-      detail: `本月還差 ${remaining.toLocaleString("zh-Hant")} VP，只靠舊會員可能不夠，需持續補新客漏斗。`,
+      label: `名單有 ${composition.existingMemberPool} 位已會員，優先 follow-up MAP/新會員階段`,
+      detail: `已會員名單較多，到名單流程挑選 MAP 或本月新會員 follow-up${formatNameHint(composition.memberNames)}`,
       href: "/retail-pipeline",
     });
   }
 
-  if (!memberHeavy && composition.existingMemberPool > 0 && avgReturning) {
+  if (newCustomerScarce && remaining > todayNeeded) {
     pushUniqueStep(steps, {
-      label: `也可從 ${composition.existingMemberPool} 位已會員中安排舊會員回購`,
-      detail: `平均每筆舊會員約 ${Math.round(avgReturning)} VP，作為今日 VP 的補充來源${formatNameHint(composition.memberNames)}`,
+      label: "新客漏斗偏少，今天先新增 1–2 位名單並安排量測",
+      detail: `本月還差 ${remaining.toLocaleString("zh-Hant")} VP；舊客/舊會員池會累積，但仍需持續補新客。`,
       href: "/retail-pipeline",
     });
   }
@@ -250,37 +336,38 @@ function buildPipelineIncomeStrategy(
     RETAIL_TRANSACTION_TYPE_KEYS.NEW_CUSTOMER_NTD,
     yearMonth,
   );
-  const avgReturning = averageTransactionAmount(
+  const avgReturningCustomer = averageTransactionAmount(
     transactions,
     RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_CUSTOMER_NTD,
     yearMonth,
   );
 
-  const memberHeavy =
-    composition.existingMemberPool > composition.newCustomerPool &&
-    composition.existingMemberPool >= 2;
-
-  if (memberHeavy && avgReturning) {
-    const deals = Math.max(1, Math.ceil(todayNeeded / avgReturning));
+  if (composition.accumulatedCustomerCount > 0 && avgReturningCustomer) {
+    const deals = Math.max(1, Math.ceil(todayNeeded / avgReturningCustomer));
     pushUniqueStep(steps, {
-      label: `名單已會員居多，優先從舊客回購補 ${todayNeeded.toLocaleString("zh-Hant")} 元`,
-      detail: `約 ${deals} 筆舊客成交（平均 ${Math.round(avgReturning).toLocaleString("zh-Hant")} 元/筆）${formatNameHint(composition.memberNames)}`,
+      label: `從累積的 ${composition.accumulatedCustomerCount} 位舊客安排回購`,
+      detail: `舊客池長期累積；約 ${deals} 筆舊客成交（平均 ${Math.round(avgReturningCustomer).toLocaleString("zh-Hant")} 元/筆）${formatNameHint(composition.accumulatedCustomerNames)}`,
       href: "/retail-pipeline",
     });
   }
 
+  buildAccumulatedCustomerSteps(steps, composition, "收入");
+
   if (composition.nearCloseNew > 0 && avgNew) {
     pushUniqueStep(steps, {
-      label: `推進 ${composition.nearCloseNew} 位新客完成 NTD 成交`,
+      label: `推進 ${composition.nearCloseNew} 位名單完成 NTD 成交`,
       detail: `新客平均約 ${Math.round(avgNew).toLocaleString("zh-Hant")} 元/筆${formatNameHint(composition.nearCloseNames)}`,
       href: "/retail-pipeline",
     });
   }
 
-  if (composition.newCustomerPool <= 2 && remaining > todayNeeded) {
+  if (
+    composition.newCustomerPool + composition.accumulatedCustomerCount <= 2 &&
+    remaining > todayNeeded
+  ) {
     pushUniqueStep(steps, {
-      label: "新客名單不足，今天先新增名單或安排量測",
-      detail: "收入目標需要新客與舊客並進，避免月底才找名單。",
+      label: "新客/舊客池偏少，今天先新增名單或安排量測",
+      detail: "收入目標需要新客與累積舊客並進，避免月底才找名單。",
       href: "/retail-pipeline",
     });
   }
@@ -294,7 +381,7 @@ function buildPipelineNewCustomerStrategy(
   if (composition.nearCloseNew > 0) {
     pushUniqueStep(steps, {
       label: `從名單流程推進 ${Math.min(composition.nearCloseNew, todayNeeded)} 位新客成交`,
-      detail: `已有 ${composition.nearCloseNew} 位在諮詢/成交階段，比從零找新客更快${formatNameHint(composition.nearCloseNames)}`,
+      detail: `已有 ${composition.nearCloseNew} 位在諮詢/成交/舊客階段，比從零找新客更快${formatNameHint(composition.nearCloseNames)}`,
       href: "/retail-pipeline",
     });
   }
@@ -307,10 +394,10 @@ function buildPipelineNewCustomerStrategy(
     });
   }
 
-  if (composition.newCustomerPool <= todayNeeded) {
+  if (composition.newCustomerPool + composition.accumulatedCustomerCount <= todayNeeded) {
     pushUniqueStep(steps, {
-      label: "名單中新客不足，今天新增 1–2 位名單",
-      detail: "新客目標需要持續補漏斗，避免每天從零開始。",
+      label: "新客/舊客池不足，今天新增 1–2 位名單",
+      detail: "新客目標需持續補漏斗；累積舊客可回購，但不會自動變新客。",
       href: "/retail-pipeline",
     });
   }
@@ -415,9 +502,23 @@ export function buildMemberGoalPlaybook(input: {
   return steps.slice(0, 5);
 }
 
-export function buildCareerGoalPlaybook(career: CareerBlueprintView): MemberGoalActionStep[] {
+export function buildCareerGoalPlaybook(
+  career: CareerBlueprintView,
+  pipeline: RetailPipelineSnapshot | null = null,
+): MemberGoalActionStep[] {
   const steps: MemberGoalActionStep[] = [];
   const rankName = career.nextRankName ?? "下一階";
+  const composition = analyzePipeline(pipeline);
+
+  buildSupervisorPathSteps(steps, composition, "career");
+
+  if (composition.supervisorCount > 0) {
+    pushUniqueStep(steps, {
+      label: `名單中 ${composition.supervisorCount} 位督導，確認是否可計入晉升`,
+      detail: `再培養 ${career.remaining} 位下線即可晉升${rankName}；名單督導與組織圖下線需同步經營${formatNameHint(composition.supervisorPathNames)}`,
+      href: "/organization",
+    });
+  }
 
   pushUniqueStep(steps, {
     label: "查看組織圖，找出最接近晉升的夥伴",
@@ -426,7 +527,7 @@ export function buildCareerGoalPlaybook(career: CareerBlueprintView): MemberGoal
   });
   pushUniqueStep(steps, {
     label: "今日行動：記錄招募或輔導",
-    detail: "招募新夥伴、協助現有下線晉升，都是組織目標的具體行動。",
+    detail: "從名單中的舊會員培育 MAP/督導，或直接招募新夥伴，都是組織目標的具體行動。",
     href: "/daily-action?action=recruit",
   });
   pushUniqueStep(steps, {
@@ -435,7 +536,7 @@ export function buildCareerGoalPlaybook(career: CareerBlueprintView): MemberGoal
     href: "/president-road",
   });
 
-  return steps;
+  return steps.slice(0, 5);
 }
 
 export function summarizePlaybook(steps: MemberGoalActionStep[]): string | null {

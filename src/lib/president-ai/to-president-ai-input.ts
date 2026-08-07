@@ -72,6 +72,7 @@ export function toPresidentAIInput(metrics: PresidentAIMetricsInput): PresidentA
           remaining: metrics.careerGoal.remaining,
           progressPercent: metrics.careerGoal.progressPercent,
           sourceKey: metrics.careerGoal.sourceKey,
+          actionSteps: metrics.careerGoal.actionSteps,
         }
       : null,
   };
