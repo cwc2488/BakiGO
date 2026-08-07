@@ -24,4 +24,5 @@ export const STORAGE_KEYS = {
   cloudMembersMode: "baki-go:cloud-members-mode",
   superLeagueEntries: "baki-go:super-league-entries",
   memberGoals: "baki-go:member-goals",
+  homeDisplayMode: "baki-go:home-display-mode",
 } as const;

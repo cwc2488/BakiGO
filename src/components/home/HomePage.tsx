@@ -10,8 +10,14 @@ import {
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import type { Priority, PresidentAIResult } from "@/types/president-ai";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { APP_EMOJI, WORK_HUB_EMOJIS } from "@/lib/ui/app-emojis";
+import {
+  getHomeDisplayMode,
+  setHomeDisplayMode,
+  type HomeDisplayMode,
+} from "@/lib/ui/home-display-mode";
+import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { EmptyState, HomeErrorState, HomeLoadingSkeleton } from "./states";
 import { Card, ProgressBar, SectionLabel } from "./ui";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
@@ -20,11 +26,71 @@ import { LearningResourceSuggestions } from "@/components/learning/LearningResou
 
 type LoadState = "loading" | "ready" | "error";
 
+const SIMPLE_QUICK_LINKS = [
+  { href: "/retail-pipeline", title: "名單" },
+  { href: "/daily-action", title: "今日行動" },
+  { href: "/events", title: "新增紀錄" },
+  { href: "/learning", title: "學習" },
+] as const;
+
+const WORK_HUB_LINKS = [
+  { href: "/daily-action", title: "今日行動", desc: "每天第一件事" },
+  { href: "/goals", title: "目標中心", desc: "設定 VP、收入、新客" },
+  { href: "/learning", title: "學習庫", desc: "業務教學影片片單" },
+  { href: "/leaderboard", title: "積分排行", desc: "本週前五 · 本月前十" },
+  { href: "/retail-pipeline", title: "名單流程", desc: "推進每位名單" },
+  { href: "/pre-meeting-graphic", title: "會前會圖", desc: "資料合併輸出" },
+  { href: "/retail-house", title: "零售屋", desc: "週分享與成交" },
+  { href: "/organization", title: "組織圖", desc: "夥伴狀況一覽" },
+  { href: "/promotions", title: "促銷專欄", desc: "獎勵與挑戰" },
+  { href: "/calendar", title: "行事曆", desc: "行程與 Google 同步" },
+  { href: "/events", title: "紀錄中心", desc: "活動與會議" },
+] as const;
+
 function hasAnyActivity(metrics: MemberComputedMetrics): boolean {
   return (
     metrics.vp.totalVp > 0 ||
     metrics.retailHouse.houses.some((house) => house.transactionCount > 0) ||
     metrics.gamification.achievements.length > 0
+  );
+}
+
+function HomeModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: HomeDisplayMode;
+  onChange: (mode: HomeDisplayMode) => void;
+}) {
+  return (
+    <button
+      className="mx-auto block text-[0.8125rem] font-medium text-[#86868b] underline-offset-2 transition-colors hover:text-[var(--brand-primary-dark)] hover:underline"
+      onClick={() => onChange(mode === "simple" ? "full" : "simple")}
+      type="button"
+    >
+      {mode === "simple" ? "顯示完整首頁" : "切換簡易首頁"}
+    </button>
+  );
+}
+
+function SimpleGreetingSection() {
+  const displayName = getMemberDisplayName();
+  const avatarUrl = getMemberAvatarUrl();
+
+  return (
+    <header className="home-section">
+      <Link className="block w-fit" href="/profile">
+        <MemberNameWithAvatar
+          avatarUrl={avatarUrl}
+          name={displayName}
+          nameClassName="text-[1.75rem] font-semibold leading-snug tracking-tight text-[#1d1d1f] sm:text-[2rem]"
+          size="md"
+          subtitle={formatTimeGreeting()}
+          subtitleClassName="text-[0.9375rem] font-medium text-[#86868b]"
+          variant="hero"
+        />
+      </Link>
+    </header>
   );
 }
 
@@ -50,6 +116,52 @@ function GreetingSection({ metrics }: { metrics: MemberComputedMetrics }) {
         />
       </Link>
     </header>
+  );
+}
+
+function QuickLinksSection({ links }: { links: readonly { href: string; title: string }[] }) {
+  return (
+    <section className="home-section grid grid-cols-2 gap-2.5">
+      {links.map((link) => (
+        <Link
+          key={link.href}
+          className="flex min-h-[4.5rem] items-center justify-center rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-4 text-center transition-colors active:bg-[var(--brand-primary-muted)] hover:border-[#d1d1d6]"
+          href={link.href}
+        >
+          <p className="text-[1rem] font-semibold text-[#1d1d1f]">
+            <span aria-hidden className="mr-1.5">
+              {WORK_HUB_EMOJIS[link.href] ?? "📌"}
+            </span>
+            {link.title}
+          </p>
+        </Link>
+      ))}
+    </section>
+  );
+}
+
+function MoreFeaturesSection() {
+  const extraLinks = WORK_HUB_LINKS.filter(
+    (link) => !SIMPLE_QUICK_LINKS.some((simple) => simple.href === link.href),
+  );
+
+  return (
+    <details className="home-section rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3">
+      <summary className="cursor-pointer list-none text-[0.9375rem] font-semibold text-[#1d1d1f] marker:content-none [&::-webkit-details-marker]:hidden">
+        更多功能
+      </summary>
+      <div className="mt-3 grid grid-cols-2 gap-2 pb-1">
+        {extraLinks.map((link) => (
+          <Link
+            key={link.href}
+            className="rounded-xl bg-[var(--brand-bg)] px-3 py-2.5 text-[0.875rem] font-medium text-[#1d1d1f] transition-colors active:bg-[var(--brand-primary-muted)]"
+            href={link.href}
+          >
+            {WORK_HUB_EMOJIS[link.href]} {link.title}
+          </Link>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -89,15 +201,11 @@ function PresidentAISection({
   firstUse: boolean;
 }) {
   const priorities = presidentAI.topPriorities;
-  const reasoning = presidentAI.reasoning[0];
 
   return (
     <Card>
       <SectionLabel emoji={APP_EMOJI.section.presidentAi}>總裁 AI</SectionLabel>
       <p className="mt-1 text-[0.9375rem] text-[#86868b]">今日最重要三件事</p>
-      {reasoning ? (
-        <p className="mt-3 text-[0.9375rem] leading-relaxed text-[#636366]">{reasoning}</p>
-      ) : null}
       <div className="mt-4 space-y-3">
         {priorities.length > 0 ? (
           priorities.map((priority, index) => (
@@ -122,30 +230,18 @@ function PresidentAISection({
 }
 
 function WorkHubSection() {
-  const hubs = [
-    { href: "/daily-action", title: "今日行動", desc: "每天第一件事" },
-    { href: "/goals", title: "目標中心", desc: "設定 VP、收入、新客" },
-    { href: "/learning", title: "學習庫", desc: "業務教學影片片單" },
-    { href: "/leaderboard", title: "積分排行", desc: "本週前五 · 本月前十" },
-    { href: "/retail-pipeline", title: "名單流程", desc: "推進每位名單" },
-    { href: "/pre-meeting-graphic", title: "會前會圖", desc: "資料合併輸出" },
-    { href: "/retail-house", title: "零售屋", desc: "週分享與成交" },
-    { href: "/organization", title: "組織圖", desc: "夥伴狀況一覽" },
-    { href: "/promotions", title: "促銷專欄", desc: "獎勵與挑戰" },
-    { href: "/calendar", title: "行事曆", desc: "行程與 Google 同步" },
-    { href: "/events", title: "紀錄中心", desc: "活動與會議" },
-  ] as const;
-
   return (
     <section className="home-section grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-      {hubs.map((hub) => (
+      {WORK_HUB_LINKS.map((hub) => (
         <Link
           key={hub.href}
           className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5 transition-colors active:bg-[var(--brand-primary-muted)] hover:border-[#d1d1d6]"
           href={hub.href}
         >
           <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">
-            <span aria-hidden className="mr-1.5">{WORK_HUB_EMOJIS[hub.href]}</span>
+            <span aria-hidden className="mr-1.5">
+              {WORK_HUB_EMOJIS[hub.href]}
+            </span>
             {hub.title}
           </p>
           <p className="mt-0.5 text-[0.75rem] text-[#86868b]">{hub.desc}</p>
@@ -172,37 +268,89 @@ function AddTransactionButton() {
   );
 }
 
-function HomeView({ metrics }: { metrics: MemberComputedMetrics }) {
+function SimpleHomeView({
+  metrics,
+  onModeChange,
+}: {
+  metrics: MemberComputedMetrics;
+  onModeChange: (mode: HomeDisplayMode) => void;
+}) {
+  const topPriority = metrics.presidentAI.topPriorities[0] ?? null;
+
+  return (
+    <>
+      <SimpleGreetingSection />
+      <TodayStepCard
+        focusMode={metrics.presidentAI.focusMode}
+        minimal
+        priority={topPriority}
+        showFocusMode={false}
+      />
+      <QuickLinksSection links={SIMPLE_QUICK_LINKS} />
+      <MoreFeaturesSection />
+      <HomeModeToggle mode="simple" onChange={onModeChange} />
+    </>
+  );
+}
+
+function FullHomeView({
+  metrics,
+  onModeChange,
+}: {
+  metrics: MemberComputedMetrics;
+  onModeChange: (mode: HomeDisplayMode) => void;
+}) {
   const firstUse = !hasAnyActivity(metrics);
   const topPriority = metrics.presidentAI.topPriorities[0] ?? null;
 
   return (
+    <>
+      <GreetingSection metrics={metrics} />
+      <TodayStepCard
+        focusMode={metrics.presidentAI.focusMode}
+        priority={topPriority}
+        showFocusMode={false}
+      />
+      <LearningResourceSuggestions
+        pipelinePushReminders={metrics.pipelinePushReminders}
+        recommendations={metrics.learningRecommendations}
+      />
+      <WorkHubSection />
+      <PresidentAISection firstUse={firstUse} presidentAI={metrics.presidentAI} />
+      <AddTransactionButton />
+      <HomeModeToggle mode="full" onChange={onModeChange} />
+    </>
+  );
+}
+
+function HomeView({
+  metrics,
+  displayMode,
+  onModeChange,
+}: {
+  metrics: MemberComputedMetrics;
+  displayMode: HomeDisplayMode;
+  onModeChange: (mode: HomeDisplayMode) => void;
+}) {
+  return (
     <div className="min-h-full bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]">
       <main className="home-container flex flex-col gap-5 pb-24 pt-10 sm:pt-12">
-        <GreetingSection metrics={metrics} />
-        <TodayStepCard
-          focusMode={metrics.presidentAI.focusMode}
-          priority={topPriority}
-          reasoning={metrics.presidentAI.reasoning[0]}
-        />
-        <LearningResourceSuggestions
-          pipelinePushReminders={metrics.pipelinePushReminders}
-          recommendations={metrics.learningRecommendations}
-        />
-        <WorkHubSection />
-        <PresidentAISection firstUse={firstUse} presidentAI={metrics.presidentAI} />
-        <AddTransactionButton />
+        {displayMode === "simple" ? (
+          <SimpleHomeView metrics={metrics} onModeChange={onModeChange} />
+        ) : (
+          <FullHomeView metrics={metrics} onModeChange={onModeChange} />
+        )}
       </main>
     </div>
   );
 }
 
 export default function HomePage() {
+  const storage = useMemo(() => createLocalStorageAdapter(), []);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [metrics, setMetrics] = useState<MemberComputedMetrics | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string>(
-    "資料載入失敗，請稍後再試。",
-  );
+  const [displayMode, setDisplayMode] = useState<HomeDisplayMode>("simple");
+  const [errorMessage, setErrorMessage] = useState<string>("資料載入失敗，請稍後再試。");
 
   const loadMetrics = useCallback(() => {
     setLoadState("loading");
@@ -210,6 +358,7 @@ export default function HomePage() {
     setErrorMessage("資料載入失敗，請稍後再試。");
 
     try {
+      setDisplayMode(getHomeDisplayMode(storage));
       const snapshot = loadMissionControlMetrics();
       setMetrics(snapshot);
       setLoadState("ready");
@@ -217,7 +366,15 @@ export default function HomePage() {
       setLoadState("error");
       setErrorMessage("系統無法完成計算，請重新載入或稍後再試。");
     }
-  }, []);
+  }, [storage]);
+
+  const handleModeChange = useCallback(
+    (mode: HomeDisplayMode) => {
+      setHomeDisplayMode(mode, storage);
+      setDisplayMode(mode);
+    },
+    [storage],
+  );
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -234,10 +391,10 @@ export default function HomePage() {
   }
 
   if (!metrics) {
-    return (
-      <HomeErrorState message="找不到可用的計算結果。" onRetry={loadMetrics} />
-    );
+    return <HomeErrorState message="找不到可用的計算結果。" onRetry={loadMetrics} />;
   }
 
-  return <HomeView metrics={metrics} />;
+  return (
+    <HomeView displayMode={displayMode} metrics={metrics} onModeChange={handleModeChange} />
+  );
 }

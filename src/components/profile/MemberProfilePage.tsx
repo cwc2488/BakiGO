@@ -18,6 +18,7 @@ import {
 } from "./ui";
 import { ProfileAccountSection } from "./ProfileAccountSection";
 import { ProfileAvatarSection } from "./ProfileAvatarSection";
+import { ProfileHomeDisplaySection } from "./ProfileHomeDisplaySection";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 
 type LoadState = "loading" | "ready" | "error";
@@ -170,6 +171,7 @@ function ProfileView({
         </header>
 
         <ProfileAvatarSection onAvatarUpdated={onSponsorUpdated} />
+        <ProfileHomeDisplaySection />
         <BasicInfoSection metrics={metrics} />
         <GrowthSection metrics={metrics} />
         <ProfileAccountSection onSponsorUpdated={onSponsorUpdated} />

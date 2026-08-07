@@ -53,6 +53,7 @@ export function TodayStepCard({
   onQuickLog,
   compact = false,
   showFocusMode = true,
+  minimal = false,
 }: {
   priority: Priority | null;
   focusMode: FocusMode;
@@ -60,10 +61,11 @@ export function TodayStepCard({
   onQuickLog?: (actionKey: "measurement" | "consultation" | "recruit") => void;
   compact?: boolean;
   showFocusMode?: boolean;
+  minimal?: boolean;
 }) {
   const action = resolvePresidentAiAction(priority);
   const title = priority?.title ?? focusMode.label;
-  const description = priority?.description ?? focusMode.reason;
+  const description = minimal ? null : (priority?.description ?? focusMode.reason);
 
   return (
     <section
@@ -74,15 +76,15 @@ export function TodayStepCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.08em] text-[var(--brand-primary-dark)]">
-            {APP_EMOJI.section.presidentAi} AI 今日一步
+            {minimal ? "今天做這件" : `${APP_EMOJI.section.presidentAi} AI 今日一步`}
           </p>
-          {showFocusMode ? (
+          {!minimal && showFocusMode ? (
             <p className="mt-1 text-[0.8125rem] font-medium text-[#86868b]">
               {formatFocusModeLabel(focusMode.key)}
             </p>
           ) : null}
         </div>
-        {priority ? (
+        {!minimal && priority ? (
           <span className="shrink-0 text-[0.875rem] font-semibold text-[var(--brand-primary-dark)]">
             {priority.score}%
           </span>
@@ -91,13 +93,17 @@ export function TodayStepCard({
 
       <h2
         className={`mt-3 font-semibold tracking-tight text-[#1d1d1f] ${
-          compact ? "text-[1.125rem] leading-snug" : "text-[1.375rem] leading-snug sm:text-[1.5rem]"
+          minimal
+            ? "text-[1.375rem] leading-snug sm:text-[1.5rem]"
+            : compact
+              ? "text-[1.125rem] leading-snug"
+              : "text-[1.375rem] leading-snug sm:text-[1.5rem]"
         }`}
       >
         {title}
       </h2>
 
-      {priority ? (
+      {!minimal && priority ? (
         <div className="mt-3">
           <ProgressBar color="#77b539" percent={priority.score} />
         </div>
@@ -109,13 +115,13 @@ export function TodayStepCard({
         </p>
       ) : null}
 
-      {reasoning ? (
+      {!minimal && reasoning ? (
         <p className="mt-2 text-[0.8125rem] leading-relaxed text-[#86868b]">{reasoning}</p>
       ) : null}
 
       {action ? (
-        <div className="mt-4">
-          <ActionButton action={action} compact={compact} onQuickLog={onQuickLog} />
+        <div className={minimal ? "mt-5" : "mt-4"}>
+          <ActionButton action={action} compact={compact || minimal} onQuickLog={onQuickLog} />
         </div>
       ) : null}
     </section>
