@@ -26,8 +26,19 @@ import type { SwipeHandlers } from "@/lib/hooks/use-swipe-navigation";
 import { useRef, useState } from "react";
 
 const DRAG_THRESHOLD_PX = 8;
+const LONG_PRESS_MS = 450;
 
 type TimedEventLayout = ReturnType<typeof layoutTimedEvents>[number];
+
+type DragSession = {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  originTopPx: number;
+  moved: boolean;
+  dragEnabled: boolean;
+  longPressTimer: number | null;
+};
 
 function CurrentTimeIndicator({
   dayDate,
@@ -78,14 +89,9 @@ function DraggableTimedEvent({
   ) => void;
   onDragActiveChange: (active: boolean) => void;
 }) {
-  const dragRef = useRef<{
-    pointerId: number;
-    startClientX: number;
-    startClientY: number;
-    originTopPx: number;
-    moved: boolean;
-  } | null>(null);
+  const dragRef = useRef<DragSession | null>(null);
   const [previewTopPx, setPreviewTopPx] = useState<number | null>(null);
+  const [isLongPressReady, setIsLongPressReady] = useState(false);
   const draggable = canDragCalendarEvent(layout.event) && Boolean(onEventReschedule);
   const topPx = previewTopPx ?? layout.topPx;
   const isDragging = previewTopPx !== null;
@@ -96,9 +102,21 @@ function DraggableTimedEvent({
   const columnIndex = Math.round(layout.leftPercent / layout.widthPercent);
   const trackWidth = `(100% - ${insetPx * 2}px - ${Math.max(0, totalColumns - 1) * gapPx}px)`;
 
+  function clearLongPressTimer() {
+    const timer = dragRef.current?.longPressTimer;
+    if (timer !== null && timer !== undefined) {
+      window.clearTimeout(timer);
+      if (dragRef.current) {
+        dragRef.current.longPressTimer = null;
+      }
+    }
+  }
+
   function resetDrag() {
+    clearLongPressTimer();
     dragRef.current = null;
     setPreviewTopPx(null);
+    setIsLongPressReady(false);
     onDragActiveChange(false);
   }
 
@@ -133,8 +151,12 @@ function DraggableTimedEvent({
   return (
     <button
       className={`absolute box-border overflow-hidden rounded-[4px] px-1.5 py-1 text-left transition-shadow ${
-        isDragging ? "z-30 cursor-grabbing shadow-lg ring-2 ring-[var(--cal-primary)]/40" : "z-10"
-      } ${draggable ? "touch-none cursor-grab active:cursor-grabbing" : ""}`}
+        isDragging
+          ? "z-30 cursor-grabbing shadow-lg ring-2 ring-[var(--cal-primary)]/40"
+          : isLongPressReady
+            ? "z-20 ring-2 ring-[var(--cal-primary)]/30"
+            : "z-10"
+      } ${draggable && (isLongPressReady || isDragging) ? "touch-none cursor-grabbing" : ""}`}
       onClick={(clickEvent) => {
         if (dragRef.current?.moved) {
           clickEvent.preventDefault();
@@ -144,21 +166,35 @@ function DraggableTimedEvent({
         clickEvent.stopPropagation();
         onEventSelect(layout.event);
       }}
-      onPointerCancel={() => {
+      onPointerCancel={(event) => {
+        if (dragRef.current?.pointerId === event.pointerId) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
         resetDrag();
       }}
       onPointerDown={(event) => {
         if (!draggable) {
           return;
         }
+
+        const pointerId = event.pointerId;
         dragRef.current = {
-          pointerId: event.pointerId,
+          pointerId,
           startClientX: event.clientX,
           startClientY: event.clientY,
           originTopPx: layout.topPx,
           moved: false,
+          dragEnabled: false,
+          longPressTimer: window.setTimeout(() => {
+            if (dragRef.current?.pointerId !== pointerId) {
+              return;
+            }
+            dragRef.current.dragEnabled = true;
+            dragRef.current.longPressTimer = null;
+            setIsLongPressReady(true);
+          }, LONG_PRESS_MS),
         };
-        event.currentTarget.setPointerCapture(event.pointerId);
+        event.currentTarget.setPointerCapture(pointerId);
       }}
       onPointerMove={(event) => {
         const drag = dragRef.current;
@@ -168,6 +204,15 @@ function DraggableTimedEvent({
 
         const deltaY = event.clientY - drag.startClientY;
         const deltaX = event.clientX - drag.startClientX;
+
+        if (!drag.dragEnabled) {
+          if (Math.abs(deltaY) < DRAG_THRESHOLD_PX && Math.abs(deltaX) < DRAG_THRESHOLD_PX) {
+            return;
+          }
+          resetDrag();
+          event.currentTarget.releasePointerCapture(event.pointerId);
+          return;
+        }
 
         if (!drag.moved) {
           if (Math.abs(deltaY) < DRAG_THRESHOLD_PX && Math.abs(deltaX) < DRAG_THRESHOLD_PX) {
@@ -464,7 +509,7 @@ export function DayTimeGrid({
 
       {onEventReschedule ? (
         <p className="border-t border-[var(--cal-border)] px-4 py-2 text-center text-[0.6875rem] text-[var(--cal-hint)]">
-          拖曳行程可調整時間
+          長按行程後拖曳可調整時間
         </p>
       ) : null}
     </div>
