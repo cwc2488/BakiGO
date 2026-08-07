@@ -79,7 +79,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("無法載入照片"));
+    image.onerror = () => reject(new Error("無法載入照片，請重新上傳"));
     image.src = src;
   });
 }
@@ -104,11 +104,4 @@ function drawImageCover(
   context.clip();
   context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
   context.restore();
-}
-
-export function downloadDataUrl(dataUrl: string, filename: string): void {
-  const link = document.createElement("a");
-  link.href = dataUrl;
-  link.download = filename;
-  link.click();
 }

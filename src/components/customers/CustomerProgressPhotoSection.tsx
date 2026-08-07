@@ -8,8 +8,10 @@ import {
   type CustomerPhotoPhase,
   type CustomerProgressPhoto,
 } from "@/types/customer";
+import { readImageFileAsJpegDataUrl } from "@/lib/images/image-file-utils";
 import { useState } from "react";
 import { CrmButton, CrmCard, CrmInput, CrmSectionTitle, CrmSelect, CrmTextarea } from "@/components/members/ui";
+import { ImageUploadButtons, ImageUploadSectionButton } from "@/components/ui/ImageUploadButtons";
 
 export interface CustomerProgressPhotoFormValues {
   photoDate: string;
@@ -40,19 +42,21 @@ export function CustomerProgressPhotoSection({
 }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<CustomerProgressPhotoFormValues>(() => emptyForm(today));
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
+  const handleFileSelect = async (file: File) => {
+    setUploadError(null);
+    setIsUploading(true);
+    try {
+      const imageDataUrl = await readImageFileAsJpegDataUrl(file);
+      setForm((current) => ({ ...current, imageDataUrl }));
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "無法讀取照片");
+      setForm((current) => ({ ...current, imageDataUrl: null }));
+    } finally {
+      setIsUploading(false);
     }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : null;
-      setForm((current) => ({ ...current, imageDataUrl: result }));
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -66,16 +70,14 @@ export function CustomerProgressPhotoSection({
     <CrmCard>
       <div className="flex items-center justify-between gap-4">
         <CrmSectionTitle>進度照片</CrmSectionTitle>
-        <button
-          className="text-[0.875rem] font-medium text-[var(--brand-primary-dark)]"
+        <ImageUploadSectionButton
+          active={showForm}
+          inactiveLabel="上傳照片"
           onClick={() => setShowForm((current) => !current)}
-          type="button"
-        >
-          {showForm ? "取消" : "上傳照片"}
-        </button>
+        />
       </div>
       <p className="mt-2 text-[0.8125rem] leading-relaxed text-[#86868b]">
-        可先上傳使用前照片，之後再補使用後，就能一鍵做對照圖。
+        可先上傳使用前照片，之後再補使用後，就能一鍵做對照圖。支援 JPG、PNG、HEIC 等常見格式。
       </p>
 
       {showForm ? (
@@ -119,16 +121,15 @@ export function CustomerProgressPhotoSection({
               </option>
             ))}
           </CrmSelect>
-          <label className="block space-y-2">
-            <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">照片</span>
-            <input
-              accept="image/*"
-              className="block w-full text-[0.875rem] text-[#636366]"
-              onChange={handleFileChange}
-              required
-              type="file"
-            />
-          </label>
+          <ImageUploadButtons
+            disabled={isUploading}
+            label="照片"
+            onFileSelect={handleFileSelect}
+          />
+          {isUploading ? (
+            <p className="text-[0.8125rem] text-[#86868b]">照片處理中…</p>
+          ) : null}
+          {uploadError ? <p className="text-[0.8125rem] text-[#cf1322]">{uploadError}</p> : null}
           {form.imageDataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -142,7 +143,9 @@ export function CustomerProgressPhotoSection({
             onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
             value={form.note}
           />
-          <CrmButton type="submit">儲存照片</CrmButton>
+          <CrmButton disabled={!form.imageDataUrl || isUploading} type="submit">
+            儲存照片
+          </CrmButton>
         </form>
       ) : null}
 

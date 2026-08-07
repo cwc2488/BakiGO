@@ -1,10 +1,17 @@
 "use client";
 
 import { CUSTOMER_RECEIPT_RETENTION_YEARS } from "@/lib/customers/customer-receipt-retention";
+import {
+  getSaveToPhotoLibraryLabel,
+  getSaveToPhotoLibrarySuccessMessage,
+  readImageFileAsJpegDataUrl,
+  saveDataUrlToPhotoLibrary,
+} from "@/lib/images/image-file-utils";
 import { formatShortDate } from "@/lib/mission-control/format";
 import type { CustomerReceiptPhoto } from "@/types/customer";
 import { useState } from "react";
 import { CrmButton, CrmCard, CrmInput, CrmSectionTitle, CrmTextarea } from "@/components/members/ui";
+import { ImageUploadButtons, ImageUploadSectionButton } from "@/components/ui/ImageUploadButtons";
 
 export interface CustomerReceiptPhotoFormValues {
   receiptDate: string;
@@ -32,20 +39,46 @@ export function CustomerReceiptPhotoSection({
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<CustomerReceiptPhotoFormValues>(() => emptyForm(today));
   const [viewerReceipt, setViewerReceipt] = useState<CustomerReceiptPhoto | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
+  const handleFileSelect = async (file: File) => {
+    setUploadError(null);
+    setIsUploading(true);
+    try {
+      const imageDataUrl = await readImageFileAsJpegDataUrl(file);
+      setForm((current) => ({ ...current, imageDataUrl }));
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "無法讀取照片");
+      setForm((current) => ({ ...current, imageDataUrl: null }));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleSaveReceipt = async (receipt: CustomerReceiptPhoto) => {
+    if (!receipt.imageDataUrl) {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : null;
-      setForm((current) => ({ ...current, imageDataUrl: result }));
-    };
-    reader.readAsDataURL(file);
-    event.target.value = "";
+    setSaveMessage(null);
+    setIsSaving(true);
+    try {
+      const method = await saveDataUrlToPhotoLibrary(
+        receipt.imageDataUrl,
+        `收據-${receipt.receiptDate}.jpg`,
+      );
+      setSaveMessage(getSaveToPhotoLibrarySuccessMessage(method));
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      setSaveMessage(error instanceof Error ? error.message : "無法儲存收據");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -63,16 +96,14 @@ export function CustomerReceiptPhotoSection({
       <CrmCard>
         <div className="flex items-center justify-between gap-4">
           <CrmSectionTitle>收據留存</CrmSectionTitle>
-          <button
-            className="text-[0.875rem] font-medium text-[var(--brand-primary-dark)]"
+          <ImageUploadSectionButton
+            active={showForm}
+            inactiveLabel="拍照上傳收據"
             onClick={() => setShowForm((current) => !current)}
-            type="button"
-          >
-            {showForm ? "取消" : "拍照上傳"}
-          </button>
+          />
         </div>
         <p className="mt-2 text-[0.8125rem] leading-relaxed text-[#86868b]">
-          收據拍照後保存 {CUSTOMER_RECEIPT_RETENTION_YEARS} 年，期間可隨時調閱；到期後自動刪除。
+          收據拍照後保存 {CUSTOMER_RECEIPT_RETENTION_YEARS} 年，期間可隨時調閱；到期後自動刪除。支援 JPG、PNG、HEIC 等常見格式。
         </p>
 
         {showForm ? (
@@ -86,17 +117,17 @@ export function CustomerReceiptPhotoSection({
               type="date"
               value={form.receiptDate}
             />
-            <label className="block space-y-2">
-              <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">收據照片</span>
-              <input
-                accept="image/*"
-                capture="environment"
-                className="block w-full text-[0.875rem] text-[#636366]"
-                onChange={handleFileChange}
-                required={!form.imageDataUrl}
-                type="file"
-              />
-            </label>
+            <ImageUploadButtons
+              cameraLabel="拍照收據"
+              disabled={isUploading}
+              label="收據照片"
+              libraryLabel="從相簿選擇"
+              onFileSelect={handleFileSelect}
+            />
+            {isUploading ? (
+              <p className="text-[0.8125rem] text-[#86868b]">照片處理中…</p>
+            ) : null}
+            {uploadError ? <p className="text-[0.8125rem] text-[#cf1322]">{uploadError}</p> : null}
             {form.imageDataUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -110,7 +141,7 @@ export function CustomerReceiptPhotoSection({
               onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
               value={form.note}
             />
-            <CrmButton disabled={!form.imageDataUrl} type="submit">
+            <CrmButton disabled={!form.imageDataUrl || isUploading} type="submit">
               儲存收據
             </CrmButton>
           </form>
@@ -129,13 +160,26 @@ export function CustomerReceiptPhotoSection({
                       保存至 {formatShortDate(receipt.retainUntil)}
                     </p>
                   </div>
-                  <button
-                    className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]"
-                    onClick={() => setViewerReceipt(receipt)}
-                    type="button"
-                  >
-                    查看
-                  </button>
+                  <div className="flex shrink-0 flex-col gap-2">
+                    <button
+                      className="rounded-full bg-white px-3 py-1.5 text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]"
+                      onClick={() => {
+                        setSaveMessage(null);
+                        setViewerReceipt(receipt);
+                      }}
+                      type="button"
+                    >
+                      查看
+                    </button>
+                    <button
+                      className="rounded-full bg-[#1d1d1f] px-3 py-1.5 text-[0.8125rem] font-medium text-white disabled:opacity-60"
+                      disabled={isSaving}
+                      onClick={() => void handleSaveReceipt(receipt)}
+                      type="button"
+                    >
+                      {getSaveToPhotoLibraryLabel()}
+                    </button>
+                  </div>
                 </div>
                 {receipt.note ? (
                   <p className="mt-2 text-[0.8125rem] text-[#636366]">{receipt.note}</p>
@@ -160,12 +204,18 @@ export function CustomerReceiptPhotoSection({
             <p className="text-[0.9375rem] text-[#86868b]">尚無收據照片</p>
           )}
         </div>
+        {saveMessage ? (
+          <p className="mt-3 text-[0.8125rem] text-[var(--brand-primary-dark)]">{saveMessage}</p>
+        ) : null}
       </CrmCard>
 
       {viewerReceipt?.imageDataUrl ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-5"
-          onClick={() => setViewerReceipt(null)}
+          onClick={() => {
+            setViewerReceipt(null);
+            setSaveMessage(null);
+          }}
           role="presentation"
         >
           <div
@@ -184,7 +234,10 @@ export function CustomerReceiptPhotoSection({
               </div>
               <button
                 className="rounded-full bg-[var(--brand-bg)] px-4 py-2 text-[0.8125rem] font-medium text-[#636366]"
-                onClick={() => setViewerReceipt(null)}
+                onClick={() => {
+                  setViewerReceipt(null);
+                  setSaveMessage(null);
+                }}
                 type="button"
               >
                 關閉
@@ -198,6 +251,17 @@ export function CustomerReceiptPhotoSection({
             />
             {viewerReceipt.note ? (
               <p className="mt-3 text-[0.875rem] text-[#636366]">{viewerReceipt.note}</p>
+            ) : null}
+            <button
+              className="mt-4 w-full rounded-2xl bg-[#1d1d1f] px-4 py-3.5 text-[0.9375rem] font-semibold text-white disabled:opacity-60"
+              disabled={isSaving}
+              onClick={() => void handleSaveReceipt(viewerReceipt)}
+              type="button"
+            >
+              {isSaving ? "處理中…" : getSaveToPhotoLibraryLabel()}
+            </button>
+            {saveMessage ? (
+              <p className="mt-2 text-[0.8125rem] text-[var(--brand-primary-dark)]">{saveMessage}</p>
             ) : null}
           </div>
         </div>

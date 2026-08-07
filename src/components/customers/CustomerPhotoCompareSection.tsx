@@ -2,10 +2,14 @@
 
 import { formatShortDate } from "@/lib/mission-control/format";
 import {
-  downloadDataUrl,
   findPhotoComparePairs,
   renderPhotoCompareImage,
 } from "@/lib/customers/customer-photo-compare";
+import {
+  getSaveToPhotoLibraryLabel,
+  getSaveToPhotoLibrarySuccessMessage,
+  saveDataUrlToPhotoLibrary,
+} from "@/lib/images/image-file-utils";
 import {
   CUSTOMER_PHOTO_ANGLE_LABELS,
   CUSTOMER_PHOTO_PHASE_LABELS,
@@ -26,6 +30,7 @@ export function CustomerPhotoCompareSection({
   const [activeIndex, setActiveIndex] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const activePair = pairs[activeIndex];
 
@@ -48,6 +53,7 @@ export function CustomerPhotoCompareSection({
     }
 
     setError(null);
+    setStatusMessage(null);
     setIsGenerating(true);
     try {
       const dataUrl = await renderPhotoCompareImage({
@@ -57,8 +63,12 @@ export function CustomerPhotoCompareSection({
         afterLabel: `${CUSTOMER_PHOTO_PHASE_LABELS.after} · ${formatShortDate(activePair.after.photoDate)}`,
         customerName,
       });
-      downloadDataUrl(dataUrl, `${customerName}-before-after.jpg`);
+      const method = await saveDataUrlToPhotoLibrary(dataUrl, `${customerName}-before-after.jpg`);
+      setStatusMessage(getSaveToPhotoLibrarySuccessMessage(method));
     } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") {
+        return;
+      }
       setError(caught instanceof Error ? caught.message : "無法產生對照圖");
     } finally {
       setIsGenerating(false);
@@ -119,8 +129,11 @@ export function CustomerPhotoCompareSection({
             onClick={() => void handleGenerate()}
             type="button"
           >
-            {isGenerating ? "產生中…" : "一鍵產生對照圖"}
+            {isGenerating ? "產生中…" : getSaveToPhotoLibraryLabel()}
           </button>
+          {statusMessage ? (
+            <p className="mt-2 text-[0.8125rem] text-[var(--brand-primary-dark)]">{statusMessage}</p>
+          ) : null}
           {error ? <p className="mt-2 text-[0.8125rem] text-[#cf1322]">{error}</p> : null}
         </>
       ) : (
