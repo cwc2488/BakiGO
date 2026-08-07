@@ -13,7 +13,20 @@ import {
 } from "@/components/customers/CustomerProgressPhotoSection";
 import { CrmCard, CrmField, CrmInput, CrmSectionTitle } from "@/components/members/ui";
 import { PageShell } from "@/components/ui/PageShell";
-import { ensureCustomerPortalToken } from "@/lib/cloud/customer-cloud-service";
+import { getCurrentMember } from "@/lib/auth/auth-service";
+import {
+  ensureCustomerPortalToken,
+  fetchCustomerPortalToken,
+  renewCustomerPortalToken,
+  revokeCustomerPortalToken,
+  updateCustomerPortalTokenExpiry,
+} from "@/lib/cloud/customer-cloud-service";
+import {
+  findLinkableDownlineMembers,
+  linkCustomerToMember,
+  unlinkCustomerFromMember,
+} from "@/lib/customers/customer-member-bridge";
+import { loadAllMembers, getMemberDisplayName } from "@/lib/members/member-service";
 import {
   compareBodyRecords,
   formatMetricDeltaLine,
@@ -26,7 +39,9 @@ import { createCustomerRepository } from "@/lib/repositories/customer-repository
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { BodyCompositionRecord, Customer, CustomerProgressPhoto } from "@/types/customer";
+import type { BodyCompositionRecord, Customer, CustomerPortalToken, CustomerProgressPhoto } from "@/types/customer";
+import type { Member } from "@/types/member";
+import Link from "next/link";
 
 export default function CustomerDetailPage({ customerId }: { customerId: string }) {
   const storage = useMemo(() => createLocalStorageAdapter(), []);
@@ -37,8 +52,48 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
   const [records, setRecords] = useState<BodyCompositionRecord[]>([]);
   const [photos, setPhotos] = useState<CustomerProgressPhoto[]>([]);
   const [portalLink, setPortalLink] = useState<string | null>(null);
+  const [portalToken, setPortalToken] = useState<CustomerPortalToken | null>(null);
+  const [portalExpiry, setPortalExpiry] = useState("");
   const [linkCopied, setLinkCopied] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [portalBusy, setPortalBusy] = useState(false);
+  const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [linkErrorMessage, setLinkErrorMessage] = useState<string | null>(null);
+
+  const viewer = useMemo(() => getCurrentMember(storage), [storage]);
+  const allMembers = useMemo(() => loadAllMembers(storage), [storage]);
+  const linkableMembers = useMemo(() => {
+    if (!customer || !viewer) {
+      return [] as Member[];
+    }
+    return findLinkableDownlineMembers(customer, viewer, storage);
+  }, [customer, viewer, storage]);
+  const linkedMember = useMemo(() => {
+    if (!customer?.linkedMemberId) {
+      return null;
+    }
+    return allMembers.find((member) => member.id === customer.linkedMemberId) ?? null;
+  }, [allMembers, customer?.linkedMemberId]);
+
+  const portalStatus = useMemo(() => {
+    if (!portalToken) {
+      return "none" as const;
+    }
+    if (portalToken.revokedAt) {
+      return "revoked" as const;
+    }
+    if (portalToken.expiresAt && new Date(portalToken.expiresAt) <= new Date()) {
+      return "expired" as const;
+    }
+    return "active" as const;
+  }, [portalToken]);
+
+  const portalStatusLabel = {
+    none: "尚未產生連結",
+    active: "連結有效",
+    revoked: "連結已撤銷",
+    expired: "連結已過期",
+  }[portalStatus];
 
   const reload = useCallback(() => {
     const found = repo.getCustomerById(customerId);
@@ -50,6 +105,25 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
   useEffect(() => {
     queueMicrotask(reload);
   }, [reload]);
+
+  useEffect(() => {
+    if (!customer) {
+      return;
+    }
+    void fetchCustomerPortalToken(customerId)
+      .then((token) => {
+        setPortalToken(token);
+        if (token && !token.revokedAt) {
+          setPortalLink(`${window.location.origin}/c/${token.token}`);
+        }
+        if (token?.expiresAt) {
+          setPortalExpiry(token.expiresAt.slice(0, 10));
+        }
+      })
+      .catch(() => {
+        setPortalToken(null);
+      });
+  }, [customer, customerId]);
 
   const comparison = useMemo(() => compareBodyRecords(records), [records]);
   const trendSeries = useMemo(() => buildBodyCompositionTrendSeries(records), [records]);
@@ -125,6 +199,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
 
   const handleShareLink = async () => {
     setLinkError(null);
+    setPortalBusy(true);
     try {
       const token = await ensureCustomerPortalToken(customerId);
       if (!token) {
@@ -132,12 +207,94 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
         return;
       }
       const url = `${window.location.origin}/c/${token.token}`;
+      setPortalToken(token);
       setPortalLink(url);
       await navigator.clipboard.writeText(url);
       setLinkCopied(true);
       setTimeout(() => setLinkCopied(false), 2000);
     } catch (error) {
       setLinkError(error instanceof Error ? error.message : "無法產生連結");
+    } finally {
+      setPortalBusy(false);
+    }
+  };
+
+  const handleRevokeLink = async () => {
+    setLinkError(null);
+    setPortalBusy(true);
+    try {
+      await revokeCustomerPortalToken(customerId);
+      const token = await fetchCustomerPortalToken(customerId);
+      setPortalToken(token);
+      setPortalLink(null);
+    } catch (error) {
+      setLinkError(error instanceof Error ? error.message : "無法撤銷連結");
+    } finally {
+      setPortalBusy(false);
+    }
+  };
+
+  const handleRenewLink = async () => {
+    setLinkError(null);
+    setPortalBusy(true);
+    try {
+      const expiresAt = portalExpiry ? new Date(`${portalExpiry}T23:59:59`).toISOString() : null;
+      const token = await renewCustomerPortalToken(customerId, expiresAt);
+      if (!token) {
+        setLinkError("雲端尚未設定，無法產生顧客連結");
+        return;
+      }
+      const url = `${window.location.origin}/c/${token.token}`;
+      setPortalToken(token);
+      setPortalLink(url);
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch (error) {
+      setLinkError(error instanceof Error ? error.message : "無法重新產生連結");
+    } finally {
+      setPortalBusy(false);
+    }
+  };
+
+  const handleExpiryChange = async (value: string) => {
+    setPortalExpiry(value);
+    if (!value || portalStatus !== "active") {
+      return;
+    }
+    try {
+      await updateCustomerPortalTokenExpiry(
+        customerId,
+        new Date(`${value}T23:59:59`).toISOString(),
+      );
+      const token = await fetchCustomerPortalToken(customerId);
+      setPortalToken(token);
+    } catch (error) {
+      setLinkError(error instanceof Error ? error.message : "無法更新到期日");
+    }
+  };
+
+  const handleLinkMember = () => {
+    if (!selectedMemberId) {
+      return;
+    }
+    setLinkErrorMessage(null);
+    try {
+      linkCustomerToMember(customerId, selectedMemberId, storage);
+      setSelectedMemberId("");
+      reload();
+    } catch (error) {
+      setLinkErrorMessage(error instanceof Error ? error.message : "無法關聯夥伴");
+    }
+  };
+
+  const handleUnlinkMember = () => {
+    setLinkErrorMessage(null);
+    try {
+      unlinkCustomerFromMember(customerId, storage);
+      reload();
+    } catch (error) {
+      setLinkErrorMessage(error instanceof Error ? error.message : "無法解除關聯");
     }
   };
 
@@ -244,19 +401,116 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
             value={customer.nextFollowUpDate ?? ""}
           />
         </div>
-        <div className="mt-5 space-y-2">
-          <button
-            className="w-full rounded-2xl bg-[#1d1d1f] px-4 py-3.5 text-[1rem] font-semibold text-white"
-            onClick={() => void handleShareLink()}
-            type="button"
-          >
-            {linkCopied ? "已複製顧客連結" : "分享 Magic Link 給顧客"}
-          </button>
-          {portalLink ? (
-            <p className="break-all text-[0.8125rem] text-[#86868b]">{portalLink}</p>
-          ) : null}
+        <div className="mt-5 space-y-4">
+          <div className="rounded-2xl bg-[var(--brand-bg)] px-4 py-3">
+            <p className="text-[0.8125rem] text-[#86868b]">Magic Link 狀態</p>
+            <p className="mt-1 text-[0.9375rem] font-medium text-[#1d1d1f]">{portalStatusLabel}</p>
+            {portalLink && portalStatus === "active" ? (
+              <p className="mt-2 break-all text-[0.8125rem] text-[#86868b]">{portalLink}</p>
+            ) : null}
+          </div>
+          <CrmInput
+            label="連結到期日（選填）"
+            onChange={(event) => void handleExpiryChange(event.target.value)}
+            type="date"
+            value={portalExpiry}
+          />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              className="rounded-2xl bg-[#1d1d1f] px-4 py-3.5 text-[0.9375rem] font-semibold text-white disabled:opacity-60"
+              disabled={portalBusy}
+              onClick={() => void handleShareLink()}
+              type="button"
+            >
+              {linkCopied ? "已複製連結" : portalStatus === "active" ? "複製 Magic Link" : "產生 Magic Link"}
+            </button>
+            {portalStatus === "active" ? (
+              <button
+                className="rounded-2xl bg-[#fff1f0] px-4 py-3.5 text-[0.9375rem] font-semibold text-[#cf1322] disabled:opacity-60"
+                disabled={portalBusy}
+                onClick={() => void handleRevokeLink()}
+                type="button"
+              >
+                撤銷連結
+              </button>
+            ) : (
+              <button
+                className="rounded-2xl bg-[var(--brand-primary-muted)] px-4 py-3.5 text-[0.9375rem] font-semibold text-[var(--brand-primary-dark)] disabled:opacity-60"
+                disabled={portalBusy}
+                onClick={() => void handleRenewLink()}
+                type="button"
+              >
+                重新產生連結
+              </button>
+            )}
+          </div>
           {linkError ? <p className="text-[0.8125rem] text-[#cf1322]">{linkError}</p> : null}
         </div>
+      </CrmCard>
+
+      <CrmCard>
+        <CrmSectionTitle>夥伴關聯</CrmSectionTitle>
+        {linkedMember ? (
+          <div className="mt-4 space-y-3">
+            <p className="text-[0.9375rem] text-[#1d1d1f]">
+              已關聯夥伴：{getMemberDisplayName(linkedMember)}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                className="rounded-full bg-[var(--brand-primary-muted)] px-4 py-2 text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]"
+                href={`/members/${linkedMember.id}`}
+              >
+                查看夥伴檔案
+              </Link>
+              <button
+                className="rounded-full bg-[#fff1f0] px-4 py-2 text-[0.8125rem] font-medium text-[#cf1322]"
+                onClick={handleUnlinkMember}
+                type="button"
+              >
+                解除關聯
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <p className="text-[0.875rem] text-[#86868b]">
+              顧客加入成為夥伴後，可關聯到夥伴檔案；系統也會依姓名或電話自動比對。
+            </p>
+            {linkableMembers.length > 0 ? (
+              <>
+                <label className="block text-[0.8125rem] font-medium text-[#636366]">
+                  選擇下線夥伴
+                  <select
+                    className="mt-2 w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3 text-[1rem] outline-none focus:border-[var(--brand-primary)]"
+                    onChange={(event) => setSelectedMemberId(event.target.value)}
+                    value={selectedMemberId}
+                  >
+                    <option value="">請選擇…</option>
+                    {linkableMembers.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {getMemberDisplayName(member)}
+                        {member.phone ? ` · ${member.phone}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className="w-full rounded-2xl bg-[var(--brand-primary)] px-4 py-3 text-[0.9375rem] font-semibold text-white disabled:opacity-50"
+                  disabled={!selectedMemberId}
+                  onClick={handleLinkMember}
+                  type="button"
+                >
+                  關聯夥伴
+                </button>
+              </>
+            ) : (
+              <p className="text-[0.875rem] text-[#86868b]">目前沒有可關聯的下線夥伴。</p>
+            )}
+            {linkErrorMessage ? (
+              <p className="text-[0.8125rem] text-[#cf1322]">{linkErrorMessage}</p>
+            ) : null}
+          </div>
+        )}
       </CrmCard>
 
       <CustomerBodySection

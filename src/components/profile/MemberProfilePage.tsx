@@ -15,6 +15,7 @@ import { APP_ICON } from "@/lib/ui/app-icons";
 import { getCurrentMember, resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import { hasPartnerCareDownline } from "@/lib/auth/member-management-access";
 import { buildDailyFollowUpSnapshot } from "@/lib/customers/customer-follow-up-reminder";
+import { buildDailyPartnerFollowUpSnapshot } from "@/lib/members/partner-follow-up";
 import { loadAllMembers } from "@/lib/members/member-service";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -129,6 +130,10 @@ function ProfileQuickLinks() {
     () => buildDailyFollowUpSnapshot(storage, resolveAuthenticatedMemberId(storage)).count,
     [storage],
   );
+  const partnerFollowUpCount = useMemo(
+    () => (viewer ? buildDailyPartnerFollowUpSnapshot(storage, viewer).count : 0),
+    [storage, viewer],
+  );
   const showPartnerCare = useMemo(() => {
     if (!viewer) {
       return false;
@@ -141,7 +146,12 @@ function ProfileQuickLinks() {
       href: "/customers",
       label: followUpCount > 0 ? `顧客關懷 (${followUpCount})` : "顧客關懷",
     },
-    ...(showPartnerCare ? [{ href: "/members", label: "夥伴關懷" }] : []),
+    ...(showPartnerCare
+      ? [{
+          href: "/members",
+          label: partnerFollowUpCount > 0 ? `夥伴關懷 (${partnerFollowUpCount})` : "夥伴關懷",
+        }]
+      : []),
     { href: "/leaderboard", label: "積分排行" },
     { href: "/organization", label: "組織圖" },
     { href: "/retail-house", label: "零售屋" },

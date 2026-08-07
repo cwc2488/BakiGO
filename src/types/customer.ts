@@ -49,6 +49,7 @@ export interface CustomerUpdateInput {
   birthYear?: number;
   heightCm?: number;
   status?: CustomerStatus;
+  linkedMemberId?: EntityId | null;
   note?: string;
   lastContactDate?: ISODateString;
   nextFollowUpDate?: ISODateString;

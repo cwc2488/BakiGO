@@ -2,7 +2,6 @@
 
 import { formatShortDate } from "@/lib/mission-control/format";
 import type { MemberDashboardSnapshot } from "@/types/member-workspace";
-import { CrmCard, CrmSectionTitle } from "../ui";
 
 function DashboardTile({
   label,
@@ -17,7 +16,7 @@ function DashboardTile({
     <article className="rounded-2xl bg-[var(--brand-bg)] px-4 py-4">
       <p className="text-[0.8125rem] text-[#86868b]">{label}</p>
       <p className="mt-1 text-[1.0625rem] font-semibold text-[#1d1d1f]">{value}</p>
-      {detail ? <p className="mt-1 text-[0.8125rem] text-[#86868b]">{detail}</p> : null}
+      {detail ? <p className="mt-1 text-[0.8125rem] leading-relaxed text-[#86868b]">{detail}</p> : null}
     </article>
   );
 }
@@ -28,17 +27,16 @@ function formatOptionalDate(date: string | null): string {
 
 export function MemberDashboard({ dashboard }: { dashboard: MemberDashboardSnapshot }) {
   return (
-    <CrmCard>
-      <CrmSectionTitle>會員總覽</CrmSectionTitle>
+    <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
+      <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">
+        夥伴總覽
+      </p>
       <div className="mt-4 grid grid-cols-2 gap-3">
         <DashboardTile label="目前等級" value={dashboard.currentRank} />
         <DashboardTile label="VP" value={`${dashboard.vp} VP`} />
         <DashboardTile label="任務" value={dashboard.missionLabel} />
         <DashboardTile label="今日建議" value={dashboard.presidentAiLabel} />
-        <DashboardTile
-          label="本月成交"
-          value={`${dashboard.monthlyTransactionCount} 筆`}
-        />
+        <DashboardTile label="本月成交" value={`${dashboard.monthlyTransactionCount} 筆`} />
         <DashboardTile
           label="最近一次量測"
           value={formatOptionalDate(dashboard.lastInBodyDate)}
@@ -55,6 +53,6 @@ export function MemberDashboard({ dashboard }: { dashboard: MemberDashboardSnaps
           detail={dashboard.lastConsultationSummary}
         />
       </div>
-    </CrmCard>
+    </section>
   );
 }

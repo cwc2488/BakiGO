@@ -36,6 +36,7 @@ export interface CustomerRepository {
   getCustomersByOwner(ownerMemberId: EntityId): Customer[];
   getCustomerById(customerId: EntityId): Customer | undefined;
   getCustomerByPipelineLeadId(pipelineLeadId: EntityId): Customer | undefined;
+  getCustomerByLinkedMemberId(memberId: EntityId): Customer | undefined;
   createCustomer(input: CustomerCreateInput): Customer;
   updateCustomer(customerId: EntityId, input: CustomerUpdateInput): Customer;
   deleteCustomer(customerId: EntityId): void;
@@ -66,6 +67,10 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
 
   getCustomerByPipelineLeadId(pipelineLeadId: EntityId): Customer | undefined {
     return this.getAllCustomers().find((customer) => customer.pipelineLeadId === pipelineLeadId);
+  }
+
+  getCustomerByLinkedMemberId(memberId: EntityId): Customer | undefined {
+    return this.getAllCustomers().find((customer) => customer.linkedMemberId === memberId);
   }
 
   createCustomer(input: CustomerCreateInput): Customer {
@@ -108,6 +113,8 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
       birthYear: input.birthYear === undefined ? current.birthYear : input.birthYear,
       heightCm: input.heightCm === undefined ? current.heightCm : input.heightCm,
       status: input.status ?? current.status,
+      linkedMemberId:
+        input.linkedMemberId === undefined ? current.linkedMemberId : input.linkedMemberId ?? undefined,
       note: input.note === undefined ? current.note : input.note.trim() || undefined,
       lastContactDate: input.lastContactDate === undefined ? current.lastContactDate : input.lastContactDate,
       nextFollowUpDate:

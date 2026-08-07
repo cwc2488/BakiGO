@@ -391,53 +391,166 @@ export async function pushLocalCustomersToCloud(storage: StorageAdapter): Promis
   );
 }
 
-export async function ensureCustomerPortalToken(customerId: EntityId): Promise<CustomerPortalToken | null> {
+export async function fetchCustomerPortalToken(
+  customerId: EntityId,
+): Promise<CustomerPortalToken | null> {
   if (!isSupabaseConfigured()) {
     return null;
   }
 
   const supabase = createSupabaseBrowserClient();
-  const { data: existing, error: fetchError } = await supabase
+  const { data, error } = await supabase
     .from("customer_portal_tokens")
     .select("*")
     .eq("customer_id", customerId)
-    .is("revoked_at", null)
     .maybeSingle();
 
-  if (fetchError) {
-    throw new Error(fetchError.message);
+  if (error) {
+    throw new Error(error.message);
   }
 
-  if (existing) {
-    return {
-      id: existing.id,
-      customerId: existing.customer_id,
-      token: existing.token,
-      expiresAt: existing.expires_at ?? undefined,
-      revokedAt: existing.revoked_at ?? undefined,
-      createdAt: existing.created_at,
-      updatedAt: existing.created_at,
-    };
-  }
-
-  const { data: created, error: createError } = await supabase
-    .from("customer_portal_tokens")
-    .insert({ customer_id: customerId })
-    .select("*")
-    .single();
-
-  if (createError) {
-    throw new Error(createError.message);
+  if (!data) {
+    return null;
   }
 
   return {
-    id: created.id,
-    customerId: created.customer_id,
-    token: created.token,
-    expiresAt: created.expires_at ?? undefined,
-    createdAt: created.created_at,
-    updatedAt: created.created_at,
+    id: data.id,
+    customerId: data.customer_id,
+    token: data.token,
+    expiresAt: data.expires_at ?? undefined,
+    revokedAt: data.revoked_at ?? undefined,
+    createdAt: data.created_at,
+    updatedAt: data.created_at,
   };
+}
+
+function isPortalTokenActive(token: CustomerPortalToken): boolean {
+  if (token.revokedAt) {
+    return false;
+  }
+  if (token.expiresAt && new Date(token.expiresAt) <= new Date()) {
+    return false;
+  }
+  return true;
+}
+
+export async function revokeCustomerPortalToken(customerId: EntityId): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    return;
+  }
+
+  const supabase = createSupabaseBrowserClient();
+  const { error } = await supabase
+    .from("customer_portal_tokens")
+    .update({ revoked_at: new Date().toISOString() })
+    .eq("customer_id", customerId)
+    .is("revoked_at", null);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function renewCustomerPortalToken(
+  customerId: EntityId,
+  expiresAt?: string | null,
+): Promise<CustomerPortalToken | null> {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const supabase = createSupabaseBrowserClient();
+  const newToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+
+  const { data: existing } = await supabase
+    .from("customer_portal_tokens")
+    .select("id")
+    .eq("customer_id", customerId)
+    .maybeSingle();
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from("customer_portal_tokens")
+      .update({
+        token: newToken,
+        revoked_at: null,
+        expires_at: expiresAt ?? null,
+      })
+      .eq("customer_id", customerId)
+      .select("*")
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return {
+      id: data.id,
+      customerId: data.customer_id,
+      token: data.token,
+      expiresAt: data.expires_at ?? undefined,
+      revokedAt: data.revoked_at ?? undefined,
+      createdAt: data.created_at,
+      updatedAt: data.created_at,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("customer_portal_tokens")
+    .insert({
+      customer_id: customerId,
+      token: newToken,
+      expires_at: expiresAt ?? null,
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    id: data.id,
+    customerId: data.customer_id,
+    token: data.token,
+    expiresAt: data.expires_at ?? undefined,
+    revokedAt: data.revoked_at ?? undefined,
+    createdAt: data.created_at,
+    updatedAt: data.created_at,
+  };
+}
+
+export async function updateCustomerPortalTokenExpiry(
+  customerId: EntityId,
+  expiresAt: string | null,
+): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    return;
+  }
+
+  const supabase = createSupabaseBrowserClient();
+  const { error } = await supabase
+    .from("customer_portal_tokens")
+    .update({ expires_at: expiresAt })
+    .eq("customer_id", customerId)
+    .is("revoked_at", null);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function ensureCustomerPortalToken(customerId: EntityId): Promise<CustomerPortalToken | null> {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const existing = await fetchCustomerPortalToken(customerId);
+  if (existing && isPortalTokenActive(existing)) {
+    return existing;
+  }
+
+  return renewCustomerPortalToken(customerId, existing?.expiresAt ?? null);
 }
 
 let pushTimer: ReturnType<typeof setTimeout> | null = null;

@@ -6,6 +6,10 @@ import {
 } from "@/lib/auth/member-management-access";
 import { getCurrentMember } from "@/lib/auth/auth-service";
 import {
+  buildDailyPartnerFollowUpSnapshot,
+  buildPartnerFollowUpHints,
+} from "@/lib/members/partner-follow-up";
+import {
   getMemberDisplayName,
   getMemberAvatarUrl,
   getMemberRankLabel,
@@ -15,7 +19,10 @@ import {
   type MemberSortKey,
 } from "@/lib/members/member-service";
 import { createMemberRepository } from "@/lib/repositories/member-repository";
+import { createMemberWorkspaceRepository } from "@/lib/repositories/member-workspace-repository";
+import { getPartnerCareMeta } from "@/lib/repositories/partner-care-meta-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import { todayISODate } from "@/lib/config/app-config";
 import { PageShell } from "@/components/ui/PageShell";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import type { Member } from "@/types/member";
@@ -25,16 +32,21 @@ import { useMemo, useState } from "react";
 import { CrmButton } from "./ui";
 import { MemberNameWithAvatar } from "./MemberNameWithAvatar";
 
+interface PartnerListItem extends Member {
+  followUpReason?: string;
+  followUpUrgency?: "high" | "medium" | "low";
+}
+
 export function MemberListView() {
   const router = useRouter();
   const storage = useMemo(() => createLocalStorageAdapter(), []);
   const viewer = getCurrentMember(storage);
 
-  const [members, setMembers] = useState<Member[]>(() => {
+  const [members, setMembers] = useState<PartnerListItem[]>(() => {
     if (typeof window === "undefined" || !viewer) {
       return [];
     }
-    return loadPartnerCareMembers(viewer, storage);
+    return buildPartnerListItems(viewer, storage);
   });
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<MemberSortKey>("name");
@@ -45,11 +57,16 @@ export function MemberListView() {
       setMembers([]);
       return;
     }
-    setMembers(loadPartnerCareMembers(viewer, createLocalStorageAdapter()));
+    setMembers(buildPartnerListItems(viewer, createLocalStorageAdapter()));
   }
 
+  const dailyFollowUp = useMemo(
+    () => (viewer ? buildDailyPartnerFollowUpSnapshot(storage, viewer) : { count: 0, items: [] }),
+    [storage, viewer],
+  );
+
   const visibleMembers = useMemo(
-    () => sortMembers(searchMembers(members, query), sortKey),
+    () => sortMembers(searchMembers(members, query), sortKey) as PartnerListItem[],
     [members, query, sortKey],
   );
 
@@ -85,6 +102,30 @@ export function MemberListView() {
       titleIcon={APP_ICON.section.organization}
       variant="plain"
     >
+      {dailyFollowUp.count > 0 ? (
+        <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-primary-muted)] p-5">
+          <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[var(--brand-primary-dark)]">
+            今日建議關心
+          </p>
+          <p className="mt-2 text-[0.9375rem] text-[#1d1d1f]">
+            有 {dailyFollowUp.count} 位夥伴值得今天花幾分鐘關心一下。
+          </p>
+          <ul className="mt-4 space-y-2">
+            {dailyFollowUp.items.slice(0, 5).map((item) => (
+              <li key={item.member.id}>
+                <Link
+                  className="flex items-center justify-between rounded-2xl bg-white/80 px-4 py-3 text-[0.875rem]"
+                  href={`/members/${item.member.id}`}
+                >
+                  <span className="font-medium text-[#1d1d1f]">{getMemberDisplayName(item.member)}</span>
+                  <span className="text-[#86868b]">{item.reason}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <div className="space-y-3">
         <input
           className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
@@ -153,7 +194,21 @@ export function MemberListView() {
                         </>
                       }
                     />
-                    <span className="shrink-0 pt-1 text-[1rem] text-[#c7c7cc]">→</span>
+                    {member.followUpReason ? (
+                      <span
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-[0.75rem] font-medium ${
+                          member.followUpUrgency === "high"
+                            ? "bg-[#fff1f0] text-[#cf1322]"
+                            : member.followUpUrgency === "medium"
+                              ? "bg-[#fff7e6] text-[#d46b08]"
+                              : "bg-[var(--brand-primary-muted)] text-[var(--brand-primary-dark)]"
+                        }`}
+                      >
+                        {member.followUpReason}
+                      </span>
+                    ) : (
+                      <span className="shrink-0 pt-1 text-[1rem] text-[#c7c7cc]">→</span>
+                    )}
                   </div>
                 </button>
                 <div className="mt-3 flex gap-2">
@@ -206,4 +261,31 @@ export function MemberListView() {
       ) : null}
     </PageShell>
   );
+}
+
+function buildPartnerListItems(viewer: Member, storage: ReturnType<typeof createLocalStorageAdapter>): PartnerListItem[] {
+  const today = todayISODate();
+  const workspaceRepo = createMemberWorkspaceRepository(storage);
+  const urgencyRank = { high: 0, medium: 1, low: 2 } as const;
+
+  return loadPartnerCareMembers(viewer, storage)
+    .map((member) => {
+      const workspace = workspaceRepo.loadWorkspace(member.id);
+      const meta = getPartnerCareMeta(storage, member.id);
+      const hints = buildPartnerFollowUpHints(member, workspace, meta, today);
+      const topHint = hints.sort((left, right) => urgencyRank[left.urgency] - urgencyRank[right.urgency])[0];
+      return {
+        ...member,
+        followUpReason: topHint?.reason,
+        followUpUrgency: topHint?.urgency,
+      };
+    })
+    .sort((left, right) => {
+      const leftRank = left.followUpUrgency ? urgencyRank[left.followUpUrgency] : 3;
+      const rightRank = right.followUpUrgency ? urgencyRank[right.followUpUrgency] : 3;
+      if (leftRank !== rightRank) {
+        return leftRank - rightRank;
+      }
+      return getMemberDisplayName(left).localeCompare(getMemberDisplayName(right), "zh-Hant");
+    });
 }

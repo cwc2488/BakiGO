@@ -1,4 +1,5 @@
 import { APP_IDS } from "@/lib/config/app-config";
+import { tryAutoLinkCustomerOnMemberJoin } from "@/lib/customers/customer-member-bridge";
 import { ensureVirtualUplineInMembers, createVirtualUplineMember } from "@/lib/members/virtual-upline";
 import { normalizeHerbalifeMemberId } from "@/types/auth";
 import type {
@@ -142,6 +143,7 @@ export class LocalStorageMemberRepository implements MemberRepository {
 
     const next = [...this.getAll(), member];
     this.storage.setItem(STORAGE_KEYS.members, JSON.stringify(next));
+    tryAutoLinkCustomerOnMemberJoin(member, this.storage);
     return member;
   }
 

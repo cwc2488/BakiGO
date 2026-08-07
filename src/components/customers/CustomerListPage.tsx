@@ -3,6 +3,7 @@
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import { buildCustomerFollowUpHints } from "@/lib/customers/body-composition-compare";
 import { buildDailyFollowUpSnapshot } from "@/lib/customers/customer-follow-up-reminder";
+import { searchCustomers } from "@/lib/customers/customer-search";
 import { todayISODate } from "@/lib/config/app-config";
 import {
   getNotificationPermissionState,
@@ -76,6 +77,7 @@ export default function CustomerListPage() {
   const [phone, setPhone] = useState("");
   const [heightCm, setHeightCm] = useState("");
   const [birthYear, setBirthYear] = useState("");
+  const [query, setQuery] = useState("");
   const [notificationState, setNotificationState] = useState(() =>
     typeof window === "undefined" ? "default" : getNotificationPermissionState(),
   );
@@ -130,6 +132,11 @@ export default function CustomerListPage() {
   }, [reload]);
 
   const followUpCount = dailyFollowUp.count;
+
+  const visibleCustomers = useMemo(
+    () => searchCustomers(customers, query),
+    [customers, query],
+  );
 
   const handleEnableNotifications = async () => {
     const next = await requestAppNotificationPermission();
@@ -270,8 +277,27 @@ export default function CustomerListPage() {
         ) : null}
 
         <div className="mt-4 space-y-3">
+          <input
+            className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜尋姓名、電話、LINE、備註…"
+            type="search"
+            value={query}
+          />
           {customers.length > 0 ? (
-            customers.map((customer) => <CustomerCard customer={customer} key={customer.id} />)
+            <p className="text-[0.8125rem] text-[#86868b]">
+              {query.trim()
+                ? `找到 ${visibleCustomers.length} / ${customers.length} 位顧客`
+                : `共 ${customers.length} 位顧客`}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {visibleCustomers.length > 0 ? (
+            visibleCustomers.map((customer) => <CustomerCard customer={customer} key={customer.id} />)
+          ) : customers.length > 0 ? (
+            <p className="text-[0.9375rem] text-[#86868b]">找不到符合的顧客，試試其他關鍵字。</p>
           ) : (
             <p className="text-[0.9375rem] text-[#86868b]">尚無顧客，先新增第一位開始追蹤。</p>
           )}
