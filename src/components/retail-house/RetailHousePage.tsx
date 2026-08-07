@@ -223,9 +223,7 @@ function MonthlyTotalsSection({
               {QUADRANT_EMOJIS[quadrant.key] ?? ""} {quadrant.monthlyLabel}：
             </p>
             <p className="mt-1 text-[1.25rem] font-semibold text-[#1d1d1f]">
-              {quadrant.monthlyTotal === null
-                ? "—"
-                : formatReportAmount(quadrant.monthlyTotal, quadrant.unit)}
+              {formatReportAmount(quadrant.monthlyTotal, quadrant.unit)}
             </p>
           </div>
         ))}

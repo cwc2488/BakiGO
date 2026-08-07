@@ -43,6 +43,32 @@ export async function fetchCloudAppData(memberId: EntityId): Promise<CloudAppDat
   return (data ?? []).map((row) => mapRow(row as MemberAppDataDbRow));
 }
 
+export async function fetchCloudAppDataBatch(
+  memberIds: EntityId[],
+  dataKeys?: string[],
+): Promise<CloudAppDataRow[]> {
+  if (!isSupabaseConfigured() || memberIds.length === 0) {
+    return [];
+  }
+
+  const supabase = createSupabaseBrowserClient();
+  let query = supabase
+    .from("member_app_data")
+    .select("member_id, data_key, payload, updated_at")
+    .in("member_id", memberIds);
+
+  if (dataKeys && dataKeys.length > 0) {
+    query = query.in("data_key", dataKeys);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).map((row) => mapRow(row as MemberAppDataDbRow));
+}
+
 export async function upsertCloudAppDataRow(input: {
   memberId: EntityId;
   dataKey: string;

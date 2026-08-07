@@ -2,6 +2,7 @@ import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
 import { loadMemberSharedCalendarAttendance } from "@/lib/calendar/calendar-attendance-storage";
 import { createEventRepository } from "@/lib/repositories/event-repository";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
+import type { BakiEvent } from "@/types/baki-event";
 import type { EntityId } from "@/types";
 
 export interface MemberActivitySummary {
@@ -18,9 +19,20 @@ export function buildMemberActivitySummary(
   memberId: EntityId,
   referenceDate: string,
   storage: StorageAdapter,
+  supplementalEvents?: BakiEvent[],
 ): MemberActivitySummary {
   const yearMonth = referenceDate.slice(0, 7);
-  const events = createEventRepository(storage).getByMemberId(memberId);
+  const localEvents = createEventRepository(storage).getByMemberId(memberId);
+  const mergedById = new Map<string, BakiEvent>();
+  for (const event of localEvents) {
+    mergedById.set(event.id, event);
+  }
+  for (const event of supplementalEvents ?? []) {
+    if (event.memberId === memberId) {
+      mergedById.set(event.id, event);
+    }
+  }
+  const events = [...mergedById.values()];
 
   const monthlyConsultations = events.filter(
     (event) =>

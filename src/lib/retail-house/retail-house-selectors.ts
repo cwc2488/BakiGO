@@ -84,7 +84,7 @@ function buildQuadrantView(
     unit: category?.unit ?? (key.includes("member") ? "VP" : "NTD"),
     weeklyItems: category?.weeklyItems ?? [],
     monthlyLabel: config.monthlyLabel,
-    monthlyTotal: category?.monthlyTotal ?? null,
+    monthlyTotal: category?.monthlyTotal ?? 0,
   };
 }
 

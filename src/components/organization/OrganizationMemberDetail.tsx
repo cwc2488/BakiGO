@@ -10,6 +10,7 @@ import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar"
 import { getCurrentMember } from "@/lib/auth/auth-service";
 import { getRegistrationRankOptions } from "@/lib/auth/registration-ranks";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import type { BakiEvent } from "@/types/baki-event";
 import type { OrganizationMemberView } from "@/types/organization-center";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
 import { ProgressBar } from "@/components/home/ui";
@@ -18,10 +19,12 @@ import { useMemo, useState } from "react";
 export function OrganizationMemberDetail({
   member,
   canAdjustRank,
+  downlineEvents = [],
   onRankAdjusted,
 }: {
   member: OrganizationMemberView;
   canAdjustRank: boolean;
+  downlineEvents?: BakiEvent[];
   onRankAdjusted?: () => void;
 }) {
   const storage = useMemo(() => createLocalStorageAdapter(), []);
@@ -38,8 +41,8 @@ export function OrganizationMemberDetail({
     [member.memberId, storage],
   );
   const activitySummary = useMemo(
-    () => buildMemberActivitySummary(member.memberId, todayISODate(), storage),
-    [member.memberId, storage],
+    () => buildMemberActivitySummary(member.memberId, todayISODate(), storage, downlineEvents),
+    [downlineEvents, member.memberId, storage],
   );
   const canRedeem = Boolean(viewer) && viewer?.id !== member.memberId;
 

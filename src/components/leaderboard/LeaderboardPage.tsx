@@ -1,6 +1,8 @@
 "use client";
 
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { fetchDownlineCloudData, getDownlineEvents } from "@/lib/cloud/downline-cloud-data";
+import type { DownlineCloudDataCache } from "@/lib/cloud/downline-cloud-data";
 import { todayISODate, toYearMonthFromDate } from "@/lib/config/app-config";
 import { loadAllMembers } from "@/lib/members/member-service";
 import { loadMemberMetrics } from "@/lib/mission-control/format";
@@ -71,6 +73,20 @@ function GroupCompetitionPlaceholder() {
 export default function LeaderboardPage() {
   const storage = useMemo(() => createLocalStorageAdapter(), []);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [downlineCache, setDownlineCache] = useState<DownlineCloudDataCache>(() => new Map());
+
+  useEffect(() => {
+    void (async () => {
+      const viewerId = resolveAuthenticatedMemberId(storage);
+      const members = loadAllMembers(storage).filter((member) => member.status === "active");
+      const cache = await fetchDownlineCloudData(
+        members.map((member) => member.id),
+        viewerId,
+      );
+      setDownlineCache(cache);
+      setRefreshKey((current) => current + 1);
+    })();
+  }, [storage]);
 
   const { weekly, monthly, viewerMetrics } = useMemo(() => {
     void refreshKey;
@@ -79,7 +95,10 @@ export default function LeaderboardPage() {
     const viewerId = resolveAuthenticatedMemberId(storage);
     const members = loadAllMembers(storage).filter((member) => member.status === "active");
     const metricsByMemberId = new Map(
-      members.map((member) => [member.id, loadMemberMetrics(member.id, storage)]),
+      members.map((member) => [
+        member.id,
+        loadMemberMetrics(member.id, storage, getDownlineEvents(member.id, downlineCache)),
+      ]),
     );
 
     const baseInput = {
@@ -95,7 +114,7 @@ export default function LeaderboardPage() {
       monthly: buildPointsLeaderboard({ ...baseInput, period: "monthly" }),
       viewerMetrics: loadMemberMetrics(viewerId, storage),
     };
-  }, [refreshKey, storage]);
+  }, [downlineCache, refreshKey, storage]);
 
   const reload = useCallback(() => {
     setRefreshKey((current) => current + 1);

@@ -5,6 +5,7 @@ import { createMemberRepository } from "@/lib/repositories/member-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { EntityId } from "@/types";
+import type { BakiEvent } from "@/types/baki-event";
 import {
   getLatestComputedMetrics,
   recalculateMemberMetrics,
@@ -14,6 +15,7 @@ import {
 export function loadMissionControlMetrics(
   memberId?: EntityId,
   storage: StorageAdapter = createLocalStorageAdapter(),
+  supplementalEvents?: BakiEvent[],
 ): MemberComputedMetrics {
   const referenceDate = todayISODate();
   const resolvedMemberId = memberId ?? resolveAuthenticatedMemberId(storage);
@@ -22,6 +24,7 @@ export function loadMissionControlMetrics(
     {
       memberId: resolvedMemberId,
       referenceDate,
+      supplementalEvents,
     },
     storage,
   );
@@ -30,8 +33,9 @@ export function loadMissionControlMetrics(
 export function loadMemberMetrics(
   memberId: EntityId,
   storage: StorageAdapter = createLocalStorageAdapter(),
+  supplementalEvents?: BakiEvent[],
 ): MemberComputedMetrics {
-  return loadMissionControlMetrics(memberId, storage);
+  return loadMissionControlMetrics(memberId, storage, supplementalEvents);
 }
 
 export function readMissionControlMetrics(

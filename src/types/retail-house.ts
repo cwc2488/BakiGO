@@ -15,7 +15,7 @@ export interface RetailHouseQuadrantView {
   unit: "NTD" | "VP";
   weeklyItems: RetailReportLineItem[];
   monthlyLabel: string;
-  monthlyTotal: number | null;
+  monthlyTotal: number;
 }
 
 export interface RetailHouseSnapshot {

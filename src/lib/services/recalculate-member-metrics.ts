@@ -57,6 +57,7 @@ import { buildEventTimeline } from "./build-event-timeline";
 import { buildMapUniverse, type MapUniverseResult } from "./build-map-universe";
 import { calculatePresidentAI, toPresidentAIInput } from "@/lib/president-ai";
 import { clampPercent } from "@/lib/business-engine/utils";
+import type { BakiEvent } from "@/types/baki-event";
 
 export interface MemberComputedMetrics {
   memberId: EntityId;
@@ -82,6 +83,8 @@ export interface RecalculateMemberMetricsInput {
   memberId: EntityId;
   referenceDate: ISODateString;
   activities?: ActivityEvent[];
+  /** Cloud-synced events for downline members viewed by an upline. */
+  supplementalEvents?: BakiEvent[];
 }
 
 function saveComputedMetrics(
@@ -118,7 +121,14 @@ export function recalculateMemberMetrics(
 ): MemberComputedMetrics {
   const yearMonth = toYearMonthFromDate(input.referenceDate);
   const eventRepository = createEventRepository(storage);
-  const allEvents = eventRepository.getAll();
+  const mergedById = new Map<string, BakiEvent>();
+  for (const event of eventRepository.getAll()) {
+    mergedById.set(event.id, event);
+  }
+  for (const event of input.supplementalEvents ?? []) {
+    mergedById.set(event.id, event);
+  }
+  const allEvents = [...mergedById.values()];
   const projected = projectEventsForEngines(allEvents);
   const activities = input.activities ?? projected.activities;
   const allTransactions = projected.transactions;

@@ -56,7 +56,8 @@ function resolveMonthlyTotal(
   typeConfig: (typeof DEFAULT_BUSINESS_RULES.retailTransactionTypes)[number],
   monthlyChallenge: MonthlyChallengeProgress,
   vp: VpResult,
-): number | null {
+  memberMonthTransactions: RetailTransaction[],
+): number {
   if (typeConfig.valueUnit === "VP") {
     const vpType = vp.byType.find((item) => item.transactionTypeKey === transactionTypeKey);
     return vpType ? vpType.totalVp : 0;
@@ -65,7 +66,13 @@ function resolveMonthlyTotal(
   const criterion = monthlyChallenge.criteria.find(
     (item) => item.criterionKey === typeConfig.criterionKey,
   );
-  return criterion ? criterion.currentValue : null;
+  if (criterion) {
+    return criterion.currentValue;
+  }
+
+  return memberMonthTransactions
+    .filter((transaction) => transaction.transactionTypeKey === transactionTypeKey)
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
 }
 
 function toLineItem(transaction: RetailTransaction, unit: "NTD" | "VP"): RetailReportLineItem {
@@ -127,6 +134,7 @@ export function buildRetailWeeklyReport(
         typeConfig,
         input.monthlyChallenge,
         input.vp,
+        memberMonthTransactions,
       );
 
       return {

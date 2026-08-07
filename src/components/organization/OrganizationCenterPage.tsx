@@ -7,6 +7,12 @@ import {
 } from "@/lib/auth/organization-access";
 import { fetchCloudOrganizationData } from "@/lib/cloud/cloud-member-service";
 import { buildViewerCloudOrganizationSnapshot } from "@/lib/cloud/build-cloud-organization-tree";
+import {
+  collectMemberIdsFromTree,
+  fetchDownlineCloudData,
+  getDownlineEvents,
+  type DownlineCloudDataCache,
+} from "@/lib/cloud/downline-cloud-data";
 import { syncCloudMembersToLocalStorage } from "@/lib/cloud/sync-cloud-members-to-local";
 import { todayISODate } from "@/lib/config/app-config";
 import { loadAllMembers } from "@/lib/members/member-service";
@@ -30,9 +36,15 @@ function mergeCloudTreeWithLocalMetrics(
   node: OrganizationTreeNode,
   members: Member[],
   storage: ReturnType<typeof createLocalStorageAdapter>,
+  downlineCache?: DownlineCloudDataCache,
 ): OrganizationTreeNode {
   const localMember = members.find((member) => member.id === node.member.memberId);
-  const metrics = localMember ? loadMemberMetrics(localMember.id, storage) : null;
+  const supplementalEvents = getDownlineEvents(node.member.memberId, downlineCache);
+  const metrics = localMember
+    ? loadMemberMetrics(localMember.id, storage, supplementalEvents)
+    : supplementalEvents.length > 0
+      ? loadMemberMetrics(node.member.memberId, storage, supplementalEvents)
+      : null;
 
   const mergedMember = metrics
     ? {
@@ -54,7 +66,9 @@ function mergeCloudTreeWithLocalMetrics(
 
   return {
     member: mergedMember,
-    children: node.children.map((child) => mergeCloudTreeWithLocalMetrics(child, members, storage)),
+    children: node.children.map((child) =>
+      mergeCloudTreeWithLocalMetrics(child, members, storage, downlineCache),
+    ),
   };
 }
 
@@ -65,6 +79,7 @@ export default function OrganizationCenterPage() {
   const [selectedMemberId, setSelectedMemberId] = useState<string>("");
   const [viewer, setViewer] = useState<Member | null>(null);
   const [allMembers, setAllMembers] = useState<Member[]>([]);
+  const [downlineCache, setDownlineCache] = useState<DownlineCloudDataCache>(() => new Map());
 
   const load = useCallback(async () => {
     setLoadState("loading");
@@ -100,8 +115,13 @@ export default function OrganizationCenterPage() {
 
       const localMembers = loadAllMembers(storage);
       const visibleMembers = getVisibleMembers(viewer, localMembers);
+
+      const downlineIds = cloudSnapshot.roots.flatMap((root) => collectMemberIdsFromTree(root));
+      const cloudCache = await fetchDownlineCloudData(downlineIds, session.memberId);
+      setDownlineCache(cloudCache);
+
       const mergedRoots = cloudSnapshot.roots.map((root) =>
-        mergeCloudTreeWithLocalMetrics(root, visibleMembers, storage),
+        mergeCloudTreeWithLocalMetrics(root, visibleMembers, storage, cloudCache),
       );
 
       const nextSnapshot: OrganizationCenterSnapshot = {
@@ -220,6 +240,7 @@ export default function OrganizationCenterPage() {
             <OrganizationMemberDetail
               key={selectedNode.member.memberId}
               canAdjustRank={canAdjustSelectedRank}
+              downlineEvents={getDownlineEvents(selectedNode.member.memberId, downlineCache)}
               member={selectedNode.member}
               onRankAdjusted={() => void load()}
             />
