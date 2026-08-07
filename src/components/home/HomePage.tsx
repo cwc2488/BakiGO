@@ -12,7 +12,8 @@ import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-me
 import type { Priority, PresidentAIResult } from "@/types/president-ai";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { APP_EMOJI, WORK_HUB_EMOJIS } from "@/lib/ui/app-emojis";
+import { AppIcon, IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import {
   getHomeDisplayMode,
@@ -26,7 +27,7 @@ import { Card, ProgressBar, SectionLabel } from "./ui";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import { TodayStepCard } from "@/components/president-ai/TodayStepCard";
 import { GreetingHeader } from "@/components/ui/GreetingHeader";
-import { IconAddRecord, IconChevronDown, QUICK_LINK_ICONS, type QuickLinkHref } from "@/components/ui/BrandIcons";
+import { IconChevronDown, ROUTE_ICON_COMPONENTS, type QuickLinkHref } from "@/components/ui/BrandIcons";
 import { TabRootShell } from "@/components/ui/TabRootShell";
 import { LearningResourceSuggestions } from "@/components/learning/LearningResourceSuggestions";
 import { DownlinePartnerSuggestions } from "@/components/organization/DownlinePartnerSuggestions";
@@ -106,7 +107,7 @@ function QuickLinksSection({ links }: { links: readonly { href: string; title: s
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2.5">
         {links.map((link) => {
-          const Icon = QUICK_LINK_ICONS[link.href as QuickLinkHref] ?? IconAddRecord;
+          const Icon = ROUTE_ICON_COMPONENTS[link.href as QuickLinkHref] ?? ROUTE_ICON_COMPONENTS["/events"];
           return (
             <Link
               key={link.href}
@@ -162,7 +163,7 @@ function PresidentAISection({
 
   return (
     <Card>
-      <SectionLabel emoji={APP_EMOJI.section.presidentAi}>{PARTNER_LABELS.todaySuggestions}</SectionLabel>
+      <SectionLabel icon={APP_ICON.section.presidentAi}>{PARTNER_LABELS.todaySuggestions}</SectionLabel>
       <p className="mt-1 text-[0.9375rem] text-[#86868b]">今日最重要三件事</p>
       <div className="mt-4 space-y-3">
         {priorities.length > 0 ? (
@@ -171,13 +172,13 @@ function PresidentAISection({
           ))
         ) : firstUse ? (
           <EmptyState
-            emoji={APP_EMOJI.mood.welcome}
+            icon={APP_ICON.mood.welcome}
             title="歡迎使用 Baki GO"
             description="完成第一筆成交後，系統會為你排出今日最重要的三件事。"
           />
         ) : (
           <EmptyState
-            emoji={APP_EMOJI.mood.done}
+            icon={APP_ICON.mood.done}
             title="今日沒有優先事項"
             description="所有關鍵目標都已完成，或相關設定尚待完成。"
           />
@@ -190,21 +191,22 @@ function PresidentAISection({
 function WorkHubSection() {
   return (
     <section className="home-section grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-      {WORK_HUB_LINKS.map((hub) => (
+      {WORK_HUB_LINKS.map((hub) => {
+        const HubIcon = ROUTE_ICON_COMPONENTS[hub.href as QuickLinkHref] ?? ROUTE_ICON_COMPONENTS["/events"];
+        return (
         <Link
           key={hub.href}
           className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5 transition-colors active:bg-[var(--brand-primary-muted)] hover:border-[#d1d1d6]"
           href={hub.href}
         >
-          <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">
-            <span aria-hidden className="mr-1.5">
-              {WORK_HUB_EMOJIS[hub.href]}
-            </span>
+          <p className="flex items-center gap-1.5 text-[0.9375rem] font-semibold text-[#1d1d1f]">
+            <HubIcon aria-hidden className="shrink-0 text-[var(--brand-primary)]" size={18} />
             {hub.title}
           </p>
           <p className="mt-0.5 text-[0.75rem] text-[#86868b]">{hub.desc}</p>
         </Link>
-      ))}
+        );
+      })}
     </section>
   );
 }
@@ -216,11 +218,15 @@ function AddTransactionButton() {
       href="/events"
     >
       <div>
-        <p className="text-[1.0625rem] font-semibold">{APP_EMOJI.action.addRecord} 新增紀錄</p>
+        <p className="text-[1.0625rem] font-semibold">
+          <IconLabel icon={APP_ICON.action.addRecord} iconClassName="text-white/90">
+            新增紀錄
+          </IconLabel>
+        </p>
         <p className="mt-1 text-[0.875rem] text-white/70">活動、會議</p>
       </div>
-      <span aria-hidden className="text-[1.375rem]">
-        📝
+      <span aria-hidden className="shrink-0">
+        <AppIcon className="text-white/80" name={APP_ICON.action.addRecord} size={28} />
       </span>
     </Link>
   );

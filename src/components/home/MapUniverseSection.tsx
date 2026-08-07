@@ -5,7 +5,8 @@ import type {
   MapUniverseLineStatus,
   MapUniverseResult,
 } from "@/lib/services/build-map-universe";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { AppIcon, IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { useState } from "react";
 import { EmptyState } from "./states";
 import { Card, SectionLabel } from "./ui";
@@ -156,7 +157,7 @@ export function MapUniverseSection({ universe }: { universe: MapUniverseResult }
 
   return (
     <Card>
-      <SectionLabel emoji={APP_EMOJI.section.mapUniverse}>活躍督導宇宙</SectionLabel>
+      <SectionLabel icon={APP_ICON.section.mapUniverse}>活躍督導宇宙</SectionLabel>
       <p className="mt-2 text-[1.25rem] font-semibold tracking-tight text-[#1d1d1f] sm:text-[1.375rem]">
         {establishedCount} 位第一代夥伴
       </p>
@@ -164,7 +165,7 @@ export function MapUniverseSection({ universe }: { universe: MapUniverseResult }
       {universe.lines.length === 0 ? (
         <div className="mt-4">
           <EmptyState
-            emoji={APP_EMOJI.mood.empty}
+            icon={APP_ICON.mood.empty}
             title="尚無第一代夥伴"
             description="招募下線後，這裡會顯示各條線的培育進度。"
           />
@@ -198,7 +199,7 @@ export function MapUniverseSection({ universe }: { universe: MapUniverseResult }
           {establishedCount === 0 ? (
             <div className="mt-5">
               <EmptyState
-                emoji={APP_EMOJI.section.mapUniverse}
+                icon={APP_ICON.section.mapUniverse}
                 title="還沒有活躍督導線"
                 description="第一代下線達成活躍督導後，對應的圓點會亮起來。"
               />

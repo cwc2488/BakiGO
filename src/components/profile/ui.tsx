@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { AppIcon, type AppIconName } from "@/components/ui/AppIcon";
 import { BrandCard, ProgressBar, SectionLabel } from "@/components/ui/brand-ui";
 
 export function ProfileCard({
@@ -67,16 +68,20 @@ export function MetricTile({
 export function EmptyBlock({
   title,
   description,
-  emoji,
+  icon,
 }: {
   title: string;
   description: string;
-  emoji?: string;
+  icon?: AppIconName;
 }) {
   return (
     <div className="rounded-2xl bg-[var(--brand-bg)] px-5 py-6 text-center">
-      {emoji ? <p className="text-[1.75rem] leading-none">{emoji}</p> : null}
-      <p className={`text-[1rem] font-semibold text-[var(--brand-text)] ${emoji ? "mt-2" : ""}`}>{title}</p>
+      {icon ? (
+        <div className="mb-2 flex justify-center">
+          <AppIcon name={icon} size={32} />
+        </div>
+      ) : null}
+      <p className="text-[1rem] font-semibold text-[var(--brand-text)]">{title}</p>
       <p className="mt-2 text-[0.875rem] leading-relaxed text-[var(--brand-text-muted)]">{description}</p>
     </div>
   );

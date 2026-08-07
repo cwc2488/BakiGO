@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { MemberAvatar } from "@/components/members/MemberAvatar";
-import { NAV_ICONS, IconGoals, QUICK_LINK_ICONS, type NavHref, type QuickLinkHref } from "@/components/ui/BrandIcons";
+import { AppIcon, type AppIconName } from "@/components/ui/AppIcon";
+import { NAV_ICONS, ROUTE_ICON_COMPONENTS, type NavHref, type QuickLinkHref } from "@/components/ui/BrandIcons";
 import { getMemberAvatarUrl, getMemberDisplayName } from "@/lib/mission-control/format";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { SIDE_NAV_EXTRA_LINKS } from "@/lib/ui/work-hub-links";
@@ -72,6 +73,36 @@ function NavLink({
   );
 }
 
+function SideExtraLink({
+  href,
+  title,
+  icon,
+  pathname,
+}: {
+  href: string;
+  title: string;
+  icon: AppIconName;
+  pathname: string;
+}) {
+  const active = isActive(pathname, href);
+  const RouteIcon = ROUTE_ICON_COMPONENTS[href as QuickLinkHref];
+
+  return (
+    <Link
+      className={`flex w-full items-center justify-center gap-3 rounded-xl px-3 py-2.5 transition-colors lg:justify-start ${
+        active
+          ? "bg-[var(--brand-primary-muted)] text-[var(--brand-primary-dark)]"
+          : "text-[#636366] hover:bg-[var(--brand-bg)] hover:text-[#1d1d1f]"
+      }`}
+      href={href}
+      title={title}
+    >
+      {RouteIcon ? <RouteIcon size={20} /> : <AppIcon name={icon} size={20} />}
+      <span className="hidden text-[0.875rem] font-semibold lg:inline">{title}</span>
+    </Link>
+  );
+}
+
 export function AppSideNav() {
   const pathname = usePathname();
   const storage = useMemo(() => createLocalStorageAdapter(), []);
@@ -102,25 +133,15 @@ export function AppSideNav() {
         <p className="mb-1 hidden px-3 text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-[#86868b] lg:block">
           更多
         </p>
-        {SIDE_NAV_EXTRA_LINKS.map((item) => {
-          const active = isActive(pathname, item.href);
-          const Icon = QUICK_LINK_ICONS[item.href as QuickLinkHref] ?? IconGoals;
-          return (
-            <Link
-              key={item.href}
-              className={`flex w-full items-center justify-center gap-3 rounded-xl px-3 py-2.5 transition-colors lg:justify-start ${
-                active
-                  ? "bg-[var(--brand-primary-muted)] text-[var(--brand-primary-dark)]"
-                  : "text-[#636366] hover:bg-[var(--brand-bg)] hover:text-[#1d1d1f]"
-              }`}
-              href={item.href}
-              title={item.title}
-            >
-              <Icon size={20} />
-              <span className="hidden text-[0.875rem] font-semibold lg:inline">{item.title}</span>
-            </Link>
-          );
-        })}
+        {SIDE_NAV_EXTRA_LINKS.map((item) => (
+          <SideExtraLink
+            key={item.href}
+            href={item.href}
+            icon={item.icon}
+            pathname={pathname}
+            title={item.title}
+          />
+        ))}
       </nav>
     </aside>
   );

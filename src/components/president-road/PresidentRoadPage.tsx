@@ -13,7 +13,7 @@ import type { PresidentRoadNode } from "@/types/president-road";
 import type { Priority } from "@/types/president-ai";
 import { PageShell } from "@/components/ui/PageShell";
 import { PageErrorState, PageLoadingState } from "@/components/ui/PageStates";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import { useCallback, useEffect, useState } from "react";
 
@@ -125,7 +125,8 @@ export default function PresidentRoadPage() {
   return (
     <PageShell
       subtitle="從會員到總裁組的完整路線，依業務規則顯示你的進度。"
-      title={`${APP_EMOJI.page.presidentRoad} ${PARTNER_LABELS.upgradePath}`}
+      title={PARTNER_LABELS.upgradePath}
+      titleIcon={APP_ICON.page.presidentRoad}
       variant="plain"
     >
         <section className="rounded-[1.75rem] bg-[var(--brand-bg)] px-6 py-8 sm:px-8 sm:py-10">

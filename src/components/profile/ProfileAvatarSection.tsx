@@ -2,6 +2,7 @@
 
 import { getCurrentSession } from "@/lib/auth/auth-service";
 import { getMemberProfileIdentity } from "@/lib/config/app-config";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { uploadMemberAvatarBlob } from "@/lib/members/member-avatar";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
@@ -78,7 +79,7 @@ export function ProfileAvatarSection({ onAvatarUpdated }: { onAvatarUpdated?: ()
   return (
     <>
       <ProfileCard>
-        <ProfileSectionTitle emoji="🙂">個人頭像</ProfileSectionTitle>
+        <ProfileSectionTitle icon={APP_ICON.page.profile}>個人頭像</ProfileSectionTitle>
         <div className="mt-5 flex flex-col items-center text-center sm:flex-row sm:items-start sm:gap-6 sm:text-left">
           <MemberAvatar avatarUrl={avatarUrl} name={identity.displayName} size="xl" />
           <div className="min-w-0 flex-1">

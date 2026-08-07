@@ -2,7 +2,8 @@
 
 import { formatPointsValue } from "@/lib/points/streak-multiplier";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { AppIcon, IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import Link from "next/link";
 
 export function PointsHeroCard({
@@ -20,7 +21,9 @@ export function PointsHeroCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-white/80">
-            {APP_EMOJI.section.points} 我的積分
+            <IconLabel icon={APP_ICON.section.points} iconClassName="text-white/80">
+              我的積分
+            </IconLabel>
           </p>
           <p className="mt-2 text-[3rem] font-bold leading-none tracking-tight">
             {formatPointsValue(points.monthlyPoints)}
@@ -31,19 +34,22 @@ export function PointsHeroCard({
           </p>
         </div>
         <Link
-          className="shrink-0 rounded-full bg-white/15 px-4 py-2 text-[0.8125rem] font-semibold text-white backdrop-blur-sm"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-4 py-2 text-[0.8125rem] font-semibold text-white backdrop-blur-sm"
           href="/leaderboard"
         >
-          {APP_EMOJI.mood.trophy} 排行榜 →
+          <AppIcon className="text-white/90" name={APP_ICON.mood.trophy} size={14} />
+          排行榜 →
         </Link>
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
-        <span className="rounded-full bg-white/15 px-3 py-1.5 text-[0.8125rem] font-semibold">
-          {APP_EMOJI.mood.streak} 今日 +{formatPointsValue(points.todayPoints)}
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[0.8125rem] font-semibold">
+          <AppIcon className="text-white/90" name={APP_ICON.mood.streak} size={14} />
+          今日 +{formatPointsValue(points.todayPoints)}
         </span>
-        <span className="rounded-full bg-white/15 px-3 py-1.5 text-[0.8125rem] font-semibold">
-          {APP_EMOJI.action.redeem} 可兌換 {formatPointsValue(points.availablePoints)}
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[0.8125rem] font-semibold">
+          <AppIcon className="text-white/90" name={APP_ICON.action.redeem} size={14} />
+          可兌換 {formatPointsValue(points.availablePoints)}
         </span>
         {points.streakMultiplier > 1 ? (
           <span className="rounded-full bg-[#ffd60a] px-3 py-1.5 text-[0.8125rem] font-bold text-[#1d1d1f]">

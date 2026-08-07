@@ -5,7 +5,7 @@ import {
   groupLearningResources,
 } from "@/lib/learning-resources/catalog";
 import { PageShell } from "@/components/ui/PageShell";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 
 function ResourceCard({
@@ -57,7 +57,8 @@ export default function LearningLibraryPage() {
   return (
     <PageShell
       subtitle={`共 ${totalCount} 支業務教學影片 · 依系列整理，點擊在 YouTube 觀看`}
-      title={`${APP_EMOJI.page.learning} ${PARTNER_LABELS.learning}`}
+      title={PARTNER_LABELS.learning}
+      titleIcon={APP_ICON.page.learning}
     >
         {groups.map((group) => (
           <section key={group.key} className="space-y-3">

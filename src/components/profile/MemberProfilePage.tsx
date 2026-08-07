@@ -10,7 +10,8 @@ import {
   loadMissionControlMetrics,
 } from "@/lib/mission-control/format";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { useCallback, useEffect, useState } from "react";
 import {
   MetricTile,
@@ -47,7 +48,7 @@ function ProfileError({ onRetry }: { onRetry: () => void }) {
     <div className={`flex min-h-full items-center justify-center ${PAGE_GRADIENT_CLASS} px-6`}>
       <div className="w-full max-w-sm rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-8 text-center">
         <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">
-          {APP_EMOJI.mood.error} 無法載入會員資料
+          <IconLabel icon={APP_ICON.mood.error}>無法載入會員資料</IconLabel>
         </p>
         <p className="mt-3 text-[0.9375rem] leading-relaxed text-[#86868b]">
           系統無法完成計算，請重新載入或稍後再試。
@@ -70,7 +71,7 @@ function BasicInfoSection({ metrics }: { metrics: MemberComputedMetrics }) {
 
   return (
     <ProfileCard>
-      <ProfileSectionTitle emoji={APP_EMOJI.page.profile}>會員資料</ProfileSectionTitle>
+      <ProfileSectionTitle icon={APP_ICON.page.profile}>會員資料</ProfileSectionTitle>
       <dl className="mt-4">
         <StatRow label="姓名" value={identity.displayName} />
         <StatRow label="會員編號" value={identity.herbalifeMemberId} />
@@ -93,7 +94,7 @@ function GrowthSection({ metrics }: { metrics: MemberComputedMetrics }) {
 
   return (
     <ProfileCard>
-      <ProfileSectionTitle emoji={APP_EMOJI.section.growth}>成長資訊</ProfileSectionTitle>
+      <ProfileSectionTitle icon={APP_ICON.section.growth}>成長資訊</ProfileSectionTitle>
 
       <div className="mt-4 space-y-5">
         <div>
@@ -118,24 +119,18 @@ function GrowthSection({ metrics }: { metrics: MemberComputedMetrics }) {
 
 function ProfileQuickLinks() {
   const links = [
-    { href: "/leaderboard", label: "積分排行", emoji: "🏆" },
-    { href: "/organization", label: "組織圖", emoji: "🌳" },
-    { href: "/retail-house", label: "零售屋", emoji: "🏠" },
-    { href: "/goals", label: "目標中心", emoji: "🎯" },
-    { href: "/events", label: "活動紀錄", emoji: "📋" },
+    { href: "/leaderboard", label: "積分排行" },
+    { href: "/organization", label: "組織圖" },
+    { href: "/retail-house", label: "零售屋" },
+    { href: "/goals", label: "目標中心" },
+    { href: "/events", label: "活動紀錄" },
   ] as const;
 
   return (
     <ProfileCard>
-      <ProfileSectionTitle emoji="🔗">更多功能</ProfileSectionTitle>
+      <ProfileSectionTitle icon="link">更多功能</ProfileSectionTitle>
       <div className="mt-4">
-        <QuickLinkGrid
-          links={links.map((link) => ({
-            href: link.href,
-            label: link.label,
-            emoji: link.emoji,
-          }))}
-        />
+        <QuickLinkGrid links={links} />
       </div>
     </ProfileCard>
   );

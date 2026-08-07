@@ -77,7 +77,8 @@ import {
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { useSwipeNavigation } from "@/lib/hooks/use-swipe-navigation";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { AppIcon, IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON, QUADRANT_ICONS } from "@/lib/ui/app-icons";
 import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
 import type { CalendarEvent, CalendarSlotInterval, ExpandedCalendarEvent, RecurrenceEditScope } from "@/types/calendar-event";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -752,13 +753,15 @@ export default function CalendarPage() {
         : `${formatChineseMonthDay(selectedDate)} ${formatChineseWeekday(selectedDate)}`;
 
   const headerSubtitle =
-    viewMode === "month"
-      ? `${APP_EMOJI.page.calendar} 月視圖`
-      : viewMode === "week"
-        ? `${APP_EMOJI.page.calendar} 週視圖`
-        : viewMode === "stats"
-          ? `${APP_EMOJI.section.activity} 查詢統計`
-          : `${APP_EMOJI.page.calendar} ${formatChineseYearMonth(selectedDate)}`;
+    viewMode === "month" ? (
+      <IconLabel icon={APP_ICON.page.calendar}>月視圖</IconLabel>
+    ) : viewMode === "week" ? (
+      <IconLabel icon={APP_ICON.page.calendar}>週視圖</IconLabel>
+    ) : viewMode === "stats" ? (
+      <IconLabel icon={APP_ICON.section.activity}>查詢統計</IconLabel>
+    ) : (
+      <IconLabel icon={APP_ICON.page.calendar}>{formatChineseYearMonth(selectedDate)}</IconLabel>
+    );
 
   const monthSwipeHandlers = useSwipeNavigation(
     () => setMonthAnchor(shiftMonth(monthAnchor, 1)),
@@ -837,7 +840,7 @@ export default function CalendarPage() {
                 onClick={() => openCreate()}
                 type="button"
               >
-                {APP_EMOJI.action.addRecord} 新增
+                <IconLabel icon={APP_ICON.action.addRecord}>新增</IconLabel>
               </button>
             ) : null}
           </div>

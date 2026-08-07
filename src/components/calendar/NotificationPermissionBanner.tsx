@@ -5,7 +5,8 @@ import {
   refreshCalendarReminderSchedule,
   requestCalendarNotificationPermission,
 } from "@/lib/calendar/calendar-reminder-runner";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { useCallback, useMemo, useState } from "react";
 
@@ -34,7 +35,7 @@ export function NotificationPermissionBanner() {
   return (
     <section className="rounded-[1.25rem] border border-[var(--cal-border)] bg-[var(--cal-surface)] px-4 py-4">
       <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">
-        {APP_EMOJI.action.notify} 開啟手機通知
+        <IconLabel icon={APP_ICON.action.notify}>開啟手機通知</IconLabel>
       </p>
       <p className="mt-1 text-[0.8125rem] leading-relaxed text-[#86868b]">
         允許通知後，自己新增的行程與「會參加」的共用行程會依提醒時間跳出通知。建議將 Baki GO
@@ -51,7 +52,7 @@ export function NotificationPermissionBanner() {
           onClick={() => void handleEnable()}
           type="button"
         >
-          {isRequesting ? "設定中…" : `${APP_EMOJI.action.notify} 允許通知`}
+          {isRequesting ? "設定中…" : <IconLabel icon={APP_ICON.action.notify}>允許通知</IconLabel>}
         </button>
       )}
     </section>

@@ -2,7 +2,8 @@
 
 import { formatPointsValue } from "@/lib/points/streak-multiplier";
 import { formatReportDateRange } from "@/lib/retail-house/format-report";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import type { EntityId } from "@/types";
 import type { LeaderboardPeriod, PointsLeaderboardEntry } from "@/types/points";
 import Link from "next/link";
@@ -57,7 +58,7 @@ export function LeaderboardRankList({
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-[1rem] font-semibold text-[#1d1d1f]">
-            {APP_EMOJI.mood.trophy} {PERIOD_LABELS[period]}
+            <IconLabel icon={APP_ICON.mood.trophy}>{PERIOD_LABELS[period]}</IconLabel>
           </h2>
           {subtitle ? (
             <p className="mt-0.5 text-[0.8125rem] text-[#86868b]">{subtitle}</p>
@@ -93,7 +94,9 @@ export function LeaderboardRankList({
         </ul>
       ) : (
         <p className="mt-4 text-center text-[0.875rem] text-[#86868b]">
-          {APP_EMOJI.mood.empty} {period === "weekly" ? "本週" : "本月"}尚無積分紀錄
+          <IconLabel icon={APP_ICON.mood.empty}>
+            {period === "weekly" ? "本週" : "本月"}尚無積分紀錄
+          </IconLabel>
         </p>
       )}
 

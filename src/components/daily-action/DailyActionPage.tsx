@@ -24,7 +24,8 @@ import {
   formatDailyActionProgress,
 } from "@/lib/daily-action/daily-action-selectors";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { AppIcon, IconLabel, type AppIconName } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -51,7 +52,7 @@ function TodayCalendarPlanCard({ plan }: { plan: CalendarDayPlanSummary }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-[1rem] font-semibold text-[var(--cal-text)]">
-            {APP_EMOJI.section.calendarToday} 今日行程
+            <IconLabel icon={APP_ICON.section.calendarToday}>今日行程</IconLabel>
           </h2>
           <p className="mt-1 text-[0.8125rem] text-[var(--cal-text-muted)]">
             共 {plan.totalCount} 項 · 會議 {plan.meetingCount} · 日常 {plan.dailyCount}
@@ -77,7 +78,7 @@ function TodayCalendarPlanCard({ plan }: { plan: CalendarDayPlanSummary }) {
         </ul>
       ) : (
         <p className="mt-4 text-[0.875rem] text-[#86868b]">
-          {APP_EMOJI.mood.empty} 今天尚無行程，可到行事曆新增或標記參加共用會議。
+          <IconLabel icon={APP_ICON.mood.empty}>今天尚無行程，可到行事曆新增或標記參加共用會議。</IconLabel>
         </p>
       )}
     </section>
@@ -153,7 +154,7 @@ function SuperLeagueCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-[1rem] font-semibold text-[#1d1d1f]">
-            {APP_EMOJI.section.superLeague} 超級聯賽 10+2
+            <IconLabel icon={APP_ICON.section.superLeague}>超級聯賽 10+2</IconLabel>
           </h2>
           <p className="mt-1 text-[0.8125rem] text-[#86868b]">僅計入手動新增的夥伴</p>
         </div>
@@ -209,7 +210,7 @@ function SuperLeagueCard({
         </ul>
       ) : (
         <p className="mt-4 rounded-xl bg-[var(--brand-bg)] px-4 py-3 text-[0.8125rem] text-[#86868b]">
-          {APP_EMOJI.mood.empty} 尚無夥伴，按「+ 新增」開始記錄。
+          <IconLabel icon={APP_ICON.mood.empty}>尚無夥伴，按「+ 新增」開始記錄。</IconLabel>
         </p>
       )}
 
@@ -247,10 +248,10 @@ function SuperLeagueCard({
   );
 }
 
-const TODAY_ACTIONS: Array<{ key: TodayActionKey; label: string; emoji: string }> = [
-  { key: "measurement", label: "量測", emoji: APP_EMOJI.action.measurement },
-  { key: "consultation", label: "諮詢", emoji: APP_EMOJI.action.consultation },
-  { key: "recruit", label: "招募會員", emoji: APP_EMOJI.action.recruit },
+const TODAY_ACTIONS: Array<{ key: TodayActionKey; label: string; icon: AppIconName }> = [
+  { key: "measurement", label: "量測", icon: APP_ICON.action.measurement },
+  { key: "consultation", label: "諮詢", icon: APP_ICON.action.consultation },
+  { key: "recruit", label: "招募會員", icon: APP_ICON.action.recruit },
 ];
 
 function DailyActionView({
@@ -407,17 +408,18 @@ function DailyActionView({
 
         <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
           <h2 className="text-[1rem] font-semibold text-[#1d1d1f]">
-            {APP_EMOJI.section.quickLog} 快速記錄
+            <IconLabel icon={APP_ICON.section.quickLog}>快速記錄</IconLabel>
           </h2>
           <div className="mt-4 grid grid-cols-3 gap-2">
             {TODAY_ACTIONS.map((action) => (
               <button
                 key={action.key}
-                className="rounded-2xl bg-[#1d1d1f] px-3 py-3.5 text-[0.8125rem] font-semibold text-white transition-transform active:scale-[0.98]"
+                className="flex flex-col items-center gap-1.5 rounded-2xl bg-[#1d1d1f] px-3 py-3.5 text-[0.8125rem] font-semibold text-white transition-transform active:scale-[0.98]"
                 onClick={() => handleAction(action.key)}
                 type="button"
               >
-                {action.emoji} {action.label}
+                <AppIcon className="text-white/90" name={action.icon} size={20} />
+                {action.label}
               </button>
             ))}
           </div>
@@ -473,7 +475,7 @@ export default function DailyActionPage() {
   if (!metrics) {
     return (
       <div className={`flex min-h-full items-center justify-center ${PAGE_GRADIENT_CLASS} text-[var(--brand-text-muted)]`}>
-        {APP_EMOJI.mood.loading} 載入今日行動…
+        <IconLabel icon={APP_ICON.mood.loading}>載入今日行動…</IconLabel>
       </div>
     );
   }

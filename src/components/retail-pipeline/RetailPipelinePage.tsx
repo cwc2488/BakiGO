@@ -16,7 +16,8 @@ import type { RetailPipelineColumnView, RetailPipelineLeadView } from "@/types/r
 import type { RetailPipelineStageKey } from "@/types/retail-pipeline";
 import { PageShell } from "@/components/ui/PageShell";
 import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const STAGE_DOT: Record<RetailPipelineStageKey, string> = {
@@ -319,7 +320,8 @@ export default function RetailPipelinePage() {
   return (
     <PageShell
       subtitle={`共 ${snapshot.totalLeads} 位名單 · 舊客/舊會員長期累積 · 新客/新會員下月自動轉舊`}
-      title={`${APP_EMOJI.page.pipeline} ${PARTNER_LABELS.memberList}`}
+      title={PARTNER_LABELS.memberList}
+      titleIcon={APP_ICON.page.pipeline}
       variant="plain"
     >
         <form
@@ -340,7 +342,7 @@ export default function RetailPipelinePage() {
             className="rounded-2xl bg-[var(--brand-primary)] px-5 py-3 text-[0.9375rem] font-semibold text-white"
             type="submit"
           >
-            {APP_EMOJI.action.addRecord} 新增陌生人
+            <IconLabel icon={APP_ICON.action.addRecord}>新增陌生人</IconLabel>
           </button>
         </form>
 

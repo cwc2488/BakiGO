@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { AppIcon, type AppIconName } from "./AppIcon";
 import { PAGE_GRADIENT_CLASS } from "./brand-ui";
 
 type PageShellVariant = "gradient" | "plain";
@@ -19,6 +20,7 @@ export function PageShell({
   variant = "gradient",
   containerClassName = "home-container",
   headerExtra,
+  titleIcon,
 }: {
   children: ReactNode;
   title: string;
@@ -29,6 +31,7 @@ export function PageShell({
   variant?: PageShellVariant;
   containerClassName?: string;
   headerExtra?: ReactNode;
+  titleIcon?: AppIconName;
 }) {
   return (
     <div className={`min-h-full ${BACKGROUNDS[variant]}`}>
@@ -44,8 +47,9 @@ export function PageShell({
           ) : null}
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-[2rem] font-semibold tracking-tight text-[var(--brand-text)] sm:text-[2.125rem]">
-                {title}
+              <h1 className="flex items-center gap-2.5 text-[2rem] font-semibold tracking-tight text-[var(--brand-text)] sm:text-[2.125rem]">
+                {titleIcon ? <AppIcon className="shrink-0" name={titleIcon} size={28} /> : null}
+                <span>{title}</span>
               </h1>
               {subtitle ? (
                 <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--brand-text-muted)]">{subtitle}</p>

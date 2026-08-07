@@ -12,7 +12,8 @@ import { getRegistrationRankOptions } from "@/lib/auth/registration-ranks";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { BakiEvent } from "@/types/baki-event";
 import type { OrganizationMemberView } from "@/types/organization-center";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { ProgressBar } from "@/components/home/ui";
 import { useMemo, useState } from "react";
 
@@ -197,7 +198,7 @@ export function OrganizationMemberDetail({
             onClick={() => setRedemptionOpen(true)}
             type="button"
           >
-            {APP_EMOJI.action.redeem} 為 {member.name} 兌換積分
+            <IconLabel icon={APP_ICON.action.redeem}>為 {member.name} 兌換積分</IconLabel>
           </button>
           {member.availablePoints <= 0 ? (
             <p className="text-center text-[0.8125rem] text-[#86868b]">目前無可兌換積分</p>
@@ -212,7 +213,7 @@ export function OrganizationMemberDetail({
       {redemptions.length > 0 ? (
         <div className="mt-5">
           <p className="text-[0.875rem] font-semibold text-[#1d1d1f]">
-            {APP_EMOJI.section.activity} 兌換紀錄
+            <IconLabel icon={APP_ICON.section.activity}>兌換紀錄</IconLabel>
           </p>
           <ul className="mt-3 space-y-2">
             {redemptions.slice(-5).reverse().map((item) => (

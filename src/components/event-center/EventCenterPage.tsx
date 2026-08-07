@@ -18,7 +18,8 @@ import type { BakiEventCategory } from "@/types/baki-event";
 import type { EventTimelineEntry } from "@/types/event-center";
 import { PageShell } from "@/components/ui/PageShell";
 import { PageErrorState, PageLoadingState } from "@/components/ui/PageStates";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -309,11 +310,12 @@ export default function EventCenterPage() {
   return (
     <PageShell
       subtitle={PARTNER_LABELS.recordCenterHint}
-      title={`${APP_EMOJI.page.events} ${PARTNER_LABELS.recordCenter}`}
+      title={PARTNER_LABELS.recordCenter}
+      titleIcon={APP_ICON.page.events}
     >
         <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6 sm:p-7">
-          <h2 className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">
-            {APP_EMOJI.action.addRecord} 新增紀錄
+          <h2 className="flex items-center gap-1.5 text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">
+            <IconLabel icon={APP_ICON.action.addRecord}>新增紀錄</IconLabel>
           </h2>
 
           <form className="mt-6 space-y-6" onSubmit={handleSubmit}>

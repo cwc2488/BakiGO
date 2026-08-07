@@ -16,7 +16,7 @@ import type {
   PromotionConditionType,
   PromotionTier,
 } from "@/types/promotion-campaign";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MonthlyPromotionsPanel } from "./MonthlyPromotionsPanel";
 import { PageShell } from "@/components/ui/PageShell";
@@ -297,7 +297,8 @@ export default function PromotionCenterPage() {
         ) : null
       }
       subtitle="發布後自動掛勾全組織下線 · 推廣組以上可發布"
-      title={`${APP_EMOJI.hub.promotions} 促銷專欄`}
+      title="促銷專欄"
+      titleIcon={APP_ICON.hub.promotions}
     >
         {successMessage ? (
           <p className="rounded-2xl bg-[#e8f8ee] px-4 py-3 text-[0.9375rem] font-medium text-[#248a3d]">

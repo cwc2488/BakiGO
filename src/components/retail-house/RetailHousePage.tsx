@@ -14,7 +14,8 @@ import {
 } from "@/lib/mission-control/format";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
-import { APP_EMOJI, QUADRANT_EMOJIS } from "@/lib/ui/app-emojis";
+import { AppIcon, IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON, QUADRANT_ICONS } from "@/lib/ui/app-icons";
 import type { RetailHouseQuadrantView } from "@/types/retail-house";
 import type { RetailReportLineItem } from "@/types/retail-weekly-report";
 import { useEffect, useMemo, useState } from "react";
@@ -92,7 +93,7 @@ function QuadrantPanel({
   usePresentationTitle?: boolean;
 }) {
   const heading = usePresentationTitle ? quadrant.presentationTitle : quadrant.title;
-  const emoji = QUADRANT_EMOJIS[quadrant.key] ?? APP_EMOJI.page.retailHouse;
+  const iconName = QUADRANT_ICONS[quadrant.key] ?? APP_ICON.page.retailHouse;
 
   return (
     <section
@@ -104,11 +105,12 @@ function QuadrantPanel({
         <h2
           className={
             presentationMode
-              ? "text-[1.375rem] font-semibold text-[#1d1d1f] lg:text-[1.5rem]"
-              : "text-[1.125rem] font-semibold text-[#1d1d1f]"
+              ? "flex items-center gap-2 text-[1.375rem] font-semibold text-[#1d1d1f] lg:text-[1.5rem]"
+              : "flex items-center gap-2 text-[1.125rem] font-semibold text-[#1d1d1f]"
           }
         >
-          {emoji} {heading}
+          <AppIcon name={iconName} size={presentationMode ? 22 : 20} />
+          {heading}
         </h2>
         <p className="text-[0.8125rem] text-[#86868b]">（{quadrant.valueLabel}）</p>
       </header>
@@ -125,7 +127,7 @@ function QuadrantPanel({
           ))
         ) : (
           <li className="py-6 text-center text-[0.9375rem] text-[#86868b]">
-            {APP_EMOJI.mood.empty} 本週尚無紀錄
+            <IconLabel icon={APP_ICON.mood.empty}>本週尚無紀錄</IconLabel>
           </li>
         )}
       </ul>
@@ -158,7 +160,7 @@ function FourQuadrantPresentation({
       <header className="flex shrink-0 items-center justify-between gap-4 border-b border-[var(--brand-border)] bg-[var(--brand-surface)]/90 px-5 py-4 backdrop-blur-md">
         <div className="min-w-0">
           <p className="text-[0.8125rem] font-medium text-[#86868b]">
-            {APP_EMOJI.action.presentation} 零售屋簡報
+            <IconLabel icon={APP_ICON.action.presentation}>零售屋簡報</IconLabel>
           </p>
           <MemberNameWithAvatar
             avatarUrl={avatarUrl}
@@ -211,7 +213,7 @@ function MonthlyTotalsSection({
     <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)]/95 p-6 shadow-[0_8px_32px_rgba(0,0,0,0.04)]">
       <header className="space-y-1">
         <h2 className="text-[1.25rem] font-semibold text-[#1d1d1f]">
-          {APP_EMOJI.section.activity} 本月累積
+          <IconLabel icon={APP_ICON.section.activity}>本月累積</IconLabel>
         </h2>
         <p className="text-[0.8125rem] text-[#86868b]">{formatReportYearMonth(yearMonth)}</p>
       </header>
@@ -219,8 +221,11 @@ function MonthlyTotalsSection({
       <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
         {quadrants.map((quadrant) => (
           <div key={`monthly-${quadrant.key}`} className="rounded-2xl bg-[var(--brand-bg)] px-4 py-3">
-            <p className="text-[0.8125rem] text-[#86868b]">
-              {QUADRANT_EMOJIS[quadrant.key] ?? ""} {quadrant.monthlyLabel}：
+            <p className="flex items-center gap-1.5 text-[0.8125rem] text-[#86868b]">
+              {QUADRANT_ICONS[quadrant.key] ? (
+                <AppIcon name={QUADRANT_ICONS[quadrant.key]!} size={14} />
+              ) : null}
+              {quadrant.monthlyLabel}：
             </p>
             <p className="mt-1 text-[1.25rem] font-semibold text-[#1d1d1f]">
               {formatReportAmount(quadrant.monthlyTotal, quadrant.unit)}
@@ -301,7 +306,8 @@ function RetailHouseView({
         />
       }
       subtitle="本週四象限成交與簡報模式"
-      title={`${APP_EMOJI.page.retailHouse} 零售屋`}
+      title="零售屋"
+      titleIcon={APP_ICON.page.retailHouse}
     >
         <RetailTransactionForm onMetricsChange={onMetricsChange} />
 
@@ -318,7 +324,7 @@ function RetailHouseView({
           onClick={onEnterPresentationMode}
           type="button"
         >
-          {APP_EMOJI.action.presentation} 簡報模式
+          <IconLabel icon={APP_ICON.action.presentation}>簡報模式</IconLabel>
         </button>
     </PageShell>
   );
@@ -337,7 +343,7 @@ export default function RetailHousePage() {
   if (!metrics) {
     return (
       <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] text-[#86868b]">
-        {APP_EMOJI.mood.loading} 載入零售屋…
+        <IconLabel icon={APP_ICON.mood.loading}>載入零售屋…</IconLabel>
       </div>
     );
   }

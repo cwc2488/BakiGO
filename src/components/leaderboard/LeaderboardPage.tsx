@@ -9,7 +9,8 @@ import { loadMemberMetrics } from "@/lib/mission-control/format";
 import { buildPointsLeaderboard } from "@/lib/points/build-points-leaderboard";
 import { formatPointsValue } from "@/lib/points/streak-multiplier";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { AppIcon, IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import type { PointsLeaderboardResult } from "@/types/points";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -28,7 +29,9 @@ function PointsHeroBanner({
   return (
     <section className="overflow-hidden rounded-[1.75rem] border border-[#248a3d]/20 bg-[linear-gradient(135deg,#248a3d_0%,#77b539_55%,#a8d86a_100%)] p-6 text-white shadow-[0_16px_48px_rgba(36,138,61,0.25)]">
       <p className="text-[0.8125rem] font-medium text-white/80">
-        {APP_EMOJI.mood.trophy} {yearMonth} 本月排行
+        <IconLabel icon={APP_ICON.mood.trophy} iconClassName="text-white/80">
+          {yearMonth} 本月排行
+        </IconLabel>
       </p>
       <div className="mt-3 flex items-end justify-between gap-4">
         <div>
@@ -61,7 +64,7 @@ function GroupCompetitionPlaceholder() {
   return (
     <section className="rounded-[1.75rem] border border-dashed border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
       <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">
-        {APP_EMOJI.section.groupCompetition} 分組競賽
+        <IconLabel icon={APP_ICON.section.groupCompetition}>分組競賽</IconLabel>
       </p>
       <h2 className="mt-1 text-[1.0625rem] font-semibold text-[#1d1d1f]">即將推出</h2>
       <p className="mt-2 text-[0.875rem] leading-relaxed text-[#86868b]">
@@ -128,7 +131,8 @@ export default function LeaderboardPage() {
   return (
     <PageShell
       subtitle="本週前五 · 本月前十 · 歷史總積分永久保留"
-      title={`${APP_EMOJI.mood.trophy} 排行榜`}
+      title="排行榜"
+      titleIcon={APP_ICON.mood.trophy}
     >
         {monthly.viewerEntry ? (
           <PointsHeroBanner
@@ -144,7 +148,7 @@ export default function LeaderboardPage() {
         >
           <div>
             <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">
-              {APP_EMOJI.action.redeem} 為下線兌換積分
+              <IconLabel icon={APP_ICON.action.redeem}>為下線兌換積分</IconLabel>
             </p>
             <p className="mt-0.5 text-[0.8125rem] text-[#86868b]">
               組織圖選取下線 · 支援所有世代
@@ -177,13 +181,27 @@ export default function LeaderboardPage() {
 
         <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
           <h2 className="text-[1rem] font-semibold text-[#1d1d1f]">
-            {APP_EMOJI.section.points} 積分規則
+            <IconLabel icon={APP_ICON.section.points}>積分規則</IconLabel>
           </h2>
           <ul className="mt-3 space-y-2 text-[0.875rem] text-[#636366]">
-            <li>{APP_EMOJI.action.measurement} 量測 1 分 · {APP_EMOJI.action.consultation} 諮詢 5 分</li>
-            <li>{APP_EMOJI.quadrant.newCustomer} 新顧客成交 20 分 · {APP_EMOJI.quadrant.returningCustomer} 舊顧客續訂 25 分</li>
-            <li>{APP_EMOJI.quadrant.newMember} 新會員 25 分 · {APP_EMOJI.quadrant.returningMember} 舊會員 25 分</li>
-            <li>{APP_EMOJI.mood.streak} 連續每日積分：每天 +2% 加成，上限 20%</li>
+            <li>
+              <IconLabel icon={APP_ICON.action.measurement}>量測 1 分</IconLabel>
+              {" · "}
+              <IconLabel icon={APP_ICON.action.consultation}>諮詢 5 分</IconLabel>
+            </li>
+            <li>
+              <IconLabel icon={APP_ICON.quadrant.newCustomer}>新顧客成交 20 分</IconLabel>
+              {" · "}
+              <IconLabel icon={APP_ICON.quadrant.returningCustomer}>舊顧客續訂 25 分</IconLabel>
+            </li>
+            <li>
+              <IconLabel icon={APP_ICON.quadrant.newMember}>新會員 25 分</IconLabel>
+              {" · "}
+              <IconLabel icon={APP_ICON.quadrant.returningMember}>舊會員 25 分</IconLabel>
+            </li>
+            <li>
+              <IconLabel icon={APP_ICON.mood.streak}>連續每日積分：每天 +2% 加成，上限 20%</IconLabel>
+            </li>
           </ul>
         </section>
 

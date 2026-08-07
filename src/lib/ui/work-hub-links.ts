@@ -1,4 +1,4 @@
-import { APP_EMOJI, WORK_HUB_EMOJIS } from "@/lib/ui/app-emojis";
+import { APP_ICON } from "@/lib/ui/app-icons";
 
 export const SIMPLE_QUICK_LINKS = [
   { href: "/retail-pipeline", title: "名單" },
@@ -24,10 +24,10 @@ export const WORK_HUB_LINKS = [
 
 /** 側邊欄捷徑 — 不在底部四個分頁裡的常用功能。 */
 export const SIDE_NAV_EXTRA_LINKS = [
-  { href: "/retail-pipeline", title: "名單", emoji: WORK_HUB_EMOJIS["/retail-pipeline"] },
-  { href: "/goals", title: "目標", emoji: WORK_HUB_EMOJIS["/goals"] ?? "🎯" },
-  { href: "/events", title: "紀錄", emoji: WORK_HUB_EMOJIS["/events"] ?? "📋" },
-  { href: "/organization", title: "組織", emoji: WORK_HUB_EMOJIS["/organization"] ?? "🌳" },
-  { href: "/learning", title: "學習", emoji: WORK_HUB_EMOJIS["/learning"] ?? "📚" },
-  { href: "/president-road", title: "升級路線", emoji: WORK_HUB_EMOJIS["/president-road"] },
+  { href: "/retail-pipeline", title: "名單", icon: APP_ICON.hub.pipeline },
+  { href: "/goals", title: "目標", icon: APP_ICON.hub.goals },
+  { href: "/events", title: "紀錄", icon: APP_ICON.hub.events },
+  { href: "/organization", title: "組織", icon: APP_ICON.hub.organization },
+  { href: "/learning", title: "學習", icon: APP_ICON.hub.learning },
+  { href: "/president-road", title: "升級路線", icon: APP_ICON.page.presidentRoad },
 ] as const;

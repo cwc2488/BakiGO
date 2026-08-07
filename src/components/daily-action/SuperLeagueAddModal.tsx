@@ -1,7 +1,8 @@
 "use client";
 
 import type { DailyActionSuperLeagueEntryView } from "@/types/daily-action";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { useBodyScrollLock } from "@/lib/ui/use-body-scroll-lock";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -142,7 +143,9 @@ export function SuperLeagueAddModal({
       <div className="relative mb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] flex w-full max-w-md max-h-[calc(100dvh-4.5rem-env(safe-area-inset-bottom,0px))] touch-auto flex-col overflow-hidden rounded-t-[1.5rem] bg-white shadow-xl sm:mb-0 sm:max-h-[90vh] sm:rounded-[1.5rem]">
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--brand-border)] px-5 py-4">
           <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">
-            {APP_EMOJI.section.superLeague} {isEditMode ? "編輯夥伴" : "加入超級聯賽"}
+            <IconLabel icon={APP_ICON.section.superLeague}>
+              {isEditMode ? "編輯夥伴" : "加入超級聯賽"}
+            </IconLabel>
           </h2>
           <button
             className="rounded-lg px-2 py-1 text-[0.9375rem] font-medium text-[var(--brand-primary-dark)]"

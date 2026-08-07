@@ -5,6 +5,7 @@ import {
   setHomeDisplayMode,
   type HomeDisplayMode,
 } from "@/lib/ui/home-display-mode";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { useMemo, useState } from "react";
 import { ProfileCard, ProfileSectionTitle } from "./ui";
@@ -20,7 +21,7 @@ export function ProfileHomeDisplaySection() {
 
   return (
     <ProfileCard>
-      <ProfileSectionTitle emoji="🏠">首頁顯示</ProfileSectionTitle>
+      <ProfileSectionTitle icon={APP_ICON.nav.home}>首頁顯示</ProfileSectionTitle>
       <p className="mt-2 text-[0.875rem] leading-relaxed text-[#86868b]">
         簡易模式只顯示今天要做的事和常用入口，字比較少。
       </p>

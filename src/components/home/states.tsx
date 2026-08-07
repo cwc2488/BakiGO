@@ -1,19 +1,24 @@
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { AppIcon, IconLabel, type AppIconName } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
 
 export function EmptyState({
   title,
   description,
-  emoji,
+  icon,
 }: {
   title: string;
   description: string;
-  emoji?: string;
+  icon?: AppIconName;
 }) {
   return (
     <div className="rounded-2xl bg-[var(--brand-bg)] px-5 py-6 text-center">
-      {emoji ? <p className="text-[1.75rem] leading-none">{emoji}</p> : null}
-      <p className={`text-[1rem] font-semibold text-[#1d1d1f] ${emoji ? "mt-2" : ""}`}>{title}</p>
+      {icon ? (
+        <div className="mb-2 flex justify-center">
+          <AppIcon name={icon} size={32} />
+        </div>
+      ) : null}
+      <p className="text-[1rem] font-semibold text-[#1d1d1f]">{title}</p>
       <p className="mt-2 text-[0.875rem] leading-relaxed text-[#86868b]">{description}</p>
     </div>
   );
@@ -30,7 +35,7 @@ export function HomeErrorState({
     <div className={`flex min-h-full items-center justify-center ${PAGE_GRADIENT_CLASS} px-6`}>
       <div className="w-full max-w-sm rounded-[1.75rem] bg-[var(--brand-surface)] p-8 text-center shadow-[0_8px_40px_rgba(0,0,0,0.06)]">
         <p className="text-[1.125rem] font-semibold text-[var(--brand-text)]">
-          {APP_EMOJI.mood.error} 無法載入首頁
+          <IconLabel icon={APP_ICON.mood.error}>無法載入首頁</IconLabel>
         </p>
         <p className="mt-3 text-[0.9375rem] leading-relaxed text-[var(--brand-text-muted)]">{message}</p>
         <button

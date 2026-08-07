@@ -23,7 +23,8 @@ import type { OrganizationCenterSnapshot, OrganizationTreeNode } from "@/types/o
 import type { Member } from "@/types/member";
 import { PageShell } from "@/components/ui/PageShell";
 import { PageErrorState, PageLoadingState } from "@/components/ui/PageStates";
-import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { IconLabel } from "@/components/ui/AppIcon";
+import { APP_ICON } from "@/lib/ui/app-icons";
 import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { OrganizationMemberDetail } from "./OrganizationMemberDetail";
@@ -198,7 +199,8 @@ export default function OrganizationCenterPage() {
   return (
     <PageShell
       subtitle={`共 ${snapshot.totalMembers} 位夥伴 · 雲端同步 · 自己 → 第一代 → 第二代…`}
-      title={`${APP_EMOJI.page.organization} ${PARTNER_LABELS.organization}`}
+      title={PARTNER_LABELS.organization}
+      titleIcon={APP_ICON.page.organization}
     >
         <section className="home-section">
           <OrganizationTreeDiagram
@@ -215,7 +217,9 @@ export default function OrganizationCenterPage() {
           <section className="home-section">
             {selectedMemberId === viewer?.id ? (
               <p className="mb-3 rounded-2xl bg-[var(--brand-primary-muted)] px-4 py-3 text-[0.875rem] text-[#636366]">
-                {APP_EMOJI.action.redeem} 點選組織圖中的下線夥伴，即可為其兌換積分（支援所有世代）。
+                <IconLabel icon={APP_ICON.action.redeem}>
+                  點選組織圖中的下線夥伴，即可為其兌換積分（支援所有世代）。
+                </IconLabel>
               </p>
             ) : null}
             <OrganizationMemberDetail

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { IconAddRecord, QUICK_LINK_ICONS, type QuickLinkHref } from "./BrandIcons";
+import { AppIcon, routeIcon, type AppIconName } from "./AppIcon";
+import { ROUTE_ICON_COMPONENTS, type QuickLinkHref } from "./BrandIcons";
 
 export const PAGE_GRADIENT_CLASS =
   "bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]";
@@ -28,14 +29,14 @@ export function BrandCard({
 
 export function SectionLabel({
   children,
-  emoji,
+  icon,
 }: {
   children: ReactNode;
-  emoji?: string;
+  icon?: AppIconName;
 }) {
   return (
-    <h2 className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[var(--brand-text-muted)]">
-      {emoji ? <span className="mr-1.5 normal-case">{emoji}</span> : null}
+    <h2 className="flex items-center gap-1.5 text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[var(--brand-text-muted)]">
+      {icon ? <AppIcon className="normal-case text-[var(--brand-primary)]" name={icon} size={14} /> : null}
       {children}
     </h2>
   );
@@ -100,7 +101,8 @@ export function QuickLinkGrid({
   return (
     <div className="grid grid-cols-2 gap-2.5">
       {links.map((link) => {
-        const Icon = QUICK_LINK_ICONS[link.href as QuickLinkHref] ?? IconAddRecord;
+        const href = link.href as QuickLinkHref;
+        const Icon = ROUTE_ICON_COMPONENTS[href] ?? ROUTE_ICON_COMPONENTS["/events"];
         return (
           <Link
             key={link.href}

@@ -108,7 +108,7 @@ export function ProfileAccountSection({ onSponsorUpdated }: { onSponsorUpdated?:
 
   return (
     <ProfileCard>
-      <ProfileSectionTitle emoji="⚙️">帳號設定</ProfileSectionTitle>
+      <ProfileSectionTitle icon="settings">帳號設定</ProfileSectionTitle>
 
       <dl className="mt-4">
         <StatRow label="目前上線會員編號" value={identity.sponsorHerbalifeMemberId ?? "—"} />
