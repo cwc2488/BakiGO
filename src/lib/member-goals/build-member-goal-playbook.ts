@@ -80,7 +80,7 @@ function collectPipelineLeadNames(
     .slice(0, limit);
 }
 
-function analyzePipeline(snapshot: RetailPipelineSnapshot | null): PipelineComposition {
+export function analyzePipeline(snapshot: RetailPipelineSnapshot | null): PipelineComposition {
   const accumulatedCustomerCount = countPipelineStages(snapshot, ACCUMULATED_CUSTOMER_STAGES);
   const repurchaseMemberCount = countPipelineStages(snapshot, REPURCHASE_MEMBER_STAGES);
   const mapCount = countPipelineStages(snapshot, ["map"]);
@@ -123,7 +123,7 @@ function formatNameHint(names: string[]): string {
   return `（例如：${names.join("、")}）`;
 }
 
-function isPipelineColdStart(composition: PipelineComposition): boolean {
+export function isPipelineColdStart(composition: PipelineComposition): boolean {
   return (
     composition.newCustomerPool === 0 &&
     composition.existingMemberPool === 0 &&

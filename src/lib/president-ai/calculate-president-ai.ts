@@ -88,6 +88,13 @@ function pickTodayPriority(
     }
   }
 
+  if (input.rankGuidance && input.rankGuidance.actionSteps.length > 0) {
+    const matched = scored.find((item) => item.sourceKey === "rank_daily_guidance");
+    if (matched) {
+      return matched;
+    }
+  }
+
   if (input.careerGoal && input.careerGoal.remaining > 0) {
     const matched =
       scored.find((item) => item.sourceKey === input.careerGoal!.sourceKey) ??

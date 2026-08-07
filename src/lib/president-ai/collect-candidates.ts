@@ -265,6 +265,21 @@ export function collectPriorityCandidates(input: PresidentAIInput): PriorityCand
     });
   }
 
+  if (input.rankGuidance && input.rankGuidance.actionSteps.length > 0) {
+    pushCandidate(candidates, {
+      sourceKey: "rank_daily_guidance",
+      title: input.rankGuidance.title,
+      description: input.rankGuidance.description,
+      category: input.rankGuidance.mode === "organization" ? "PROMOTION" : "ACTIVE",
+      current: 0,
+      target: 1,
+      remaining: 1,
+      progressPercent: 0,
+      enginePriority: input.rankGuidance.mode === "organization" ? 2600 : 2400,
+      actionHref: input.rankGuidance.actionSteps[0]?.href,
+    });
+  }
+
   return candidates;
 }
 

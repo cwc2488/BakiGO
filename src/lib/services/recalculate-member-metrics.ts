@@ -57,6 +57,7 @@ import { buildEventTimeline } from "./build-event-timeline";
 import { buildMapUniverse, type MapUniverseResult } from "./build-map-universe";
 import { calculatePresidentAI, toPresidentAIInput } from "@/lib/president-ai";
 import { clampPercent } from "@/lib/business-engine/utils";
+import { RANK_KEYS } from "@/lib/business-engine/rules/keys";
 import type { BakiEvent } from "@/types/baki-event";
 import { loadActiveMemberGoals } from "@/lib/member-goals/member-goal-storage";
 import {
@@ -64,6 +65,7 @@ import {
   buildMemberGoalProgressView,
 } from "@/lib/member-goals/calculate-member-goal-progress";
 import { buildRetailPipelineSnapshot } from "@/lib/retail-pipeline/pipeline-selectors";
+import { buildRankGuidance } from "@/lib/member-goals/build-rank-guidance-playbook";
 
 export interface MemberComputedMetrics {
   memberId: EntityId;
@@ -309,6 +311,14 @@ export function recalculateMemberMetrics(
     buildMemberGoalProgressView(goal, goalMetricsContext, memberTransactions, pipelineSnapshot),
   );
   const careerGoalView = buildCareerBlueprintView(goalMetricsContext, pipelineSnapshot);
+  const rankGuidanceView = buildRankGuidance({
+    rankKey: currentMember?.rankKey ?? RANK_KEYS.NEW_MEMBER,
+    monthlyChallenge,
+    qualificationResults,
+    promotionProgress,
+    vp,
+    pipeline: pipelineSnapshot,
+  });
 
   const presidentAI = calculatePresidentAI(
     toPresidentAIInput({
@@ -316,6 +326,7 @@ export function recalculateMemberMetrics(
       referenceDate: input.referenceDate,
       memberGoals: memberGoalViews,
       careerGoal: careerGoalView,
+      rankGuidance: rankGuidanceView,
     }),
   );
 

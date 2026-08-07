@@ -123,6 +123,12 @@ export interface PresidentAIInput {
     sourceKey: string;
     actionSteps: Array<{ label: string; detail: string; href?: string }>;
   } | null;
+  rankGuidance: {
+    mode: "foundation" | "organization";
+    title: string;
+    description: string;
+    actionSteps: Array<{ label: string; detail: string; href?: string }>;
+  } | null;
 }
 
 export interface PriorityCandidate {

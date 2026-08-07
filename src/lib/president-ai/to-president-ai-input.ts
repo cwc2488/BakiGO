@@ -1,5 +1,6 @@
 import type { PresidentAIInput } from "./types";
 import type { CareerBlueprintView, MemberGoalProgressView } from "@/types/member-goal";
+import type { RankGuidanceView } from "@/lib/member-goals/build-rank-guidance-playbook";
 
 export interface PresidentAIMetricsInput {
   memberId: string;
@@ -15,6 +16,7 @@ export interface PresidentAIMetricsInput {
   ruleMissing: PresidentAIInput["ruleMissing"];
   memberGoals?: MemberGoalProgressView[];
   careerGoal?: CareerBlueprintView | null;
+  rankGuidance?: RankGuidanceView | null;
 }
 
 export function toPresidentAIInput(metrics: PresidentAIMetricsInput): PresidentAIInput {
@@ -73,6 +75,14 @@ export function toPresidentAIInput(metrics: PresidentAIMetricsInput): PresidentA
           progressPercent: metrics.careerGoal.progressPercent,
           sourceKey: metrics.careerGoal.sourceKey,
           actionSteps: metrics.careerGoal.actionSteps,
+        }
+      : null,
+    rankGuidance: metrics.rankGuidance
+      ? {
+          mode: metrics.rankGuidance.mode,
+          title: metrics.rankGuidance.title,
+          description: metrics.rankGuidance.description,
+          actionSteps: metrics.rankGuidance.actionSteps,
         }
       : null,
   };
