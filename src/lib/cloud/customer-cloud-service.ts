@@ -8,6 +8,11 @@ import { setCloudSyncPaused } from "@/lib/repositories/syncing-storage-adapter";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import { isReceiptExpired } from "@/lib/customers/customer-receipt-retention";
+import {
+  clearCustomerDeletionTombstones,
+  readCustomerDeletionTombstones,
+  readCustomerDeletionTombstoneIds,
+} from "@/lib/customers/customer-deletion-tombstones";
 import { todayISODate } from "@/lib/config/app-config";
 import type {
   BodyCompositionRecord,
@@ -297,6 +302,40 @@ export async function fetchCloudReceiptPhotos(
   return (data ?? []).map((row) => mapReceiptPhoto(row as ReceiptPhotoDbRow));
 }
 
+export async function deleteCustomersFromCloud(
+  ownerMemberId: EntityId,
+  customerIds: EntityId[],
+): Promise<void> {
+  if (!isSupabaseConfigured() || !isCloudDatabaseMemberId(ownerMemberId) || customerIds.length === 0) {
+    return;
+  }
+
+  const supabase = createSupabaseBrowserClient();
+  const { error } = await supabase
+    .from("customers")
+    .delete()
+    .eq("owner_member_id", ownerMemberId)
+    .in("id", customerIds);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+async function pushPendingCustomerDeletionsToCloud(
+  storage: StorageAdapter,
+  ownerMemberId: EntityId,
+): Promise<void> {
+  const tombstones = readCustomerDeletionTombstones(storage);
+  if (tombstones.length === 0) {
+    return;
+  }
+
+  const customerIds = tombstones.map((tombstone) => tombstone.customerId);
+  await deleteCustomersFromCloud(ownerMemberId, customerIds);
+  clearCustomerDeletionTombstones(storage, customerIds);
+}
+
 export async function pushCustomersToCloud(
   ownerMemberId: EntityId,
   customers: Customer[],
@@ -412,6 +451,8 @@ export async function syncCustomersOnLogin(
   setCloudSyncPaused(true);
   try {
     const repo = createCustomerRepository(storage);
+    await pushPendingCustomerDeletionsToCloud(storage, ownerMemberId);
+
     const cloudCustomers = await fetchCloudCustomers(ownerMemberId);
     const cloudHasData = cloudCustomers.length > 0;
     const localHasData = localHasCustomerData(storage);
@@ -429,7 +470,9 @@ export async function syncCustomersOnLogin(
 
     if (cloudHasData) {
       const localCustomers = repo.getCustomersByOwner(ownerMemberId);
-      const mergedCustomers = mergeById(localCustomers, cloudCustomers);
+      const tombstoneIds = readCustomerDeletionTombstoneIds(storage);
+      const filteredCloudCustomers = cloudCustomers.filter((customer) => !tombstoneIds.has(customer.id));
+      const mergedCustomers = mergeById(localCustomers, filteredCloudCustomers);
       storage.setItem(STORAGE_KEYS.customers, JSON.stringify(mergedCustomers));
 
       const customerIds = mergedCustomers.map((customer) => customer.id);
@@ -476,6 +519,8 @@ export async function pushLocalCustomersToCloud(storage: StorageAdapter): Promis
   if (!memberId) {
     return;
   }
+
+  await pushPendingCustomerDeletionsToCloud(storage, memberId);
 
   const repo = createCustomerRepository(storage);
   await pushCustomersToCloud(
@@ -672,4 +717,21 @@ export function scheduleCustomerCloudPush(storage?: StorageAdapter): void {
       console.error("Customer cloud sync push failed:", error);
     });
   }, PUSH_DEBOUNCE_MS);
+}
+
+export function flushCustomerCloudPush(storage?: StorageAdapter): void {
+  if (!isSupabaseConfigured()) {
+    return;
+  }
+
+  if (pushTimer) {
+    clearTimeout(pushTimer);
+    pushTimer = null;
+  }
+
+  pushStorage = storage ?? pushStorage ?? new LocalStorageAdapter();
+  const targetStorage = pushStorage ?? createLocalStorageAdapter();
+  void pushLocalCustomersToCloud(targetStorage).catch((error) => {
+    console.error("Customer cloud sync push failed:", error);
+  });
 }

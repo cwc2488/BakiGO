@@ -1,1 +1,1 @@
-export { scheduleCustomerCloudPush } from "@/lib/cloud/customer-cloud-service";
+export { flushCustomerCloudPush, scheduleCustomerCloudPush } from "@/lib/cloud/customer-cloud-service";

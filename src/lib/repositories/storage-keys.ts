@@ -29,6 +29,7 @@ export const STORAGE_KEYS = {
   customerBodyRecords: "baki-go:customer-body-records",
   customerProgressPhotos: "baki-go:customer-progress-photos",
   customerReceiptPhotos: "baki-go:customer-receipt-photos",
+  customerDeletionTombstones: "baki-go:customer-deletion-tombstones",
   customerFollowUpReminderDate: "baki-go:customer-follow-up-reminder-date",
   partnerCareMeta: "baki-go:partner-care-meta",
 } as const;

@@ -12,7 +12,8 @@ import type {
 import type { EntityId } from "@/types";
 import type { StorageAdapter } from "./storage-adapter";
 import { STORAGE_KEYS } from "./storage-keys";
-import { scheduleCustomerCloudPush } from "@/lib/cloud/customer-cloud-sync";
+import { scheduleCustomerCloudPush, flushCustomerCloudPush } from "@/lib/cloud/customer-cloud-sync";
+import { addCustomerDeletionTombstone } from "@/lib/customers/customer-deletion-tombstones";
 import {
   computeReceiptRetainUntil,
   isReceiptExpired,
@@ -104,7 +105,7 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
 
     const next = [...this.getAllCustomers(), customer];
     this.storage.setItem(STORAGE_KEYS.customers, JSON.stringify(next));
-    scheduleCustomerCloudPush();
+    scheduleCustomerCloudPush(this.storage);
     return customer;
   }
 
@@ -137,11 +138,13 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
     const next = [...customers];
     next[index] = updated;
     this.storage.setItem(STORAGE_KEYS.customers, JSON.stringify(next));
-    scheduleCustomerCloudPush();
+    scheduleCustomerCloudPush(this.storage);
     return updated;
   }
 
   deleteCustomer(customerId: EntityId): void {
+    addCustomerDeletionTombstone(this.storage, customerId);
+
     const nextCustomers = this.getAllCustomers().filter((customer) => customer.id !== customerId);
     this.storage.setItem(STORAGE_KEYS.customers, JSON.stringify(nextCustomers));
 
@@ -153,7 +156,7 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
 
     const nextReceipts = this.getAllReceiptPhotos().filter((receipt) => receipt.customerId !== customerId);
     this.storage.setItem(STORAGE_KEYS.customerReceiptPhotos, JSON.stringify(nextReceipts));
-    scheduleCustomerCloudPush();
+    flushCustomerCloudPush(this.storage);
   }
 
   getAllBodyRecords(): BodyCompositionRecord[] {
@@ -188,14 +191,14 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
 
     const next = [...this.getAllBodyRecords(), record];
     this.storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(next));
-    scheduleCustomerCloudPush();
+    scheduleCustomerCloudPush(this.storage);
     return record;
   }
 
   deleteBodyRecord(recordId: EntityId): void {
     const next = this.getAllBodyRecords().filter((record) => record.id !== recordId);
     this.storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(next));
-    scheduleCustomerCloudPush();
+    scheduleCustomerCloudPush(this.storage);
   }
 
   getAllProgressPhotos(): CustomerProgressPhoto[] {
@@ -224,14 +227,14 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
 
     const next = [...this.getAllProgressPhotos(), photo];
     this.storage.setItem(STORAGE_KEYS.customerProgressPhotos, JSON.stringify(next));
-    scheduleCustomerCloudPush();
+    scheduleCustomerCloudPush(this.storage);
     return photo;
   }
 
   deleteProgressPhoto(photoId: EntityId): void {
     const next = this.getAllProgressPhotos().filter((photo) => photo.id !== photoId);
     this.storage.setItem(STORAGE_KEYS.customerProgressPhotos, JSON.stringify(next));
-    scheduleCustomerCloudPush();
+    scheduleCustomerCloudPush(this.storage);
   }
 
   getAllReceiptPhotos(): CustomerReceiptPhoto[] {
@@ -243,7 +246,7 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
     const active = current.filter((receipt) => !isReceiptExpired(receipt, referenceDate));
     if (active.length !== current.length) {
       this.storage.setItem(STORAGE_KEYS.customerReceiptPhotos, JSON.stringify(active));
-      scheduleCustomerCloudPush();
+      scheduleCustomerCloudPush(this.storage);
     }
   }
 
@@ -269,14 +272,14 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
 
     const next = [...this.getAllReceiptPhotos(), receipt];
     this.storage.setItem(STORAGE_KEYS.customerReceiptPhotos, JSON.stringify(next));
-    scheduleCustomerCloudPush();
+    scheduleCustomerCloudPush(this.storage);
     return receipt;
   }
 
   deleteReceiptPhoto(receiptId: EntityId): void {
     const next = this.getAllReceiptPhotos().filter((receipt) => receipt.id !== receiptId);
     this.storage.setItem(STORAGE_KEYS.customerReceiptPhotos, JSON.stringify(next));
-    scheduleCustomerCloudPush();
+    scheduleCustomerCloudPush(this.storage);
   }
 }
 
