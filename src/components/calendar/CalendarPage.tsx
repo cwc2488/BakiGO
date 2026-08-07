@@ -77,7 +77,7 @@ import {
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { useSwipeNavigation } from "@/lib/hooks/use-swipe-navigation";
-import { AppIcon, IconLabel } from "@/components/ui/AppIcon";
+import { AppIcon } from "@/components/ui/AppIcon";
 import { APP_ICON, QUADRANT_ICONS } from "@/lib/ui/app-icons";
 import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
 import type { CalendarEvent, CalendarSlotInterval, ExpandedCalendarEvent, RecurrenceEditScope } from "@/types/calendar-event";
@@ -753,15 +753,13 @@ export default function CalendarPage() {
         : `${formatChineseMonthDay(selectedDate)} ${formatChineseWeekday(selectedDate)}`;
 
   const headerSubtitle =
-    viewMode === "month" ? (
-      <IconLabel icon={APP_ICON.page.calendar}>月視圖</IconLabel>
-    ) : viewMode === "week" ? (
-      <IconLabel icon={APP_ICON.page.calendar}>週視圖</IconLabel>
-    ) : viewMode === "stats" ? (
-      <IconLabel icon={APP_ICON.section.activity}>查詢統計</IconLabel>
-    ) : (
-      <IconLabel icon={APP_ICON.page.calendar}>{formatChineseYearMonth(selectedDate)}</IconLabel>
-    );
+    viewMode === "month"
+      ? "月視圖"
+      : viewMode === "week"
+        ? "週視圖"
+        : viewMode === "stats"
+          ? "查詢統計"
+          : formatChineseYearMonth(selectedDate);
 
   const monthSwipeHandlers = useSwipeNavigation(
     () => setMonthAnchor(shiftMonth(monthAnchor, 1)),
@@ -836,11 +834,12 @@ export default function CalendarPage() {
             </div>
             {viewMode !== "stats" ? (
               <button
-                className="rounded-full bg-[var(--cal-primary)] px-4 py-2 text-[0.875rem] font-semibold text-white"
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 text-[0.875rem] font-semibold text-white transition-transform active:scale-[0.98]"
                 onClick={() => openCreate()}
                 type="button"
               >
-                <IconLabel icon={APP_ICON.action.addRecord}>新增</IconLabel>
+                <AppIcon className="text-white" name={APP_ICON.action.addRecord} size={16} />
+                新增
               </button>
             ) : null}
           </div>
