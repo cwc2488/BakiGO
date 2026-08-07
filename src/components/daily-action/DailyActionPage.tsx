@@ -28,6 +28,7 @@ import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-me
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import type { DailyActionMetricView, DailyActionSuperLeagueEntryView, TodayActionKey } from "@/types/daily-action";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -35,6 +36,7 @@ import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal
 import { QuickRecruitModal } from "@/components/daily-action/QuickRecruitModal";
 import { SuperLeagueAddModal } from "@/components/daily-action/SuperLeagueAddModal";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
+import { TodayStepCard } from "@/components/president-ai/TodayStepCard";
 import {
   addSuperLeagueEntry,
   removeSuperLeagueEntry,
@@ -281,6 +283,18 @@ function DailyActionView({
   const [activityModalType, setActivityModalType] = useState<"measurement" | "consultation" | null>(
     null,
   );
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const action = searchParams.get("action");
+    if (action === "measurement" || action === "consultation") {
+      setActivityModalType(action);
+      return;
+    }
+    if (action === "recruit") {
+      setRecruitModalOpen(true);
+    }
+  }, [searchParams]);
 
   const editingSuperLeagueEntry = useMemo(() => {
     if (!editingSuperLeagueEntryId) {
@@ -387,6 +401,13 @@ function DailyActionView({
             />
           </div>
         </header>
+
+        <TodayStepCard
+          focusMode={metrics.presidentAI.focusMode}
+          onQuickLog={handleAction}
+          priority={snapshot.topPriority}
+          reasoning={metrics.presidentAI.reasoning[0]}
+        />
 
         <TodayCalendarPlanCard plan={todayPlan} />
 

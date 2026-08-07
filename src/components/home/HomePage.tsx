@@ -1,6 +1,5 @@
 "use client";
 
-import { buildGoalCenter } from "@/lib/goal-center/build-goal-center";
 import {
   formatDisplayDate,
   formatTimeGreeting,
@@ -9,14 +8,14 @@ import {
   loadMissionControlMetrics,
 } from "@/lib/mission-control/format";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
-import type { GoalCenterResult } from "@/types/goal-center";
-import type { Priority } from "@/types/president-ai";
+import type { Priority, PresidentAIResult } from "@/types/president-ai";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { APP_EMOJI, WORK_HUB_EMOJIS } from "@/lib/ui/app-emojis";
 import { EmptyState, HomeErrorState, HomeLoadingSkeleton } from "./states";
 import { Card, ProgressBar, SectionLabel } from "./ui";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
+import { TodayStepCard } from "@/components/president-ai/TodayStepCard";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -82,14 +81,14 @@ function PriorityCard({ priority, index }: { priority: Priority; index: number }
 }
 
 function PresidentAISection({
-  goalCenter,
+  presidentAI,
   firstUse,
 }: {
-  goalCenter: GoalCenterResult;
+  presidentAI: PresidentAIResult;
   firstUse: boolean;
 }) {
-  const priorities = goalCenter.topPriorities;
-  const reasoning = goalCenter.reasoning[0];
+  const priorities = presidentAI.topPriorities;
+  const reasoning = presidentAI.reasoning[0];
 
   return (
     <Card>
@@ -170,21 +169,21 @@ function AddTransactionButton() {
   );
 }
 
-function HomeView({
-  metrics,
-  goalCenter,
-}: {
-  metrics: MemberComputedMetrics;
-  goalCenter: GoalCenterResult;
-}) {
+function HomeView({ metrics }: { metrics: MemberComputedMetrics }) {
   const firstUse = !hasAnyActivity(metrics);
+  const topPriority = metrics.presidentAI.topPriorities[0] ?? null;
 
   return (
     <div className="min-h-full bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]">
       <main className="home-container flex flex-col gap-5 pb-24 pt-10 sm:pt-12">
         <GreetingSection metrics={metrics} />
+        <TodayStepCard
+          focusMode={metrics.presidentAI.focusMode}
+          priority={topPriority}
+          reasoning={metrics.presidentAI.reasoning[0]}
+        />
         <WorkHubSection />
-        <PresidentAISection goalCenter={goalCenter} firstUse={firstUse} />
+        <PresidentAISection firstUse={firstUse} presidentAI={metrics.presidentAI} />
         <AddTransactionButton />
       </main>
     </div>
@@ -219,11 +218,6 @@ export default function HomePage() {
     });
   }, [loadMetrics]);
 
-  const goalCenter = useMemo(
-    () => (metrics ? buildGoalCenter(metrics) : null),
-    [metrics],
-  );
-
   if (loadState === "loading") {
     return <HomeLoadingSkeleton />;
   }
@@ -232,11 +226,11 @@ export default function HomePage() {
     return <HomeErrorState message={errorMessage} onRetry={loadMetrics} />;
   }
 
-  if (!metrics || !goalCenter) {
+  if (!metrics) {
     return (
       <HomeErrorState message="找不到可用的計算結果。" onRetry={loadMetrics} />
     );
   }
 
-  return <HomeView metrics={metrics} goalCenter={goalCenter} />;
+  return <HomeView metrics={metrics} />;
 }

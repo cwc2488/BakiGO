@@ -138,6 +138,7 @@ export function buildDailyActionSnapshot(
     presidentAiTitle:
       topPriority?.title ?? metrics.presidentAI.focusMode.label ?? "今日尚無建議",
     presidentAiDescription: topPriority?.description ?? null,
+    topPriority: topPriority ?? null,
   };
 }
 

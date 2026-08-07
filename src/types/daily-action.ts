@@ -1,3 +1,5 @@
+import type { Priority } from "./president-ai";
+
 export interface DailyActionMetricView {
   current: number;
   target: number | null;
@@ -26,6 +28,7 @@ export interface DailyActionSnapshot {
   superLeague: DailyActionSuperLeagueView;
   presidentAiTitle: string;
   presidentAiDescription: string | null;
+  topPriority: Priority | null;
 }
 
 export type TodayActionKey = "measurement" | "consultation" | "recruit";
