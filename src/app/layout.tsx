@@ -32,7 +32,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="zh-Hant" className={`${geistSans.variable} h-full antialiased`}>
       <head>
-        <link href="/icon.svg" rel="apple-touch-icon" />
+        <link href="/apple-touch-icon.png" rel="apple-touch-icon" sizes="180x180" />
+        <link href="/icon.svg" rel="icon" type="image/svg+xml" />
         <script dangerouslySetInnerHTML={{ __html: getSupabaseEnvScript() }} />
       </head>
       <body className="min-h-full font-sans">

@@ -1,4 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Baki GO">
-  <rect width="512" height="512" rx="112" fill="#77b539"/>
-  <text x="256" y="300" text-anchor="middle" font-family="system-ui, sans-serif" font-size="180" font-weight="700" fill="#ffffff">B</text>
+  <defs>
+    <linearGradient id="bg" x1="72" y1="48" x2="440" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#95d44a"/>
+      <stop offset="0.45" stop-color="#77b539"/>
+      <stop offset="1" stop-color="#248a3d"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="256" y1="64" x2="256" y2="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#124a22" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="280" rx="112" fill="url(#shine)"/>
+  <g filter="url(#softShadow)">
+    <circle cx="256" cy="248" r="118" fill="#ffffff" fill-opacity="0.14"/>
+    <circle cx="256" cy="244" r="118" fill="none" stroke="#ffffff" stroke-width="22"/>
+    <path
+      d="M196 244 L236 284 L332 188"
+      fill="none"
+      stroke="#ffffff"
+      stroke-width="28"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+  <circle cx="360" cy="152" r="18" fill="#ffffff" fill-opacity="0.55"/>
 </svg>

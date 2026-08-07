@@ -38,8 +38,8 @@ async function showViaServiceWorker(reminder: {
   const registration = await navigator.serviceWorker.ready;
   await registration.showNotification(reminder.title, {
     body: reminder.body,
-    icon: "/icon.svg",
-    badge: "/icon.svg",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
     tag: reminder.id,
     data: { url: reminder.url },
   });
@@ -58,7 +58,7 @@ function showViaNotificationApi(reminder: {
 
   const notification = new Notification(reminder.title, {
     body: reminder.body,
-    icon: "/icon.svg",
+    icon: "/icon-192.png",
     tag: reminder.id,
   });
 
