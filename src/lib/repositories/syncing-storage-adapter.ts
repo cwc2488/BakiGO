@@ -25,6 +25,14 @@ export function flushPendingCloudSync(): void {
   void runCloudPush();
 }
 
+export async function awaitPendingCloudSync(): Promise<void> {
+  if (pushTimer) {
+    clearTimeout(pushTimer);
+    pushTimer = null;
+  }
+  await runCloudPush();
+}
+
 function readSyncMemberId(): EntityId | null {
   const storage = pushSourceStorage ?? new LocalStorageAdapter();
   return createAuthRepository(storage).readSession()?.memberId ?? null;

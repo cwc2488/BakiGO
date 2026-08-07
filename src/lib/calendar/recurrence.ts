@@ -55,7 +55,7 @@ function cloneOccurrence(
     endAt,
     allDay: event.allDay,
     color: event.color,
-    isRecurringInstance: index > 0,
+    isRecurringInstance: true,
     googleEventId: event.googleEventId,
     googleCalendarId: event.googleCalendarId,
     activityTypeKey: event.activityTypeKey,
@@ -188,6 +188,17 @@ export function expandEventOccurrences(
   return results;
 }
 
+function dedupeExpandedEvents(events: ExpandedCalendarEvent[]): ExpandedCalendarEvent[] {
+  const seen = new Map<string, ExpandedCalendarEvent>();
+  for (const event of events) {
+    const key = `${event.sourceEventId}:${event.startAt}:${event.endAt}`;
+    if (!seen.has(key)) {
+      seen.set(key, event);
+    }
+  }
+  return [...seen.values()];
+}
+
 export function expandEventsForDay(
   events: CalendarEvent[],
   dayDate: string,
@@ -195,10 +206,11 @@ export function expandEventsForDay(
   const rangeStart = new Date(`${dayDate}T00:00:00`);
   const rangeEnd = new Date(`${dayDate}T23:59:59`);
 
-  return events
-    .flatMap((event) => expandEventOccurrences(event, rangeStart, rangeEnd))
-    .filter((item) => item.startAt.slice(0, 10) === dayDate || item.endAt.slice(0, 10) === dayDate)
-    .sort((left, right) => left.startAt.localeCompare(right.startAt));
+  return dedupeExpandedEvents(
+    events
+      .flatMap((event) => expandEventOccurrences(event, rangeStart, rangeEnd))
+      .filter((item) => item.startAt.slice(0, 10) === dayDate || item.endAt.slice(0, 10) === dayDate),
+  ).sort((left, right) => left.startAt.localeCompare(right.startAt));
 }
 
 export function expandEventsForRange(
@@ -209,9 +221,9 @@ export function expandEventsForRange(
   const rangeStart = new Date(`${startDate}T00:00:00`);
   const rangeEnd = new Date(`${endDate}T23:59:59`);
 
-  return events
-    .flatMap((event) => expandEventOccurrences(event, rangeStart, rangeEnd))
-    .sort((left, right) => left.startAt.localeCompare(right.startAt));
+  return dedupeExpandedEvents(
+    events.flatMap((event) => expandEventOccurrences(event, rangeStart, rangeEnd)),
+  ).sort((left, right) => left.startAt.localeCompare(right.startAt));
 }
 
 export function defaultRecurrence(): RecurrenceRule {

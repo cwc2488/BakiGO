@@ -41,6 +41,9 @@ import {
   type RecurrenceMutationResult,
 } from "@/lib/calendar/recurrence-scope";
 import {
+  tryDeleteGoogleCalendarEvent,
+} from "@/lib/calendar/calendar-google-deletion-tombstones";
+import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,
   loadGoogleCalendarConnection,
@@ -76,6 +79,7 @@ import {
 } from "@/lib/calendar/time-grid";
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import { awaitPendingCloudSync } from "@/lib/repositories/syncing-storage-adapter";
 import { useSwipeNavigation } from "@/lib/hooks/use-swipe-navigation";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { AppIcon } from "@/components/ui/AppIcon";
@@ -537,9 +541,34 @@ export default function CalendarPage() {
     }
   }
 
+  function resolveGoogleCalendarId(event: CalendarEvent, mode: "create" | "update" | "delete"): string | undefined {
+    const connection = loadGoogleCalendarConnection(storage);
+    if (!connection) {
+      return undefined;
+    }
+
+    if (mode === "create") {
+      return connection.selectedCalendarId ?? event.googleCalendarId;
+    }
+
+    return event.googleCalendarId ?? connection.selectedCalendarId;
+  }
+
+  async function syncGoogleDelete(event: CalendarEvent): Promise<string | null> {
+    const connection = loadGoogleCalendarConnection(storage);
+    const calendarId = resolveGoogleCalendarId(event, "delete");
+    if (!connection || !calendarId || isSharedGoogleCalendarId(calendarId) || !event.googleEventId) {
+      return null;
+    }
+
+    return tryDeleteGoogleCalendarEvent(storage, event, () =>
+      deleteGoogleCalendarEvent(connection, calendarId, event.googleEventId!, storage),
+    );
+  }
+
   async function syncToGoogle(event: CalendarEvent, mode: "create" | "update" | "delete") {
     const connection = loadGoogleCalendarConnection(storage);
-    const calendarId = connection?.selectedCalendarId ?? event.googleCalendarId;
+    const calendarId = resolveGoogleCalendarId(event, mode);
     if (!connection || !calendarId || isSharedGoogleCalendarId(calendarId)) {
       return event;
     }
@@ -579,28 +608,44 @@ export default function CalendarPage() {
     return event;
   }
 
-  async function applyRecurrenceMutation(plan: RecurrenceMutationResult): Promise<CalendarEvent | null> {
+  async function syncToGoogleWithWarning(
+    event: CalendarEvent,
+    mode: "create" | "update" | "delete",
+  ): Promise<string | null> {
+    try {
+      await syncToGoogle(event, mode);
+      return null;
+    } catch (caught) {
+      return caught instanceof Error ? caught.message : "Google 日曆同步失敗";
+    }
+  }
+
+  async function applyRecurrenceMutation(plan: RecurrenceMutationResult): Promise<string | null> {
     const repository = createCalendarEventRepository(storage);
 
     if (plan.action === "delete") {
       const existing = repository.getById(plan.eventId);
-      if (existing) {
-        await syncToGoogle(existing, "delete");
+      if (!existing) {
+        return null;
       }
+
       repository.delete(plan.eventId);
-      return null;
+      await awaitPendingCloudSync();
+      return syncGoogleDelete(existing);
     }
 
     if (plan.action === "update") {
       const updated = repository.update(plan.eventId, plan.input);
-      return syncToGoogle(updated, "update");
+      await awaitPendingCloudSync();
+      return syncToGoogleWithWarning(updated, "update");
     }
 
     if (plan.updateParent) {
       repository.update(plan.updateParent.eventId, plan.updateParent.input);
     }
     const created = repository.create(plan.input);
-    return syncToGoogle(created, "create");
+    await awaitPendingCloudSync();
+    return syncToGoogleWithWarning(created, "create");
   }
 
   function needsRecurrenceScopePrompt(source: CalendarEvent | undefined): boolean {
@@ -613,44 +658,53 @@ export default function CalendarPage() {
   async function finalizeEdit(scope?: RecurrenceEditScope) {
     const repository = createCalendarEventRepository(storage);
     const payload = formValuesToPayload(formValues);
+    let googleWarning: string | null = null;
 
-    if (formMode === "create") {
-      await syncToGoogle(repository.create({ memberId, ...payload }), "create");
-      setFormOpen(false);
-      reloadEvents();
-      await refreshCalendarReminderSchedule(storage);
-      setStatusMessage("行程已新增");
-      return;
-    }
-
-    if (!editingEventId) {
-      return;
-    }
-
-    const source = repository.getById(editingEventId);
-    if (!source) {
-      return;
-    }
-
-    if (needsRecurrenceScopePrompt(source)) {
-      if (!scope) {
-        setRecurrenceScopeMode("edit");
+    try {
+      if (formMode === "create") {
+        const created = repository.create({ memberId, ...payload });
+        await awaitPendingCloudSync();
+        googleWarning = await syncToGoogleWithWarning(created, "create");
+        setFormOpen(false);
+        setStatusMessage(googleWarning ? `行程已新增（${googleWarning}）` : "行程已新增");
         return;
       }
-      const occurrenceDate =
-        getOccurrenceDateFromExpanded(editingOccurrence!, source) ?? formValues.date;
-      const plan = planRecurringUpdate(source, occurrenceDate, scope, payload);
-      await applyRecurrenceMutation(plan);
-    } else {
-      await syncToGoogle(repository.update(editingEventId, payload), "update");
-    }
 
-    setFormOpen(false);
-    setEditingOccurrence(null);
-    setRecurrenceScopeMode(null);
-    reloadEvents();
-    await refreshCalendarReminderSchedule(storage);
-    setStatusMessage("行程已更新");
+      if (!editingEventId) {
+        return;
+      }
+
+      const source = repository.getById(editingEventId);
+      if (!source) {
+        return;
+      }
+
+      if (needsRecurrenceScopePrompt(source)) {
+        if (!scope) {
+          setRecurrenceScopeMode("edit");
+          return;
+        }
+        const occurrenceDate =
+          getOccurrenceDateFromExpanded(editingOccurrence!, source) ?? formValues.date;
+        const plan = planRecurringUpdate(source, occurrenceDate, scope, payload);
+        googleWarning = await applyRecurrenceMutation(plan);
+      } else {
+        const updated = repository.update(editingEventId, payload);
+        await awaitPendingCloudSync();
+        googleWarning = await syncToGoogleWithWarning(updated, "update");
+      }
+
+      setFormOpen(false);
+      setEditingOccurrence(null);
+      setRecurrenceScopeMode(null);
+      setStatusMessage(googleWarning ? `行程已更新（${googleWarning}）` : "行程已更新");
+    } catch (caught) {
+      setStatusMessage(caught instanceof Error ? caught.message : "儲存失敗");
+      setRecurrenceScopeMode(null);
+    } finally {
+      reloadEvents();
+      void refreshCalendarReminderSchedule(storage);
+    }
   }
 
   async function finalizeDelete(scope?: RecurrenceEditScope) {
@@ -664,32 +718,55 @@ export default function CalendarPage() {
       return;
     }
 
-    if (needsRecurrenceScopePrompt(existing)) {
-      if (!scope) {
-        setRecurrenceScopeMode("delete");
-        return;
-      }
-      const occurrenceDate =
-        getOccurrenceDateFromExpanded(editingOccurrence!, existing) ?? formValues.date;
-      await applyRecurrenceMutation(planRecurringDelete(existing, occurrenceDate, scope));
-      removeBakiEventForPersonalCalendarEvent(storage, memberId, editingEventId, occurrenceDate);
-    } else {
-      await syncToGoogle(existing, "delete");
-      removeBakiEventForPersonalCalendarEvent(
-        storage,
-        memberId,
-        editingEventId,
-        existing.startAt.slice(0, 10),
-      );
-      repository.delete(editingEventId);
-    }
+    let googleWarning: string | null = null;
 
-    setFormOpen(false);
-    setEditingOccurrence(null);
-    setRecurrenceScopeMode(null);
-    reloadEvents();
-    await refreshCalendarReminderSchedule(storage);
-    setStatusMessage("行程已刪除");
+    try {
+      if (needsRecurrenceScopePrompt(existing)) {
+        if (!scope) {
+          setRecurrenceScopeMode("delete");
+          return;
+        }
+        const occurrenceDate =
+          getOccurrenceDateFromExpanded(editingOccurrence!, existing) ?? formValues.date;
+        if (scope === "this" || occurrenceDate > existing.startAt.slice(0, 10)) {
+          googleWarning = await applyRecurrenceMutation(
+            planRecurringDelete(existing, occurrenceDate, scope),
+          );
+          removeBakiEventForPersonalCalendarEvent(storage, memberId, editingEventId, occurrenceDate);
+        } else {
+          removeBakiEventForPersonalCalendarEvent(
+            storage,
+            memberId,
+            editingEventId,
+            existing.startAt.slice(0, 10),
+          );
+          repository.delete(editingEventId);
+          await awaitPendingCloudSync();
+          googleWarning = await syncGoogleDelete(existing);
+        }
+      } else {
+        removeBakiEventForPersonalCalendarEvent(
+          storage,
+          memberId,
+          editingEventId,
+          existing.startAt.slice(0, 10),
+        );
+        repository.delete(editingEventId);
+        await awaitPendingCloudSync();
+        googleWarning = await syncGoogleDelete(existing);
+      }
+
+      setFormOpen(false);
+      setEditingOccurrence(null);
+      setRecurrenceScopeMode(null);
+      setStatusMessage(googleWarning ? `行程已刪除（${googleWarning}）` : "行程已刪除");
+    } catch (caught) {
+      setStatusMessage(caught instanceof Error ? caught.message : "刪除失敗");
+      setRecurrenceScopeMode(null);
+    } finally {
+      reloadEvents();
+      void refreshCalendarReminderSchedule(storage);
+    }
   }
 
   async function handleSubmit() {
@@ -738,19 +815,36 @@ export default function CalendarPage() {
       return;
     }
 
+    let googleWarning: string | null = null;
+
     try {
-      await syncToGoogle(
-        repository.update(expanded.sourceEventId, {
+      if (isRecurringSeries(existing)) {
+        const occurrenceDate = expanded.startAt.slice(0, 10);
+        googleWarning = await applyRecurrenceMutation(
+          planRecurringUpdate(existing, occurrenceDate, "this", {
+            startAt: newStartAt,
+            endAt: newEndAt,
+          }),
+        );
+      } else {
+        const updated = repository.update(expanded.sourceEventId, {
           startAt: newStartAt,
           endAt: newEndAt,
-        }),
-        "update",
+        });
+        await awaitPendingCloudSync();
+        googleWarning = await syncToGoogleWithWarning(updated, "update");
+      }
+
+      setStatusMessage(
+        googleWarning
+          ? `行程已移至 ${newStartAt.slice(11, 16)}（${googleWarning}）`
+          : `行程已移至 ${newStartAt.slice(11, 16)}`,
       );
-      reloadEvents();
-      await refreshCalendarReminderSchedule(storage);
-      setStatusMessage(`行程已移至 ${newStartAt.slice(11, 16)}`);
     } catch (caught) {
       setStatusMessage(caught instanceof Error ? caught.message : "移動失敗");
+    } finally {
+      reloadEvents();
+      void refreshCalendarReminderSchedule(storage);
     }
   }
 

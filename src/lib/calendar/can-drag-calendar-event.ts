@@ -11,8 +11,5 @@ export function canDragCalendarEvent(event: ExpandedCalendarEvent): boolean {
   if (isSharedGoogleCalendarId(event.googleCalendarId)) {
     return false;
   }
-  if (event.isRecurringInstance) {
-    return false;
-  }
   return true;
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { isCalendarGoogleEventDeleted } from "@/lib/calendar/calendar-google-deletion-tombstones";
 import {
   clearGoogleCalendarConnection,
   fetchGoogleCalendarEvents,
@@ -107,6 +108,9 @@ export function GoogleCalendarPanel({
       );
       const repository = createCalendarEventRepository(storage);
       googleEvents.forEach((item) => {
+        if (isCalendarGoogleEventDeleted(storage, item.id, calendarId)) {
+          return;
+        }
         repository.upsertGoogleEvent(mapGoogleEventToLocal(item, memberId, calendarId));
       });
       saveGoogleCalendarConnection(storage, current);

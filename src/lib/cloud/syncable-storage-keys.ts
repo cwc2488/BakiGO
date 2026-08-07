@@ -5,6 +5,7 @@ export const SYNCABLE_STORAGE_KEYS = [
   STORAGE_KEYS.bakiEvents,
   STORAGE_KEYS.retailPipelineLeads,
   STORAGE_KEYS.calendarEvents,
+  STORAGE_KEYS.calendarGoogleDeletionTombstones,
   STORAGE_KEYS.calendarSharedAttendance,
   STORAGE_KEYS.promotionCampaigns,
   STORAGE_KEYS.memberInBodyRecords,

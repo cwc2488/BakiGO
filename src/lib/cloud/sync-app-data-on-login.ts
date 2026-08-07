@@ -9,7 +9,7 @@ import { SYNCABLE_STORAGE_KEYS } from "@/lib/cloud/syncable-storage-keys";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
-import { setCloudSyncPaused } from "@/lib/repositories/syncing-storage-adapter";
+import { awaitPendingCloudSync, setCloudSyncPaused } from "@/lib/repositories/syncing-storage-adapter";
 import type { EntityId } from "@/types";
 
 /** Pull cloud app data on login; upload local data when cloud is empty. */
@@ -23,6 +23,8 @@ export async function syncAppDataOnLogin(
 
   setCloudSyncPaused(true);
   try {
+    await awaitPendingCloudSync();
+
     const cloudRows = await fetchCloudAppData(memberId);
     const cloudByKey = new Map(cloudRows.map((row) => [row.dataKey, row]));
     const cloudHasData = cloudRows.length > 0;

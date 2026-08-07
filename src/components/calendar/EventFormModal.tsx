@@ -393,7 +393,7 @@ export function EventFormModal({
         <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-6 py-4 [-webkit-overflow-scrolling:touch]">
         {readOnly ? (
           <p className="mb-4 text-[0.8125rem] leading-relaxed text-[#86868b]">
-            此行程來自共用行事曆，無法編輯內容。請選擇種類後按「會參加」，系統會列入統計並固定顯示在您的行事曆。
+            此行程來自共用行事曆，無法編輯或刪除。請選擇種類後按「會參加」，系統會列入統計並固定顯示在您的行事曆。
           </p>
         ) : null}
 

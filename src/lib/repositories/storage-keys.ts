@@ -12,6 +12,7 @@ export const STORAGE_KEYS = {
   retailPipelineLeads: "baki-go:retail-pipeline-leads",
   promotionCampaigns: "baki-go:promotion-campaigns",
   calendarEvents: "baki-go:calendar-events",
+  calendarGoogleDeletionTombstones: "baki-go:calendar-google-deletion-tombstones",
   calendarSharedAttendance: "baki-go:calendar-shared-attendance",
   sharedCalendarEvents: "baki-go:shared-calendar-events",
   sharedCalendarCacheMeta: "baki-go:shared-calendar-cache-meta",
