@@ -1,13 +1,16 @@
 "use client";
 
 import { getMemberProfileIdentity } from "@/lib/config/app-config";
+import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
+import { GreetingHeader } from "@/components/ui/GreetingHeader";
+import { QuickLinkGrid } from "@/components/ui/brand-ui";
+import { TabRootShell } from "@/components/ui/TabRootShell";
 import {
   formatJoinedDate,
   loadMissionControlMetrics,
 } from "@/lib/mission-control/format";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   MetricTile,
@@ -20,14 +23,13 @@ import { ProfileAccountSection } from "./ProfileAccountSection";
 import { ProfileAvatarSection } from "./ProfileAvatarSection";
 import { ProfileHomeDisplaySection } from "./ProfileHomeDisplaySection";
 import { ProfileSetupSection } from "./ProfileSetupSection";
-import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 
 type LoadState = "loading" | "ready" | "error";
 
 function ProfileLoading() {
   return (
-    <div className="min-h-full bg-[var(--brand-bg)]">
-      <main className="profile-container flex flex-col gap-6 pb-24 pt-10 sm:pt-12">
+    <div className={`min-h-full ${PAGE_GRADIENT_CLASS}`}>
+      <main className="home-container flex flex-col gap-6 pb-24 pt-10 sm:pt-12">
         <div className="space-y-3">
           <div className="h-4 w-20 animate-pulse rounded-lg bg-[var(--brand-border)]" />
           <div className="h-10 w-48 animate-pulse rounded-lg bg-[var(--brand-border)]" />
@@ -42,7 +44,7 @@ function ProfileLoading() {
 
 function ProfileError({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] px-6">
+    <div className={`flex min-h-full items-center justify-center ${PAGE_GRADIENT_CLASS} px-6`}>
       <div className="w-full max-w-sm rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-8 text-center">
         <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">
           {APP_EMOJI.mood.error} 無法載入會員資料
@@ -51,7 +53,7 @@ function ProfileError({ onRetry }: { onRetry: () => void }) {
           系統無法完成計算，請重新載入或稍後再試。
         </p>
         <button
-          className="mt-6 w-full rounded-2xl bg-[var(--brand-primary)] px-4 py-3.5 text-[1rem] font-semibold text-white transition-transform duration-200 active:scale-[0.98]"
+          className="mt-6 w-full rounded-2xl bg-[#1d1d1f] px-4 py-3.5 text-[1rem] font-semibold text-white transition-transform duration-200 active:scale-[0.98]"
           onClick={onRetry}
           type="button"
         >
@@ -126,16 +128,14 @@ function ProfileQuickLinks() {
   return (
     <ProfileCard>
       <ProfileSectionTitle emoji="🔗">更多功能</ProfileSectionTitle>
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        {links.map((link) => (
-          <Link
-            key={link.href}
-            className="rounded-xl bg-[var(--brand-bg)] px-4 py-3 text-[0.9375rem] font-medium text-[#1d1d1f] transition-colors hover:bg-[var(--brand-primary-muted)]"
-            href={link.href}
-          >
-            {link.emoji} {link.label}
-          </Link>
-        ))}
+      <div className="mt-4">
+        <QuickLinkGrid
+          links={links.map((link) => ({
+            href: link.href,
+            label: link.label,
+            emoji: link.emoji,
+          }))}
+        />
       </div>
     </ProfileCard>
   );
@@ -151,20 +151,16 @@ function ProfileView({
   const identity = getMemberProfileIdentity();
 
   return (
-    <div className="min-h-full bg-[var(--brand-bg)]">
-      <main className="profile-container flex flex-col gap-6 pb-24 pt-10 sm:pt-12">
-        <header className="space-y-3">
-          <MemberNameWithAvatar
-            avatarUrl={identity.avatarUrl}
-            name={identity.displayName}
-            nameClassName="text-[2rem] font-semibold leading-tight tracking-tight text-[#1d1d1f] sm:text-[2.25rem]"
-            size="xl"
-            subtitle="我的"
-            subtitleClassName="text-[0.9375rem] font-medium text-[#86868b]"
-            variant="hero"
-          />
-        </header>
-
+    <TabRootShell
+      header={
+        <GreetingHeader
+          avatarUrl={identity.avatarUrl}
+          displayName={identity.displayName}
+          href="/profile"
+          subtitle="我的"
+        />
+      }
+    >
         <ProfileSetupSection />
         <ProfileAvatarSection onAvatarUpdated={onSponsorUpdated} />
         <BasicInfoSection metrics={metrics} />
@@ -172,8 +168,7 @@ function ProfileView({
         <ProfileHomeDisplaySection />
         <ProfileQuickLinks />
         <ProfileAccountSection onSponsorUpdated={onSponsorUpdated} />
-      </main>
-    </div>
+    </TabRootShell>
   );
 }
 

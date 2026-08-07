@@ -17,9 +17,9 @@ import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-me
 import { APP_EMOJI, QUADRANT_EMOJIS } from "@/lib/ui/app-emojis";
 import type { RetailHouseQuadrantView } from "@/types/retail-house";
 import type { RetailReportLineItem } from "@/types/retail-weekly-report";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { RetailTransactionForm } from "./RetailTransactionForm";
+import { PageShell } from "@/components/ui/PageShell";
 
 function TransactionRow({
   item,
@@ -285,30 +285,24 @@ function RetailHouseView({
   }
 
   return (
-    <div className="min-h-full bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]">
-      <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-5 pb-24 pt-12">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <Link className="text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]" href="/events">
-            活動與會議紀錄
-          </Link>
-        </div>
-
-        <header className="space-y-2">
-          <p className="text-[0.8125rem] font-medium tracking-wide text-[#aeaeb2]">Baki GO</p>
-          <h1 className="text-[2rem] font-semibold tracking-tight text-[#1d1d1f]">
-            {APP_EMOJI.page.retailHouse} 零售屋
-          </h1>
-          <MemberNameWithAvatar
-            avatarUrl={avatarUrl}
-            name={`${displayName} 的工作現場`}
-            nameClassName="text-[1.125rem] font-semibold text-[#1d1d1f]"
-            size="md"
-            subtitle={`本週 ${formatReportDateRange(snapshot.weekStartDate, snapshot.weekEndDate)}`}
-            subtitleClassName="text-[0.9375rem] text-[#86868b]"
-            variant="hero"
-          />
-        </header>
-
+    <PageShell
+      backHref="/events"
+      backLabel="活動與會議紀錄"
+      containerClassName="wide-container"
+      headerExtra={
+        <MemberNameWithAvatar
+          avatarUrl={avatarUrl}
+          name={`${displayName} 的工作現場`}
+          nameClassName="text-[1rem] font-semibold text-[var(--brand-text)]"
+          size="sm"
+          subtitle={`本週 ${formatReportDateRange(snapshot.weekStartDate, snapshot.weekEndDate)}`}
+          subtitleClassName="text-[0.8125rem] text-[var(--brand-text-muted)]"
+          variant="hero"
+        />
+      }
+      subtitle="本週四象限成交與簡報模式"
+      title={`${APP_EMOJI.page.retailHouse} 零售屋`}
+    >
         <RetailTransactionForm onMetricsChange={onMetricsChange} />
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:grid-rows-2 lg:gap-5">
@@ -326,8 +320,7 @@ function RetailHouseView({
         >
           {APP_EMOJI.action.presentation} 簡報模式
         </button>
-      </main>
-    </div>
+    </PageShell>
   );
 }
 

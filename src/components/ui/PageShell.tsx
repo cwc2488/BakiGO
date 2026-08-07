@@ -1,10 +1,11 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { PAGE_GRADIENT_CLASS } from "./brand-ui";
 
 type PageShellVariant = "gradient" | "plain";
 
 const BACKGROUNDS: Record<PageShellVariant, string> = {
-  gradient: "bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]",
+  gradient: PAGE_GRADIENT_CLASS,
   plain: "bg-[var(--brand-bg)]",
 };
 
@@ -43,11 +44,11 @@ export function PageShell({
           ) : null}
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-[2rem] font-semibold tracking-tight text-[#1d1d1f] sm:text-[2.125rem]">
+              <h1 className="text-[2rem] font-semibold tracking-tight text-[var(--brand-text)] sm:text-[2.125rem]">
                 {title}
               </h1>
               {subtitle ? (
-                <p className="mt-2 text-[0.9375rem] leading-relaxed text-[#86868b]">{subtitle}</p>
+                <p className="mt-2 text-[0.9375rem] leading-relaxed text-[var(--brand-text-muted)]">{subtitle}</p>
               ) : null}
             </div>
             {headerExtra ? <div className="shrink-0">{headerExtra}</div> : null}

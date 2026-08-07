@@ -20,7 +20,7 @@ function ResourceCard({
   note?: string;
 }) {
   return (
-    <article className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-4">
+    <article className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-4">
       <a
         className="block transition-opacity active:opacity-80"
         href={youtubeUrl}

@@ -14,7 +14,6 @@ import { createCalendarEventRepository } from "@/lib/repositories/calendar-event
 import { logTodayActivity, logTodayRecruit } from "@/lib/daily-action/log-today-action";
 import {
   formatDisplayDate,
-  formatTimeGreeting,
   getMemberAvatarUrl,
   getMemberDisplayName,
   loadMissionControlMetrics,
@@ -35,8 +34,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal";
 import { QuickRecruitModal } from "@/components/daily-action/QuickRecruitModal";
 import { SuperLeagueAddModal } from "@/components/daily-action/SuperLeagueAddModal";
-import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import { TodayStepCard } from "@/components/president-ai/TodayStepCard";
+import { GreetingHeader } from "@/components/ui/GreetingHeader";
+import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
+import { TabRootShell } from "@/components/ui/TabRootShell";
 import {
   addSuperLeagueEntry,
   removeSuperLeagueEntry,
@@ -380,28 +381,15 @@ function DailyActionView({
   }, []);
 
   return (
-    <div className="min-h-full bg-[var(--brand-bg)]">
-      <main className="mx-auto flex w-full max-w-md flex-col gap-4 px-5 pb-24 pt-12">
-        <header className="space-y-1">
-          <p className="text-[0.8125rem] font-medium text-[#86868b]">
-            {APP_EMOJI.page.dailyAction} 今日行動
-          </p>
-          <p className="text-[1.75rem] font-semibold tracking-tight text-[#1d1d1f]">
-            {formatDisplayDate(snapshot.referenceDate)}
-          </p>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <MemberNameWithAvatar
-              avatarUrl={avatarUrl}
-              name={displayName}
-              nameClassName="text-[1.375rem] font-semibold text-[#1d1d1f]"
-              size="md"
-              subtitle={formatTimeGreeting()}
-              subtitleClassName="text-[0.875rem] font-medium text-[#86868b]"
-              variant="hero"
-            />
-          </div>
-        </header>
-
+    <TabRootShell
+      header={
+        <GreetingHeader
+          avatarUrl={avatarUrl}
+          displayName={displayName}
+          subtitle={`${formatDisplayDate(snapshot.referenceDate)} · 今日行動`}
+        />
+      }
+    >
         <TodayStepCard
           focusMode={metrics.presidentAI.focusMode}
           onQuickLog={handleAction}
@@ -463,8 +451,7 @@ function DailyActionView({
           onToggleSupervisor={handleToggleSupervisor}
           superLeague={snapshot.superLeague}
         />
-      </main>
-    </div>
+    </TabRootShell>
   );
 }
 
@@ -479,7 +466,7 @@ export default function DailyActionPage() {
 
   if (!metrics) {
     return (
-      <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] text-[#86868b]">
+      <div className={`flex min-h-full items-center justify-center ${PAGE_GRADIENT_CLASS} text-[var(--brand-text-muted)]`}>
         {APP_EMOJI.mood.loading} 載入今日行動…
       </div>
     );

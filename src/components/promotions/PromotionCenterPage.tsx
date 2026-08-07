@@ -17,9 +17,9 @@ import type {
   PromotionTier,
 } from "@/types/promotion-campaign";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MonthlyPromotionsPanel } from "./MonthlyPromotionsPanel";
+import { PageShell } from "@/components/ui/PageShell";
 
 const CONDITION_LABELS: Record<PromotionConditionType, string> = {
   consecutive_monthly_vp: "連續月份 VP 達標",
@@ -284,33 +284,21 @@ export default function PromotionCenterPage() {
   }
 
   return (
-    <div className="min-h-full bg-[var(--brand-bg)]">
-      <main className="profile-container flex flex-col gap-5 pb-24 pt-10 sm:pt-12">
-        <header className="space-y-3">
-          <Link className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)]" href="/">
-            ← 返回首頁
-          </Link>
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <h1 className="text-[1.75rem] font-semibold tracking-tight text-[#1d1d1f]">
-                {APP_EMOJI.hub.promotions} 促銷專欄
-              </h1>
-              <p className="mt-1 text-[0.9375rem] text-[#86868b]">
-                發布後自動掛勾全組織下線 · 推廣組以上可發布
-              </p>
-            </div>
-            {canManage ? (
-              <button
-                className="shrink-0 rounded-full bg-[var(--brand-primary)] px-5 py-2.5 text-[0.9375rem] font-semibold text-white"
-                onClick={() => setShowForm((current) => !current)}
-                type="button"
-              >
-                {showForm ? "取消" : "新增促銷"}
-              </button>
-            ) : null}
-          </div>
-        </header>
-
+    <PageShell
+      headerExtra={
+        canManage ? (
+          <button
+            className="shrink-0 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-[0.9375rem] font-semibold text-white"
+            onClick={() => setShowForm((current) => !current)}
+            type="button"
+          >
+            {showForm ? "取消" : "新增促銷"}
+          </button>
+        ) : null
+      }
+      subtitle="發布後自動掛勾全組織下線 · 推廣組以上可發布"
+      title={`${APP_EMOJI.hub.promotions} 促銷專欄`}
+    >
         {successMessage ? (
           <p className="rounded-2xl bg-[#e8f8ee] px-4 py-3 text-[0.9375rem] font-medium text-[#248a3d]">
             {successMessage}
@@ -435,7 +423,6 @@ export default function PromotionCenterPage() {
             </ul>
           </section>
         ) : null}
-      </main>
-    </div>
+    </PageShell>
   );
 }

@@ -78,6 +78,7 @@ import { createCalendarEventRepository } from "@/lib/repositories/calendar-event
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { useSwipeNavigation } from "@/lib/hooks/use-swipe-navigation";
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
 import type { CalendarEvent, CalendarSlotInterval, ExpandedCalendarEvent, RecurrenceEditScope } from "@/types/calendar-event";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -820,7 +821,7 @@ export default function CalendarPage() {
       : undefined;
 
   return (
-    <div className="min-h-full bg-[var(--cal-bg)]">
+    <div className={`min-h-full ${PAGE_GRADIENT_CLASS}`}>
       <main className="calendar-container flex flex-col gap-4 pb-24 pt-10 sm:pt-12">
         <header className="space-y-3">
           <div className="flex items-end justify-between gap-3">

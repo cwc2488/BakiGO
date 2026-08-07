@@ -308,10 +308,8 @@ export default function EventCenterPage() {
 
   return (
     <PageShell
-      containerClassName="profile-container"
       subtitle={PARTNER_LABELS.recordCenterHint}
       title={`${APP_EMOJI.page.events} ${PARTNER_LABELS.recordCenter}`}
-      variant="plain"
     >
         <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6 sm:p-7">
           <h2 className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">

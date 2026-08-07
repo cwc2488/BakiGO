@@ -1,8 +1,11 @@
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { PAGE_GRADIENT_CLASS } from "./brand-ui";
 
 export function PageLoadingState({ message = "載入中…" }: { message?: string }) {
   return (
-    <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] px-6 text-[#86868b]">
+    <div
+      className={`flex min-h-full items-center justify-center ${PAGE_GRADIENT_CLASS} px-6 text-[var(--brand-text-muted)]`}
+    >
       {message}
     </div>
   );
@@ -18,15 +21,15 @@ export function PageErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] px-6">
-      <div className="w-full max-w-sm rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-8 text-center">
-        <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">
+    <div className={`flex min-h-full items-center justify-center ${PAGE_GRADIENT_CLASS} px-6`}>
+      <div className="w-full max-w-sm rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-8 text-center shadow-[0_8px_40px_rgba(0,0,0,0.04)]">
+        <p className="text-[1.125rem] font-semibold text-[var(--brand-text)]">
           {APP_EMOJI.mood.error} {title}
         </p>
-        <p className="mt-3 text-[0.9375rem] leading-relaxed text-[#86868b]">{message}</p>
+        <p className="mt-3 text-[0.9375rem] leading-relaxed text-[var(--brand-text-muted)]">{message}</p>
         {onRetry ? (
           <button
-            className="mt-6 w-full rounded-2xl bg-[var(--brand-primary)] px-4 py-3.5 text-[1rem] font-semibold text-white transition-transform active:scale-[0.98]"
+            className="mt-6 w-full rounded-2xl bg-[#1d1d1f] px-4 py-3.5 text-[1rem] font-semibold text-white transition-transform active:scale-[0.98]"
             onClick={onRetry}
             type="button"
           >

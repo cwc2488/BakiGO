@@ -128,7 +128,7 @@ export default function PresidentRoadPage() {
       title={`${APP_EMOJI.page.presidentRoad} ${PARTNER_LABELS.upgradePath}`}
       variant="plain"
     >
-        <section className="rounded-[2rem] bg-[var(--brand-bg)] px-6 py-8 sm:px-8 sm:py-10">
+        <section className="rounded-[1.75rem] bg-[var(--brand-bg)] px-6 py-8 sm:px-8 sm:py-10">
           <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.12em] text-[#86868b]">
             總裁進度
           </p>
@@ -158,7 +158,7 @@ export default function PresidentRoadPage() {
           ))}
         </section>
 
-        <section className="rounded-[2rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] px-6 py-7 sm:px-8">
+        <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] px-6 py-7 sm:px-8">
           <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.12em] text-[#86868b]">
             {PARTNER_LABELS.todaySuggestions}
           </p>
@@ -177,7 +177,7 @@ export default function PresidentRoadPage() {
           </div>
         </section>
 
-        <section className="rounded-[2rem] bg-[#1d1d1f] px-6 py-7 text-white sm:px-8">
+        <section className="rounded-[1.75rem] bg-[#1d1d1f] px-6 py-7 text-white sm:px-8">
           <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.12em] text-white/60">
             今日下一步
           </p>

@@ -24,6 +24,8 @@ import { EmptyState, HomeErrorState, HomeLoadingSkeleton } from "./states";
 import { Card, ProgressBar, SectionLabel } from "./ui";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import { TodayStepCard } from "@/components/president-ai/TodayStepCard";
+import { GreetingHeader } from "@/components/ui/GreetingHeader";
+import { TabRootShell } from "@/components/ui/TabRootShell";
 import { LearningResourceSuggestions } from "@/components/learning/LearningResourceSuggestions";
 import { DownlinePartnerSuggestions } from "@/components/organization/DownlinePartnerSuggestions";
 import { isCareerRankAtOrAbove } from "@/lib/auth/career-rank-order";
@@ -68,27 +70,6 @@ function HomeModeToggle({
   );
 }
 
-function SimpleGreetingSection() {
-  const displayName = getMemberDisplayName();
-  const avatarUrl = getMemberAvatarUrl();
-
-  return (
-    <header className="home-section">
-      <Link className="block w-fit" href="/profile">
-        <MemberNameWithAvatar
-          avatarUrl={avatarUrl}
-          name={displayName}
-          nameClassName="text-[1.75rem] font-semibold leading-snug tracking-tight text-[#1d1d1f] sm:text-[2rem]"
-          size="md"
-          subtitle={formatTimeGreeting()}
-          subtitleClassName="text-[0.9375rem] font-medium text-[#86868b]"
-          variant="hero"
-        />
-      </Link>
-    </header>
-  );
-}
-
 function GreetingSection({ metrics }: { metrics: MemberComputedMetrics }) {
   const referenceDate = metrics.missions.referenceDate;
   const displayName = getMemberDisplayName();
@@ -96,17 +77,17 @@ function GreetingSection({ metrics }: { metrics: MemberComputedMetrics }) {
 
   return (
     <header className="home-section space-y-2 sm:space-y-3">
-      <p className="text-[2rem] font-semibold leading-tight tracking-tight text-[#1d1d1f] sm:text-[2.125rem]">
+      <p className="text-[2rem] font-semibold leading-tight tracking-tight text-[var(--brand-text)] sm:text-[2.125rem]">
         {formatDisplayDate(referenceDate)}
       </p>
       <Link className="block w-fit" href="/profile">
         <MemberNameWithAvatar
           avatarUrl={avatarUrl}
           name={displayName}
-          nameClassName="text-[1.625rem] font-semibold leading-snug tracking-tight text-[#1d1d1f] underline decoration-[#d1d1d6] underline-offset-4 transition-colors duration-200 hover:text-[var(--brand-primary-dark)] hover:decoration-[var(--brand-primary-dark)]/30 sm:text-[1.875rem]"
+          nameClassName="text-[1.625rem] font-semibold leading-snug tracking-tight text-[var(--brand-text)] underline decoration-[#d1d1d6] underline-offset-4 transition-colors duration-200 hover:text-[var(--brand-primary-dark)] hover:decoration-[var(--brand-primary-dark)]/30 sm:text-[1.875rem]"
           size="lg"
           subtitle={formatTimeGreeting()}
-          subtitleClassName="text-[1rem] font-medium text-[#86868b] sm:text-[1.0625rem]"
+          subtitleClassName="text-[1rem] font-medium text-[var(--brand-text-muted)] sm:text-[1.0625rem]"
           variant="hero"
         />
       </Link>
@@ -271,10 +252,16 @@ function SimpleHomeView({
   onModeChange: (mode: HomeDisplayMode) => void;
 }) {
   const topPriority = metrics.presidentAI.topPriorities[0] ?? null;
+  const displayName = getMemberDisplayName();
+  const avatarUrl = getMemberAvatarUrl();
 
   return (
     <>
-      <SimpleGreetingSection />
+      <GreetingHeader
+        avatarUrl={avatarUrl}
+        displayName={displayName}
+        subtitle={formatTimeGreeting()}
+      />
       <TodayStepCard
         focusMode={metrics.presidentAI.focusMode}
         minimal
@@ -331,15 +318,13 @@ function HomeView({
   onModeChange: (mode: HomeDisplayMode) => void;
 }) {
   return (
-    <div className="min-h-full bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]">
-      <main className="home-container flex flex-col gap-5 pb-24 pt-10 sm:pt-12">
-        {displayMode === "simple" ? (
-          <SimpleHomeView metrics={metrics} onModeChange={onModeChange} />
-        ) : (
-          <FullHomeView metrics={metrics} onModeChange={onModeChange} />
-        )}
-      </main>
-    </div>
+    <TabRootShell>
+      {displayMode === "simple" ? (
+        <SimpleHomeView metrics={metrics} onModeChange={onModeChange} />
+      ) : (
+        <FullHomeView metrics={metrics} onModeChange={onModeChange} />
+      )}
+    </TabRootShell>
   );
 }
 

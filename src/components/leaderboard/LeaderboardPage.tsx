@@ -14,6 +14,7 @@ import type { PointsLeaderboardResult } from "@/types/points";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LeaderboardRankList } from "./LeaderboardRankList";
+import { PageShell } from "@/components/ui/PageShell";
 
 function PointsHeroBanner({
   points,
@@ -125,20 +126,10 @@ export default function LeaderboardPage() {
   }, [reload]);
 
   return (
-    <div className="min-h-full bg-[var(--brand-bg)]">
-      <main className="mx-auto flex w-full max-w-md flex-col gap-4 px-5 pb-24 pt-12">
-        <header className="space-y-1">
-          <p className="text-[0.8125rem] font-medium text-[#86868b]">
-            {APP_EMOJI.page.leaderboard} 積分排行
-          </p>
-          <h1 className="text-[1.75rem] font-semibold tracking-tight text-[#1d1d1f]">
-            {APP_EMOJI.mood.trophy} 排行榜
-          </h1>
-          <p className="text-[0.875rem] text-[#86868b]">
-            本週前五 · 本月前十 · 歷史總積分永久保留
-          </p>
-        </header>
-
+    <PageShell
+      subtitle="本週前五 · 本月前十 · 歷史總積分永久保留"
+      title={`${APP_EMOJI.mood.trophy} 排行榜`}
+    >
         {monthly.viewerEntry ? (
           <PointsHeroBanner
             points={monthly.viewerEntry}
@@ -197,7 +188,6 @@ export default function LeaderboardPage() {
         </section>
 
         <GroupCompetitionPlaceholder />
-      </main>
-    </div>
+    </PageShell>
   );
 }

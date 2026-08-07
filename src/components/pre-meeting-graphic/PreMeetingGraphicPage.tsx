@@ -11,7 +11,7 @@ import {
   type PreMeetingGraphicInput,
   type PreMeetingGraphicLayout,
 } from "@/types/pre-meeting-graphic";
-import Link from "next/link";
+import { PageShell } from "@/components/ui/PageShell";
 import { useMemo, useState } from "react";
 
 const FIELD_GROUPS: Array<{
@@ -143,18 +143,10 @@ export default function PreMeetingGraphicPage() {
   }
 
   return (
-    <div className="min-h-full bg-[var(--brand-bg)]">
-      <main className="mx-auto flex w-full max-w-lg flex-col gap-4 px-5 pb-24 pt-12">
-        <header className="space-y-2">
-          <Link className="inline-flex text-[0.875rem] font-medium text-[var(--brand-primary-dark)]" href="/">
-            ← 返回首頁
-          </Link>
-          <h1 className="text-[1.75rem] font-semibold tracking-tight text-[#1d1d1f]">會前會圖製作</h1>
-          <p className="text-[0.9375rem] text-[#86868b]">
-            填寫資料、上傳照片，合併輸出會前會分享圖
-          </p>
-        </header>
-
+    <PageShell
+      subtitle="填寫資料、上傳照片，合併輸出會前會分享圖"
+      title="會前會圖製作"
+    >
         <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
           <p className="text-[0.875rem] font-semibold text-[#1d1d1f]">照片與版型</p>
           <label className="mt-3 block">
@@ -252,7 +244,6 @@ export default function PreMeetingGraphicPage() {
             <img alt="會前會圖預覽" className="w-full rounded-2xl" src={previewUrl} />
           </section>
         ) : null}
-      </main>
-    </div>
+    </PageShell>
   );
 }

@@ -1,4 +1,5 @@
 import { APP_EMOJI } from "@/lib/ui/app-emojis";
+import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
 
 export function EmptyState({
   title,
@@ -26,14 +27,14 @@ export function HomeErrorState({
   onRetry: () => void;
 }) {
   return (
-    <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] px-6">
+    <div className={`flex min-h-full items-center justify-center ${PAGE_GRADIENT_CLASS} px-6`}>
       <div className="w-full max-w-sm rounded-[1.75rem] bg-[var(--brand-surface)] p-8 text-center shadow-[0_8px_40px_rgba(0,0,0,0.06)]">
-        <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">
+        <p className="text-[1.125rem] font-semibold text-[var(--brand-text)]">
           {APP_EMOJI.mood.error} 無法載入首頁
         </p>
-        <p className="mt-3 text-[0.9375rem] leading-relaxed text-[#86868b]">{message}</p>
+        <p className="mt-3 text-[0.9375rem] leading-relaxed text-[var(--brand-text-muted)]">{message}</p>
         <button
-          className="mt-6 w-full rounded-2xl bg-[var(--brand-primary)] px-4 py-3.5 text-[1rem] font-semibold text-white transition-transform duration-200 active:scale-[0.98]"
+          className="mt-6 w-full rounded-2xl bg-[#1d1d1f] px-4 py-3.5 text-[1rem] font-semibold text-white transition-transform duration-200 active:scale-[0.98]"
           onClick={onRetry}
           type="button"
         >
@@ -50,7 +51,7 @@ function SkeletonBar({ className = "" }: { className?: string }) {
 
 export function HomeLoadingSkeleton() {
   return (
-    <div className="min-h-full bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]">
+    <div className={`min-h-full ${PAGE_GRADIENT_CLASS}`}>
       <main className="home-container flex flex-col gap-5 pb-24 pt-12">
         <div className="space-y-3">
           <SkeletonBar className="h-4 w-16" />

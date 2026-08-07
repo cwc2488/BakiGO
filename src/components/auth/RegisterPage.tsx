@@ -1,6 +1,7 @@
 "use client";
 
 import { SupabaseSetupNotice } from "@/components/auth/SupabaseSetupNotice";
+import { PAGE_GRADIENT_CLASS, PrimarySubmitButton } from "@/components/ui/brand-ui";
 import { registerAccount } from "@/lib/auth/auth-service";
 import { useAuth } from "@/lib/auth/auth-context";
 import { CLOUD_MEMBER_LEVELS } from "@/lib/cloud/member-levels";
@@ -53,18 +54,18 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-full bg-[var(--brand-bg)]">
-      <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-5 pb-24 pt-16">
-        <header className="space-y-2">
-          <h1 className="text-[2.5rem] font-semibold tracking-tight text-[#1d1d1f]">建立帳號</h1>
-          <p className="text-[1rem] text-[#86868b]">
+    <div className={`min-h-full ${PAGE_GRADIENT_CLASS}`}>
+      <main className="home-container flex flex-col gap-8 pb-24 pt-16">
+        <header className="home-section space-y-2">
+          <h1 className="text-[2rem] font-semibold tracking-tight text-[var(--brand-text)] sm:text-[2.25rem]">建立帳號</h1>
+          <p className="text-[1rem] text-[var(--brand-text-muted)]">
             會員資料永久保存在 Supabase 雲端，任何裝置登入都看到同一份組織。
           </p>
         </header>
 
         <SupabaseSetupNotice />
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        <form className="home-section space-y-4" onSubmit={handleSubmit}>
           <label className="block space-y-2">
             <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">姓名</span>
             <input
@@ -135,16 +136,12 @@ export default function RegisterPage() {
 
           {error ? <p className="text-[0.9375rem] text-[#ff375f]">{error}</p> : null}
 
-          <button
-            className="w-full rounded-[1.25rem] bg-[var(--brand-primary)] px-4 py-4 text-[1rem] font-semibold text-white disabled:opacity-60"
-            disabled={isSubmitting}
-            type="submit"
-          >
+          <PrimarySubmitButton disabled={isSubmitting}>
             {isSubmitting ? "建立中…" : "建立帳號"}
-          </button>
+          </PrimarySubmitButton>
         </form>
 
-        <p className="text-center text-[0.9375rem] text-[#86868b]">
+        <p className="home-section text-center text-[0.9375rem] text-[var(--brand-text-muted)]">
           已有帳號？{" "}
           <Link className="font-medium text-[var(--brand-primary-dark)]" href="/login">
             登入
