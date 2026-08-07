@@ -62,12 +62,63 @@ export const LEARNING_RESOURCE_CATALOG: LearningResource[] = [
     youtubeUrl: "https://youtu.be/V9Xnpw_N5sE",
     stuckPoints: ["product_knowledge", "pipeline_consultation"],
   },
+  {
+    id: "promotion_abc_bachi",
+    title: "巴奇推廣 實戰促銷ABC",
+    youtubeUrl: "https://youtu.be/KJFSKyzuAZk",
+    stuckPoints: ["pipeline_consultation", "objection_handling", "organization_growth"],
+    seriesKey: "promotion_abc",
+    seriesPart: 1,
+  },
+  {
+    id: "promotion_abc_kaohsiung",
+    title: "高雄一日培訓 · 促銷ABC（蔡明蕙 富豪組）",
+    youtubeUrl: "https://youtu.be/k87wl0qXVzA",
+    stuckPoints: ["pipeline_consultation", "objection_handling", "organization_growth"],
+    seriesKey: "promotion_abc",
+    seriesPart: 2,
+  },
+  {
+    id: "promotion_abc_store",
+    title: "認識店家績優組ABC法則",
+    youtubeUrl: "https://youtu.be/WfkKLHI8VNI",
+    stuckPoints: ["pipeline_consultation", "organization_growth", "retail_house"],
+    seriesKey: "promotion_abc",
+    seriesPart: 3,
+  },
+  {
+    id: "promotion_abc_lumi",
+    title: "促銷ABC（Lumi 富豪）",
+    youtubeUrl: "https://youtu.be/oYYQOO3Ys-o",
+    stuckPoints: ["pipeline_consultation", "objection_handling", "organization_growth"],
+    seriesKey: "promotion_abc",
+    seriesPart: 4,
+  },
+  {
+    id: "after_sales_goldmine",
+    title: "服務是金礦（士謙哥 · 售後服務）",
+    youtubeUrl: "https://youtu.be/jtngUiEbwMc",
+    stuckPoints: ["product_knowledge", "retail_house", "pipeline_consultation"],
+    seriesKey: "after_sales",
+    seriesPart: 1,
+  },
+  {
+    id: "comprehensive_playlist",
+    title: "綜合大全（完整片單）",
+    youtubeUrl: "https://youtube.com/playlist?list=PLI5FMVK_dFp9xekrYRUNkqOBHTYwXco_Z",
+    stuckPoints: ["marketing_overview", "foundation_newcomer"],
+    seriesKey: "comprehensive",
+    note: "YouTube 播放清單，含多堂業務教學影片。",
+  },
 ];
 
 export const LEARNING_SERIES_LABELS: Record<string, string> = {
   dream_quartet: "圓夢四部曲",
+  promotion_abc: "促銷ABC · 零售成交或招募",
   objection_handling: "異議處理",
+  after_sales: "售後服務",
   general: "事業基礎",
+  comprehensive: "綜合大全",
 };
 
 export interface LearningResourceGroup {
@@ -84,7 +135,14 @@ export function formatLearningStuckPoints(resource: LearningResource): string[] 
   return resource.stuckPoints.map((point) => LEARNING_STUCK_POINT_LABELS[point]);
 }
 
-const GROUP_ORDER = ["dream_quartet", "objection_handling", "general"] as const;
+const GROUP_ORDER = [
+  "dream_quartet",
+  "promotion_abc",
+  "objection_handling",
+  "after_sales",
+  "general",
+  "comprehensive",
+] as const;
 
 export function groupLearningResources(): LearningResourceGroup[] {
   const buckets = new Map<string, LearningResource[]>();
