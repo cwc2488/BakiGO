@@ -2,6 +2,7 @@
 
 import {
   formatDisplayDate,
+  formatPlainTimeGreeting,
   formatTimeGreeting,
   getMemberAvatarUrl,
   getMemberDisplayName,
@@ -97,47 +98,25 @@ function GreetingSection({ metrics }: { metrics: MemberComputedMetrics }) {
 
 function QuickLinksSection({ links }: { links: readonly { href: string; title: string }[] }) {
   return (
-    <section className="home-section grid grid-cols-2 gap-2.5">
-      {links.map((link) => (
-        <Link
-          key={link.href}
-          className="flex min-h-[4.5rem] items-center justify-center rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-4 text-center transition-colors active:bg-[var(--brand-primary-muted)] hover:border-[#d1d1d6]"
-          href={link.href}
-        >
-          <p className="text-[1rem] font-semibold text-[#1d1d1f]">
-            <span aria-hidden className="mr-1.5">
-              {WORK_HUB_EMOJIS[link.href] ?? "📌"}
-            </span>
-            {link.title}
-          </p>
-        </Link>
-      ))}
-    </section>
-  );
-}
-
-function MoreFeaturesSection() {
-  const extraLinks = WORK_HUB_LINKS.filter(
-    (link) => !SIMPLE_QUICK_LINKS.some((simple) => simple.href === link.href),
-  );
-
-  return (
-    <details className="home-section rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3">
-      <summary className="cursor-pointer list-none text-[0.9375rem] font-semibold text-[#1d1d1f] marker:content-none [&::-webkit-details-marker]:hidden">
-        更多功能
-      </summary>
-      <div className="mt-3 grid grid-cols-2 gap-2 pb-1">
-        {extraLinks.map((link) => (
+    <section className="home-section">
+      <SectionLabel>更多功能</SectionLabel>
+      <div className="mt-3 grid grid-cols-2 gap-2.5">
+        {links.map((link) => (
           <Link
             key={link.href}
-            className="rounded-xl bg-[var(--brand-bg)] px-3 py-2.5 text-[0.875rem] font-medium text-[#1d1d1f] transition-colors active:bg-[var(--brand-primary-muted)]"
+            className="flex min-h-[4.5rem] items-center justify-center rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-4 text-center transition-colors active:bg-[var(--brand-primary-muted)] hover:border-[#d1d1d6]"
             href={link.href}
           >
-            {WORK_HUB_EMOJIS[link.href]} {link.title}
+            <p className="text-[1rem] font-semibold text-[var(--brand-primary-dark)]">
+              <span aria-hidden className="mr-1.5">
+                {WORK_HUB_EMOJIS[link.href] ?? "📌"}
+              </span>
+              {link.title}
+            </p>
           </Link>
         ))}
       </div>
-    </details>
+    </section>
   );
 }
 
@@ -254,13 +233,14 @@ function SimpleHomeView({
   const topPriority = metrics.presidentAI.topPriorities[0] ?? null;
   const displayName = getMemberDisplayName();
   const avatarUrl = getMemberAvatarUrl();
+  const referenceDate = metrics.missions.referenceDate;
 
   return (
     <>
       <GreetingHeader
         avatarUrl={avatarUrl}
-        displayName={displayName}
-        subtitle={formatTimeGreeting()}
+        displayName={`${formatPlainTimeGreeting()}，${displayName}`}
+        subtitle={formatDisplayDate(referenceDate)}
       />
       <TodayStepCard
         focusMode={metrics.presidentAI.focusMode}
@@ -268,9 +248,7 @@ function SimpleHomeView({
         priority={topPriority}
         showFocusMode={false}
       />
-      <DownlinePartnerSuggestions suggestions={metrics.downlinePartnerSuggestions} />
       <QuickLinksSection links={SIMPLE_QUICK_LINKS} />
-      <MoreFeaturesSection />
       <HomeModeToggle mode="simple" onChange={onModeChange} />
     </>
   );

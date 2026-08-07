@@ -94,6 +94,17 @@ export function formatDisplayDate(referenceDate: string): string {
   return formatter.format(date);
 }
 
+export function formatPlainTimeGreeting(date: Date = new Date()): string {
+  const hour = date.getHours();
+  if (hour < 12) {
+    return "早安";
+  }
+  if (hour < 18) {
+    return "午安";
+  }
+  return "晚安";
+}
+
 export function formatTimeGreeting(date: Date = new Date()): string {
   const hour = date.getHours();
   if (hour < 12) {

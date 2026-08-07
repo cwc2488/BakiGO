@@ -161,6 +161,17 @@ export function resolvePresidentAiAction(
     priority.sourceKey === "rank_daily_guidance" ||
     priority.sourceKey.startsWith("promotion_")
   ) {
+    if (
+      priority.sourceKey.startsWith("downline_no_meetings_") ||
+      priority.sourceKey.startsWith("downline_no_new_customers_")
+    ) {
+      return {
+        kind: "navigate",
+        href: priority.actionHref ?? "/organization",
+        label: "查看夥伴",
+      };
+    }
+
     const fromHref = resolveActionHref(priority, "執行今日建議");
     if (fromHref) {
       return fromHref;

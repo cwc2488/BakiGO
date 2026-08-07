@@ -35,6 +35,7 @@ import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal
 import { QuickRecruitModal } from "@/components/daily-action/QuickRecruitModal";
 import { SuperLeagueAddModal } from "@/components/daily-action/SuperLeagueAddModal";
 import { TodayStepCard } from "@/components/president-ai/TodayStepCard";
+import { DownlinePartnerSuggestions } from "@/components/organization/DownlinePartnerSuggestions";
 import { GreetingHeader } from "@/components/ui/GreetingHeader";
 import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
 import { TabRootShell } from "@/components/ui/TabRootShell";
@@ -395,6 +396,11 @@ function DailyActionView({
           onQuickLog={handleAction}
           priority={snapshot.topPriority}
           reasoning={metrics.presidentAI.reasoning[0]}
+        />
+
+        <DownlinePartnerSuggestions
+          compact
+          suggestions={metrics.downlinePartnerSuggestions}
         />
 
         <TodayCalendarPlanCard plan={todayPlan} />
