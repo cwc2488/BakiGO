@@ -1,5 +1,6 @@
 import type { PriorityCandidate, PresidentAIInput } from "./types";
 import { isPromotionCoveredByNextSteps } from "@/lib/business-engine/next-step/promotion-step-dedupe";
+import { collectPipelinePushCandidates } from "./collect-pipeline-candidates";
 import {
   resolveCategoryFromCriterionKey,
   resolveCategoryFromMetric,
@@ -294,6 +295,10 @@ export function collectPriorityCandidates(input: PresidentAIInput): PriorityCand
       actionHref: input.rankGuidance.actionSteps[0]?.href,
     });
   }
+
+  collectPipelinePushCandidates(input.pipelinePushSteps).forEach((candidate) =>
+    pushCandidate(candidates, candidate),
+  );
 
   return dedupeCandidatesByTitle(candidates);
 }

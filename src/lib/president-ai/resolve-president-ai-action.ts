@@ -145,6 +145,10 @@ export function resolvePresidentAiAction(
     return null;
   }
 
+  if (priority.sourceKey.startsWith("pipeline_push_") && priority.actionHref) {
+    return resolvePlaybookHref(priority.actionHref, "前往名單流程");
+  }
+
   if (priority.sourceKey.startsWith("member_goal_")) {
     return resolveMemberGoalAction(priority.category, priority.actionHref);
   }

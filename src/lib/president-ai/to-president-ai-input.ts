@@ -1,6 +1,7 @@
 import type { PresidentAIInput } from "./types";
-import type { CareerBlueprintView, MemberGoalProgressView } from "@/types/member-goal";
+import type { CareerBlueprintView, MemberGoalActionStep, MemberGoalProgressView } from "@/types/member-goal";
 import type { RankGuidanceView } from "@/lib/member-goals/build-rank-guidance-playbook";
+import type { LearningStuckPointKey } from "@/types/learning-resource";
 
 export interface PresidentAIMetricsInput {
   memberId: string;
@@ -17,6 +18,8 @@ export interface PresidentAIMetricsInput {
   memberGoals?: MemberGoalProgressView[];
   careerGoal?: CareerBlueprintView | null;
   rankGuidance?: RankGuidanceView | null;
+  detectedStuckPoints?: LearningStuckPointKey[];
+  pipelinePushSteps?: MemberGoalActionStep[];
 }
 
 export function toPresidentAIInput(metrics: PresidentAIMetricsInput): PresidentAIInput {
@@ -85,5 +88,7 @@ export function toPresidentAIInput(metrics: PresidentAIMetricsInput): PresidentA
           actionSteps: metrics.rankGuidance.actionSteps,
         }
       : null,
+    detectedStuckPoints: metrics.detectedStuckPoints ?? [],
+    pipelinePushSteps: metrics.pipelinePushSteps ?? [],
   };
 }

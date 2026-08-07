@@ -88,6 +88,13 @@ function pickTodayPriority(
     }
   }
 
+  if (input.detectedStuckPoints.length > 0 && input.pipelinePushSteps.length > 0) {
+    const matched = scored.find((item) => item.sourceKey.startsWith("pipeline_push_"));
+    if (matched) {
+      return matched;
+    }
+  }
+
   if (input.rankGuidance && input.rankGuidance.actionSteps.length > 0) {
     const matched = scored.find((item) => item.sourceKey === "rank_daily_guidance");
     if (matched) {

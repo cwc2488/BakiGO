@@ -66,8 +66,13 @@ import {
   buildMemberGoalProgressView,
 } from "@/lib/member-goals/calculate-member-goal-progress";
 import { buildRetailPipelineSnapshot } from "@/lib/retail-pipeline/pipeline-selectors";
+import { buildPipelinePushSteps } from "@/lib/retail-pipeline/build-pipeline-push-steps";
 import { buildRankGuidance } from "@/lib/member-goals/build-rank-guidance-playbook";
-import { recommendLearningResources } from "@/lib/learning-resources/recommend-learning-resources";
+import {
+  detectStuckPoints,
+  recommendLearningResources,
+} from "@/lib/learning-resources/recommend-learning-resources";
+import type { MemberGoalActionStep } from "@/types/member-goal";
 
 export interface MemberComputedMetrics {
   memberId: EntityId;
@@ -88,6 +93,7 @@ export interface MemberComputedMetrics {
   mapUniverse: MapUniverseResult;
   eventCenter: EventCenterResult;
   learningRecommendations: LearningRecommendation[];
+  pipelinePushReminders: MemberGoalActionStep[];
 }
 
 export interface RecalculateMemberMetricsInput {
@@ -284,7 +290,12 @@ export function recalculateMemberMetrics(
 
   const snapshotCore: Omit<
     MemberComputedMetrics,
-    "presidentAI" | "retailWeeklyReport" | "mapUniverse" | "eventCenter" | "learningRecommendations"
+    | "presidentAI"
+    | "retailWeeklyReport"
+    | "mapUniverse"
+    | "eventCenter"
+    | "learningRecommendations"
+    | "pipelinePushReminders"
   > = {
     memberId: input.memberId,
     yearMonth,
@@ -323,7 +334,7 @@ export function recalculateMemberMetrics(
     pipeline: pipelineSnapshot,
   });
 
-  const learningRecommendations = recommendLearningResources({
+  const stuckPointInput = {
     rankKey: currentMember?.rankKey ?? RANK_KEYS.NEW_MEMBER,
     rankGuidanceMode: rankGuidanceView?.mode ?? null,
     pipeline: pipelineSnapshot,
@@ -331,7 +342,11 @@ export function recalculateMemberMetrics(
     promotionProgress,
     vp,
     monthlyChallenge,
-  });
+  };
+  const detectedStuckPoints = detectStuckPoints(stuckPointInput);
+  const pipelinePushReminders = buildPipelinePushSteps(pipelineSnapshot);
+
+  const learningRecommendations = recommendLearningResources(stuckPointInput);
 
   const presidentAI = calculatePresidentAI(
     toPresidentAIInput({
@@ -340,6 +355,8 @@ export function recalculateMemberMetrics(
       memberGoals: memberGoalViews,
       careerGoal: careerGoalView,
       rankGuidance: rankGuidanceView,
+      detectedStuckPoints,
+      pipelinePushSteps: pipelinePushReminders,
     }),
   );
 
@@ -391,6 +408,7 @@ export function recalculateMemberMetrics(
     mapUniverse,
     eventCenter,
     learningRecommendations,
+    pipelinePushReminders,
   };
 
   saveComputedMetrics(storage, snapshot);

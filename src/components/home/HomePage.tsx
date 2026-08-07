@@ -185,7 +185,10 @@ function HomeView({ metrics }: { metrics: MemberComputedMetrics }) {
           priority={topPriority}
           reasoning={metrics.presidentAI.reasoning[0]}
         />
-        <LearningResourceSuggestions recommendations={metrics.learningRecommendations} />
+        <LearningResourceSuggestions
+          pipelinePushReminders={metrics.pipelinePushReminders}
+          recommendations={metrics.learningRecommendations}
+        />
         <WorkHubSection />
         <PresidentAISection firstUse={firstUse} presidentAI={metrics.presidentAI} />
         <AddTransactionButton />

@@ -49,7 +49,7 @@ const STUCK_POINT_REASONS: Record<LearningStuckPointKey, string> = {
   product_knowledge: "諮詢與成交前，先把全產品熟悉。",
 };
 
-function detectStuckPoints(input: {
+export function detectStuckPoints(input: {
   rankKey: string;
   rankGuidanceMode: RankGuidanceMode | null;
   pipeline: RetailPipelineSnapshot | null;
