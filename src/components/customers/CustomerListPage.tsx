@@ -44,6 +44,11 @@ function CustomerCard({ customer }: { customer: CustomerListItem }) {
           ) : (
             <p className="mt-1 text-[0.8125rem] text-[#86868b]">尚無量測紀錄</p>
           )}
+          {customer.lastContactDate ? (
+            <p className="mt-0.5 text-[0.8125rem] text-[#86868b]">
+              上次聯絡 {customer.lastContactDate}
+            </p>
+          ) : null}
         </div>
         {customer.followUpReason ? (
           <span
@@ -70,6 +75,7 @@ export default function CustomerListPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [heightCm, setHeightCm] = useState("");
+  const [birthYear, setBirthYear] = useState("");
   const [notificationState, setNotificationState] = useState(() =>
     typeof window === "undefined" ? "default" : getNotificationPermissionState(),
   );
@@ -141,10 +147,12 @@ export default function CustomerListPage() {
       displayName: name,
       phone: phone || undefined,
       heightCm: heightCm ? Number(heightCm) : undefined,
+      birthYear: birthYear ? Number(birthYear) : undefined,
     });
     setName("");
     setPhone("");
     setHeightCm("");
+    setBirthYear("");
     setShowForm(false);
     reload();
   };
@@ -241,6 +249,15 @@ export default function CustomerListPage() {
                 inputMode="decimal"
                 onChange={(event) => setHeightCm(event.target.value)}
                 value={heightCm}
+              />
+            </label>
+            <label className="block space-y-2">
+              <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">出生年（選填，自動算年齡）</span>
+              <input
+                className="date-input w-full"
+                inputMode="numeric"
+                onChange={(event) => setBirthYear(event.target.value)}
+                value={birthYear}
               />
             </label>
             <button

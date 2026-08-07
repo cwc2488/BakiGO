@@ -485,6 +485,7 @@ export const ROUTE_ICON_COMPONENTS = {
   "/leaderboard": IconLeaderboard,
   "/retail-pipeline": IconPipeline,
   "/customers": IconNewCustomer,
+  "/members": IconOrganization,
   "/retail-house": IconRetailHouse,
   "/organization": IconOrganization,
   "/promotions": IconPromotions,

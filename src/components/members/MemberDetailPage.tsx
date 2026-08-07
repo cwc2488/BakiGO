@@ -1,6 +1,7 @@
 "use client";
 
-import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { getCurrentMember, resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { canEditMemberRecord, canViewMemberRecord } from "@/lib/auth/member-management-access";
 import {
   formatJoinedDate,
   formatShortDate,
@@ -65,6 +66,12 @@ export default function MemberDetailPage({ memberId }: { memberId: string }) {
       const found = createMemberRepository(storage).getById(memberId);
 
       if (!found) {
+        setLoadState("not-found");
+        return;
+      }
+
+      const viewer = getCurrentMember(storage);
+      if (viewer && !canViewMemberRecord(viewer, memberId, allMembers)) {
         setLoadState("not-found");
         return;
       }
@@ -135,6 +142,8 @@ export default function MemberDetailPage({ memberId }: { memberId: string }) {
 
   const profile = getMemberProfileFields(member, members);
   const workspaceRepo = createMemberWorkspaceRepository(createLocalStorageAdapter());
+  const viewer = getCurrentMember(createLocalStorageAdapter());
+  const canEdit = viewer ? canEditMemberRecord(viewer, member.id, members) : false;
 
   return (
     <div className="min-h-full bg-[var(--brand-bg)]">
@@ -155,7 +164,7 @@ export default function MemberDetailPage({ memberId }: { memberId: string }) {
                 variant="hero"
               />
             </div>
-            {!isSelfView ? (
+            {!isSelfView && canEdit ? (
               <Link
                 className="rounded-full bg-[var(--brand-bg)] px-4 py-2 text-[0.875rem] font-medium text-[#636366]"
                 href={`/members/${member.id}/edit`}

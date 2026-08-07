@@ -3,7 +3,7 @@
 import { DEFAULT_BUSINESS_RULES } from "@/lib/business-engine";
 import { RANK_KEYS } from "@/lib/business-engine/rules/keys";
 import { getCurrentMember, resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
-import { canAccessMemberManagement } from "@/lib/auth/member-management-access";
+import { canAccessMemberManagement, canEditMemberRecord } from "@/lib/auth/member-management-access";
 import { APP_IDS, todayISODate } from "@/lib/config/app-config";
 import {
   loadAllMembers,
@@ -116,8 +116,16 @@ export default function MemberFormPage({
   useEffect(() => {
     if (mode === "create" && !canManageMembers) {
       router.replace("/organization");
+      return;
     }
-  }, [mode, canManageMembers, router]);
+
+    if (mode === "edit" && memberId && viewer && !isSelfProfile) {
+      const allMembers = loadAllMembers(storage);
+      if (!canEditMemberRecord(viewer, memberId, allMembers)) {
+        router.replace("/organization");
+      }
+    }
+  }, [mode, canManageMembers, isSelfProfile, memberId, router, storage, viewer]);
 
   useEffect(() => {
     if (mode !== "edit" || !memberId) {

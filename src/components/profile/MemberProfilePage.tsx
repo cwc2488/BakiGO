@@ -12,7 +12,11 @@ import {
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import { IconLabel } from "@/components/ui/AppIcon";
 import { APP_ICON } from "@/lib/ui/app-icons";
-import { useCallback, useEffect, useState } from "react";
+import { getCurrentMember, resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { canAccessMemberManagement } from "@/lib/auth/member-management-access";
+import { buildDailyFollowUpSnapshot } from "@/lib/customers/customer-follow-up-reminder";
+import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   MetricTile,
   ProfileCard,
@@ -118,8 +122,20 @@ function GrowthSection({ metrics }: { metrics: MemberComputedMetrics }) {
 }
 
 function ProfileQuickLinks() {
+  const storage = useMemo(() => createLocalStorageAdapter(), []);
+  const viewer = getCurrentMember(storage);
+  const followUpCount = useMemo(
+    () => buildDailyFollowUpSnapshot(storage, resolveAuthenticatedMemberId(storage)).count,
+    [storage],
+  );
+  const showPartnerCare = canAccessMemberManagement(viewer);
+
   const links = [
-    { href: "/customers", label: "顧客關懷" },
+    {
+      href: "/customers",
+      label: followUpCount > 0 ? `顧客關懷 (${followUpCount})` : "顧客關懷",
+    },
+    ...(showPartnerCare ? [{ href: "/members", label: "夥伴關懷" }] : []),
     { href: "/leaderboard", label: "積分排行" },
     { href: "/organization", label: "組織圖" },
     { href: "/retail-house", label: "零售屋" },

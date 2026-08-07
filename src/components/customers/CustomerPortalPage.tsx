@@ -2,10 +2,12 @@
 
 import { formatShortDate } from "@/lib/mission-control/format";
 import { BodyCompositionTrendCharts } from "@/components/customers/BodyCompositionTrendCharts";
+import { CustomerPhotoCompareSection } from "@/components/customers/CustomerPhotoCompareSection";
 import { buildPortalTrendSeries } from "@/lib/customers/body-composition-trends";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { PageShell } from "@/components/ui/PageShell";
-import { useEffect, useState } from "react";
+import type { CustomerPhotoAngle, CustomerPhotoPhase, CustomerProgressPhoto } from "@/types/customer";
+import { useEffect, useMemo, useState } from "react";
 
 interface PortalRecord {
   recordDate: string;
@@ -14,11 +16,21 @@ interface PortalRecord {
   visceralFatLevel: number | null;
   bodyAge: number | null;
   basalMetabolicRate: number | null;
+  bmi: number | null;
+}
+
+interface PortalPhoto {
+  phase: CustomerPhotoPhase;
+  angle: CustomerPhotoAngle;
+  photoDate: string;
+  imageDataUrl: string;
 }
 
 interface PortalData {
   displayName: string;
+  heightCm: number | null;
   records: PortalRecord[];
+  photos: PortalPhoto[];
 }
 
 function buildEncouragement(records: PortalRecord[]): string {
@@ -36,6 +48,19 @@ function buildEncouragement(records: PortalRecord[]): string {
     return "比上次有進步！記得保持規律作息，我們約下次再量一次看看。";
   }
   return "每一次量測都是在照顧自己，有任何問題都可以跟教練說。";
+}
+
+function mapPortalPhotos(photos: PortalPhoto[]): CustomerProgressPhoto[] {
+  return photos.map((photo, index) => ({
+    id: `portal-${photo.phase}-${photo.angle}-${index}`,
+    customerId: "portal",
+    phase: photo.phase,
+    angle: photo.angle,
+    photoDate: photo.photoDate,
+    imageDataUrl: photo.imageDataUrl,
+    createdAt: photo.photoDate,
+    updatedAt: photo.photoDate,
+  }));
 }
 
 export default function CustomerPortalPage({ token }: { token: string }) {
@@ -64,11 +89,20 @@ export default function CustomerPortalPage({ token }: { token: string }) {
         return;
       }
 
-      setData(payload as PortalData);
+      const parsed = payload as PortalData;
+      setData({
+        ...parsed,
+        photos: parsed.photos ?? [],
+      });
     }
 
     void load();
   }, [token]);
+
+  const portalPhotos = useMemo(
+    () => (data ? mapPortalPhotos(data.photos) : []),
+    [data],
+  );
 
   if (error) {
     return (
@@ -94,7 +128,16 @@ export default function CustomerPortalPage({ token }: { token: string }) {
         <p className="text-[0.9375rem] leading-relaxed text-[#1d1d1f]">
           {buildEncouragement(data.records)}
         </p>
+        {data.heightCm ? (
+          <p className="mt-2 text-[0.8125rem] text-[#86868b]">身高 {data.heightCm} cm</p>
+        ) : null}
       </section>
+
+      <CustomerPhotoCompareSection
+        customerName={data.displayName}
+        photos={portalPhotos}
+        readOnly
+      />
 
       <BodyCompositionTrendCharts seriesList={trendSeries} />
 
@@ -110,6 +153,7 @@ export default function CustomerPortalPage({ token }: { token: string }) {
                   <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">
                     {record.weightKg !== null ? `${record.weightKg} kg` : "體組成紀錄"}
                     {record.bodyFatPercent !== null ? ` · 體脂 ${record.bodyFatPercent}%` : ""}
+                    {record.bmi !== null ? ` · BMI ${record.bmi}` : ""}
                   </p>
                   <time className="text-[0.8125rem] text-[#86868b]">
                     {formatShortDate(record.recordDate)}

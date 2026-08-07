@@ -89,6 +89,7 @@ export const ROUTE_ICONS: Record<string, AppIconName> = {
   "/leaderboard": "leaderboard",
   "/retail-pipeline": "pipeline",
   "/customers": "newCustomer",
+  "/members": "organization",
   "/retail-house": "retailHouse",
   "/organization": "organization",
   "/promotions": "promotions",

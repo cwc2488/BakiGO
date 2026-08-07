@@ -1,8 +1,9 @@
 "use client";
 
 import { formatShortDate } from "@/lib/mission-control/format";
+import { computeAgeFromBirthYear } from "@/lib/customers/body-metrics";
 import type { BodyCompositionRecord } from "@/types/customer";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CrmButton, CrmCard, CrmInput, CrmSectionTitle, CrmTextarea } from "@/components/members/ui";
 
 export interface CustomerBodyFormValues {
@@ -61,14 +62,31 @@ function formatRecordSummary(record: BodyCompositionRecord): string {
 export function CustomerBodySection({
   records,
   today,
+  birthYear,
   onCreate,
 }: {
   records: BodyCompositionRecord[];
   today: string;
+  birthYear?: number;
   onCreate: (values: CustomerBodyFormValues) => void;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<CustomerBodyFormValues>(() => emptyForm(today));
+
+  useEffect(() => {
+    if (!showForm || !birthYear) {
+      return;
+    }
+
+    const suggestedAge = computeAgeFromBirthYear(birthYear, form.recordDate);
+    if (suggestedAge === null) {
+      return;
+    }
+
+    setForm((current) =>
+      current.age.trim() ? current : { ...current, age: String(suggestedAge) },
+    );
+  }, [birthYear, form.recordDate, showForm]);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -78,7 +96,16 @@ export function CustomerBodySection({
   };
 
   const updateField = (field: keyof CustomerBodyFormValues, value: string) => {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => {
+      const next = { ...current, [field]: value };
+      if (field === "recordDate" && birthYear && !current.age.trim()) {
+        const suggestedAge = computeAgeFromBirthYear(birthYear, value);
+        if (suggestedAge !== null) {
+          next.age = String(suggestedAge);
+        }
+      }
+      return next;
+    });
   };
 
   return (

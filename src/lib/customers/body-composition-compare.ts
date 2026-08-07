@@ -162,7 +162,7 @@ export function buildCustomerFollowUpHints(
   }
 
   const daysSinceRecord = daysBetween(latestRecord.recordDate, today);
-  if (daysSinceRecord >= 14) {
+        if (daysSinceRecord >= 14 && customer.lastContactDate !== today) {
     hints.push({
       customerId: customer.id,
       reason: `已 ${daysSinceRecord} 天沒量測`,

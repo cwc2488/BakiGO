@@ -16,9 +16,11 @@ import { useMemo, useState } from "react";
 export function CustomerPhotoCompareSection({
   customerName,
   photos,
+  readOnly = false,
 }: {
   customerName: string;
   photos: CustomerProgressPhoto[];
+  readOnly?: boolean;
 }) {
   const pairs = useMemo(() => findPhotoComparePairs(photos), [photos]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -109,15 +111,23 @@ export function CustomerPhotoCompareSection({
         </div>
       ) : null}
 
-      <button
-        className="mt-5 w-full rounded-2xl bg-[#1d1d1f] px-4 py-3.5 text-[1rem] font-semibold text-white disabled:opacity-60"
-        disabled={isGenerating}
-        onClick={() => void handleGenerate()}
-        type="button"
-      >
-        {isGenerating ? "產生中…" : "一鍵產生對照圖"}
-      </button>
-      {error ? <p className="mt-2 text-[0.8125rem] text-[#cf1322]">{error}</p> : null}
+      {!readOnly ? (
+        <>
+          <button
+            className="mt-5 w-full rounded-2xl bg-[#1d1d1f] px-4 py-3.5 text-[1rem] font-semibold text-white disabled:opacity-60"
+            disabled={isGenerating}
+            onClick={() => void handleGenerate()}
+            type="button"
+          >
+            {isGenerating ? "產生中…" : "一鍵產生對照圖"}
+          </button>
+          {error ? <p className="mt-2 text-[0.8125rem] text-[#cf1322]">{error}</p> : null}
+        </>
+      ) : (
+        <p className="mt-4 text-[0.8125rem] leading-relaxed text-[#86868b]">
+          這是你的使用前後對照，繼續保持，有任何問題都可以跟教練說。
+        </p>
+      )}
     </section>
   );
 }

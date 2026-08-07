@@ -19,7 +19,9 @@ import {
   formatMetricDeltaLine,
 } from "@/lib/customers/body-composition-compare";
 import { buildBodyCompositionTrendSeries } from "@/lib/customers/body-composition-trends";
+import { computeBmi, computeAgeFromBirthYear } from "@/lib/customers/body-metrics";
 import { todayISODate } from "@/lib/config/app-config";
+import { formatShortDate } from "@/lib/mission-control/format";
 import { createCustomerRepository } from "@/lib/repositories/customer-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { APP_ICON } from "@/lib/ui/app-icons";
@@ -53,14 +55,23 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
   const trendSeries = useMemo(() => buildBodyCompositionTrendSeries(records), [records]);
 
   const handleCreateRecord = (values: CustomerBodyFormValues) => {
+    const currentCustomer = repo.getCustomerById(customerId);
+    const weightKg = parseCustomerBodyNumber(values.weightKg);
+    const bmi =
+      parseCustomerBodyNumber(values.bmi) ??
+      computeBmi(weightKg, currentCustomer?.heightCm ?? null);
+    const age =
+      parseCustomerBodyNumber(values.age) ??
+      computeAgeFromBirthYear(currentCustomer?.birthYear, values.recordDate);
+
     repo.createBodyRecord({
       customerId,
       recordDate: values.recordDate,
-      age: parseCustomerBodyNumber(values.age),
-      weightKg: parseCustomerBodyNumber(values.weightKg),
+      age,
+      weightKg,
       skeletalMuscleKg: parseCustomerBodyNumber(values.skeletalMuscleKg),
       bodyFatKg: parseCustomerBodyNumber(values.bodyFatKg),
-      bmi: parseCustomerBodyNumber(values.bmi),
+      bmi,
       bodyFatPercent: parseCustomerBodyNumber(values.bodyFatPercent),
       visceralFatLevel: parseCustomerBodyNumber(values.visceralFatLevel),
       basalMetabolicRate: parseCustomerBodyNumber(values.basalMetabolicRate),
@@ -90,9 +101,24 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
     reload();
   };
 
+  const handleBirthYearChange = (value: string) => {
+    const parsed = parseCustomerBodyNumber(value);
+    repo.updateCustomer(customerId, {
+      birthYear: parsed ?? undefined,
+    });
+    reload();
+  };
+
   const handleFollowUpDateChange = (value: string) => {
     repo.updateCustomer(customerId, {
       nextFollowUpDate: value || undefined,
+    });
+    reload();
+  };
+
+  const handleMarkContacted = () => {
+    repo.updateCustomer(customerId, {
+      lastContactDate: today,
     });
     reload();
   };
@@ -158,6 +184,28 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
         </section>
       ) : null}
 
+      <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">
+              聯絡紀錄
+            </p>
+            <p className="mt-2 text-[0.9375rem] text-[#1d1d1f]">
+              {customer.lastContactDate
+                ? `上次聯絡 ${formatShortDate(customer.lastContactDate)}`
+                : "尚未記錄聯絡"}
+            </p>
+          </div>
+          <button
+            className="shrink-0 rounded-2xl bg-[var(--brand-primary-muted)] px-4 py-2.5 text-[0.875rem] font-semibold text-[var(--brand-primary-dark)]"
+            onClick={handleMarkContacted}
+            type="button"
+          >
+            今天已聯絡
+          </button>
+        </div>
+      </section>
+
       <BodyCompositionTrendCharts seriesList={trendSeries} />
 
       <CustomerPhotoCompareSection customerName={customer.displayName} photos={photos} />
@@ -180,7 +228,15 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
             onChange={(event) => handleHeightChange(event.target.value)}
             value={customer.heightCm?.toString() ?? ""}
           />
-          <p className="text-[0.8125rem] text-[#86868b]">身高設定後固定，量測紀錄不會重複填寫。</p>
+          <CrmInput
+            label="出生年"
+            inputMode="numeric"
+            onChange={(event) => handleBirthYearChange(event.target.value)}
+            value={customer.birthYear?.toString() ?? ""}
+          />
+          <p className="text-[0.8125rem] text-[#86868b]">
+            身高設定後固定；有出生年時，量測會自動帶入年齡。
+          </p>
           <CrmInput
             label="下次追蹤日"
             onChange={(event) => handleFollowUpDateChange(event.target.value)}
@@ -203,7 +259,12 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
         </div>
       </CrmCard>
 
-      <CustomerBodySection onCreate={handleCreateRecord} records={records} today={today} />
+      <CustomerBodySection
+        birthYear={customer.birthYear}
+        onCreate={handleCreateRecord}
+        records={records}
+        today={today}
+      />
     </PageShell>
   );
 }
