@@ -110,7 +110,7 @@ export function AppSideNav() {
   const avatarUrl = getMemberAvatarUrl(undefined, storage);
 
   return (
-    <aside className="hidden md:flex md:w-[5.75rem] md:shrink-0 md:flex-col md:border-r md:border-[var(--brand-border)] md:bg-[var(--brand-surface)] lg:w-[15rem]">
+    <aside className="fixed inset-y-0 left-0 z-[90] hidden w-[5.75rem] shrink-0 flex-col border-r border-[var(--brand-border)] bg-[var(--brand-surface)] md:flex lg:w-[15rem]">
       <div className="flex flex-col items-center gap-3 border-b border-[var(--brand-border)] px-3 py-5 lg:items-stretch lg:px-4">
         <Link className="group flex flex-col items-center gap-2 lg:flex-row lg:items-center lg:gap-3" href="/profile">
           <MemberAvatar avatarUrl={avatarUrl} name={displayName} size="md" />
@@ -123,7 +123,7 @@ export function AppSideNav() {
         </Link>
       </div>
 
-      <nav aria-label="主要功能" className="flex flex-1 flex-col gap-1 p-3">
+      <nav aria-label="主要功能" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3">
         {NAV_ITEMS.map((item) => (
           <NavLink key={item.href} item={item} layout="side" pathname={pathname} />
         ))}

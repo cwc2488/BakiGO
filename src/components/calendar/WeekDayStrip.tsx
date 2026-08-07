@@ -13,14 +13,54 @@ export interface WeekDayStripItem {
 export function WeekDayStrip({
   days,
   onSelectDate,
+  onShiftWeek,
+  weekLabel,
   swipeHandlers,
 }: {
   days: WeekDayStripItem[];
   onSelectDate: (date: string) => void;
+  onShiftWeek?: (delta: number) => void;
+  weekLabel?: string;
   swipeHandlers?: SwipeHandlers;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
+      {weekLabel || onShiftWeek ? (
+        <div className="flex items-center gap-2">
+          {onShiftWeek ? (
+            <button
+              aria-label="上一週"
+              className="rounded-lg border border-[var(--cal-border)] bg-[var(--brand-surface)] px-3 py-1.5 text-[0.8125rem] font-medium text-[#636366]"
+              onClick={() => onShiftWeek(-1)}
+              type="button"
+            >
+              ‹
+            </button>
+          ) : (
+            <span className="w-10" />
+          )}
+          {weekLabel ? (
+            <p className="flex-1 text-center text-[0.8125rem] font-semibold text-[#636366]">
+              {weekLabel}
+            </p>
+          ) : (
+            <span className="flex-1" />
+          )}
+          {onShiftWeek ? (
+            <button
+              aria-label="下一週"
+              className="rounded-lg border border-[var(--cal-border)] bg-[var(--brand-surface)] px-3 py-1.5 text-[0.8125rem] font-medium text-[#636366]"
+              onClick={() => onShiftWeek(1)}
+              type="button"
+            >
+              ›
+            </button>
+          ) : (
+            <span className="w-10" />
+          )}
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-7 gap-1 touch-pan-y" {...swipeHandlers}>
         {days.map((day) => (
           <button

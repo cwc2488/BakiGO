@@ -28,18 +28,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <>
       <CalendarReminderScheduler />
       <CustomerFollowUpReminderScheduler />
-      <div className="flex min-h-full overflow-x-hidden max-w-[100vw]">
+      <div className="min-h-full max-w-[100vw]">
         {showNav ? <AppSideNav /> : null}
-        <div className="min-w-0 flex-1">
-          <div
-            className={
-              showNav
-                ? "pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-0"
-                : undefined
-            }
-          >
-            {children}
-          </div>
+        <div
+          className={
+            showNav
+              ? "min-w-0 md:ml-[5.75rem] lg:ml-[15rem] pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-0"
+              : undefined
+          }
+        >
+          {children}
           {showNav ? <AppBottomNav /> : null}
         </div>
       </div>

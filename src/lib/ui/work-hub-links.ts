@@ -30,5 +30,4 @@ export const SIDE_NAV_EXTRA_LINKS = [
   { href: "/events", title: "紀錄", icon: APP_ICON.hub.events },
   { href: "/organization", title: "組織", icon: APP_ICON.hub.organization },
   { href: "/learning", title: "學習", icon: APP_ICON.hub.learning },
-  { href: "/president-road", title: "升級路線", icon: APP_ICON.page.presidentRoad },
 ] as const;

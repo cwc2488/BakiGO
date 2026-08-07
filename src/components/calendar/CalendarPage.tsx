@@ -31,7 +31,7 @@ import {
   saveSharedCalendarAttendance,
   type SharedCalendarAttendance,
 } from "@/lib/calendar/calendar-attendance-storage";
-import { getMonthStart, shiftMonth, shiftWeek } from "@/lib/calendar/calendar-stats";
+import { getMonthStart, shiftMonth } from "@/lib/calendar/calendar-stats";
 import { addDays, expandEventsForDay, expandEventsForRange, getMonthGridDates, getWeekDates } from "@/lib/calendar/recurrence";
 import {
   getOccurrenceDateFromExpanded,
@@ -77,6 +77,7 @@ import {
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { useSwipeNavigation } from "@/lib/hooks/use-swipe-navigation";
+import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { APP_ICON, QUADRANT_ICONS } from "@/lib/ui/app-icons";
 import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
@@ -271,10 +272,20 @@ export default function CalendarPage() {
     return [...dedupedPersonal, ...sharedVisible, ...attendedCalendarEvents];
   }, [attendedCalendarEvents, events, normalizedSharedEvents, showSharedCalendar]);
 
-  const dayEvents = useMemo(
-    () => expandEventsForDay(visibleEvents, selectedDate),
-    [visibleEvents, selectedDate],
+  const dayViewDates = useMemo(
+    () => [selectedDate, addDays(selectedDate, 1)],
+    [selectedDate],
   );
+
+  const dayEventsByDate = useMemo(() => {
+    const map = new Map<string, ExpandedCalendarEvent[]>();
+    for (const date of dayViewDates) {
+      map.set(date, expandEventsForDay(visibleEvents, date));
+    }
+    return map;
+  }, [dayViewDates, visibleEvents]);
+
+  const isTabletUp = useMediaQuery("(min-width: 768px)");
 
   const weekEvents = useMemo(
     () => expandEventsForRange(visibleEvents, weekRangeStart, weekRangeEnd),
@@ -297,10 +308,12 @@ export default function CalendarPage() {
         value,
         weekday: ["一", "二", "三", "四", "五", "六", "日"][index],
         day: Number(value.slice(8, 10)),
-        isSelected: value === selectedDate,
+        isSelected:
+          value === selectedDate ||
+          (isTabletUp && viewMode === "day" && value === addDays(selectedDate, 1)),
         isToday: value === getTodayDateString(),
       })),
-    [selectedDate, weekDates],
+    [isTabletUp, selectedDate, viewMode, weekDates],
   );
 
   function selectDate(date: string, switchToDay = false) {
@@ -308,14 +321,6 @@ export default function CalendarPage() {
     setMonthAnchor(getMonthStart(date));
     if (switchToDay) {
       setViewMode("day");
-    }
-  }
-
-  function shiftNavigation(delta: number) {
-    if (viewMode === "day") {
-      setSelectedDate(addDays(selectedDate, delta));
-    } else if (viewMode === "week") {
-      setSelectedDate(shiftWeek(selectedDate, delta));
     }
   }
 
@@ -754,7 +759,9 @@ export default function CalendarPage() {
       ? formatChineseYearMonth(monthAnchor)
       : viewMode === "week"
         ? `${formatChineseMonthDay(weekRangeStart)} – ${formatChineseMonthDay(weekRangeEnd)}`
-        : `${formatChineseMonthDay(selectedDate)} ${formatChineseWeekday(selectedDate)}`;
+        : viewMode === "day" && isTabletUp
+          ? `${formatChineseMonthDay(selectedDate)} ${formatChineseWeekday(selectedDate)} – ${formatChineseMonthDay(addDays(selectedDate, 1))} ${formatChineseWeekday(addDays(selectedDate, 1))}`
+          : `${formatChineseMonthDay(selectedDate)} ${formatChineseWeekday(selectedDate)}`;
 
   const headerSubtitle =
     viewMode === "month"
@@ -869,36 +876,6 @@ export default function CalendarPage() {
               </button>
             ))}
           </div>
-
-          {viewMode !== "month" && viewMode !== "stats" ? (
-            <div className="flex items-center gap-2">
-              <button
-                className="rounded-lg border border-[var(--cal-border)] bg-[var(--brand-surface)] px-3 py-1.5 text-[0.8125rem] font-medium text-[#636366]"
-                onClick={() => shiftNavigation(-1)}
-                type="button"
-              >
-                ‹
-              </button>
-              <button
-                className="rounded-lg border border-[var(--cal-border)] bg-[var(--brand-surface)] px-3 py-1.5 text-[0.8125rem] font-medium text-[var(--cal-primary-dark)]"
-                onClick={() => {
-                  const today = getTodayDateString();
-                  setSelectedDate(today);
-                  setMonthAnchor(getMonthStart(today));
-                }}
-                type="button"
-              >
-                今天
-              </button>
-              <button
-                className="rounded-lg border border-[var(--cal-border)] bg-[var(--brand-surface)] px-3 py-1.5 text-[0.8125rem] font-medium text-[#636366]"
-                onClick={() => shiftNavigation(1)}
-                type="button"
-              >
-                ›
-              </button>
-            </div>
-          ) : null}
         </header>
 
         <NotificationPermissionBanner />
@@ -920,7 +897,9 @@ export default function CalendarPage() {
             <WeekDayStrip
               days={weekStrip}
               onSelectDate={selectDate}
-              swipeHandlers={daySwipeHandlers}
+              onShiftWeek={shiftWeekNavigation}
+              swipeHandlers={weekSwipeHandlers}
+              weekLabel={`${formatChineseMonthDay(weekRangeStart)} – ${formatChineseMonthDay(weekRangeEnd)}`}
             />
 
             <div className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-[var(--cal-border)] bg-[var(--cal-surface)] px-4 py-3">
@@ -950,8 +929,8 @@ export default function CalendarPage() {
             ) : null}
 
             <DayTimeGrid
-              dayDate={selectedDate}
-              events={dayEvents}
+              dayDates={dayViewDates}
+              eventsByDate={dayEventsByDate}
               intervalMinutes={slotInterval}
               onEventReschedule={(event, startAt, endAt) =>
                 void handleEventReschedule(event, startAt, endAt)

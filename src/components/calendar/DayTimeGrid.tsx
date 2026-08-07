@@ -4,6 +4,8 @@ import { canDragCalendarEvent } from "@/lib/calendar/can-drag-calendar-event";
 import {
   clampDragTopPx,
   eventDurationMinutes,
+  formatChineseMonthDay,
+  formatChineseWeekday,
   formatEventTimeRange,
   formatTimeLabel,
   getGridHeightPx,
@@ -226,17 +228,114 @@ function DraggableTimedEvent({
   );
 }
 
-export function DayTimeGrid({
+function DayTimedColumn({
   dayDate,
   events,
+  intervalMinutes,
+  slotHeight,
+  gridHeight,
+  slots,
+  onSlotSelect,
+  onEventSelect,
+  onEventReschedule,
+  onDragActiveChange,
+}: {
+  dayDate: string;
+  events: ExpandedCalendarEvent[];
+  intervalMinutes: CalendarSlotInterval;
+  slotHeight: number;
+  gridHeight: number;
+  slots: Array<{ index: number; hour: number; minute: number; label: string }>;
+  onSlotSelect: (startAt: string) => void;
+  onEventSelect: (event: ExpandedCalendarEvent) => void;
+  onEventReschedule?: (
+    event: ExpandedCalendarEvent,
+    startAt: string,
+    endAt: string,
+  ) => void;
+  onDragActiveChange: (active: boolean) => void;
+}) {
+  const timedEvents = events.filter((event) => !event.allDay);
+  const timedLayouts = layoutTimedEvents(timedEvents, dayDate, intervalMinutes);
+
+  return (
+    <div className="relative min-w-0 flex-1 border-l border-[var(--cal-border)]" style={{ height: gridHeight }}>
+      {slots.map((slot) => (
+        <button
+          key={slot.index}
+          className="block w-full border-b border-[#eef2ee] hover:bg-[var(--cal-primary-muted)]"
+          onClick={() => onSlotSelect(slotIndexToTime(dayDate, slot.index, intervalMinutes))}
+          style={{ height: slotHeight }}
+          type="button"
+        />
+      ))}
+
+      <CurrentTimeIndicator dayDate={dayDate} intervalMinutes={intervalMinutes} />
+
+      {timedLayouts.map((layout) => (
+        <DraggableTimedEvent
+          key={layout.event.occurrenceId}
+          dayDate={dayDate}
+          intervalMinutes={intervalMinutes}
+          layout={layout}
+          onDragActiveChange={onDragActiveChange}
+          onEventReschedule={onEventReschedule}
+          onEventSelect={onEventSelect}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DayAllDaySection({
+  dayDate,
+  events,
+  onEventSelect,
+}: {
+  dayDate: string;
+  events: ExpandedCalendarEvent[];
+  onEventSelect: (event: ExpandedCalendarEvent) => void;
+}) {
+  const allDayEvents = events.filter((event) => event.allDay);
+  if (allDayEvents.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="border-b border-[var(--cal-border)] px-3 py-3 md:px-4">
+      <p className="text-[0.6875rem] font-medium text-[var(--cal-text-muted)] md:text-[0.75rem]">
+        {formatChineseMonthDay(dayDate)} · 全天
+      </p>
+      <div className="mt-2 space-y-1.5">
+        {allDayEvents.map((event) => (
+          <button
+            key={event.occurrenceId}
+            className="block w-full rounded-lg px-3 py-2 text-left text-[0.8125rem] font-medium"
+            onClick={() => onEventSelect(event)}
+            style={getCalendarEventSurfaceStyle(event.color, {
+              attended: event.attendedFromShared,
+            })}
+            type="button"
+          >
+            {event.title}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function DayTimeGrid({
+  dayDates,
+  eventsByDate,
   intervalMinutes,
   onSlotSelect,
   onEventSelect,
   onEventReschedule,
   swipeHandlers,
 }: {
-  dayDate: string;
-  events: ExpandedCalendarEvent[];
+  dayDates: string[];
+  eventsByDate: Map<string, ExpandedCalendarEvent[]>;
   intervalMinutes: CalendarSlotInterval;
   onSlotSelect: (startAt: string) => void;
   onEventSelect: (event: ExpandedCalendarEvent) => void;
@@ -248,13 +347,11 @@ export function DayTimeGrid({
   swipeHandlers?: SwipeHandlers;
 }) {
   const [isDraggingEvent, setIsDraggingEvent] = useState(false);
+  const showMultiDay = dayDates.length > 1;
 
   const slotCount = getSlotCount(intervalMinutes);
   const slotHeight = getSlotHeightPx(intervalMinutes);
   const gridHeight = getGridHeightPx(intervalMinutes);
-  const timedEvents = events.filter((event) => !event.allDay);
-  const allDayEvents = events.filter((event) => event.allDay);
-  const timedLayouts = layoutTimedEvents(timedEvents, dayDate, intervalMinutes);
 
   const slots = Array.from({ length: slotCount }, (_, index) => {
     const totalMinutes = CALENDAR_DAY_START_HOUR * 60 + index * intervalMinutes;
@@ -265,36 +362,70 @@ export function DayTimeGrid({
 
   const gridSwipeHandlers = isDraggingEvent ? undefined : swipeHandlers;
 
+  const allDaySections = dayDates
+    .map((date, index) => {
+      const allDayEvents = (eventsByDate.get(date) ?? []).filter((event) => event.allDay);
+      if (allDayEvents.length === 0) {
+        return null;
+      }
+
+      return (
+        <div
+          key={date}
+          className={`min-w-0 flex-1 ${index > 0 ? "hidden md:block" : ""}`}
+        >
+          <DayAllDaySection
+            dayDate={date}
+            events={allDayEvents}
+            onEventSelect={onEventSelect}
+          />
+        </div>
+      );
+    })
+    .filter(Boolean);
+
   return (
     <div
       className="touch-pan-y overflow-hidden rounded-[1.25rem] border border-[var(--cal-border)] bg-[var(--cal-surface)]"
       {...gridSwipeHandlers}
     >
-      {allDayEvents.length > 0 ? (
-        <div className="border-b border-[var(--cal-border)] px-4 py-3">
-          <p className="text-[0.75rem] font-medium text-[var(--cal-text-muted)]">全天</p>
-          <div className="mt-2 space-y-1.5">
-            {allDayEvents.map((event) => {
-              return (
-                <button
-                  key={event.occurrenceId}
-                  className="block w-full rounded-lg px-3 py-2 text-left text-[0.8125rem] font-medium"
-                  onClick={() => onEventSelect(event)}
-                  style={getCalendarEventSurfaceStyle(event.color, {
-                    attended: event.attendedFromShared,
-                  })}
-                  type="button"
-                >
-                  {event.title}
-                </button>
-              );
-            })}
-          </div>
+      {showMultiDay ? (
+        <div className="hidden border-b border-[var(--cal-border)] md:flex">
+          <div className="w-14 shrink-0 bg-[var(--cal-primary-muted)]" />
+          {dayDates.map((date, index) => (
+            <div
+              key={date}
+              className={`min-w-0 flex-1 border-l border-[var(--cal-border)] px-3 py-2.5 ${
+                index > 0 ? "hidden md:block" : ""
+              }`}
+            >
+              <p className="text-[0.875rem] font-semibold text-[#1d1d1f]">
+                {formatChineseMonthDay(date)} {formatChineseWeekday(date)}
+              </p>
+            </div>
+          ))}
         </div>
       ) : null}
 
+      {allDaySections.length > 0 ? (
+        showMultiDay ? (
+          <>
+            <div className="md:hidden">{allDaySections[0]}</div>
+            <div className="hidden border-b border-[var(--cal-border)] md:flex">
+              <div className="w-14 shrink-0 bg-[var(--cal-primary-muted)]" />
+              {allDaySections}
+            </div>
+          </>
+        ) : (
+          allDaySections[0]
+        )
+      ) : null}
+
       <div className="flex">
-        <div className="w-14 shrink-0 border-r border-[var(--cal-border)] bg-[var(--cal-primary-muted)]" style={{ height: gridHeight }}>
+        <div
+          className="w-14 shrink-0 border-r border-[var(--cal-border)] bg-[var(--cal-primary-muted)]"
+          style={{ height: gridHeight }}
+        >
           {slots.map((slot) => (
             <div
               key={slot.index}
@@ -302,37 +433,33 @@ export function DayTimeGrid({
               style={{ height: slotHeight }}
             >
               {slot.label ? (
-                <span className="absolute -top-2 right-2 bg-[var(--cal-primary-muted)] px-0.5">{slot.label}</span>
+                <span className="absolute -top-2 right-2 bg-[var(--cal-primary-muted)] px-0.5">
+                  {slot.label}
+                </span>
               ) : null}
             </div>
           ))}
         </div>
 
-        <div className="relative min-w-0 flex-1" style={{ height: gridHeight }}>
-          {slots.map((slot) => (
-            <button
-              key={slot.index}
-              className="block w-full border-b border-[#eef2ee] hover:bg-[var(--cal-primary-muted)]"
-              onClick={() => onSlotSelect(slotIndexToTime(dayDate, slot.index, intervalMinutes))}
-              style={{ height: slotHeight }}
-              type="button"
-            />
-          ))}
-
-          <CurrentTimeIndicator dayDate={dayDate} intervalMinutes={intervalMinutes} />
-
-          {timedLayouts.map((layout) => (
-            <DraggableTimedEvent
-              key={layout.event.occurrenceId}
-              dayDate={dayDate}
+        {dayDates.map((date, index) => (
+          <div
+            key={date}
+            className={`min-w-0 flex-1 ${index > 0 ? "hidden md:block" : ""}`}
+          >
+            <DayTimedColumn
+              dayDate={date}
+              events={eventsByDate.get(date) ?? []}
+              gridHeight={gridHeight}
               intervalMinutes={intervalMinutes}
-              layout={layout}
               onDragActiveChange={setIsDraggingEvent}
               onEventReschedule={onEventReschedule}
               onEventSelect={onEventSelect}
+              onSlotSelect={onSlotSelect}
+              slotHeight={slotHeight}
+              slots={slots}
             />
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
 
       {onEventReschedule ? (
