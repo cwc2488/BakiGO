@@ -7,13 +7,18 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { AppBottomNav, AppSideNav } from "./AppNav";
 import { CalendarReminderScheduler } from "@/components/calendar/CalendarReminderScheduler";
+import { CustomerFollowUpReminderScheduler } from "@/components/customers/CustomerFollowUpReminderScheduler";
 
 const PUBLIC_PATHS = new Set(["/login", "/register"]);
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.has(pathname) || pathname.startsWith("/c/");
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
   const pathname = usePathname();
-  const showNav = Boolean(session) && !PUBLIC_PATHS.has(pathname);
+  const showNav = Boolean(session) && !isPublicPath(pathname);
 
   useEffect(() => {
     runAppDataResetIfNeeded(createLocalStorageAdapter());
@@ -22,6 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <CalendarReminderScheduler />
+      <CustomerFollowUpReminderScheduler />
       <div className="flex min-h-full overflow-x-hidden max-w-[100vw]">
         {showNav ? <AppSideNav /> : null}
         <div className="min-w-0 flex-1">

@@ -6,11 +6,15 @@ import { useEffect } from "react";
 
 const PUBLIC_PATHS = new Set(["/login", "/register"]);
 
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.has(pathname) || pathname.startsWith("/c/");
+}
+
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { session, isLoading } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const isPublic = PUBLIC_PATHS.has(pathname);
+  const isPublic = isPublicPath(pathname);
 
   useEffect(() => {
     if (isLoading) {

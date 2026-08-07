@@ -1,0 +1,167 @@
+import type {
+  BodyCompositionRecord,
+  BodyCompositionRecordCreateInput,
+  Customer,
+  CustomerCreateInput,
+  CustomerUpdateInput,
+} from "@/types/customer";
+import type { EntityId } from "@/types";
+import type { StorageAdapter } from "./storage-adapter";
+import { STORAGE_KEYS } from "./storage-keys";
+import { scheduleCustomerCloudPush } from "@/lib/cloud/customer-cloud-sync";
+
+function createId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `customer-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function parseArray<T>(raw: string | null): T[] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as T[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface CustomerRepository {
+  getAllCustomers(): Customer[];
+  getCustomersByOwner(ownerMemberId: EntityId): Customer[];
+  getCustomerById(customerId: EntityId): Customer | undefined;
+  createCustomer(input: CustomerCreateInput): Customer;
+  updateCustomer(customerId: EntityId, input: CustomerUpdateInput): Customer;
+  deleteCustomer(customerId: EntityId): void;
+  getAllBodyRecords(): BodyCompositionRecord[];
+  getBodyRecordsByCustomer(customerId: EntityId): BodyCompositionRecord[];
+  createBodyRecord(input: BodyCompositionRecordCreateInput): BodyCompositionRecord;
+  deleteBodyRecord(recordId: EntityId): void;
+}
+
+export class LocalStorageCustomerRepository implements CustomerRepository {
+  constructor(private readonly storage: StorageAdapter) {}
+
+  getAllCustomers(): Customer[] {
+    return parseArray<Customer>(this.storage.getItem(STORAGE_KEYS.customers));
+  }
+
+  getCustomersByOwner(ownerMemberId: EntityId): Customer[] {
+    return this.getAllCustomers().filter((customer) => customer.ownerMemberId === ownerMemberId);
+  }
+
+  getCustomerById(customerId: EntityId): Customer | undefined {
+    return this.getAllCustomers().find((customer) => customer.id === customerId);
+  }
+
+  createCustomer(input: CustomerCreateInput): Customer {
+    const now = new Date().toISOString();
+    const customer: Customer = {
+      id: createId(),
+      createdAt: now,
+      updatedAt: now,
+      ownerMemberId: input.ownerMemberId,
+      displayName: input.displayName.trim(),
+      phone: input.phone?.trim() || undefined,
+      lineId: input.lineId?.trim() || undefined,
+      birthYear: input.birthYear,
+      status: "active",
+      pipelineLeadId: input.pipelineLeadId,
+      note: input.note?.trim() || undefined,
+    };
+
+    const next = [...this.getAllCustomers(), customer];
+    this.storage.setItem(STORAGE_KEYS.customers, JSON.stringify(next));
+    scheduleCustomerCloudPush();
+    return customer;
+  }
+
+  updateCustomer(customerId: EntityId, input: CustomerUpdateInput): Customer {
+    const customers = this.getAllCustomers();
+    const index = customers.findIndex((customer) => customer.id === customerId);
+    if (index < 0) {
+      throw new Error(`Customer not found: ${customerId}`);
+    }
+
+    const now = new Date().toISOString();
+    const current = customers[index];
+    const updated: Customer = {
+      ...current,
+      displayName: input.displayName?.trim() ?? current.displayName,
+      phone: input.phone === undefined ? current.phone : input.phone.trim() || undefined,
+      lineId: input.lineId === undefined ? current.lineId : input.lineId.trim() || undefined,
+      birthYear: input.birthYear === undefined ? current.birthYear : input.birthYear,
+      status: input.status ?? current.status,
+      note: input.note === undefined ? current.note : input.note.trim() || undefined,
+      lastContactDate: input.lastContactDate === undefined ? current.lastContactDate : input.lastContactDate,
+      nextFollowUpDate:
+        input.nextFollowUpDate === undefined ? current.nextFollowUpDate : input.nextFollowUpDate,
+      updatedAt: now,
+    };
+
+    const next = [...customers];
+    next[index] = updated;
+    this.storage.setItem(STORAGE_KEYS.customers, JSON.stringify(next));
+    scheduleCustomerCloudPush();
+    return updated;
+  }
+
+  deleteCustomer(customerId: EntityId): void {
+    const nextCustomers = this.getAllCustomers().filter((customer) => customer.id !== customerId);
+    this.storage.setItem(STORAGE_KEYS.customers, JSON.stringify(nextCustomers));
+
+    const nextRecords = this.getAllBodyRecords().filter((record) => record.customerId !== customerId);
+    this.storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(nextRecords));
+    scheduleCustomerCloudPush();
+  }
+
+  getAllBodyRecords(): BodyCompositionRecord[] {
+    return parseArray<BodyCompositionRecord>(this.storage.getItem(STORAGE_KEYS.customerBodyRecords));
+  }
+
+  getBodyRecordsByCustomer(customerId: EntityId): BodyCompositionRecord[] {
+    return this.getAllBodyRecords()
+      .filter((record) => record.customerId === customerId)
+      .sort((left, right) => right.recordDate.localeCompare(left.recordDate));
+  }
+
+  createBodyRecord(input: BodyCompositionRecordCreateInput): BodyCompositionRecord {
+    const now = new Date().toISOString();
+    const record: BodyCompositionRecord = {
+      id: createId(),
+      createdAt: now,
+      updatedAt: now,
+      customerId: input.customerId,
+      recordDate: input.recordDate,
+      age: input.age ?? null,
+      heightCm: input.heightCm ?? null,
+      weightKg: input.weightKg ?? null,
+      skeletalMuscleKg: input.skeletalMuscleKg ?? null,
+      bodyFatKg: input.bodyFatKg ?? null,
+      bmi: input.bmi ?? null,
+      bodyFatPercent: input.bodyFatPercent ?? null,
+      visceralFatLevel: input.visceralFatLevel ?? null,
+      basalMetabolicRate: input.basalMetabolicRate ?? null,
+      bodyAge: input.bodyAge ?? null,
+      note: input.note?.trim() || undefined,
+    };
+
+    const next = [...this.getAllBodyRecords(), record];
+    this.storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(next));
+    scheduleCustomerCloudPush();
+    return record;
+  }
+
+  deleteBodyRecord(recordId: EntityId): void {
+    const next = this.getAllBodyRecords().filter((record) => record.id !== recordId);
+    this.storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(next));
+    scheduleCustomerCloudPush();
+  }
+}
+
+export function createCustomerRepository(storage: StorageAdapter): CustomerRepository {
+  return new LocalStorageCustomerRepository(storage);
+}

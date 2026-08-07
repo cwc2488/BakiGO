@@ -13,6 +13,7 @@ export const WORK_HUB_LINKS = [
   { href: "/learning", title: "學習庫", desc: "業務教學影片" },
   { href: "/leaderboard", title: "積分排行", desc: "本週前五 · 本月前十" },
   { href: "/retail-pipeline", title: "名單", desc: "推進每位名單" },
+  { href: "/customers", title: "顧客關懷", desc: "體組成與追蹤" },
   { href: "/pre-meeting-graphic", title: "會前會圖", desc: "資料合併輸出" },
   { href: "/retail-house", title: "零售屋", desc: "週分享與成交" },
   { href: "/organization", title: "組織圖", desc: "夥伴狀況一覽" },

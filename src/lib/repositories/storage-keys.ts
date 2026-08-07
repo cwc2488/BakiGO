@@ -25,4 +25,7 @@ export const STORAGE_KEYS = {
   superLeagueEntries: "baki-go:super-league-entries",
   memberGoals: "baki-go:member-goals",
   homeDisplayMode: "baki-go:home-display-mode",
+  customers: "baki-go:customers",
+  customerBodyRecords: "baki-go:customer-body-records",
+  customerFollowUpReminderDate: "baki-go:customer-follow-up-reminder-date",
 } as const;

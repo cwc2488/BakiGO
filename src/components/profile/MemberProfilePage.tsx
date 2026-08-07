@@ -119,6 +119,7 @@ function GrowthSection({ metrics }: { metrics: MemberComputedMetrics }) {
 
 function ProfileQuickLinks() {
   const links = [
+    { href: "/customers", label: "顧客關懷" },
     { href: "/leaderboard", label: "積分排行" },
     { href: "/organization", label: "組織圖" },
     { href: "/retail-house", label: "零售屋" },
