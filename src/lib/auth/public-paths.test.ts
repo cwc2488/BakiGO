@@ -26,7 +26,7 @@ describe("public-paths", () => {
     expect(isPublicPath("/daily-action")).toBe(false);
   });
 
-  it("normalizes trailing slashes", () => {
-    expect(normalizePathname("/privacy/")).toBe("/privacy");
+  it("treats meta-review subpaths as open public paths", () => {
+    expect(isOpenPublicPath("/meta-review/data-deletion-status")).toBe(true);
   });
 });
