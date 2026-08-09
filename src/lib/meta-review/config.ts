@@ -23,8 +23,23 @@ export function getThreadsOAuthTokenUrl(): string {
   return `${getThreadsGraphApiOrigin()}/oauth/access_token`;
 }
 
+export const PRODUCTION_META_REVIEW_REDIRECT_URI =
+  "https://bakigo.tw/api/meta-review/auth/callback";
+
+function isLocalDevOrigin(origin: string): boolean {
+  try {
+    const hostname = new URL(origin).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
 export function getMetaReviewRedirectUri(origin: string): string {
-  return `${origin}/api/meta-review/auth/callback`;
+  if (isLocalDevOrigin(origin)) {
+    return `${origin.replace(/\/$/, "")}/api/meta-review/auth/callback`;
+  }
+  return PRODUCTION_META_REVIEW_REDIRECT_URI;
 }
 
 export function isMetaReviewConfigured(): boolean {
