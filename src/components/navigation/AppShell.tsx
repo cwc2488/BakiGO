@@ -1,5 +1,6 @@
 "use client";
 
+import { isPublicPath, normalizePathname } from "@/lib/auth/public-paths";
 import { useAuth } from "@/lib/auth/auth-context";
 import { runAppDataResetIfNeeded } from "@/lib/repositories/clear-test-app-data";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
@@ -9,20 +10,9 @@ import { AppBottomNav, AppSideNav } from "./AppNav";
 import { CalendarReminderScheduler } from "@/components/calendar/CalendarReminderScheduler";
 import { CustomerFollowUpReminderScheduler } from "@/components/customers/CustomerFollowUpReminderScheduler";
 
-const AUTH_PUBLIC_PATHS = new Set(["/login", "/register"]);
-const OPEN_PUBLIC_PATHS = new Set(["/privacy", "/data-deletion"]);
-
-function isPublicPath(pathname: string): boolean {
-  return (
-    AUTH_PUBLIC_PATHS.has(pathname) ||
-    OPEN_PUBLIC_PATHS.has(pathname) ||
-    pathname.startsWith("/c/")
-  );
-}
-
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
-  const pathname = usePathname();
+  const pathname = normalizePathname(usePathname());
   const showNav = Boolean(session) && !isPublicPath(pathname);
 
   useEffect(() => {

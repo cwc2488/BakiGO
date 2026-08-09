@@ -1,31 +1,27 @@
 "use client";
 
+import {
+  isOpenPublicPath,
+  isPublicPath,
+  normalizePathname,
+  shouldRedirectAuthenticatedUser,
+} from "@/lib/auth/public-paths";
 import { useAuth } from "@/lib/auth/auth-context";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-const AUTH_PUBLIC_PATHS = new Set(["/login", "/register"]);
-const OPEN_PUBLIC_PATHS = new Set(["/privacy", "/data-deletion"]);
-
-function isPublicPath(pathname: string): boolean {
-  return (
-    AUTH_PUBLIC_PATHS.has(pathname) ||
-    OPEN_PUBLIC_PATHS.has(pathname) ||
-    pathname.startsWith("/c/")
-  );
-}
-
-function shouldRedirectAuthenticatedUser(pathname: string): boolean {
-  return AUTH_PUBLIC_PATHS.has(pathname) || pathname.startsWith("/c/");
-}
-
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { session, isLoading } = useAuth();
-  const pathname = usePathname();
+  const pathname = normalizePathname(usePathname());
   const router = useRouter();
   const isPublic = isPublicPath(pathname);
+  const isOpenPublic = isOpenPublicPath(pathname);
 
   useEffect(() => {
+    if (isOpenPublic) {
+      return;
+    }
+
     if (isLoading) {
       return;
     }
@@ -38,7 +34,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     if (session && shouldRedirectAuthenticatedUser(pathname)) {
       router.replace("/daily-action");
     }
-  }, [isLoading, isPublic, pathname, router, session]);
+  }, [isLoading, isOpenPublic, isPublic, pathname, router, session]);
+
+  // Legal / Meta review pages must render without waiting for auth.
+  if (isOpenPublic) {
+    return children;
+  }
 
   if (isLoading) {
     return (
