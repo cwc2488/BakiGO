@@ -9,10 +9,15 @@ import { AppBottomNav, AppSideNav } from "./AppNav";
 import { CalendarReminderScheduler } from "@/components/calendar/CalendarReminderScheduler";
 import { CustomerFollowUpReminderScheduler } from "@/components/customers/CustomerFollowUpReminderScheduler";
 
-const PUBLIC_PATHS = new Set(["/login", "/register"]);
+const AUTH_PUBLIC_PATHS = new Set(["/login", "/register"]);
+const OPEN_PUBLIC_PATHS = new Set(["/privacy", "/data-deletion"]);
 
 function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.has(pathname) || pathname.startsWith("/c/");
+  return (
+    AUTH_PUBLIC_PATHS.has(pathname) ||
+    OPEN_PUBLIC_PATHS.has(pathname) ||
+    pathname.startsWith("/c/")
+  );
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {

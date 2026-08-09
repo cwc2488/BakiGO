@@ -4,10 +4,19 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-const PUBLIC_PATHS = new Set(["/login", "/register"]);
+const AUTH_PUBLIC_PATHS = new Set(["/login", "/register"]);
+const OPEN_PUBLIC_PATHS = new Set(["/privacy", "/data-deletion"]);
 
 function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.has(pathname) || pathname.startsWith("/c/");
+  return (
+    AUTH_PUBLIC_PATHS.has(pathname) ||
+    OPEN_PUBLIC_PATHS.has(pathname) ||
+    pathname.startsWith("/c/")
+  );
+}
+
+function shouldRedirectAuthenticatedUser(pathname: string): boolean {
+  return AUTH_PUBLIC_PATHS.has(pathname) || pathname.startsWith("/c/");
 }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
@@ -26,7 +35,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (session && isPublic) {
+    if (session && shouldRedirectAuthenticatedUser(pathname)) {
       router.replace("/daily-action");
     }
   }, [isLoading, isPublic, pathname, router, session]);
@@ -43,7 +52,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  if (session && isPublic) {
+  if (session && shouldRedirectAuthenticatedUser(pathname)) {
     return null;
   }
 
