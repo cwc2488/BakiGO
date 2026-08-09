@@ -1,5 +1,5 @@
 export const AUTH_PUBLIC_PATHS = new Set(["/login", "/register"]);
-export const OPEN_PUBLIC_PATHS = new Set(["/privacy", "/data-deletion"]);
+export const OPEN_PUBLIC_PATHS = new Set(["/privacy", "/data-deletion", "/meta-review"]);
 
 export function normalizePathname(pathname: string): string {
   if (pathname.length > 1 && pathname.endsWith("/")) {
