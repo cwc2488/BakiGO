@@ -1,10 +1,5 @@
-import type { Metadata } from "next";
 import { Suspense } from "react";
 import { FatLossQuizStartPage } from "@/components/quiz/FatLossQuizStartPage";
-
-export const metadata: Metadata = {
-  title: "開始測驗 | Baki GO",
-};
 
 function StartFallback() {
   return (

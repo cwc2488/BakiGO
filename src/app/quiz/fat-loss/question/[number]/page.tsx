@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { FatLossQuizQuestionPage } from "@/components/quiz/FatLossQuizQuestionPage";
 import { FAT_LOSS_QUESTIONS } from "@/lib/quiz/fat-loss/questions";
+import { buildFatLossQuizPublicMetadata } from "@/lib/quiz/fat-loss/public-metadata";
 
-export const metadata: Metadata = {
-  title: "測驗進行中 | Baki GO",
-};
+export const metadata: Metadata = buildFatLossQuizPublicMetadata({
+  title: "減脂卡關人格測驗｜進行中",
+});
 
 type PageProps = {
   params: Promise<{ number: string }>;

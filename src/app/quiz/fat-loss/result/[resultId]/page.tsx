@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { FatLossQuizResultPage } from "@/components/quiz/FatLossQuizResultPage";
+import { buildFatLossQuizPublicMetadata } from "@/lib/quiz/fat-loss/public-metadata";
 
-export const metadata: Metadata = {
-  title: "測驗結果 | Baki GO",
-};
+export const metadata: Metadata = buildFatLossQuizPublicMetadata({
+  title: "你的減脂卡關人格｜測驗結果",
+});
 
 type PageProps = {
   params: Promise<{ resultId: string }>;

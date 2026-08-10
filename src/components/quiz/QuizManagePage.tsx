@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { buildPublicShareUrl } from "@/lib/app/public-origin";
 import { fetchWithMemberAuth } from "@/lib/quiz/quiz-member-fetch";
 import { PageShell } from "@/components/ui/PageShell";
 import { BrandCard } from "@/components/ui/brand-ui";
@@ -56,11 +57,8 @@ export function QuizManagePage() {
       if (!response.ok || !payload.shareCode) {
         throw new Error(payload.error ?? "無法建立分享連結");
       }
-      const absoluteUrl =
-        typeof window !== "undefined"
-          ? `${window.location.origin}${payload.url ?? `/q/${payload.shareCode}`}`
-          : payload.url ?? `/q/${payload.shareCode}`;
-      setLatestUrl(absoluteUrl);
+      const sharePath = payload.url ?? `/q/${payload.shareCode}`;
+      setLatestUrl(buildPublicShareUrl(sharePath));
       await loadLinks();
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "無法建立分享連結");
@@ -121,10 +119,7 @@ export function QuizManagePage() {
         ) : (
           <ul className="mt-4 space-y-3">
             {links.map((link) => {
-              const url =
-                typeof window !== "undefined"
-                  ? `${window.location.origin}/q/${link.shareCode}`
-                  : `/q/${link.shareCode}`;
+              const url = buildPublicShareUrl(`/q/${link.shareCode}`);
               return (
                 <li
                   key={link.shareCode}
