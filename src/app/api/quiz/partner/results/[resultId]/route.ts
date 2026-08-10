@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getMemberIdFromRequest } from "@/lib/supabase/member-auth";
 import { getQuizResultById, serializePartnerResult } from "@/lib/quiz/quiz-service";
+import { toQuizApiErrorMessage } from "@/lib/quiz/quiz-api-error";
 import { isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 
 export const runtime = "nodejs";
@@ -28,7 +29,7 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ ok: true, intelligence: serializePartnerResult(record) });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to load intelligence card." },
+      { error: toQuizApiErrorMessage(error, "Failed to load intelligence card.") },
       { status: 400 },
     );
   }

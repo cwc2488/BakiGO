@@ -7,6 +7,7 @@ import {
   listShareLinksForMember,
   serializePartnerResult,
 } from "@/lib/quiz/quiz-service";
+import { toQuizApiErrorMessage } from "@/lib/quiz/quiz-api-error";
 import { isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 
 export const runtime = "nodejs";
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to load leads." },
+      { error: toQuizApiErrorMessage(error, "Failed to load leads.") },
       { status: 400 },
     );
   }
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, ...link });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to create share link." },
+      { error: toQuizApiErrorMessage(error, "Failed to create share link.") },
       { status: 400 },
     );
   }

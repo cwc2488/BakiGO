@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getMemberIdFromRequest } from "@/lib/supabase/member-auth";
 import { listShareLinksForMember } from "@/lib/quiz/quiz-service";
+import { toQuizApiErrorMessage } from "@/lib/quiz/quiz-api-error";
 import { isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 
 export const runtime = "nodejs";
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, links });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to load share links." },
+      { error: toQuizApiErrorMessage(error, "Failed to load share links.") },
       { status: 400 },
     );
   }
