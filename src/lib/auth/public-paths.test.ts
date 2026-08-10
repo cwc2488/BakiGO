@@ -41,5 +41,6 @@ describe("public-paths", () => {
     expect(isOpenPublicPath("/q/fat-loss")).toBe(true);
     expect(isPublicPath("/quiz/manage")).toBe(false);
     expect(isPublicPath("/quiz/leads")).toBe(false);
+    expect(isPublicPath("/quiz/hub")).toBe(false);
   });
 });
