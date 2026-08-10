@@ -18,7 +18,6 @@ export function FatLossQuizCharacterImage({
   className = "",
 }: FatLossQuizCharacterImageProps) {
   const asset = getCharacterAsset(type);
-  const src = variant === "hero" ? asset.heroSrc : asset.thumbSrc;
   const isHero = variant === "hero";
 
   if (isHero) {
@@ -44,26 +43,28 @@ export function FatLossQuizCharacterImage({
           />
         </div>
         <Image
-          src={src}
+          src={asset.src}
           alt={asset.heroAlt}
           fill
           priority={priority}
           sizes="(max-width: 512px) 92vw, 340px"
-          className="absolute inset-0 z-10 object-contain object-bottom px-2 pb-1 drop-shadow-[0_18px_32px_rgba(47,38,34,0.18)]"
+          className="absolute inset-0 z-10 object-contain object-center p-1 drop-shadow-[0_18px_32px_rgba(47,38,34,0.18)]"
         />
       </div>
     );
   }
 
   return (
-    <div className={`relative h-11 w-11 shrink-0 overflow-hidden rounded-2xl ${className}`}>
+    <div
+      className={`relative h-11 w-11 shrink-0 overflow-hidden rounded-2xl border border-[#eadfd6] bg-[#fff8f2] ${className}`}
+    >
       <Image
-        src={src}
+        src={asset.src}
         alt=""
         fill
         sizes="44px"
         aria-hidden
-        className="object-cover object-center"
+        className="scale-[2.4] object-contain object-[center_20%]"
       />
     </div>
   );
