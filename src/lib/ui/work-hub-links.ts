@@ -5,6 +5,7 @@ export const SIMPLE_QUICK_LINKS = [
   { href: "/daily-action", title: "今日行動" },
   { href: "/events", title: "新增紀錄" },
   { href: "/learning", title: "學習" },
+  { href: "/quiz/hub", title: "破冰測驗" },
 ] as const;
 
 export const WORK_HUB_LINKS = [
@@ -21,6 +22,7 @@ export const WORK_HUB_LINKS = [
   { href: "/calendar", title: "行事曆", desc: "行程與提醒" },
   { href: "/events", title: "紀錄中心", desc: "量測、諮詢、會議" },
   { href: "/president-road", title: "升級路線", desc: "資格與晉升進度" },
+  { href: "/quiz/hub", title: "破冰測驗", desc: "用有趣的測驗開啟話題，快速了解對方真正的需求。" },
 ] as const;
 
 /** 側邊欄捷徑 — 不在底部四個分頁裡的常用功能。 */
