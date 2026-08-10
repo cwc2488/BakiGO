@@ -10,6 +10,7 @@ import {
 } from "@/lib/calendar/calendar-attendance-storage";
 import { isPersonalCalendarEvent } from "@/lib/calendar/shared-calendar-storage";
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { useAuth } from "@/lib/auth/auth-context";
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { logTodayActivity, logTodayRecruit } from "@/lib/daily-action/log-today-action";
 import {
@@ -17,6 +18,7 @@ import {
   getMemberAvatarUrl,
   getMemberDisplayName,
   loadMissionControlMetrics,
+  readMissionControlMetrics,
 } from "@/lib/mission-control/format";
 import {
   buildDailyActionSnapshot,
@@ -464,13 +466,17 @@ function DailyActionView({
 }
 
 export default function DailyActionPage() {
-  const [metrics, setMetrics] = useState<MemberComputedMetrics | null>(null);
+  const { cloudSyncVersion } = useAuth();
+  const [metrics, setMetrics] = useState<MemberComputedMetrics | null>(() => {
+    return readMissionControlMetrics(undefined, createLocalStorageAdapter());
+  });
 
   useEffect(() => {
+    const storage = createLocalStorageAdapter();
     queueMicrotask(() => {
-      setMetrics(loadMissionControlMetrics());
+      setMetrics(loadMissionControlMetrics(undefined, storage));
     });
-  }, []);
+  }, [cloudSyncVersion]);
 
   if (!metrics) {
     return (

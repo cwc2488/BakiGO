@@ -8,11 +8,8 @@ import {
 } from "@/lib/cloud/cloud-member-service";
 import {
   clearCloudMembersMode,
-  syncCloudMembersToLocalStorage,
 } from "@/lib/cloud/sync-cloud-members-to-local";
-import { syncCustomersOnLogin } from "@/lib/cloud/customer-cloud-service";
-import { syncGoogleCalendarConnectionOnLogin } from "@/lib/cloud/google-calendar-cloud-service";
-import { syncAppDataOnLogin } from "@/lib/cloud/sync-app-data-on-login";
+import { syncCloudAuthData, startCloudAuthBackgroundSync } from "@/lib/auth/cloud-sync";
 import { APP_IDS } from "@/lib/config/app-config";
 import { createAuthRepository } from "@/lib/repositories/auth-repository";
 import { createMemberRepository } from "@/lib/repositories/member-repository";
@@ -60,20 +57,17 @@ function writeLocalSession(
 async function finalizeCloudAuth(
   storage: StorageAdapter,
   member: { id: EntityId; memberNumber: string; email: string },
+  options?: { awaitSync?: boolean },
 ): Promise<AuthSession> {
-  try {
-    await syncCloudMembersToLocalStorage(storage);
-    await syncAppDataOnLogin(storage, member.id);
-    await syncCustomersOnLogin(storage, member.id);
-    await syncGoogleCalendarConnectionOnLogin(storage, member.id);
-  } catch (error) {
-    throw new AuthError(
-      "cloud_sync_failed",
-      error instanceof Error ? error.message : "無法同步雲端資料",
-    );
+  const session = writeLocalSession(storage, member);
+
+  if (options?.awaitSync === false) {
+    void startCloudAuthBackgroundSync(storage, member);
+    return session;
   }
 
-  return writeLocalSession(storage, member);
+  await syncCloudAuthData(storage, member);
+  return session;
 }
 
 export function getCurrentMemberId(
@@ -269,7 +263,7 @@ export async function restoreCloudSession(
     id: cloudMember.id,
     memberNumber: cloudMember.memberNumber,
     email: cloudMember.email,
-  });
+  }, { awaitSync: false });
 }
 
 export async function logoutAccount(

@@ -6,6 +6,7 @@ import {
   logoutAccount,
   restoreCloudSession,
 } from "@/lib/auth/auth-service";
+import { getCloudBackgroundSyncVersion } from "@/lib/auth/cloud-sync";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { AuthSession } from "@/types/auth";
 import type { Member } from "@/types/member";
@@ -22,6 +23,7 @@ interface AuthContextValue {
   session: AuthSession | null;
   member: Member | null;
   isLoading: boolean;
+  cloudSyncVersion: number;
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -32,6 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [member, setMember] = useState<Member | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [cloudSyncVersion, setCloudSyncVersion] = useState(0);
 
   const refresh = useCallback(async () => {
     const storage = createLocalStorageAdapter();
@@ -42,6 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const nextSession = restored ?? getCurrentSession(storage);
       setSession(nextSession);
       setMember(nextSession ? getCurrentMember(storage) : null);
+      setCloudSyncVersion(getCloudBackgroundSyncVersion());
     } catch {
       setSession(null);
       setMember(null);
@@ -49,6 +53,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const pollBackgroundSync = async () => {
+      const { getCloudBackgroundSyncPromise } = await import("@/lib/auth/cloud-sync");
+      const pending = getCloudBackgroundSyncPromise();
+      if (!pending) {
+        return;
+      }
+      await pending;
+      if (!cancelled) {
+        const storage = createLocalStorageAdapter();
+        setMember(getCurrentMember(storage));
+        setCloudSyncVersion(getCloudBackgroundSyncVersion());
+      }
+    };
+
+    void pollBackgroundSync();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.memberId, isLoading]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -67,10 +94,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       session,
       member,
       isLoading,
+      cloudSyncVersion,
       refresh,
       signOut,
     }),
-    [session, member, isLoading, refresh, signOut],
+    [session, member, isLoading, cloudSyncVersion, refresh, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
