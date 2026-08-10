@@ -36,6 +36,7 @@ describe("public-paths", () => {
     expect(isOpenPublicPath("/quiz/fat-loss/start")).toBe(true);
     expect(isOpenPublicPath("/quiz/fat-loss/question/1")).toBe(true);
     expect(isOpenPublicPath("/quiz/fat-loss/result/abc-123")).toBe(true);
+    expect(isOpenPublicPath("/quiz/fat-loss/next-step/abc-123")).toBe(true);
     expect(isOpenPublicPath("/q/ABC123")).toBe(true);
     expect(isOpenPublicPath("/q/fat-loss")).toBe(true);
     expect(isPublicPath("/quiz/manage")).toBe(false);

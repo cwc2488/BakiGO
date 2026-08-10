@@ -182,21 +182,12 @@ export function FatLossQuizResultPage({ resultId }: { resultId: string }) {
           <QuizPrimaryButton onClick={() => void handleShare()}>
             {copied ? "已複製連結" : "分享給朋友測測看"}
           </QuizPrimaryButton>
-          {result.hasReferrer ? (
-            <Link
-              href="/customers"
-              className="block w-full rounded-[1.25rem] border border-[#eadfd6] bg-white px-5 py-4 text-center text-base font-semibold text-[#2f2622]"
-            >
-              解鎖我的下一步
-            </Link>
-          ) : (
-            <Link
-              href="/quiz/fat-loss"
-              className="block w-full rounded-[1.25rem] border border-[#eadfd6] bg-white px-5 py-4 text-center text-base font-semibold text-[#2f2622]"
-            >
-              解鎖我的下一步
-            </Link>
-          )}
+          <Link
+            href={`/quiz/fat-loss/next-step/${resultId}`}
+            className="block w-full rounded-[1.25rem] border border-[#eadfd6] bg-white px-5 py-4 text-center text-base font-semibold text-[#2f2622]"
+          >
+            解鎖我的下一步
+          </Link>
         </div>
       </div>
     </QuizWarmShell>
