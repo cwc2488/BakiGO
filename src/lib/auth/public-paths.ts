@@ -10,7 +10,13 @@ export function normalizePathname(pathname: string): string {
 
 export function isOpenPublicPath(pathname: string): boolean {
   const normalized = normalizePathname(pathname);
-  return OPEN_PUBLIC_PATHS.has(normalized) || normalized.startsWith("/meta-review/");
+  return (
+    OPEN_PUBLIC_PATHS.has(normalized) ||
+    normalized.startsWith("/meta-review/") ||
+    normalized.startsWith("/quiz/fat-loss") ||
+    normalized === "/quiz" ||
+    normalized.startsWith("/q/")
+  );
 }
 
 export function isAuthPublicPath(pathname: string): boolean {

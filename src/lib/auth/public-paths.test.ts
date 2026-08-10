@@ -29,4 +29,16 @@ describe("public-paths", () => {
   it("treats meta-review subpaths as open public paths", () => {
     expect(isOpenPublicPath("/meta-review/data-deletion-status")).toBe(true);
   });
+
+  it("treats quiz icebreaker routes as open public paths", () => {
+    expect(isOpenPublicPath("/quiz")).toBe(true);
+    expect(isOpenPublicPath("/quiz/fat-loss")).toBe(true);
+    expect(isOpenPublicPath("/quiz/fat-loss/start")).toBe(true);
+    expect(isOpenPublicPath("/quiz/fat-loss/question/1")).toBe(true);
+    expect(isOpenPublicPath("/quiz/fat-loss/result/abc-123")).toBe(true);
+    expect(isOpenPublicPath("/q/ABC123")).toBe(true);
+    expect(isOpenPublicPath("/q/fat-loss")).toBe(true);
+    expect(isPublicPath("/quiz/manage")).toBe(false);
+    expect(isPublicPath("/quiz/leads")).toBe(false);
+  });
 });
