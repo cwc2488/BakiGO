@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" fill="none" role="img" aria-label="Breakthrough leopard character placeholder">
+  <defs>
+    <linearGradient id="bg" x1="200" y1="0" x2="200" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#faf3dc"/>
+      <stop offset="0.55" stop-color="#f0d48c"/>
+      <stop offset="1" stop-color="#fff8f2"/>
+    </linearGradient>
+    <linearGradient id="body" x1="200" y1="210" x2="200" y2="350" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f5dfa0"/>
+      <stop offset="1" stop-color="#d8b860"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="500" fill="url(#bg)"/>
+  <path d="M60 360c50-90 140-150 280-120" stroke="#eadfd6" stroke-width="18" stroke-linecap="round" fill="none"/>
+  <path d="M120 340l160-80" stroke="#fff8f2" stroke-width="10" stroke-linecap="round" opacity="0.8"/>
+  <circle cx="300" cy="210" r="18" fill="#fff4df"/>
+  <path d="M300 192v36M288 210h24" stroke="#f0d48c" stroke-width="4" stroke-linecap="round"/>
+  <ellipse cx="200" cy="420" rx="150" ry="28" fill="#eadfd6" opacity="0.7"/>
+  <ellipse cx="200" cy="300" rx="62" ry="48" fill="url(#body)"/>
+  <circle cx="30" cy="250" r="7" fill="#b88840" opacity="0.65"/>
+  <circle cx="55" cy="280" r="5" fill="#b88840" opacity="0.55"/>
+  <circle cx="340" cy="270" r="6" fill="#b88840" opacity="0.6"/>
+  <circle cx="318" cy="300" r="4" fill="#b88840" opacity="0.5"/>
+  <circle cx="184" cy="286" r="7" fill="#5f4f47"/>
+  <circle cx="216" cy="286" r="7" fill="#5f4f47"/>
+  <path d="M190 304c6 5 14 5 20 0" stroke="#8a7038" stroke-width="4" stroke-linecap="round"/>
+  <path d="M250 250l28-16-10 30z" fill="#f0d48c"/>
+</svg>

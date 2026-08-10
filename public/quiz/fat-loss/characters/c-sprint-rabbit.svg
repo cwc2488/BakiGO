@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" fill="none" role="img" aria-label="Sprint rabbit character placeholder">
+  <defs>
+    <linearGradient id="bg" x1="200" y1="0" x2="200" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffece8"/>
+      <stop offset="0.55" stop-color="#ffb8a8"/>
+      <stop offset="1" stop-color="#fff8f2"/>
+    </linearGradient>
+    <linearGradient id="body" x1="200" y1="180" x2="200" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffd0c4"/>
+      <stop offset="1" stop-color="#f0a090"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="500" fill="url(#bg)"/>
+  <path d="M80 250c40-30 80-45 120-45s80 15 120 45" stroke="#ffd8cc" stroke-width="14" stroke-linecap="round" opacity="0.8"/>
+  <path d="M60 290c50-20 95-30 140-30s90 10 140 30" stroke="#ffc8b8" stroke-width="10" stroke-linecap="round" opacity="0.7"/>
+  <ellipse cx="200" cy="420" rx="150" ry="28" fill="#eadfd6" opacity="0.7"/>
+  <ellipse cx="200" cy="300" rx="54" ry="48" fill="url(#body)"/>
+  <ellipse cx="168" cy="220" rx="14" ry="42" fill="#ffd0c4" transform="rotate(-12 168 220)"/>
+  <ellipse cx="232" cy="220" rx="14" ry="42" fill="#ffd0c4" transform="rotate(12 232 220)"/>
+  <circle cx="186" cy="286" r="7" fill="#5f4f47"/>
+  <circle cx="214" cy="286" r="7" fill="#5f4f47"/>
+  <path d="M190 304c5 5 15 5 20 0" stroke="#b87060" stroke-width="4" stroke-linecap="round"/>
+  <path d="M250 320l36-18-18 36z" fill="#ffb8a8" opacity="0.85"/>
+</svg>

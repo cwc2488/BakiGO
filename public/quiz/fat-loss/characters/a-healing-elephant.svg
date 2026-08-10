@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" fill="none" role="img" aria-label="Healing elephant character placeholder">
+  <defs>
+    <linearGradient id="bg" x1="200" y1="0" x2="200" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fde8ef"/>
+      <stop offset="0.55" stop-color="#f8b4c4"/>
+      <stop offset="1" stop-color="#fff8f2"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="matrix(0 120 -120 0 200 300)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff8f2" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#f8b4c4" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="body" x1="200" y1="180" x2="200" y2="380" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e8c4cf"/>
+      <stop offset="1" stop-color="#c89aa8"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="500" fill="url(#bg)"/>
+  <ellipse cx="200" cy="420" rx="150" ry="28" fill="#eadfd6" opacity="0.7"/>
+  <circle cx="200" cy="300" r="130" fill="url(#glow)"/>
+  <path d="M120 360c20-70 60-110 80-110s60 40 80 110c-35 18-125 18-160 0z" fill="url(#body)"/>
+  <ellipse cx="200" cy="220" rx="72" ry="68" fill="url(#body)"/>
+  <ellipse cx="145" cy="245" rx="38" ry="52" fill="#d9aab6"/>
+  <ellipse cx="255" cy="245" rx="38" ry="52" fill="#d9aab6"/>
+  <path d="M168 250c8 8 18 12 32 12s24-4 32-12" stroke="#9d7380" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="178" cy="210" r="8" fill="#5f4f47"/>
+  <circle cx="222" cy="210" r="8" fill="#5f4f47"/>
+  <path d="M120 210c-18-10-28 8-18 24 10 14 34 8 34-8" fill="#d9aab6"/>
+  <rect x="250" y="330" width="58" height="42" rx="14" fill="#fff8f2" stroke="#eadfd6" stroke-width="3"/>
+  <path d="M265 345h28" stroke="#c08a98" stroke-width="4" stroke-linecap="round"/>
+  <path d="M265 358h18" stroke="#d4b8c0" stroke-width="3" stroke-linecap="round"/>
+</svg>

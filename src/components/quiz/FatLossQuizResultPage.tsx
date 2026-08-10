@@ -2,11 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import {
-  QuizCharacterCard,
-  QuizPrimaryButton,
-  QuizWarmShell,
-} from "@/components/quiz/QuizWarmShell";
+import { QuizPrimaryButton, QuizWarmShell } from "@/components/quiz/QuizWarmShell";
+import { FatLossQuizResultHero } from "@/components/quiz/FatLossQuizResultHero";
 import type { PersonalityProfile } from "@/lib/quiz/fat-loss/types";
 import { clearFatLossQuizSession } from "@/lib/quiz/fat-loss/session-storage";
 
@@ -101,37 +98,11 @@ export function FatLossQuizResultPage({ resultId }: { resultId: string }) {
   return (
     <QuizWarmShell footer="Baki GO · 心理測驗破冰工具">
       <div className="flex flex-col gap-8 pb-6 pt-2">
-        <section className="rounded-[2rem] border border-[#eadfd6] bg-white/85 p-6 text-center shadow-[0_16px_48px_rgba(47,38,34,0.06)]">
-          <p className="text-sm text-[#c08a98]">{result.respondentName} 的減脂卡關人格</p>
-          <div className="mt-6">
-            <QuizCharacterCard
-              emoji={result.primary.emoji}
-              animalName={result.primary.animalName}
-              tagline={result.primary.tagline}
-              accent={result.primary.accent}
-              headline={result.primary.headline}
-            />
-          </div>
-          <p className="mt-6 rounded-full bg-[#fff4f7] px-4 py-2 text-sm text-[#6f5f57]">
-            你還有 {result.secondary.emoji} {result.secondary.animalName} 傾向
-          </p>
-        </section>
-
-        <section id="share-card" className="rounded-[2rem] border border-[#eadfd6] bg-[#fff8f2] p-6">
-          <div className="flex flex-col items-center text-center">
-            <div
-              className="mb-4 flex h-36 w-36 items-center justify-center rounded-[2rem] text-6xl shadow-[0_16px_40px_rgba(47,38,34,0.12)]"
-              style={{
-                background: `linear-gradient(180deg, ${result.primary.accent} 0%, #fff8f2 100%)`,
-              }}
-            >
-              {result.primary.emoji}
-            </div>
-            <p className="text-xl font-semibold text-[#2f2622]">{result.primary.animalName}</p>
-            <p className="mt-2 max-w-sm text-[0.98rem] leading-7 text-[#5f4f47]">{result.primary.headline}</p>
-            <p className="mt-4 text-xs text-[#a0897d]">Baki GO · 你是哪一種瘦不下來的人？</p>
-          </div>
-        </section>
+        <FatLossQuizResultHero
+          respondentName={result.respondentName}
+          primary={result.primary}
+          secondary={result.secondary}
+        />
 
         <section className="space-y-6 rounded-[2rem] border border-[#eadfd6] bg-white/85 p-6">
           <div>

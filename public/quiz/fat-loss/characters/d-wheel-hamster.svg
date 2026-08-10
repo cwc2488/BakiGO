@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" fill="none" role="img" aria-label="Wheel hamster character placeholder">
+  <defs>
+    <linearGradient id="bg" x1="200" y1="0" x2="200" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f0ebfa"/>
+      <stop offset="0.55" stop-color="#c9b8f0"/>
+      <stop offset="1" stop-color="#fff8f2"/>
+    </linearGradient>
+    <linearGradient id="body" x1="200" y1="220" x2="200" y2="340" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e8dcf8"/>
+      <stop offset="1" stop-color="#c4b0e8"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="500" fill="url(#bg)"/>
+  <circle cx="200" cy="290" r="92" fill="none" stroke="#ddd0f4" stroke-width="12"/>
+  <circle cx="200" cy="290" r="72" fill="none" stroke="#c9b8f0" stroke-width="8" opacity="0.7"/>
+  <path d="M120 180l24 14M280 180l-24 14M120 400l24-14M280 400l-24-14" stroke="#d8ccf0" stroke-width="6" stroke-linecap="round"/>
+  <ellipse cx="200" cy="420" rx="150" ry="28" fill="#eadfd6" opacity="0.7"/>
+  <ellipse cx="200" cy="300" rx="46" ry="40" fill="url(#body)"/>
+  <circle cx="186" cy="292" r="6" fill="#5f4f47"/>
+  <circle cx="214" cy="292" r="6" fill="#5f4f47"/>
+  <path d="M190 308c4 4 16 4 20 0" stroke="#8a78b8" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="200" cy="270" r="24" fill="#e8dcf8"/>
+  <circle cx="192" cy="266" r="4" fill="#5f4f47"/>
+  <circle cx="208" cy="266" r="4" fill="#5f4f47"/>
+</svg>
