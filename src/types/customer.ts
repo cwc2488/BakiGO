@@ -21,8 +21,12 @@ export interface Customer extends StoredEntity {
   phone?: string;
   lineId?: string;
   birthYear?: number;
+  /** Full birth date (YYYY-MM-DD). Preferred over birthYear when set. */
+  birthDate?: ISODateString;
   /** Fixed height — set once on the customer profile, not per measurement. */
   heightCm?: number;
+  region?: string;
+  occupation?: string;
   status: CustomerStatus;
   pipelineLeadId?: EntityId;
   linkedMemberId?: EntityId;
@@ -37,7 +41,10 @@ export interface CustomerCreateInput {
   phone?: string;
   lineId?: string;
   birthYear?: number;
+  birthDate?: ISODateString;
   heightCm?: number;
+  region?: string;
+  occupation?: string;
   note?: string;
   pipelineLeadId?: EntityId;
 }
@@ -47,7 +54,10 @@ export interface CustomerUpdateInput {
   phone?: string;
   lineId?: string;
   birthYear?: number;
+  birthDate?: ISODateString;
   heightCm?: number;
+  region?: string;
+  occupation?: string;
   status?: CustomerStatus;
   linkedMemberId?: EntityId | null;
   note?: string;

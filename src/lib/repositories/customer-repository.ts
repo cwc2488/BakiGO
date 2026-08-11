@@ -18,6 +18,7 @@ import {
   computeReceiptRetainUntil,
   isReceiptExpired,
 } from "@/lib/customers/customer-receipt-retention";
+import { birthYearFromBirthDate, findCustomerByPhoneForOwner as matchCustomerByPhone } from "@/lib/customers/customer-profile";
 import { todayISODate } from "@/lib/config/app-config";
 
 function createId(): string {
@@ -45,6 +46,7 @@ export interface CustomerRepository {
   getCustomerById(customerId: EntityId): Customer | undefined;
   getCustomerByPipelineLeadId(pipelineLeadId: EntityId): Customer | undefined;
   getCustomerByLinkedMemberId(memberId: EntityId): Customer | undefined;
+  findCustomerByPhoneForOwner(ownerMemberId: EntityId, phone: string): Customer | undefined;
   createCustomer(input: CustomerCreateInput): Customer;
   updateCustomer(customerId: EntityId, input: CustomerUpdateInput): Customer;
   deleteCustomer(customerId: EntityId): void;
@@ -86,8 +88,15 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
     return this.getAllCustomers().find((customer) => customer.linkedMemberId === memberId);
   }
 
+  findCustomerByPhoneForOwner(ownerMemberId: EntityId, phone: string): Customer | undefined {
+    return matchCustomerByPhone(this.getCustomersByOwner(ownerMemberId), ownerMemberId, phone);
+  }
+
   createCustomer(input: CustomerCreateInput): Customer {
     const now = new Date().toISOString();
+    const birthDate = input.birthDate?.trim() || undefined;
+    const birthYear =
+      input.birthYear ?? (birthDate ? birthYearFromBirthDate(birthDate) : undefined);
     const customer: Customer = {
       id: createId(),
       createdAt: now,
@@ -96,8 +105,11 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
       displayName: input.displayName.trim(),
       phone: input.phone?.trim() || undefined,
       lineId: input.lineId?.trim() || undefined,
-      birthYear: input.birthYear,
+      birthYear,
+      birthDate,
       heightCm: input.heightCm,
+      region: input.region?.trim() || undefined,
+      occupation: input.occupation?.trim() || undefined,
       status: "active",
       pipelineLeadId: input.pipelineLeadId,
       note: input.note?.trim() || undefined,
@@ -118,13 +130,25 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
 
     const now = new Date().toISOString();
     const current = customers[index];
+    const birthDate =
+      input.birthDate === undefined ? current.birthDate : input.birthDate?.trim() || undefined;
+    const birthYear =
+      input.birthYear === undefined
+        ? birthDate
+          ? birthYearFromBirthDate(birthDate)
+          : current.birthYear
+        : input.birthYear;
     const updated: Customer = {
       ...current,
       displayName: input.displayName?.trim() ?? current.displayName,
       phone: input.phone === undefined ? current.phone : input.phone.trim() || undefined,
       lineId: input.lineId === undefined ? current.lineId : input.lineId.trim() || undefined,
-      birthYear: input.birthYear === undefined ? current.birthYear : input.birthYear,
+      birthYear,
+      birthDate,
       heightCm: input.heightCm === undefined ? current.heightCm : input.heightCm,
+      region: input.region === undefined ? current.region : input.region.trim() || undefined,
+      occupation:
+        input.occupation === undefined ? current.occupation : input.occupation.trim() || undefined,
       status: input.status ?? current.status,
       linkedMemberId:
         input.linkedMemberId === undefined ? current.linkedMemberId : input.linkedMemberId ?? undefined,

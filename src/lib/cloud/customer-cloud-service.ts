@@ -30,7 +30,10 @@ interface CustomerDbRow {
   phone: string | null;
   line_id: string | null;
   birth_year: number | null;
+  birth_date: string | null;
   height_cm: number | null;
+  region: string | null;
+  occupation: string | null;
   status: Customer["status"];
   pipeline_lead_id: string | null;
   linked_member_id: string | null;
@@ -91,7 +94,10 @@ function mapCustomer(row: CustomerDbRow): Customer {
     phone: row.phone ?? undefined,
     lineId: row.line_id ?? undefined,
     birthYear: row.birth_year ?? undefined,
+    birthDate: row.birth_date ?? undefined,
     heightCm: row.height_cm ?? undefined,
+    region: row.region ?? undefined,
+    occupation: row.occupation ?? undefined,
     status: row.status,
     pipelineLeadId: row.pipeline_lead_id ?? undefined,
     linkedMemberId: row.linked_member_id ?? undefined,
@@ -158,7 +164,10 @@ function customerToDbRow(customer: Customer): CustomerDbRow {
     phone: customer.phone ?? null,
     line_id: customer.lineId ?? null,
     birth_year: customer.birthYear ?? null,
+    birth_date: customer.birthDate ?? null,
     height_cm: customer.heightCm ?? null,
+    region: customer.region ?? null,
+    occupation: customer.occupation ?? null,
     status: customer.status,
     pipeline_lead_id: customer.pipelineLeadId ?? null,
     linked_member_id: customer.linkedMemberId ?? null,

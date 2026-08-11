@@ -1,47 +1,26 @@
 "use client";
 
 import { formatShortDate } from "@/lib/mission-control/format";
-import { computeAgeFromBirthYear, computeBmi } from "@/lib/customers/body-metrics";
+import { computeAgeFromCustomerProfile, computeBmi } from "@/lib/customers/body-metrics";
+import {
+  emptyCustomerBodyForm,
+  parseCustomerBodyNumber,
+  type CustomerBodyFormValues,
+} from "@/lib/customers/customer-body-form";
 import type { BodyCompositionRecord } from "@/types/customer";
 import { useEffect, useMemo, useState } from "react";
 import { CrmButton, CrmCard, CrmInput, CrmSectionTitle, CrmTextarea } from "@/components/members/ui";
 import { ImageUploadSectionButton } from "@/components/ui/ImageUploadButtons";
 
-export interface CustomerBodyFormValues {
-  recordDate: string;
-  age: string;
-  weightKg: string;
-  skeletalMuscleKg: string;
-  bmi: string;
-  bodyFatPercent: string;
-  visceralFatLevel: string;
-  basalMetabolicRate: string;
-  bodyAge: string;
-  note: string;
-}
+export type { CustomerBodyFormValues };
+export { parseCustomerBodyNumber };
 
 function emptyForm(today: string): CustomerBodyFormValues {
-  return {
-    recordDate: today,
-    age: "",
-    weightKg: "",
-    skeletalMuscleKg: "",
-    bmi: "",
-    bodyFatPercent: "",
-    visceralFatLevel: "",
-    basalMetabolicRate: "",
-    bodyAge: "",
-    note: "",
-  };
+  return emptyCustomerBodyForm(today);
 }
 
 function parseNumber(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
+  return parseCustomerBodyNumber(value);
 }
 
 function formatRecordSummary(record: BodyCompositionRecord): string {
@@ -62,12 +41,14 @@ export function CustomerBodySection({
   records,
   today,
   birthYear,
+  birthDate,
   heightCm,
   onCreate,
 }: {
   records: BodyCompositionRecord[];
   today: string;
   birthYear?: number;
+  birthDate?: string;
   heightCm?: number;
   onCreate: (values: CustomerBodyFormValues) => void;
 }) {
@@ -75,8 +56,8 @@ export function CustomerBodySection({
   const [form, setForm] = useState<CustomerBodyFormValues>(() => emptyForm(today));
 
   const suggestedAge = useMemo(
-    () => computeAgeFromBirthYear(birthYear, form.recordDate),
-    [birthYear, form.recordDate],
+    () => computeAgeFromCustomerProfile({ birthDate, birthYear }, form.recordDate),
+    [birthDate, birthYear, form.recordDate],
   );
 
   const autoBmi = useMemo(
@@ -85,14 +66,14 @@ export function CustomerBodySection({
   );
 
   useEffect(() => {
-    if (!showForm || !birthYear || form.age.trim()) {
+    if (!showForm || !(birthDate || birthYear) || form.age.trim()) {
       return;
     }
 
     if (suggestedAge !== null) {
       setForm((current) => ({ ...current, age: String(suggestedAge) }));
     }
-  }, [birthYear, form.age, showForm, suggestedAge]);
+  }, [birthDate, birthYear, form.age, showForm, suggestedAge]);
 
   useEffect(() => {
     if (autoBmi === null) {
@@ -112,8 +93,8 @@ export function CustomerBodySection({
   const updateField = (field: keyof CustomerBodyFormValues, value: string) => {
     setForm((current) => {
       const next = { ...current, [field]: value };
-      if (field === "recordDate" && birthYear && !current.age.trim()) {
-        const age = computeAgeFromBirthYear(birthYear, value);
+      if (field === "recordDate" && !current.age.trim()) {
+        const age = computeAgeFromCustomerProfile({ birthDate, birthYear }, value);
         if (age !== null) {
           next.age = String(age);
         }
@@ -154,11 +135,13 @@ export function CustomerBodySection({
             value={form.recordDate}
           />
 
-          {birthYear && suggestedAge !== null ? (
-            <p className="rounded-2xl bg-[var(--brand-bg)] px-4 py-3 text-[0.8125rem] text-[#636366]">
-              年齡：<span className="font-semibold text-[#1d1d1f]">{suggestedAge} 歲</span>
-              <span className="text-[#86868b]">（依出生年自動計算）</span>
-            </p>
+          {birthDate || birthYear ? (
+            suggestedAge !== null ? (
+              <p className="rounded-2xl bg-[var(--brand-bg)] px-4 py-3 text-[0.8125rem] text-[#636366]">
+                年齡：<span className="font-semibold text-[#1d1d1f]">{suggestedAge} 歲</span>
+                <span className="text-[#86868b]">（依顧客生日自動計算）</span>
+              </p>
+            ) : null
           ) : (
             <CrmInput
               inputMode="numeric"
@@ -168,7 +151,7 @@ export function CustomerBodySection({
             />
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <CrmInput
               inputMode="decimal"
               label="體重 (kg)"
@@ -272,5 +255,3 @@ export function CustomerBodySection({
     </CrmCard>
   );
 }
-
-export { parseNumber as parseCustomerBodyNumber };

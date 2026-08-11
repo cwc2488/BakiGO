@@ -36,7 +36,7 @@ import {
   formatMetricDeltaLine,
 } from "@/lib/customers/body-composition-compare";
 import { buildBodyCompositionTrendSeries } from "@/lib/customers/body-composition-trends";
-import { computeBmi, computeAgeFromBirthYear } from "@/lib/customers/body-metrics";
+import { computeBmi, computeAgeFromCustomerProfile } from "@/lib/customers/body-metrics";
 import { todayISODate } from "@/lib/config/app-config";
 import { formatShortDate } from "@/lib/mission-control/format";
 import { createCustomerRepository } from "@/lib/repositories/customer-repository";
@@ -147,7 +147,10 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
       computeBmi(weightKg, currentCustomer?.heightCm ?? null);
     const age =
       parseCustomerBodyNumber(values.age) ??
-      computeAgeFromBirthYear(currentCustomer?.birthYear, values.recordDate);
+      computeAgeFromCustomerProfile(
+        { birthDate: currentCustomer?.birthDate, birthYear: currentCustomer?.birthYear },
+        values.recordDate,
+      );
 
     repo.createBodyRecord({
       customerId,
@@ -386,6 +389,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
 
       <CustomerBodySection
         birthYear={customer.birthYear}
+        birthDate={customer.birthDate}
         heightCm={customer.heightCm}
         onCreate={handleCreateRecord}
         records={records}

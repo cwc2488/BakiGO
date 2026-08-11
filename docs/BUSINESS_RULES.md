@@ -313,6 +313,23 @@ _To be defined._
 
 _To be defined — member vs. leader vs. admin roles within an organization._
 
+### Consultation Engine V1 (Phase 1)
+
+Guided consultation (`consultation_sessions`) is **coach-owned customer data**, same privacy boundary as `customers` and `body_composition_records`:
+
+| Rule | Behavior |
+|------|----------|
+| Visibility | **Owner member only** — uplines cannot read consultation sessions or health step data |
+| Customer anchor | Every session links to exactly one existing `customers` row — no duplicate profile entity |
+| Measurement | Step 3 writes to `body_composition_records`; session stores `body_composition_record_id` FK |
+| Health safety flag | Enum: `pending_review`, `normal`, `caution`, `professional_review_required` — **automated mapping rules not yet defined** (Phase 1 records health data only; new sessions default to `pending_review`; completing Step 2 does **not** change the flag; `consultation_data.health.safetyReviewStatus = pending_rules`) |
+| Customer profile | Step 1 reads/writes `customers` fields: name, phone, `birth_date`, height, region, occupation — not duplicated in `consultation_data` |
+| Duplicate protection | Before creating a new customer, match normalized phone within the same `owner_member_id`; if found, UI shows「可能已有此客戶」and offers existing customer or cancel — no auto-create, no name-only dedupe |
+| Commitment gate | Steps 8+ (future): score 1–5 → `not_ready` / `follow_up`; 6–9 → barriers required; 10 → optional barrier skip — **not implemented in Phase 1** |
+| Success stories | Step 10+ (future): partner self-reports count ≥ 3 — **not implemented in Phase 1** |
+
+Configuration: `consultation_sessions.status`, `consultation_sessions.health_safety_flag` — gate thresholds for Steps 8–10 to be added when those phases ship.
+
 ## Edge Cases & Exceptions
 
 Document any intentional exceptions to the rules above in this section.
@@ -325,3 +342,4 @@ Document any intentional exceptions to the rules above in this section.
 | — | Updated for Network Marketing Business OS philosophy | — |
 | 2026-08 | Sprint 11 — Promotion Rules（賀寶芙晉升制度） | — |
 | 2026-08 | Sprint 13 — VP Rule Engine（Core Currency） | — |
+| 2026-08 | Consultation Engine V1 Phase 1 — sessions + JSONB step data | — |
