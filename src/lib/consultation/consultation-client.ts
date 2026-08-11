@@ -2,6 +2,7 @@ export { fetchWithMemberAuth as fetchWithConsultationAuth } from "@/lib/quiz/qui
 
 import type { ConsultationData, ConsultationSession } from "@/types/consultation";
 import { fetchWithMemberAuth } from "@/lib/quiz/quiz-member-fetch";
+import { setConsultationSessionCache } from "@/lib/consultation/consultation-session-cache";
 
 export type ConsultationSessionPayload = {
   ok?: boolean;
@@ -21,7 +22,11 @@ export async function createConsultationSessionApi(customerId: string): Promise<
 
 export async function loadConsultationSessionApi(sessionId: string): Promise<ConsultationSessionPayload> {
   const response = await fetchWithMemberAuth(`/api/consultation/sessions/${sessionId}`);
-  return (await response.json()) as ConsultationSessionPayload;
+  const payload = (await response.json()) as ConsultationSessionPayload;
+  if (payload.session && payload.data) {
+    setConsultationSessionCache(sessionId, { session: payload.session, data: payload.data });
+  }
+  return payload;
 }
 
 export async function saveConsultationStepApi(
@@ -37,5 +42,9 @@ export async function saveConsultationStepApi(
       body: JSON.stringify(body),
     },
   );
-  return (await response.json()) as ConsultationSessionPayload;
+  const payload = (await response.json()) as ConsultationSessionPayload;
+  if (payload.session && payload.data) {
+    setConsultationSessionCache(sessionId, { session: payload.session, data: payload.data });
+  }
+  return payload;
 }

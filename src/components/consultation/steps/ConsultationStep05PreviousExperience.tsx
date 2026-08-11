@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useConsultationFlowActions } from "@/components/consultation/ConsultationFlowContext";
 import {
   ConsultationField,
   ConsultationFlowShell,
@@ -11,17 +12,17 @@ import {
 } from "@/components/consultation/ConsultationFlowShell";
 import { CONSULTATION_STEP_META } from "@/lib/consultation/consultation-flow-engine";
 import { saveConsultationStepApi } from "@/lib/consultation/consultation-client";
+import { buildOptimisticStepRecord } from "@/lib/consultation/consultation-step-navigation";
 import type { ConsultationSessionRecord } from "@/types/consultation";
 
 export function ConsultationStep05PreviousExperience({
   sessionId,
   record,
-  onCompleted,
 }: {
   sessionId: string;
   record: ConsultationSessionRecord;
-  onCompleted: (next: ConsultationSessionRecord) => void;
 }) {
+  const { completeOptimistic } = useConsultationFlowActions();
   const initial = record.data.dataJson.previousExperience ?? {};
   const [hasPreviousExperience, setHasPreviousExperience] = useState<boolean | null>(
     initial.hasPreviousExperience ?? null,
@@ -38,40 +39,38 @@ export function ConsultationStep05PreviousExperience({
 
   const meta = CONSULTATION_STEP_META[5];
 
-  async function handleSubmit(event: React.FormEvent) {
+  function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setLoading(true);
     setError(null);
-    try {
-      const previousMethods = previousMethodsText
-        .split(/[、,，]/)
-        .map((item) => item.trim())
-        .filter(Boolean);
 
-      const payload = await saveConsultationStepApi(sessionId, 5, {
-        previousExperience: {
-          hasPreviousExperience: hasPreviousExperience ?? undefined,
-          previousMethods,
-          previousResult: previousResult.trim() || undefined,
-          regainedOrStopped: regainedOrStopped.trim() || undefined,
-          whyStoppedOrRegained: whyStoppedOrRegained.trim() || undefined,
-          experienceNotes: experienceNotes.trim() || undefined,
-        },
-      });
-      if (!payload.session || !payload.data) {
-        throw new Error(payload.error ?? "無法儲存 Step 5");
-      }
-      onCompleted({ session: payload.session, data: payload.data });
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "無法儲存 Step 5");
-    } finally {
-      setLoading(false);
-    }
+    const previousMethods = previousMethodsText
+      .split(/[、,，]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    const previousExperience = {
+      hasPreviousExperience: hasPreviousExperience ?? undefined,
+      previousMethods,
+      previousResult: previousResult.trim() || undefined,
+      regainedOrStopped: regainedOrStopped.trim() || undefined,
+      whyStoppedOrRegained: whyStoppedOrRegained.trim() || undefined,
+      experienceNotes: experienceNotes.trim() || undefined,
+    };
+
+    const optimisticRecord = buildOptimisticStepRecord(record, 5, { previousExperience });
+    completeOptimistic({
+      stepNumber: 5,
+      priorRecord: record,
+      optimisticRecord,
+      savePromise: saveConsultationStepApi(sessionId, 5, { previousExperience }),
+    });
+    setLoading(false);
   }
 
   return (
     <ConsultationFlowShell step={5} title={meta.title} purpose={meta.purpose}>
-      <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+      <form className="space-y-4" onSubmit={handleSubmit}>
         <p className="rounded-[1.25rem] bg-[#f3ebe3] px-4 py-3 text-sm leading-6 text-[#6f5f57]">
           「你過去有沒有減重、增肌或改變身材的經驗？」
         </p>

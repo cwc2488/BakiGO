@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useConsultationFlowActions } from "@/components/consultation/ConsultationFlowContext";
 import {
   ConsultationField,
   ConsultationFlowShell,
@@ -10,17 +11,17 @@ import {
 } from "@/components/consultation/ConsultationFlowShell";
 import { CONSULTATION_STEP_META } from "@/lib/consultation/consultation-flow-engine";
 import { saveConsultationStepApi } from "@/lib/consultation/consultation-client";
+import { buildOptimisticStepRecord } from "@/lib/consultation/consultation-step-navigation";
 import type { ConsultationSessionRecord } from "@/types/consultation";
 
 export function ConsultationStep06Motivations({
   sessionId,
   record,
-  onCompleted,
 }: {
   sessionId: string;
   record: ConsultationSessionRecord;
-  onCompleted: (next: ConsultationSessionRecord) => void;
 }) {
+  const { completeOptimistic } = useConsultationFlowActions();
   const initial = record.data.dataJson.motivations ?? {};
   const [reason1, setReason1] = useState(initial.reason1 ?? "");
   const [reason2, setReason2] = useState(initial.reason2 ?? "");
@@ -32,7 +33,7 @@ export function ConsultationStep06Motivations({
   const meta = CONSULTATION_STEP_META[6];
   const hasAtLeastOneReason = [reason1, reason2, reason3].some((value) => value.trim());
 
-  async function handleSubmit(event: React.FormEvent) {
+  function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!hasAtLeastOneReason) {
       setError("請至少記錄一個改變理由。");
@@ -40,29 +41,27 @@ export function ConsultationStep06Motivations({
     }
     setLoading(true);
     setError(null);
-    try {
-      const payload = await saveConsultationStepApi(sessionId, 6, {
-        motivations: {
-          reason1: reason1.trim() || undefined,
-          reason2: reason2.trim() || undefined,
-          reason3: reason3.trim() || undefined,
-          motivationNotes: motivationNotes.trim() || undefined,
-        },
-      });
-      if (!payload.session || !payload.data) {
-        throw new Error(payload.error ?? "無法儲存 Step 6");
-      }
-      onCompleted({ session: payload.session, data: payload.data });
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "無法儲存 Step 6");
-    } finally {
-      setLoading(false);
-    }
+
+    const motivations = {
+      reason1: reason1.trim() || undefined,
+      reason2: reason2.trim() || undefined,
+      reason3: reason3.trim() || undefined,
+      motivationNotes: motivationNotes.trim() || undefined,
+    };
+
+    const optimisticRecord = buildOptimisticStepRecord(record, 6, { motivations });
+    completeOptimistic({
+      stepNumber: 6,
+      priorRecord: record,
+      optimisticRecord,
+      savePromise: saveConsultationStepApi(sessionId, 6, { motivations }),
+    });
+    setLoading(false);
   }
 
   return (
     <ConsultationFlowShell step={6} title={meta.title} purpose={meta.purpose}>
-      <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+      <form className="space-y-4" onSubmit={handleSubmit}>
         <p className="rounded-[1.25rem] bg-[#f3ebe3] px-4 py-3 text-sm leading-6 text-[#6f5f57]">
           「如果這次真的把身材改變成功，對你來說最重要的三個理由是什麼？」
         </p>

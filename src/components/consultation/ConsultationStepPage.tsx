@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ConsultationFlowProvider } from "@/components/consultation/ConsultationFlowContext";
 import { ConsultationFlowShell, ConsultationPrimaryButton } from "@/components/consultation/ConsultationFlowShell";
 import { ConsultationStep01BasicInfo } from "@/components/consultation/steps/ConsultationStep01BasicInfo";
 import { ConsultationStep02HealthConcern } from "@/components/consultation/steps/ConsultationStep02HealthConcern";
@@ -12,10 +13,14 @@ import { ConsultationStep05PreviousExperience } from "@/components/consultation/
 import { ConsultationStep06Motivations } from "@/components/consultation/steps/ConsultationStep06Motivations";
 import { ConsultationStep07CommitmentScore } from "@/components/consultation/steps/ConsultationStep07CommitmentScore";
 import { ConsultationStep08CommitmentGate } from "@/components/consultation/steps/ConsultationStep08CommitmentGate";
+import { isValidConsultationStep } from "@/lib/consultation/consultation-flow-engine";
+import { loadConsultationSessionApi, type ConsultationSessionPayload } from "@/lib/consultation/consultation-client";
 import {
-  isValidConsultationStep,
-} from "@/lib/consultation/consultation-flow-engine";
-import { loadConsultationSessionApi } from "@/lib/consultation/consultation-client";
+  consultationSessionCacheCoversStep,
+  getConsultationSessionCache,
+  setConsultationSessionCache,
+} from "@/lib/consultation/consultation-session-cache";
+import { consultationStepPath, prefetchConsultationSteps } from "@/lib/consultation/consultation-step-navigation";
 import { CONSULTATION_PHASE2_MAX_STEP, type ConsultationSessionRecord } from "@/types/consultation";
 
 function ConsultationPausedScreen({ record }: { record: ConsultationSessionRecord }) {
@@ -34,9 +39,7 @@ function ConsultationPausedScreen({ record }: { record: ConsultationSessionRecor
             : ""}
         </p>
         {readiness?.notReadyReason ? (
-          <p className="text-sm leading-7 text-[#6f5f57]">
-            原因：{readiness.notReadyReason}
-          </p>
+          <p className="text-sm leading-7 text-[#6f5f57]">原因：{readiness.notReadyReason}</p>
         ) : null}
         {readiness?.followUpNotes ? (
           <p className="text-sm leading-7 text-[#6f5f57]">追蹤備註：{readiness.followUpNotes}</p>
@@ -89,6 +92,31 @@ function ConsultationPhase2GateCompleteScreen({ record }: { record: Consultation
   );
 }
 
+function applySessionRouting(
+  payload: ConsultationSessionRecord,
+  stepNumber: number,
+  router: ReturnType<typeof useRouter>,
+): boolean {
+  const activeStep = payload.session.currentStep;
+
+  if (!isValidConsultationStep(stepNumber)) {
+    router.replace(consultationStepPath(payload.session.id, activeStep));
+    return false;
+  }
+
+  if (payload.session.status === "not_ready" && stepNumber > CONSULTATION_PHASE2_MAX_STEP) {
+    router.replace(consultationStepPath(payload.session.id, CONSULTATION_PHASE2_MAX_STEP));
+    return false;
+  }
+
+  if (stepNumber > activeStep) {
+    router.replace(consultationStepPath(payload.session.id, activeStep));
+    return false;
+  }
+
+  return true;
+}
+
 export function ConsultationStepPage({
   sessionId,
   stepNumber,
@@ -97,59 +125,117 @@ export function ConsultationStepPage({
   stepNumber: number;
 }) {
   const router = useRouter();
-  const [record, setRecord] = useState<ConsultationSessionRecord | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cachedOnMount = getConsultationSessionCache(sessionId);
+  const [record, setRecord] = useState<ConsultationSessionRecord | null>(
+    cachedOnMount && consultationSessionCacheCoversStep(cachedOnMount, stepNumber) ? cachedOnMount : null,
+  );
+  const [loading, setLoading] = useState(() => record === null);
   const [error, setError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-  const loadSession = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const payload = await loadConsultationSessionApi(sessionId);
-      if (!payload.session || !payload.data) {
-        throw new Error(payload.error ?? "無法載入諮詢場次");
-      }
-      setRecord({ session: payload.session, data: payload.data });
+  const loadSession = useCallback(
+    async (options?: { background?: boolean }) => {
+      const cached = getConsultationSessionCache(sessionId);
+      const cacheHit = cached && consultationSessionCacheCoversStep(cached, stepNumber);
 
-      const activeStep = payload.session.currentStep;
-
-      if (!isValidConsultationStep(stepNumber)) {
-        router.replace(`/consultation/${sessionId}/step/${activeStep}`);
+      if (cacheHit && !options?.background) {
+        setRecord(cached);
+        setLoading(false);
+        applySessionRouting(cached, stepNumber, router);
         return;
       }
 
-      if (payload.session.status === "not_ready") {
-        if (stepNumber > CONSULTATION_PHASE2_MAX_STEP) {
-          router.replace(`/consultation/${sessionId}/step/${CONSULTATION_PHASE2_MAX_STEP}`);
-        }
-        return;
+      if (!options?.background && !cacheHit) {
+        setLoading(true);
       }
+      setError(null);
 
-      if (payload.session.status === "in_progress" && activeStep >= 9) {
-        if (stepNumber >= 9) {
-          return;
+      try {
+        const payload = await loadConsultationSessionApi(sessionId);
+        if (!payload.session || !payload.data) {
+          throw new Error(payload.error ?? "無法載入諮詢場次");
+        }
+
+        const nextRecord = { session: payload.session, data: payload.data };
+        setConsultationSessionCache(sessionId, nextRecord);
+        setRecord(nextRecord);
+        applySessionRouting(nextRecord, stepNumber, router);
+      } catch (loadError) {
+        if (!cacheHit) {
+          setError(loadError instanceof Error ? loadError.message : "無法載入諮詢場次");
+          setRecord(null);
+        }
+      } finally {
+        if (!options?.background) {
+          setLoading(false);
         }
       }
-
-      if (stepNumber > activeStep) {
-        router.replace(`/consultation/${sessionId}/step/${activeStep}`);
-      }
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "無法載入諮詢場次");
-      setRecord(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [router, sessionId, stepNumber]);
+    },
+    [router, sessionId, stepNumber],
+  );
 
   useEffect(() => {
     void loadSession();
   }, [loadSession]);
 
-  function handleCompleted(next: ConsultationSessionRecord) {
-    setRecord(next);
-    router.push(`/consultation/${sessionId}/step/${next.session.currentStep}`);
-  }
+  useEffect(() => {
+    if (!record) {
+      return;
+    }
+    const upcoming = [stepNumber + 1, stepNumber + 2].filter((step) => step <= 14);
+    prefetchConsultationSteps(router.prefetch.bind(router), sessionId, upcoming);
+  }, [record, router, sessionId, stepNumber]);
+
+  const completeBlocking = useCallback(
+    (next: ConsultationSessionRecord) => {
+      setConsultationSessionCache(sessionId, next);
+      setRecord(next);
+      setSyncError(null);
+      router.push(consultationStepPath(sessionId, next.session.currentStep));
+    },
+    [router, sessionId],
+  );
+
+  const completeOptimistic = useCallback(
+    (input: {
+      stepNumber: number;
+      priorRecord: ConsultationSessionRecord;
+      optimisticRecord: ConsultationSessionRecord;
+      savePromise: Promise<ConsultationSessionPayload>;
+    }) => {
+      setConsultationSessionCache(sessionId, input.optimisticRecord);
+      setRecord(input.optimisticRecord);
+      setSyncError(null);
+      router.push(consultationStepPath(sessionId, input.optimisticRecord.session.currentStep));
+
+      void input.savePromise
+        .then((payload) => {
+          if (!payload.session || !payload.data) {
+            throw new Error(payload.error ?? "無法儲存諮詢步驟");
+          }
+          const confirmed = { session: payload.session, data: payload.data };
+          setConsultationSessionCache(sessionId, confirmed);
+          setRecord((current) => (current?.session.id === sessionId ? confirmed : current));
+        })
+        .catch((saveError) => {
+          setConsultationSessionCache(sessionId, input.priorRecord);
+          setRecord(input.priorRecord);
+          setSyncError(saveError instanceof Error ? saveError.message : "儲存失敗，請重試");
+          router.replace(consultationStepPath(sessionId, input.stepNumber));
+        });
+    },
+    [router, sessionId],
+  );
+
+  const flowActions = useMemo(
+    () => ({
+      syncError,
+      clearSyncError: () => setSyncError(null),
+      completeBlocking,
+      completeOptimistic,
+    }),
+    [completeBlocking, completeOptimistic, syncError],
+  );
 
   if (loading) {
     return (
@@ -178,50 +264,46 @@ export function ConsultationStepPage({
     return <ConsultationPhase2GateCompleteScreen record={record} />;
   }
 
-  if (stepNumber === 1) {
+  const stepContent = (() => {
+    if (stepNumber === 1) {
+      return <ConsultationStep01BasicInfo sessionId={sessionId} record={record} onCompleted={completeBlocking} />;
+    }
+    if (stepNumber === 2) {
+      return <ConsultationStep02HealthConcern sessionId={sessionId} record={record} onCompleted={completeBlocking} />;
+    }
+    if (stepNumber === 3) {
+      return (
+        <ConsultationStep03BodyMeasurement sessionId={sessionId} record={record} onCompleted={completeBlocking} />
+      );
+    }
+    if (stepNumber === 4) {
+      return <ConsultationStep04DataReviewGoals sessionId={sessionId} record={record} />;
+    }
+    if (stepNumber === 5) {
+      return <ConsultationStep05PreviousExperience sessionId={sessionId} record={record} />;
+    }
+    if (stepNumber === 6) {
+      return <ConsultationStep06Motivations sessionId={sessionId} record={record} />;
+    }
+    if (stepNumber === 7) {
+      return <ConsultationStep07CommitmentScore sessionId={sessionId} record={record} onCompleted={completeBlocking} />;
+    }
+    if (stepNumber === 8) {
+      return <ConsultationStep08CommitmentGate sessionId={sessionId} record={record} onCompleted={completeBlocking} />;
+    }
     return (
-      <ConsultationStep01BasicInfo sessionId={sessionId} record={record} onCompleted={handleCompleted} />
+      <div className="flex min-h-full items-center justify-center bg-[#faf6f1] px-6 text-center text-sm text-[#8b7d74]">
+        此步驟尚未開放。
+      </div>
     );
-  }
-  if (stepNumber === 2) {
-    return (
-      <ConsultationStep02HealthConcern sessionId={sessionId} record={record} onCompleted={handleCompleted} />
-    );
-  }
-  if (stepNumber === 3) {
-    return (
-      <ConsultationStep03BodyMeasurement sessionId={sessionId} record={record} onCompleted={handleCompleted} />
-    );
-  }
-  if (stepNumber === 4) {
-    return (
-      <ConsultationStep04DataReviewGoals sessionId={sessionId} record={record} onCompleted={handleCompleted} />
-    );
-  }
-  if (stepNumber === 5) {
-    return (
-      <ConsultationStep05PreviousExperience sessionId={sessionId} record={record} onCompleted={handleCompleted} />
-    );
-  }
-  if (stepNumber === 6) {
-    return (
-      <ConsultationStep06Motivations sessionId={sessionId} record={record} onCompleted={handleCompleted} />
-    );
-  }
-  if (stepNumber === 7) {
-    return (
-      <ConsultationStep07CommitmentScore sessionId={sessionId} record={record} onCompleted={handleCompleted} />
-    );
-  }
-  if (stepNumber === 8) {
-    return (
-      <ConsultationStep08CommitmentGate sessionId={sessionId} record={record} onCompleted={handleCompleted} />
-    );
-  }
+  })();
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-[#faf6f1] px-6 text-center text-sm text-[#8b7d74]">
-      此步驟尚未開放。
-    </div>
+    <ConsultationFlowProvider value={flowActions}>
+      {syncError ? (
+        <div className="bg-[#fff3f0] px-4 py-3 text-center text-sm text-[#b04a3a]">{syncError}</div>
+      ) : null}
+      {stepContent}
+    </ConsultationFlowProvider>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ConsultationBodyDataSummary } from "@/components/consultation/ConsultationBodyDataSummary";
+import { useConsultationFlowActions } from "@/components/consultation/ConsultationFlowContext";
 import {
   ConsultationField,
   ConsultationFlowShell,
@@ -15,8 +16,8 @@ import {
   CONSULTATION_STEP_META,
 } from "@/lib/consultation/consultation-flow-engine";
 import { saveConsultationStepApi } from "@/lib/consultation/consultation-client";
-import { createCustomerRepository } from "@/lib/repositories/customer-repository";
-import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import { buildOptimisticStepRecord } from "@/lib/consultation/consultation-step-navigation";
+import { useConsultationCustomerData } from "@/hooks/useConsultationCustomerData";
 import type { ConsultationGoalType, ConsultationSessionRecord } from "@/types/consultation";
 
 const GOAL_TYPES = Object.keys(CONSULTATION_GOAL_TYPE_LABELS) as ConsultationGoalType[];
@@ -24,18 +25,12 @@ const GOAL_TYPES = Object.keys(CONSULTATION_GOAL_TYPE_LABELS) as ConsultationGoa
 export function ConsultationStep04DataReviewGoals({
   sessionId,
   record,
-  onCompleted,
 }: {
   sessionId: string;
   record: ConsultationSessionRecord;
-  onCompleted: (next: ConsultationSessionRecord) => void;
 }) {
-  const storage = useMemo(() => createLocalStorageAdapter(), []);
-  const repo = useMemo(() => createCustomerRepository(storage), [storage]);
-  const customer = repo.getCustomerById(record.session.customerId);
-  const bodyRecord = record.session.bodyCompositionRecordId
-    ? repo.getAllBodyRecords().find((item) => item.id === record.session.bodyCompositionRecordId)
-    : undefined;
+  const { completeOptimistic } = useConsultationFlowActions();
+  const { customer, bodyRecord } = useConsultationCustomerData(record);
 
   const initial = record.data.dataJson.goals ?? {};
   const [goalType, setGoalType] = useState<ConsultationGoalType | "">(initial.goalType ?? "");
@@ -52,34 +47,32 @@ export function ConsultationStep04DataReviewGoals({
 
   const meta = CONSULTATION_STEP_META[4];
 
-  async function handleSubmit(event: React.FormEvent) {
+  function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setLoading(true);
     setError(null);
-    try {
-      const payload = await saveConsultationStepApi(sessionId, 4, {
-        goals: {
-          goalType: goalType || undefined,
-          targetWeightKg: targetWeightKg.trim() ? Number(targetWeightKg) : undefined,
-          targetBodyFatPercent: targetBodyFatPercent.trim() ? Number(targetBodyFatPercent) : undefined,
-          desiredBodyDescription: desiredBodyDescription.trim() || undefined,
-          goalNotes: goalNotes.trim() || undefined,
-        },
-      });
-      if (!payload.session || !payload.data) {
-        throw new Error(payload.error ?? "無法儲存 Step 4");
-      }
-      onCompleted({ session: payload.session, data: payload.data });
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "無法儲存 Step 4");
-    } finally {
-      setLoading(false);
-    }
+
+    const goals = {
+      goalType: goalType || undefined,
+      targetWeightKg: targetWeightKg.trim() ? Number(targetWeightKg) : undefined,
+      targetBodyFatPercent: targetBodyFatPercent.trim() ? Number(targetBodyFatPercent) : undefined,
+      desiredBodyDescription: desiredBodyDescription.trim() || undefined,
+      goalNotes: goalNotes.trim() || undefined,
+    };
+
+    const optimisticRecord = buildOptimisticStepRecord(record, 4, { goals });
+    completeOptimistic({
+      stepNumber: 4,
+      priorRecord: record,
+      optimisticRecord,
+      savePromise: saveConsultationStepApi(sessionId, 4, { goals }),
+    });
+    setLoading(false);
   }
 
   return (
     <ConsultationFlowShell step={4} title={meta.title} purpose={meta.purpose}>
-      <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+      <form className="space-y-4" onSubmit={handleSubmit}>
         <ConsultationBodyDataSummary heightCm={customer?.heightCm} bodyRecord={bodyRecord} />
         <p className="text-sm leading-6 text-[#6f5f57]">
           請搭配你的解說方式，向客人說明以上數據，並記錄這次想達成的目標。
