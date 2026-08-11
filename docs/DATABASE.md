@@ -48,7 +48,11 @@ Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `oc
 
 ### Consultation Engine V1 (`023_consultation_engine_v1.sql`)
 
-Guided partner-led consultation SOP. **Customer is the only CRM anchor** — no duplicate profile tables.
+**Status:** `experimental_hidden`
+
+Guided partner-led consultation SOP. **Not a current Baki GO product entry** — the 14-step flow remains in the codebase for future re-evaluation, but is hidden from home and normal navigation. Direct URLs (`/consultation/*`), APIs, tables, migrations, tests, and existing production data are retained.
+
+**Customer is the only CRM anchor** — no duplicate profile tables.
 
 | Table | Purpose |
 |-------|---------|

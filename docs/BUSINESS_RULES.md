@@ -315,6 +315,8 @@ _To be defined — member vs. leader vs. admin roles within an organization._
 
 ### Consultation Engine V1 (Phase 1)
 
+**Status:** `experimental_hidden` — not promoted as a Baki GO product entry. The experimental 14-step guided flow is archived in code for future re-evaluation; partners should not treat it as the official consultation SOP in the app UI.
+
 Guided consultation (`consultation_sessions`) is **coach-owned customer data**, same privacy boundary as `customers` and `body_composition_records`:
 
 | Rule | Behavior |
