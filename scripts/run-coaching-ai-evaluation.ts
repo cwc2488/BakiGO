@@ -16,6 +16,9 @@ function loadEnvFile(path: string): void {
     ) {
       value = value.slice(1, -1);
     }
+    if (!value || value === "[SENSITIVE]") {
+      continue;
+    }
     if (!process.env[key]) {
       process.env[key] = value;
     }
@@ -41,9 +44,16 @@ async function main() {
 
   const report = await runCoachingAiControlledEvaluation();
   const outPath = resolve(process.cwd(), ".tmp-coaching-ai-evaluation-report.json");
-  writeFileSync(outPath, JSON.stringify({ ok: true, report }, null, 2));
+  const payload = { ok: true, report };
+  writeFileSync(outPath, JSON.stringify(payload, null, 2));
 
-  console.log(JSON.stringify({ ok: true, scenarios: report.scenarios.length, outPath }));
+  if (process.env.RUN_COACHING_CONTROLLED_EVAL === "1") {
+    console.log("COACHING_EVAL_REPORT_START");
+    console.log(JSON.stringify(payload));
+    console.log("COACHING_EVAL_REPORT_END");
+  } else {
+    console.log(JSON.stringify({ ok: true, scenarios: report.scenarios.length, outPath }));
+  }
 }
 
 main().catch((error) => {
