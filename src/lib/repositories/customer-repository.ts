@@ -108,6 +108,7 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
       birthYear,
       birthDate,
       heightCm: input.heightCm,
+      sex: input.sex,
       region: input.region?.trim() || undefined,
       occupation: input.occupation?.trim() || undefined,
       status: "active",
@@ -146,6 +147,7 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
       birthYear,
       birthDate,
       heightCm: input.heightCm === undefined ? current.heightCm : input.heightCm,
+      sex: input.sex === undefined ? current.sex : input.sex,
       region: input.region === undefined ? current.region : input.region.trim() || undefined,
       occupation:
         input.occupation === undefined ? current.occupation : input.occupation.trim() || undefined,

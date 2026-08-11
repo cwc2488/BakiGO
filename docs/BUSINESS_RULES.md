@@ -323,7 +323,7 @@ Guided consultation (`consultation_sessions`) is **coach-owned customer data**, 
 | Customer anchor | Every session links to exactly one existing `customers` row — no duplicate profile entity |
 | Measurement | Step 3 writes to `body_composition_records`; session stores `body_composition_record_id` FK |
 | Health safety flag | Enum: `pending_review`, `normal`, `caution`, `professional_review_required` — **automated mapping rules not yet defined** (Phase 1 records health data only; new sessions default to `pending_review`; completing Step 2 does **not** change the flag; `consultation_data.health.safetyReviewStatus = pending_rules`) |
-| Customer profile | Step 1 reads/writes `customers` fields: name, phone, `birth_date`, height, region, occupation — not duplicated in `consultation_data` |
+| Customer profile | Step 1 reads/writes `customers` fields: name, phone, `birth_date`, height, `sex`, region, occupation — not duplicated in `consultation_data` |
 | Duplicate protection | Before creating a new customer, match normalized phone within the same `owner_member_id`; if found, UI shows「可能已有此客戶」and offers existing customer or cancel — no auto-create, no name-only dedupe |
 | Commitment gate | Step 7 writes `consultation_sessions.commitment_score` (1–10). Step 8 completes the gate — **never ends the session at Step 7**. Step 8 routing: **10** → execution confirm → `ready` → `current_step = 9`; **6–9** → barrier explore → `readyIfBarrierSolved = true` → step 9, else `not_ready`; **1–5** → not ready confirm → `not_ready`. `not_ready` retains all prior data and blocks Step 9+ |
 | Success stories | Step 10+ (future): partner self-reports count ≥ 3 — **not implemented in Phase 1–2** |

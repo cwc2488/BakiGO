@@ -32,9 +32,9 @@ See migrations `001_cloud_foundation.sql`, `004_member_app_data.sql`.
 | `customer_progress_photos` | Before/after photos |
 | `customer_receipt_photos` | Coach-only receipt photos |
 
-**Customer profile fields:** `display_name`, `phone`, `line_id`, `birth_year` (legacy), `birth_date` (preferred when available), `height_cm`, `region`, `occupation`, `status`, `pipeline_lead_id`, `linked_member_id`, follow-up dates, single `note`.
+**Customer profile fields:** `display_name`, `phone`, `line_id`, `birth_year` (legacy), `birth_date` (preferred when available), `height_cm`, `sex` (`male` | `female` | `other` | `prefer_not_to_say`, nullable), `region`, `occupation`, `status`, `pipeline_lead_id`, `linked_member_id`, follow-up dates, single `note`.
 
-Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `occupation`. When a full birthday is captured, persist `birth_date` and derive `birth_year` for legacy compatibility.
+Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `occupation`. Migration `025_customers_sex.sql` adds nullable `sex` with enum check. When a full birthday is captured, persist `birth_date` and derive `birth_year` for legacy compatibility.
 
 ### Quiz icebreaker (`021_quiz_icebreaker_v1.sql`+)
 

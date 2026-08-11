@@ -14,6 +14,7 @@ import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { flushCustomerCloudPush } from "@/lib/cloud/customer-cloud-sync";
 import { saveConsultationStepApi } from "@/lib/consultation/consultation-client";
 import type { ConsultationSessionRecord } from "@/types/consultation";
+import { CUSTOMER_SEX_LABELS, CUSTOMER_SEX_OPTIONS, type CustomerSex } from "@/types/customer";
 
 export function ConsultationStep01BasicInfo({
   sessionId,
@@ -32,12 +33,14 @@ export function ConsultationStep01BasicInfo({
   const [phone, setPhone] = useState(customer?.phone ?? "");
   const [birthDate, setBirthDate] = useState(customer?.birthDate ?? "");
   const [heightCm, setHeightCm] = useState(customer?.heightCm ? String(customer.heightCm) : "");
+  const [sex, setSex] = useState<CustomerSex | "">(customer?.sex ?? "");
   const [region, setRegion] = useState(customer?.region ?? "");
   const [occupation, setOccupation] = useState(customer?.occupation ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const meta = CONSULTATION_STEP_META[1];
+  const sexRequired = !customer?.sex;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -47,6 +50,10 @@ export function ConsultationStep01BasicInfo({
     }
     if (!displayName.trim()) {
       setError("請輸入姓名");
+      return;
+    }
+    if (sexRequired && !sex) {
+      setError("請選擇性別");
       return;
     }
 
@@ -60,6 +67,7 @@ export function ConsultationStep01BasicInfo({
         phone: phone.trim() || undefined,
         birthDate: birthDate.trim() || undefined,
         heightCm: Number.isFinite(parsedHeight) ? parsedHeight : undefined,
+        sex: sex || undefined,
         region: region.trim() || undefined,
         occupation: occupation.trim() || undefined,
       });
@@ -109,6 +117,24 @@ export function ConsultationStep01BasicInfo({
             onChange={(event) => setHeightCm(event.target.value)}
             placeholder="例如：165"
           />
+        </ConsultationField>
+        <ConsultationField
+          label={sexRequired ? "性別（必填）" : "性別"}
+          hint={sexRequired ? "既有顧客若尚未記錄性別，請在此補填。" : undefined}
+        >
+          <select
+            className="w-full rounded-[1.25rem] border border-[#eadfd6] bg-white px-4 py-4 text-base"
+            value={sex}
+            onChange={(event) => setSex(event.target.value as CustomerSex | "")}
+            required={sexRequired}
+          >
+            <option value="">請選擇…</option>
+            {CUSTOMER_SEX_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {CUSTOMER_SEX_LABELS[option]}
+              </option>
+            ))}
+          </select>
         </ConsultationField>
         <ConsultationField label="地區">
           <ConsultationInput value={region} onChange={(event) => setRegion(event.target.value)} />

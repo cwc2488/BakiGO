@@ -1,6 +1,7 @@
 import type { EntityId, ISODateString, StoredEntity } from "./common";
 
 export type CustomerStatus = "active" | "paused" | "converted";
+export type CustomerSex = "male" | "female" | "other" | "prefer_not_to_say";
 export type CustomerPhotoPhase = "before" | "after";
 export type CustomerPhotoAngle = "front" | "side" | "back";
 
@@ -15,6 +16,15 @@ export const CUSTOMER_PHOTO_ANGLE_LABELS: Record<CustomerPhotoAngle, string> = {
   back: "背面",
 };
 
+export const CUSTOMER_SEX_LABELS: Record<CustomerSex, string> = {
+  male: "男",
+  female: "女",
+  other: "其他",
+  prefer_not_to_say: "不便透露",
+};
+
+export const CUSTOMER_SEX_OPTIONS = Object.keys(CUSTOMER_SEX_LABELS) as CustomerSex[];
+
 export interface Customer extends StoredEntity {
   ownerMemberId: EntityId;
   displayName: string;
@@ -25,6 +35,7 @@ export interface Customer extends StoredEntity {
   birthDate?: ISODateString;
   /** Fixed height — set once on the customer profile, not per measurement. */
   heightCm?: number;
+  sex?: CustomerSex;
   region?: string;
   occupation?: string;
   status: CustomerStatus;
@@ -43,6 +54,7 @@ export interface CustomerCreateInput {
   birthYear?: number;
   birthDate?: ISODateString;
   heightCm?: number;
+  sex?: CustomerSex;
   region?: string;
   occupation?: string;
   note?: string;
@@ -56,6 +68,7 @@ export interface CustomerUpdateInput {
   birthYear?: number;
   birthDate?: ISODateString;
   heightCm?: number;
+  sex?: CustomerSex;
   region?: string;
   occupation?: string;
   status?: CustomerStatus;

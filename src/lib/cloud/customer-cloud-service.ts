@@ -32,6 +32,7 @@ interface CustomerDbRow {
   birth_year: number | null;
   birth_date: string | null;
   height_cm: number | null;
+  sex: Customer["sex"] | null;
   region: string | null;
   occupation: string | null;
   status: Customer["status"];
@@ -96,6 +97,7 @@ function mapCustomer(row: CustomerDbRow): Customer {
     birthYear: row.birth_year ?? undefined,
     birthDate: row.birth_date ?? undefined,
     heightCm: row.height_cm ?? undefined,
+    sex: row.sex ?? undefined,
     region: row.region ?? undefined,
     occupation: row.occupation ?? undefined,
     status: row.status,
@@ -166,6 +168,7 @@ function customerToDbRow(customer: Customer): CustomerDbRow {
     birth_year: customer.birthYear ?? null,
     birth_date: customer.birthDate ?? null,
     height_cm: customer.heightCm ?? null,
+    sex: customer.sex ?? null,
     region: customer.region ?? null,
     occupation: customer.occupation ?? null,
     status: customer.status,
