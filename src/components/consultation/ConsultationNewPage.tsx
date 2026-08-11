@@ -115,8 +115,8 @@ export function ConsultationNewPage() {
   return (
     <div className="min-h-full bg-[#faf6f1]">
       <main className="mx-auto w-full max-w-lg px-4 pb-10 pt-8 sm:px-6">
-        <Link className="text-sm text-[#8b7d74]" href="/customers">
-          ← 返回顧客關懷
+        <Link className="text-sm text-[#8b7d74]" href="/">
+          ← 返回首頁
         </Link>
         <div className="mt-4 space-y-2">
           <h1 className="text-[1.75rem] font-semibold text-[#2f2622]">開始引導式諮詢</h1>
