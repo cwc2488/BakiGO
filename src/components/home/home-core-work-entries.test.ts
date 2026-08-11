@@ -1,15 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { SIMPLE_QUICK_LINKS, WORK_HUB_LINKS } from "@/lib/ui/work-hub-links";
 
-describe("home core work entries", () => {
-  it("links consultation entry to /consultation/new", () => {
-    const source = readFileSync(
-      resolve(process.cwd(), "src/components/home/HomeCoreWorkEntries.tsx"),
-      "utf8",
-    );
-    expect(source).toContain('title="引導式諮詢"');
-    expect(source).toContain('href="/consultation/new"');
-    expect(source).toContain("開始諮詢 →");
+describe("home work hub links", () => {
+  it("includes guided consultation in simple and full home grids", () => {
+    expect(SIMPLE_QUICK_LINKS.some((link) => link.href === "/consultation/new")).toBe(true);
+    expect(
+      WORK_HUB_LINKS.some(
+        (link) => link.href === "/consultation/new" && link.title === "引導式諮詢",
+      ),
+    ).toBe(true);
   });
 });

@@ -31,7 +31,6 @@ import { IconChevronDown, ROUTE_ICON_COMPONENTS, type QuickLinkHref } from "@/co
 import { TabRootShell } from "@/components/ui/TabRootShell";
 import { LearningResourceSuggestions } from "@/components/learning/LearningResourceSuggestions";
 import { DownlinePartnerSuggestions } from "@/components/organization/DownlinePartnerSuggestions";
-import { HomeCoreWorkEntries } from "@/components/home/HomeCoreWorkEntries";
 import { isCareerRankAtOrAbove } from "@/lib/auth/career-rank-order";
 import { getCurrentMember, getCurrentSession } from "@/lib/auth/auth-service";
 import { buildViewerCloudOrganizationSnapshot } from "@/lib/cloud/build-cloud-organization-tree";
@@ -258,7 +257,6 @@ function SimpleHomeView({
         priority={topPriority}
         showFocusMode={false}
       />
-      <HomeCoreWorkEntries />
       <QuickLinksSection links={SIMPLE_QUICK_LINKS} />
       <HomeModeToggle mode="simple" onChange={onModeChange} />
     </>
@@ -284,7 +282,6 @@ function FullHomeView({
         priority={topPriority}
         showFocusMode={false}
       />
-      <HomeCoreWorkEntries />
       <DownlinePartnerSuggestions suggestions={metrics.downlinePartnerSuggestions} />
       <LearningResourceSuggestions
         pipelinePushReminders={metrics.pipelinePushReminders}
