@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   ConsultationField,
   ConsultationFlowShell,
+  ConsultationFormActions,
   ConsultationPrimaryButton,
   ConsultationTextarea,
 } from "@/components/consultation/ConsultationFlowShell";
@@ -103,9 +104,11 @@ export function ConsultationStep02HealthConcern({
           />
         </ConsultationField>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <ConsultationPrimaryButton type="submit" disabled={loading}>
-          {loading ? "儲存中…" : "完成健康關懷，下一步"}
-        </ConsultationPrimaryButton>
+        <ConsultationFormActions>
+          <ConsultationPrimaryButton type="submit" disabled={loading}>
+            {loading ? "儲存中…" : "完成健康關懷，下一步"}
+          </ConsultationPrimaryButton>
+        </ConsultationFormActions>
       </form>
     </ConsultationFlowShell>
   );

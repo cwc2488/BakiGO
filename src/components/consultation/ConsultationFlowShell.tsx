@@ -20,7 +20,7 @@ export function ConsultationFlowShell({
 
   return (
     <div className="min-h-full bg-[#faf6f1]">
-      <main className="mx-auto flex min-h-full w-full max-w-lg flex-col px-4 pb-10 pt-6 sm:px-6">
+      <main className="mx-auto flex min-h-full w-full max-w-lg flex-col px-4 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-6 sm:px-6">
         <ConsultationProgressBar current={step} total={CONSULTATION_TOTAL_STEPS} percent={percent} />
         <div className="mt-6 space-y-2">
           <p className="text-sm font-medium text-[#c08a98]">Step {step} / {CONSULTATION_TOTAL_STEPS}</p>
@@ -57,6 +57,14 @@ function ConsultationProgressBar({
           style={{ width: `${percent}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+export function ConsultationFormActions({ children }: { children: ReactNode }) {
+  return (
+    <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] z-10 -mx-1 mt-6 bg-[#faf6f1]/95 px-1 pb-2 pt-4 backdrop-blur-sm">
+      {children}
     </div>
   );
 }

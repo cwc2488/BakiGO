@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   ConsultationField,
   ConsultationFlowShell,
+  ConsultationFormActions,
   ConsultationInput,
   ConsultationPrimaryButton,
 } from "@/components/consultation/ConsultationFlowShell";
@@ -119,9 +120,11 @@ export function ConsultationStep01BasicInfo({
           />
         </ConsultationField>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <ConsultationPrimaryButton type="submit" disabled={loading}>
-          {loading ? "儲存中…" : "確認基本資料，下一步"}
-        </ConsultationPrimaryButton>
+        <ConsultationFormActions>
+          <ConsultationPrimaryButton type="submit" disabled={loading}>
+            {loading ? "儲存中…" : "確認基本資料，下一步"}
+          </ConsultationPrimaryButton>
+        </ConsultationFormActions>
       </form>
     </ConsultationFlowShell>
   );

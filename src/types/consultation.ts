@@ -4,6 +4,8 @@ export const CONSULTATION_TOTAL_STEPS = 14;
 
 export const CONSULTATION_PHASE1_MAX_STEP = 3;
 
+export const CONSULTATION_PHASE2_MAX_STEP = 8;
+
 export type ConsultationStatus =
   | "in_progress"
   | "completed"
@@ -58,10 +60,81 @@ export type ConsultationHealthData = {
 
 export type ConsultationBasicInfoExtras = Record<string, never>;
 
+export type ConsultationGoalType =
+  | "fat_loss"
+  | "muscle_gain"
+  | "body_recomposition"
+  | "health"
+  | "other";
+
+export type ConsultationGoalsData = {
+  goalType?: ConsultationGoalType;
+  targetWeightKg?: number;
+  targetBodyFatPercent?: number;
+  desiredBodyDescription?: string;
+  goalNotes?: string;
+};
+
+export type ConsultationPreviousExperienceData = {
+  hasPreviousExperience?: boolean;
+  previousMethods?: string[];
+  previousResult?: string;
+  regainedOrStopped?: string;
+  whyStoppedOrRegained?: string;
+  experienceNotes?: string;
+};
+
+export type ConsultationMotivationsData = {
+  reason1?: string;
+  reason2?: string;
+  reason3?: string;
+  motivationNotes?: string;
+};
+
+export const CONSULTATION_BARRIER_KEYS = [
+  "time",
+  "diet",
+  "work_schedule",
+  "family",
+  "budget",
+  "exercise",
+  "dont_know_how",
+  "fear_of_failure",
+  "past_failure",
+  "lack_of_support",
+  "other",
+] as const;
+
+export type ConsultationBarrierKey = (typeof CONSULTATION_BARRIER_KEYS)[number];
+
+export type ConsultationBarriersData = {
+  barriers?: ConsultationBarrierKey[];
+  primaryBarrier?: ConsultationBarrierKey;
+  barrierNotes?: string;
+  potentialBarriers?: ConsultationBarrierKey[];
+  potentialBarrierNotes?: string;
+};
+
+export type ConsultationReadinessGateDecision = "ready" | "not_ready";
+
+export type ConsultationReadinessData = {
+  readyIfBarrierSolved?: boolean;
+  notReadyReason?: string;
+  followUpNotes?: string;
+  followUpDate?: ISODateString;
+  gateDecision?: ConsultationReadinessGateDecision;
+  gateDecidedAt?: string;
+};
+
 export type ConsultationDataJson = {
   health?: ConsultationHealthData;
   basicInfoExtras?: ConsultationBasicInfoExtras;
   phase1CompletedAt?: ISODateString;
+  goals?: ConsultationGoalsData;
+  previousExperience?: ConsultationPreviousExperienceData;
+  motivations?: ConsultationMotivationsData;
+  barriers?: ConsultationBarriersData;
+  readiness?: ConsultationReadinessData;
 };
 
 export type CreateConsultationSessionInput = {

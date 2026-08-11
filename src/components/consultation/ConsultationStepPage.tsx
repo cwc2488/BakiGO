@@ -7,9 +7,87 @@ import { ConsultationFlowShell, ConsultationPrimaryButton } from "@/components/c
 import { ConsultationStep01BasicInfo } from "@/components/consultation/steps/ConsultationStep01BasicInfo";
 import { ConsultationStep02HealthConcern } from "@/components/consultation/steps/ConsultationStep02HealthConcern";
 import { ConsultationStep03BodyMeasurement } from "@/components/consultation/steps/ConsultationStep03BodyMeasurement";
-import { isPhase1Complete, isPhase1Step } from "@/lib/consultation/consultation-flow-engine";
+import { ConsultationStep04DataReviewGoals } from "@/components/consultation/steps/ConsultationStep04DataReviewGoals";
+import { ConsultationStep05PreviousExperience } from "@/components/consultation/steps/ConsultationStep05PreviousExperience";
+import { ConsultationStep06Motivations } from "@/components/consultation/steps/ConsultationStep06Motivations";
+import { ConsultationStep07CommitmentScore } from "@/components/consultation/steps/ConsultationStep07CommitmentScore";
+import { ConsultationStep08CommitmentGate } from "@/components/consultation/steps/ConsultationStep08CommitmentGate";
+import {
+  isValidConsultationStep,
+} from "@/lib/consultation/consultation-flow-engine";
 import { loadConsultationSessionApi } from "@/lib/consultation/consultation-client";
-import type { ConsultationSessionRecord } from "@/types/consultation";
+import { CONSULTATION_PHASE2_MAX_STEP, type ConsultationSessionRecord } from "@/types/consultation";
+
+function ConsultationPausedScreen({ record }: { record: ConsultationSessionRecord }) {
+  const readiness = record.data.dataJson.readiness;
+  return (
+    <ConsultationFlowShell
+      step={8}
+      title="本次諮詢暫停"
+      purpose="客人目前尚未準備好進入正式方案流程。前面所有資料都已保留。"
+    >
+      <div className="space-y-4 rounded-[1.5rem] bg-white/90 p-5 ring-1 ring-[#eadfd6]">
+        <p className="text-sm leading-7 text-[#6f5f57]">
+          狀態：<span className="font-medium text-[#2f2622]">not_ready</span>
+          {record.session.commitmentScore !== undefined
+            ? ` · 決心 ${record.session.commitmentScore} 分`
+            : ""}
+        </p>
+        {readiness?.notReadyReason ? (
+          <p className="text-sm leading-7 text-[#6f5f57]">
+            原因：{readiness.notReadyReason}
+          </p>
+        ) : null}
+        {readiness?.followUpNotes ? (
+          <p className="text-sm leading-7 text-[#6f5f57]">追蹤備註：{readiness.followUpNotes}</p>
+        ) : null}
+        {readiness?.followUpDate ? (
+          <p className="text-sm leading-7 text-[#6f5f57]">追蹤日期：{readiness.followUpDate}</p>
+        ) : null}
+        <p className="text-xs text-[#9a8b82]">Step 9 之後的 SOP 尚未開放，且 not_ready 狀態無法直接進入。</p>
+      </div>
+      <div className="mt-6 space-y-3">
+        <Link href={`/customers/${record.session.customerId}`}>
+          <ConsultationPrimaryButton type="button">查看顧客檔案</ConsultationPrimaryButton>
+        </Link>
+        <Link className="block text-center text-sm text-[#8b7d74]" href="/consultation/new">
+          開始另一場諮詢
+        </Link>
+      </div>
+    </ConsultationFlowShell>
+  );
+}
+
+function ConsultationPhase2GateCompleteScreen({ record }: { record: ConsultationSessionRecord }) {
+  return (
+    <ConsultationFlowShell
+      step={8}
+      title="Decision Tree 已完成"
+      purpose="目標、過往經驗、理由、決心與準備度都已記錄。Step 9 之後的 SOP 將在後續 Phase 開放。"
+    >
+      <div className="space-y-4 rounded-[1.5rem] bg-white/90 p-5 ring-1 ring-[#eadfd6]">
+        <p className="text-sm leading-7 text-[#6f5f57]">
+          準備度判定：
+          <span className="font-medium text-[#2f2622]">
+            {record.data.dataJson.readiness?.gateDecision === "ready" ? "ready" : "—"}
+          </span>
+          {record.session.commitmentScore !== undefined
+            ? ` · 決心 ${record.session.commitmentScore} 分`
+            : ""}
+        </p>
+        <p className="text-xs text-[#9a8b82]">Session ID：{record.session.id}</p>
+      </div>
+      <div className="mt-6 space-y-3">
+        <Link href={`/customers/${record.session.customerId}`}>
+          <ConsultationPrimaryButton type="button">查看顧客檔案</ConsultationPrimaryButton>
+        </Link>
+        <Link className="block text-center text-sm text-[#8b7d74]" href="/consultation/new">
+          開始另一場諮詢
+        </Link>
+      </div>
+    </ConsultationFlowShell>
+  );
+}
 
 export function ConsultationStepPage({
   sessionId,
@@ -34,13 +112,26 @@ export function ConsultationStepPage({
       setRecord({ session: payload.session, data: payload.data });
 
       const activeStep = payload.session.currentStep;
-      if (isPhase1Complete(activeStep) && stepNumber <= 3) {
-        if (stepNumber !== 4) {
-          router.replace(`/consultation/${sessionId}/step/4`);
+
+      if (!isValidConsultationStep(stepNumber)) {
+        router.replace(`/consultation/${sessionId}/step/${activeStep}`);
+        return;
+      }
+
+      if (payload.session.status === "not_ready") {
+        if (stepNumber > CONSULTATION_PHASE2_MAX_STEP) {
+          router.replace(`/consultation/${sessionId}/step/${CONSULTATION_PHASE2_MAX_STEP}`);
         }
         return;
       }
-      if (isPhase1Step(stepNumber) && stepNumber !== activeStep) {
+
+      if (payload.session.status === "in_progress" && activeStep >= 9) {
+        if (stepNumber >= 9) {
+          return;
+        }
+      }
+
+      if (stepNumber > activeStep) {
         router.replace(`/consultation/${sessionId}/step/${activeStep}`);
       }
     } catch (loadError) {
@@ -57,8 +148,7 @@ export function ConsultationStepPage({
 
   function handleCompleted(next: ConsultationSessionRecord) {
     setRecord(next);
-    const nextStep = next.session.currentStep;
-    router.push(`/consultation/${sessionId}/step/${nextStep}`);
+    router.push(`/consultation/${sessionId}/step/${next.session.currentStep}`);
   }
 
   if (loading) {
@@ -80,31 +170,12 @@ export function ConsultationStepPage({
     );
   }
 
-  if (stepNumber === 4 || isPhase1Complete(record.session.currentStep)) {
-    return (
-      <ConsultationFlowShell
-        step={3}
-        title="Phase 1 已完成"
-        purpose="基本資料、健康關懷與身體量測都已記錄。後續 SOP 步驟將在之後版本開放。"
-      >
-        <div className="space-y-4 rounded-[1.5rem] bg-white/90 p-5 ring-1 ring-[#eadfd6]">
-          <p className="text-sm leading-7 text-[#6f5f57]">
-            這場諮詢已保存 Step 1–3。你可以關閉頁面，下次從顧客詳情或諮詢列表繼續（Step 4 尚未開放）。
-          </p>
-          <p className="text-xs text-[#9a8b82]">
-            Session ID：{record.session.id}
-          </p>
-        </div>
-        <div className="mt-6 space-y-3">
-          <Link href={`/customers/${record.session.customerId}`}>
-            <ConsultationPrimaryButton type="button">查看顧客檔案</ConsultationPrimaryButton>
-          </Link>
-          <Link className="block text-center text-sm text-[#8b7d74]" href="/consultation/new">
-            開始另一場諮詢
-          </Link>
-        </div>
-      </ConsultationFlowShell>
-    );
+  if (record.session.status === "not_ready") {
+    return <ConsultationPausedScreen record={record} />;
+  }
+
+  if (record.session.currentStep >= 9 && stepNumber >= 9) {
+    return <ConsultationPhase2GateCompleteScreen record={record} />;
   }
 
   if (stepNumber === 1) {
@@ -120,6 +191,31 @@ export function ConsultationStepPage({
   if (stepNumber === 3) {
     return (
       <ConsultationStep03BodyMeasurement sessionId={sessionId} record={record} onCompleted={handleCompleted} />
+    );
+  }
+  if (stepNumber === 4) {
+    return (
+      <ConsultationStep04DataReviewGoals sessionId={sessionId} record={record} onCompleted={handleCompleted} />
+    );
+  }
+  if (stepNumber === 5) {
+    return (
+      <ConsultationStep05PreviousExperience sessionId={sessionId} record={record} onCompleted={handleCompleted} />
+    );
+  }
+  if (stepNumber === 6) {
+    return (
+      <ConsultationStep06Motivations sessionId={sessionId} record={record} onCompleted={handleCompleted} />
+    );
+  }
+  if (stepNumber === 7) {
+    return (
+      <ConsultationStep07CommitmentScore sessionId={sessionId} record={record} onCompleted={handleCompleted} />
+    );
+  }
+  if (stepNumber === 8) {
+    return (
+      <ConsultationStep08CommitmentGate sessionId={sessionId} record={record} onCompleted={handleCompleted} />
     );
   }
 

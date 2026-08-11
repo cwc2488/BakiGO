@@ -3,19 +3,42 @@ import { getMemberIdFromRequest } from "@/lib/supabase/member-auth";
 import {
   completeConsultationStep1,
   completeConsultationStep3,
+  completeConsultationStep8,
   getConsultationSession,
   saveConsultationStep2,
+  saveConsultationStep4,
+  saveConsultationStep5,
+  saveConsultationStep6,
+  saveConsultationStep7,
   serializeConsultationSession,
 } from "@/lib/consultation/consultation-service";
 import { toConsultationApiErrorMessage } from "@/lib/consultation/consultation-api-error";
-import { isPhase1Step, isValidConsultationStep } from "@/lib/consultation/consultation-flow-engine";
+import { isValidConsultationStep } from "@/lib/consultation/consultation-flow-engine";
 import { isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
-import type { ConsultationHealthData } from "@/types/consultation";
+import type {
+  ConsultationBarriersData,
+  ConsultationGoalsData,
+  ConsultationHealthData,
+  ConsultationMotivationsData,
+  ConsultationPreviousExperienceData,
+  ConsultationReadinessData,
+} from "@/types/consultation";
 
 export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{ sessionId: string; stepNumber: string }>;
+};
+
+type StepPatchBody = {
+  health?: Partial<ConsultationHealthData>;
+  bodyCompositionRecordId?: string;
+  goals?: Partial<ConsultationGoalsData>;
+  previousExperience?: Partial<ConsultationPreviousExperienceData>;
+  motivations?: Partial<ConsultationMotivationsData>;
+  commitmentScore?: number;
+  barriers?: Partial<ConsultationBarriersData>;
+  readiness?: Partial<ConsultationReadinessData>;
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -30,14 +53,11 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { sessionId, stepNumber: stepNumberRaw } = await context.params;
     const stepNumber = Number(stepNumberRaw);
-    if (!isValidConsultationStep(stepNumber) || !isPhase1Step(stepNumber)) {
-      return NextResponse.json({ error: "Invalid step number for Phase 1." }, { status: 400 });
+    if (!isValidConsultationStep(stepNumber) || stepNumber > 8) {
+      return NextResponse.json({ error: "Invalid or unsupported step number." }, { status: 400 });
     }
 
-    const body = (await request.json()) as {
-      health?: Partial<ConsultationHealthData>;
-      bodyCompositionRecordId?: string;
-    };
+    const body = (await request.json()) as StepPatchBody;
 
     let record;
     if (stepNumber === 1) {
@@ -59,6 +79,40 @@ export async function PATCH(request: Request, context: RouteContext) {
         sessionId,
         memberId,
         bodyCompositionRecordId: body.bodyCompositionRecordId.trim(),
+      });
+    } else if (stepNumber === 4) {
+      record = await saveConsultationStep4({
+        sessionId,
+        memberId,
+        goals: body.goals ?? {},
+      });
+    } else if (stepNumber === 5) {
+      record = await saveConsultationStep5({
+        sessionId,
+        memberId,
+        previousExperience: body.previousExperience ?? {},
+      });
+    } else if (stepNumber === 6) {
+      record = await saveConsultationStep6({
+        sessionId,
+        memberId,
+        motivations: body.motivations ?? {},
+      });
+    } else if (stepNumber === 7) {
+      if (body.commitmentScore === undefined) {
+        return NextResponse.json({ error: "commitmentScore is required." }, { status: 400 });
+      }
+      record = await saveConsultationStep7({
+        sessionId,
+        memberId,
+        commitmentScore: body.commitmentScore,
+      });
+    } else if (stepNumber === 8) {
+      record = await completeConsultationStep8({
+        sessionId,
+        memberId,
+        barriers: body.barriers ?? {},
+        readiness: body.readiness ?? {},
       });
     } else {
       return NextResponse.json({ error: "Step not implemented." }, { status: 400 });

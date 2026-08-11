@@ -5,6 +5,7 @@ import { CustomerBodyMeasurementForm } from "@/components/customers/CustomerBody
 import { parseCustomerBodyNumber } from "@/lib/customers/customer-body-form";
 import {
   ConsultationFlowShell,
+  ConsultationFormActions,
   ConsultationPrimaryButton,
 } from "@/components/consultation/ConsultationFlowShell";
 import { CONSULTATION_STEP_META } from "@/lib/consultation/consultation-flow-engine";
@@ -91,9 +92,11 @@ export function ConsultationStep03BodyMeasurement({
         onSubmit={(values) => void handleSubmit(values)}
         disabled={loading}
         renderSubmit={({ label, disabled }) => (
-          <ConsultationPrimaryButton type="submit" disabled={disabled || loading}>
-            {label}
-          </ConsultationPrimaryButton>
+          <ConsultationFormActions>
+            <ConsultationPrimaryButton type="submit" disabled={disabled || loading}>
+              {label}
+            </ConsultationPrimaryButton>
+          </ConsultationFormActions>
         )}
       />
       {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}

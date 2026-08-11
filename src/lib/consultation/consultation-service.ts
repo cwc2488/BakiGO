@@ -1,11 +1,25 @@
 import { createSupabaseServiceClient, isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 import {
   getStepAfterCompletion,
+  normalizeBarriersData,
+  normalizeGoalsData,
   normalizeHealthData,
+  normalizeMotivationsData,
+  normalizePreviousExperienceData,
+  normalizeReadinessData,
+  resolveStep8Outcome,
+  validateCommitmentScore,
+  validateStep6CanComplete,
+  validateStep8Submission,
 } from "@/lib/consultation/consultation-flow-engine";
 import type {
+  ConsultationBarriersData,
   ConsultationData,
   ConsultationDataJson,
+  ConsultationGoalsData,
+  ConsultationMotivationsData,
+  ConsultationPreviousExperienceData,
+  ConsultationReadinessData,
   ConsultationSession,
   ConsultationSessionRecord,
   CreateConsultationSessionInput,
@@ -344,6 +358,223 @@ export async function completeConsultationStep3(input: {
   }
 
   return loadSessionRecord(input);
+}
+
+async function assertStepIsActive(input: {
+  record: ConsultationSessionRecord;
+  stepNumber: number;
+}): Promise<void> {
+  if (input.record.session.status === "not_ready") {
+    throw new Error("Consultation is paused. Cannot advance steps.");
+  }
+  if (input.record.session.currentStep !== input.stepNumber) {
+    throw new Error(`Step ${input.stepNumber} is not the active step.`);
+  }
+}
+
+async function updateSessionData(input: {
+  sessionId: string;
+  memberId: string;
+  sessionPatch: Record<string, unknown>;
+  dataJson: ConsultationDataJson;
+}): Promise<ConsultationSessionRecord> {
+  const supabase = requireServiceClient();
+  const now = new Date().toISOString();
+
+  const { error: sessionError } = await supabase
+    .from("consultation_sessions")
+    .update({ ...input.sessionPatch, updated_at: now })
+    .eq("id", input.sessionId)
+    .eq("owner_member_id", input.memberId);
+
+  if (sessionError) {
+    throw new Error(sessionError.message);
+  }
+
+  const { error: dataError } = await supabase
+    .from("consultation_data")
+    .update({ data_json: input.dataJson, updated_at: now })
+    .eq("session_id", input.sessionId);
+
+  if (dataError) {
+    throw new Error(dataError.message);
+  }
+
+  return loadSessionRecord({ sessionId: input.sessionId, memberId: input.memberId });
+}
+
+export async function saveConsultationStep4(input: {
+  sessionId: string;
+  memberId: string;
+  goals: Partial<ConsultationGoalsData>;
+}): Promise<ConsultationSessionRecord> {
+  const record = await loadSessionRecord(input);
+  if (record.session.currentStep < 4) {
+    throw new Error("Complete Phase 1 before goal setting.");
+  }
+  await assertStepIsActive({ record, stepNumber: 4 });
+
+  const goals = normalizeGoalsData(input.goals ?? {});
+  const nextDataJson: ConsultationDataJson = {
+    ...record.data.dataJson,
+    goals,
+  };
+
+  return updateSessionData({
+    sessionId: input.sessionId,
+    memberId: input.memberId,
+    sessionPatch: { current_step: getStepAfterCompletion(4) },
+    dataJson: nextDataJson,
+  });
+}
+
+export async function saveConsultationStep5(input: {
+  sessionId: string;
+  memberId: string;
+  previousExperience: Partial<ConsultationPreviousExperienceData>;
+}): Promise<ConsultationSessionRecord> {
+  const record = await loadSessionRecord(input);
+  if (record.session.currentStep < 5) {
+    throw new Error("Complete Step 4 before previous experience.");
+  }
+  await assertStepIsActive({ record, stepNumber: 5 });
+
+  const previousExperience = normalizePreviousExperienceData(input.previousExperience ?? {});
+  const nextDataJson: ConsultationDataJson = {
+    ...record.data.dataJson,
+    previousExperience,
+  };
+
+  return updateSessionData({
+    sessionId: input.sessionId,
+    memberId: input.memberId,
+    sessionPatch: { current_step: getStepAfterCompletion(5) },
+    dataJson: nextDataJson,
+  });
+}
+
+export async function saveConsultationStep6(input: {
+  sessionId: string;
+  memberId: string;
+  motivations: Partial<ConsultationMotivationsData>;
+}): Promise<ConsultationSessionRecord> {
+  const record = await loadSessionRecord(input);
+  if (record.session.currentStep < 6) {
+    throw new Error("Complete Step 5 before motivations.");
+  }
+  await assertStepIsActive({ record, stepNumber: 6 });
+
+  const motivations = normalizeMotivationsData(input.motivations ?? {});
+  const validationError = validateStep6CanComplete(motivations);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const nextDataJson: ConsultationDataJson = {
+    ...record.data.dataJson,
+    motivations,
+  };
+
+  return updateSessionData({
+    sessionId: input.sessionId,
+    memberId: input.memberId,
+    sessionPatch: { current_step: getStepAfterCompletion(6) },
+    dataJson: nextDataJson,
+  });
+}
+
+export async function saveConsultationStep7(input: {
+  sessionId: string;
+  memberId: string;
+  commitmentScore: number;
+}): Promise<ConsultationSessionRecord> {
+  const record = await loadSessionRecord(input);
+  if (record.session.currentStep < 7) {
+    throw new Error("Complete Step 6 before commitment score.");
+  }
+  await assertStepIsActive({ record, stepNumber: 7 });
+
+  const validationError = validateCommitmentScore(input.commitmentScore);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  return updateSessionData({
+    sessionId: input.sessionId,
+    memberId: input.memberId,
+    sessionPatch: {
+      current_step: getStepAfterCompletion(7),
+      commitment_score: input.commitmentScore,
+    },
+    dataJson: record.data.dataJson,
+  });
+}
+
+export async function completeConsultationStep8(input: {
+  sessionId: string;
+  memberId: string;
+  barriers: Partial<ConsultationBarriersData>;
+  readiness: Partial<ConsultationReadinessData>;
+}): Promise<ConsultationSessionRecord> {
+  const record = await loadSessionRecord(input);
+  if (record.session.currentStep < 8) {
+    throw new Error("Complete Step 7 before commitment gate.");
+  }
+  await assertStepIsActive({ record, stepNumber: 8 });
+
+  const commitmentScore = record.session.commitmentScore;
+  if (commitmentScore === undefined) {
+    throw new Error("Commitment score is required from Step 7.");
+  }
+
+  const barriers = normalizeBarriersData(input.barriers ?? {});
+  const readinessInput = normalizeReadinessData(input.readiness ?? {});
+  const validationError = validateStep8Submission({
+    commitmentScore,
+    barriers,
+    readiness: readinessInput,
+  });
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const outcome = resolveStep8Outcome({
+    commitmentScore,
+    readyIfBarrierSolved: readinessInput.readyIfBarrierSolved,
+  });
+  const now = new Date().toISOString();
+  const readiness: ConsultationReadinessData = {
+    ...readinessInput,
+    gateDecision: outcome.type === "advance_to_step_9" ? "ready" : "not_ready",
+    gateDecidedAt: now,
+  };
+  const nextDataJson: ConsultationDataJson = {
+    ...record.data.dataJson,
+    barriers,
+    readiness,
+  };
+
+  if (outcome.type === "advance_to_step_9") {
+    return updateSessionData({
+      sessionId: input.sessionId,
+      memberId: input.memberId,
+      sessionPatch: {
+        current_step: 9,
+        status: "in_progress",
+      },
+      dataJson: nextDataJson,
+    });
+  }
+
+  return updateSessionData({
+    sessionId: input.sessionId,
+    memberId: input.memberId,
+    sessionPatch: {
+      current_step: 8,
+      status: "not_ready",
+    },
+    dataJson: nextDataJson,
+  });
 }
 
 export function serializeConsultationSession(record: ConsultationSessionRecord) {

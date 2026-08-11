@@ -325,10 +325,34 @@ Guided consultation (`consultation_sessions`) is **coach-owned customer data**, 
 | Health safety flag | Enum: `pending_review`, `normal`, `caution`, `professional_review_required` — **automated mapping rules not yet defined** (Phase 1 records health data only; new sessions default to `pending_review`; completing Step 2 does **not** change the flag; `consultation_data.health.safetyReviewStatus = pending_rules`) |
 | Customer profile | Step 1 reads/writes `customers` fields: name, phone, `birth_date`, height, region, occupation — not duplicated in `consultation_data` |
 | Duplicate protection | Before creating a new customer, match normalized phone within the same `owner_member_id`; if found, UI shows「可能已有此客戶」and offers existing customer or cancel — no auto-create, no name-only dedupe |
-| Commitment gate | Steps 8+ (future): score 1–5 → `not_ready` / `follow_up`; 6–9 → barriers required; 10 → optional barrier skip — **not implemented in Phase 1** |
-| Success stories | Step 10+ (future): partner self-reports count ≥ 3 — **not implemented in Phase 1** |
+| Commitment gate | Step 7 writes `consultation_sessions.commitment_score` (1–10). Step 8 completes the gate — **never ends the session at Step 7**. Step 8 routing: **10** → execution confirm → `ready` → `current_step = 9`; **6–9** → barrier explore → `readyIfBarrierSolved = true` → step 9, else `not_ready`; **1–5** → not ready confirm → `not_ready`. `not_ready` retains all prior data and blocks Step 9+ |
+| Success stories | Step 10+ (future): partner self-reports count ≥ 3 — **not implemented in Phase 1–2** |
 
-Configuration: `consultation_sessions.status`, `consultation_sessions.health_safety_flag` — gate thresholds for Steps 8–10 to be added when those phases ship.
+Configuration: `consultation_sessions.status`, `consultation_sessions.health_safety_flag`, `consultation_sessions.commitment_score` — Step 8 gate thresholds defined in Phase 2; success-story thresholds remain future work.
+
+### Consultation Engine V1 (Phase 2 — Steps 4–8)
+
+Decision Tree segment after Phase 1 body measurement. All step payloads live in `consultation_data.data_json` — no normalized tables for goals, experience, motivations, or barriers.
+
+| Step | Purpose | Key data |
+|------|---------|----------|
+| 4 | Data review + goal body | Display Step 3 body record; record `goals.*` |
+| 5 | Previous change experience | `previousExperience.*` — conversational, not a long form |
+| 6 | Three reasons | `motivations.reason1–3` — **at least one required**; store guest's words verbatim |
+| 7 | Commitment score | `commitment_score` on session — large 1–10 selector; always advances to Step 8 |
+| 8 | Barriers + readiness gate | `barriers.*`, `readiness.*`; sets `status` and routing per commitment tier |
+
+**Step 8 routing (authoritative — implement in flow engine, not UI):**
+
+| Score | Step 8 mode | Outcome when complete |
+|-------|-------------|------------------------|
+| 10 | Execution confirm | `current_step = 9`, `status = in_progress` |
+| 6–9 | Barrier explore | `readyIfBarrierSolved = true` → step 9; else `not_ready` |
+| 1–5 | Not ready confirm | `status = not_ready`, stay at step 8 |
+
+`not_ready` sessions show「本次諮詢暫停」and **cannot** enter Step 9+. Resume works for Steps 4–8 while `in_progress`.
+
+**Out of scope for Phase 2:** success stories, AI, case matching, brain-change / science / services / product / pricing / Consultation Brief (Steps 9–14).
 
 ## Edge Cases & Exceptions
 
@@ -343,3 +367,4 @@ Document any intentional exceptions to the rules above in this section.
 | 2026-08 | Sprint 11 — Promotion Rules（賀寶芙晉升制度） | — |
 | 2026-08 | Sprint 13 — VP Rule Engine（Core Currency） | — |
 | 2026-08 | Consultation Engine V1 Phase 1 — sessions + JSONB step data | — |
+| 2026-08 | Consultation Engine V1 Phase 2 — Steps 4–8 decision tree + commitment gate | — |

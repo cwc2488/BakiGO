@@ -66,7 +66,7 @@ Guided partner-led consultation SOP. **Customer is the only CRM anchor** — no 
 | `body_composition_record_id` | uuid FK → `body_composition_records` | Set in Step 3 |
 | `current_step` | integer 1–14 | Resume pointer |
 | `status` | text | `in_progress`, `completed`, `follow_up`, `not_ready`, `abandoned` |
-| `commitment_score` | integer 1–10 | Step 8+ (future) |
+| `commitment_score` | integer 1–10 | Step 7 (written); used by Step 8 gate |
 | `health_safety_flag` | text | `pending_review` (default), `normal`, `caution`, `professional_review_required` — Step 2 does not auto-promote to `normal` |
 | `success_story_count` | integer | Step 10+ (future) |
 | `brief_snapshot` | jsonb | Completed brief snapshot (future; replaces separate briefs table) |
@@ -80,6 +80,8 @@ Guided partner-led consultation SOP. **Customer is the only CRM anchor** — no 
 | `data_json` | jsonb | V1 SOP payloads, e.g. `health`, future `desired_state`, `meals`, etc. |
 
 **Phase 1 `data_json` keys:** `health` (Step 2), `phase1CompletedAt` (after Step 3). Region/occupation live on `customers`, not in JSONB.
+
+**Phase 2 `data_json` keys:** `goals` (Step 4), `previousExperience` (Step 5), `motivations` (Step 6), `barriers` + `readiness` (Step 8). `commitment_score` lives on `consultation_sessions`.
 
 **RLS:** Owner-only — same pattern as `customers` (uplines excluded).
 
