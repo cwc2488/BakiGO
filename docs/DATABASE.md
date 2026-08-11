@@ -142,6 +142,21 @@ Member (coach)
 | Meeting summaries | Computed | Aggregated at read time for team scope |
 | Consultation Brief | Hybrid (future) | Live step data + `brief_snapshot` on complete |
 
+### AI Coaching V1 (`027_coaching_v1.sql`)
+
+**Status:** Phase 1 active product module. Cloud-first; customer access via portal token. See [COACHING.md](./COACHING.md).
+
+| Table | Purpose |
+|-------|---------|
+| `coaching_enrollments` | Active/paused/completed coaching relationship; plan snapshot + onboarding state |
+| `coaching_daily_logs` | One row per enrollment per `log_date` (Asia/Taipei) |
+| `coaching_meal_entries` | Meal slot rows linked to daily log |
+| `coaching_meal_photos` | Storage path refs for meal photos (private bucket) |
+
+**Storage:** `coaching-meal-photos` (private). No public URL; signed URLs via service role API.
+
+**Reuse:** `customers`, `members`, `customer_portal_tokens`, `body_composition_records`, `customer_progress_photos` (read-only in coach detail).
+
 ## Migrations
 
 - All schema changes go through versioned migrations.
@@ -151,4 +166,4 @@ Member (coach)
 
 - [PRODUCT.md](./PRODUCT.md)
 - [BUSINESS_RULES.md](./BUSINESS_RULES.md)
-- [GAME_DESIGN.md](./GAME_DESIGN.md)
+- [COACHING.md](./COACHING.md)

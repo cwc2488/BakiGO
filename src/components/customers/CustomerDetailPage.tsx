@@ -1,5 +1,6 @@
 "use client";
 
+import { CoachingCustomerSection } from "@/components/coaching/CoachingCustomerSection";
 import { BodyCompositionTrendCharts } from "@/components/customers/BodyCompositionTrendCharts";
 import {
   CustomerBodySection,
@@ -425,6 +426,8 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
       <CustomerProgressPhotoSection onCreate={handleCreatePhoto} photos={photos} today={today} />
 
       <CustomerReceiptPhotoSection onCreate={handleCreateReceipt} receipts={receipts} today={today} />
+
+      <CoachingCustomerSection customerDisplayName={customer.displayName} customerId={customerId} />
 
       <CrmCard>
         <CrmSectionTitle>基本資料</CrmSectionTitle>
