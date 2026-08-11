@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ConsultationAiInsightBlock } from "@/components/consultation/ConsultationAiInsightBlock";
 import {
   ConsultationField,
   ConsultationFlowShell,
@@ -20,6 +21,7 @@ import {
   type ConsultationBarrierKey,
   type ConsultationSessionRecord,
 } from "@/types/consultation";
+import { CONSULTATION_AI_POINT_KEYS } from "@/types/consultation-ai";
 
 export function ConsultationStep08CommitmentGate({
   sessionId,
@@ -132,11 +134,35 @@ export function ConsultationStep08CommitmentGate({
     }
   }
 
+  const barrierDraft = useMemo(
+    () => ({
+      barriers: selectedBarriers,
+      primaryBarrier: primaryBarrier || undefined,
+      barrierNotes: barrierNotes.trim() || undefined,
+    }),
+    [barrierNotes, primaryBarrier, selectedBarriers],
+  );
+  const readinessDraft = useMemo(
+    () => ({
+      readyIfBarrierSolved: readyIfBarrierSolved ?? undefined,
+      followUpNotes: followUpNotes.trim() || undefined,
+    }),
+    [followUpNotes, readyIfBarrierSolved],
+  );
+  const barrierInsightKey = `${selectedBarriers.join(",")}|${barrierNotes}|${readyIfBarrierSolved ?? ""}`;
+
   return (
     <ConsultationFlowShell step={8} title={meta.title} purpose={meta.purpose}>
       <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
         {mode === "barrier_explore" ? (
           <>
+            <ConsultationAiInsightBlock
+              sessionId={sessionId}
+              pointKey={CONSULTATION_AI_POINT_KEYS.BARRIER_INSIGHT}
+              enabled
+              requestBody={{ barrierDraft, readinessDraft }}
+              requestKey={barrierInsightKey}
+            />
             <p className="rounded-[1.25rem] bg-[#f3ebe3] px-4 py-3 text-sm leading-6 text-[#6f5f57]">
               你現在是 {commitmentScore} 分，那少掉的這幾分主要是卡在哪裡？
             </p>

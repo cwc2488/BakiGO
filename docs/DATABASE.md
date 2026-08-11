@@ -54,6 +54,7 @@ Guided partner-led consultation SOP. **Customer is the only CRM anchor** — no 
 |-------|---------|
 | `consultation_sessions` | Session identity, lifecycle, gate summary columns |
 | `consultation_data` | One row per session; structured step payload in `data_json` |
+| `consultation_ai_outputs` | Structured AI coach insights per session + point key (V1: motivation + barrier) |
 
 #### `consultation_sessions`
 
@@ -87,6 +88,24 @@ Guided partner-led consultation SOP. **Customer is the only CRM anchor** — no 
 
 **RLS:** Owner-only — same pattern as `customers` (uplines excluded).
 
+#### `consultation_ai_outputs`
+
+Separate from `consultation_data.data_json` — supports regenerate, audit, model tracking, and future AI points.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | uuid PK | |
+| `session_id` | uuid FK → `consultation_sessions` | Unique with `point_key` |
+| `owner_member_id` | uuid FK → `members` | Coach who owns the session |
+| `point_key` | text | `motivation_insight`, `barrier_insight` (V1) |
+| `input_snapshot` | jsonb | Sanitized AI input (no phone/PII) |
+| `output_json` | jsonb nullable | Structured coach insight payload |
+| `model` | text nullable | Provider model id |
+| `status` | text | `pending`, `completed`, `failed` |
+| `error_message` | text nullable | Failure detail when `status = failed` |
+| `regeneration_count` | integer | Upserted per `(session_id, point_key)` |
+| `created_at`, `updated_at` | timestamptz | |
+
 **API access:** Service role + server-side `owner_member_id` check (mirrors quiz partner routes).
 
 ### Conceptual relationships
@@ -96,7 +115,8 @@ Member (coach)
   └── owns → Customer
                 ├── body_composition_records
                 └── consultation_sessions
-                      └── consultation_data (data_json)
+                      ├── consultation_data (data_json)
+                      └── consultation_ai_outputs (point_key + output_json)
 ```
 
 ## Naming Conventions

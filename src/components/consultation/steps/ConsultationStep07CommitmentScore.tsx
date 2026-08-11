@@ -6,8 +6,10 @@ import {
   ConsultationFormActions,
   ConsultationPrimaryButton,
 } from "@/components/consultation/ConsultationFlowShell";
+import { ConsultationAiInsightBlock } from "@/components/consultation/ConsultationAiInsightBlock";
 import { CONSULTATION_STEP_META } from "@/lib/consultation/consultation-flow-engine";
 import { saveConsultationStepApi } from "@/lib/consultation/consultation-client";
+import { CONSULTATION_AI_POINT_KEYS } from "@/types/consultation-ai";
 import type { ConsultationSessionRecord } from "@/types/consultation";
 
 export function ConsultationStep07CommitmentScore({
@@ -49,9 +51,20 @@ export function ConsultationStep07CommitmentScore({
     }
   }
 
+  const hasMotivations = Boolean(
+    record.data.dataJson.motivations?.reason1?.trim() ||
+      record.data.dataJson.motivations?.reason2?.trim() ||
+      record.data.dataJson.motivations?.reason3?.trim(),
+  );
+
   return (
     <ConsultationFlowShell step={7} title={meta.title} purpose={meta.purpose}>
       <form className="space-y-6" onSubmit={(event) => void handleSubmit(event)}>
+        <ConsultationAiInsightBlock
+          sessionId={sessionId}
+          pointKey={CONSULTATION_AI_POINT_KEYS.MOTIVATION_INSIGHT}
+          enabled={hasMotivations}
+        />
         <p className="rounded-[1.25rem] bg-[#f3ebe3] px-4 py-3 text-sm leading-6 text-[#6f5f57]">
           「如果 1–10 分，10 分代表你現在非常想改變，你覺得自己現在是幾分？」
         </p>
