@@ -17,7 +17,11 @@ export async function createConsultationSessionApi(customerId: string): Promise<
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ customerId }),
   });
-  return (await response.json()) as ConsultationSessionPayload;
+  const payload = (await response.json()) as ConsultationSessionPayload;
+  if (payload.session && payload.data) {
+    setConsultationSessionCache(payload.session.id, { session: payload.session, data: payload.data });
+  }
+  return payload;
 }
 
 export async function loadConsultationSessionApi(sessionId: string): Promise<ConsultationSessionPayload> {

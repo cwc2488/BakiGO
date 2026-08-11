@@ -269,7 +269,7 @@ export function ConsultationStepPage({
       return <ConsultationStep01BasicInfo sessionId={sessionId} record={record} onCompleted={completeBlocking} />;
     }
     if (stepNumber === 2) {
-      return <ConsultationStep02HealthConcern sessionId={sessionId} record={record} onCompleted={completeBlocking} />;
+      return <ConsultationStep02HealthConcern sessionId={sessionId} record={record} />;
     }
     if (stepNumber === 3) {
       return (

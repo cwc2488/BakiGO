@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useConsultationFlowActions } from "@/components/consultation/ConsultationFlowContext";
 import {
   ConsultationField,
   ConsultationFlowShell,
@@ -10,17 +11,17 @@ import {
 } from "@/components/consultation/ConsultationFlowShell";
 import { CONSULTATION_STEP_META, createDefaultHealthData } from "@/lib/consultation/consultation-flow-engine";
 import { saveConsultationStepApi } from "@/lib/consultation/consultation-client";
+import { buildOptimisticStepRecord } from "@/lib/consultation/consultation-step-navigation";
 import type { ConsultationHealthData, ConsultationSessionRecord } from "@/types/consultation";
 
 export function ConsultationStep02HealthConcern({
   sessionId,
   record,
-  onCompleted,
 }: {
   sessionId: string;
   record: ConsultationSessionRecord;
-  onCompleted: (next: ConsultationSessionRecord) => void;
 }) {
+  const { completeOptimistic } = useConsultationFlowActions();
   const initial = record.data.dataJson.health ?? createDefaultHealthData();
   const [chronicConditions, setChronicConditions] = useState(initial.chronicConditions ?? "");
   const [longTermMedications, setLongTermMedications] = useState(initial.longTermMedications ?? "");
@@ -33,7 +34,7 @@ export function ConsultationStep02HealthConcern({
 
   const meta = CONSULTATION_STEP_META[2];
 
-  async function handleSubmit(event: React.FormEvent) {
+  function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setLoading(true);
     setError(null);
@@ -48,22 +49,19 @@ export function ConsultationStep02HealthConcern({
       partnerNotes: partnerNotes.trim() || undefined,
     };
 
-    try {
-      const payload = await saveConsultationStepApi(sessionId, 2, { health });
-      if (!payload.session || !payload.data) {
-        throw new Error(payload.error ?? "無法儲存 Step 2");
-      }
-      onCompleted({ session: payload.session, data: payload.data });
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "無法儲存 Step 2");
-    } finally {
-      setLoading(false);
-    }
+    const optimisticRecord = buildOptimisticStepRecord(record, 2, { health });
+    completeOptimistic({
+      stepNumber: 2,
+      priorRecord: record,
+      optimisticRecord,
+      savePromise: saveConsultationStepApi(sessionId, 2, { health }),
+    });
+    setLoading(false);
   }
 
   return (
     <ConsultationFlowShell step={2} title={meta.title} purpose={meta.purpose}>
-      <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+      <form className="space-y-4" onSubmit={handleSubmit}>
         <p className="rounded-[1.25rem] bg-[#f3ebe3] px-4 py-3 text-sm leading-6 text-[#6f5f57]">
           這一步只記錄健康背景，不代表已完成安全審核。目前安全狀態為「待審核（pending_review）」，正式規則完成前不會自動判定為安全。
         </p>
