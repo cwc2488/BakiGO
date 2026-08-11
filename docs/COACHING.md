@@ -45,11 +45,19 @@ Consultation Engine remains `experimental_hidden` and is not used by coaching.
 - Customer member accounts
 - Refactoring progress photos off base64
 
-## Phase 2a — Memory Architecture + Cost Telemetry (in progress)
+## Phase 2c — Production Daily Coach Integration
 
-**Status:** Schema, types, snapshot builder, and cost telemetry foundation. **No OpenAI calls. No AI output generation.**
+**Status:** Wired. Daily submit enqueues generation jobs; service-role worker processes with claim/retry/stale recovery; customer complete page polls customer-facing fields; coach dashboard/detail show deterministic intervention + AI wording.
 
-Phase 2a establishes stable DB-backed memory for future AI — not chat history.
+**Authority:** System owns priorities / evidence / recurring / improved / coach attention / final intervention. AI owns wording only (`coaching_daily_v2b7` + `gpt-4o-mini-2024-07-18`).
+
+**Worker:** `POST /api/coaching/jobs/process` with `Authorization: Bearer $COACHING_CRON_SECRET` (falls back to `RADAR_CRON_SECRET`).
+
+**Not deployed to Customer AI until product confirmation.** Controlled eval public route removed; build no longer runs eval hook.
+
+## Phase 2a — Memory Architecture + Cost Telemetry
+
+**Status:** Complete (folded into 2c). Schema, types, snapshot builder, cost telemetry, and async generation path.
 
 ### Memory layers (`buildCoachingInputSnapshot()`)
 
@@ -70,11 +78,11 @@ AI memory source is **DB only** — never model chat history.
 - Two consecutive weeks no overall improvement or worsening trend → future AI may raise intervention — **without blame**
 - Strictness must combine: execution, 14-day patterns, body data, coach directives — never single meal or single weight alone
 
-### Future AI output writeback (schema only)
+### AI output writeback
 
-Structured `output_json` fields reserved: `tomorrow_focus`, `recurring_issue`, `improved_issue`, `coach_attention_required`, `intervention_level`.
+Structured `output_json` fields: `tomorrow_focus`, `recurring_issue`, `improved_issue`, `coach_attention_required`, `proposed_intervention_level`. Authoritative intervention is `final_intervention_level` on the row (deterministic).
 
-See [COACHING_AI_PHASE2_PLAN.md](./COACHING_AI_PHASE2_PLAN.md) for full architecture.
+See [COACHING_AI_PHASE2_PLAN.md](./COACHING_AI_PHASE2_PLAN.md) for architecture history.
 
 ## Future AI domain rules (Phase 2+ — not implemented)
 

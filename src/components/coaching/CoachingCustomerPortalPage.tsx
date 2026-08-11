@@ -382,6 +382,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
           dailyLog={dailyLog}
           logDate={logDate}
           mealDrafts={draft.meals}
+          portalToken={token}
           onEdit={() => setDailyView("form")}
         />
       </div>

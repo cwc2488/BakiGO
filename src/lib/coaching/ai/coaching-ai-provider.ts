@@ -23,11 +23,14 @@ import {
 import { parseOpenAiChatCompletionUsage } from "@/lib/coaching/ai/parse-openai-usage";
 import { encodePreparedCoachingMealImageAsBase64 } from "@/lib/coaching/ai/coaching-meal-image-processor";
 import { FixtureCoachingAiProvider } from "@/lib/coaching/ai/fixture-coaching-ai-provider";
+import { applyCoachingDecisionContextToOutput } from "@/lib/coaching/ai/apply-coaching-decision-context";
+import type { CoachingDecisionContext } from "@/types/coaching-signals";
 
 export type GenerateDailyCoachInput = {
   generationInput: CoachingGenerationInput;
   preparedMealImages: PreparedCoachingMealImage[];
   finalInterventionLevel: CoachingInterventionLevel;
+  decisionContext: CoachingDecisionContext;
 };
 
 export type GenerateDailyCoachUsage = {
@@ -74,6 +77,7 @@ export function buildOpenAiDailyCoachUserMessageContent(input: {
   generationInput: CoachingGenerationInput;
   finalInterventionLevel: CoachingInterventionLevel;
   preparedMealImages: PreparedCoachingMealImage[];
+  decisionContext: CoachingDecisionContext;
 }): OpenAiMessageContent[] {
   const content: OpenAiMessageContent[] = [
     {
@@ -104,6 +108,7 @@ export async function callOpenAiDailyCoachStructuredOutput(input: {
   generationInput: CoachingGenerationInput;
   finalInterventionLevel: CoachingInterventionLevel;
   preparedMealImages: PreparedCoachingMealImage[];
+  decisionContext: CoachingDecisionContext;
 }): Promise<{ rawJson: string; usage: GenerateDailyCoachUsage; latencyMs: number }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), COACHING_DAILY_AI_TIMEOUT_MS);
@@ -166,6 +171,31 @@ export async function callOpenAiDailyCoachStructuredOutput(input: {
   }
 }
 
+function normalizeDailyCoachDraftJson(value: unknown): unknown {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const root = value as Record<string, unknown>;
+  const customer = root.customer;
+  if (!customer || typeof customer !== "object") {
+    return value;
+  }
+  const customerRecord = customer as Record<string, unknown>;
+  if (typeof customerRecord.tomorrow_focus !== "string" || customerRecord.tomorrow_focus.trim().length === 0) {
+    customerRecord.tomorrow_focus = "維持目前節奏";
+  }
+  if (typeof customerRecord.encouragement !== "string" || customerRecord.encouragement.trim().length === 0) {
+    customerRecord.encouragement = "持續回報很重要，我們一起往前。";
+  }
+  if (typeof customerRecord.today_feedback !== "string" || customerRecord.today_feedback.trim().length === 0) {
+    customerRecord.today_feedback = "今天先依系統重點調整即可。";
+  }
+  if (!Array.isArray(customerRecord.adjustment_priorities)) {
+    customerRecord.adjustment_priorities = [];
+  }
+  return root;
+}
+
 export function parseDailyCoachProviderJson(rawJson: string): CoachingDailyGenerationOutputJson {
   let parsedJson: unknown;
   try {
@@ -174,7 +204,7 @@ export function parseDailyCoachProviderJson(rawJson: string): CoachingDailyGener
     throw new Error("LLM returned invalid JSON.");
   }
 
-  const parsed = parseCoachingDailyGenerationOutput(parsedJson);
+  const parsed = parseCoachingDailyGenerationOutput(normalizeDailyCoachDraftJson(parsedJson));
   if (!parsed.ok) {
     throw new Error(parsed.error);
   }
@@ -191,9 +221,13 @@ export class OpenAiCoachingAiProvider implements CoachingAiProvider {
       generationInput: input.generationInput,
       finalInterventionLevel: input.finalInterventionLevel,
       preparedMealImages: input.preparedMealImages,
+      decisionContext: input.decisionContext,
     });
 
-    const output = parseDailyCoachProviderJson(upstream.rawJson);
+    const output = applyCoachingDecisionContextToOutput(
+      parseDailyCoachProviderJson(upstream.rawJson),
+      input.decisionContext,
+    );
 
     return {
       output,

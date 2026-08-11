@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/coaching/jobs/process",
+      "schedule": "* * * * *"
+    }
+  ]
+}

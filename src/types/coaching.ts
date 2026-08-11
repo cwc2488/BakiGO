@@ -99,6 +99,13 @@ export type CoachingDailyLogDetail = CoachingDailyLog & {
   meals: CoachingMealEntryWithPhoto[];
 };
 
+export type CoachingTodayAiBrief = {
+  status: "pending" | "processing" | "completed" | "failed" | "missing";
+  dailySummary: string | null;
+  finalInterventionLevel: "normal" | "watch" | "coach_attention" | null;
+  coachAttentionRequired: boolean;
+};
+
 export type CoachingTodayStatus = {
   enrollmentId: EntityId;
   customerId: EntityId;
@@ -118,6 +125,7 @@ export type CoachingTodayStatus = {
   exerciseNote: string | null;
   exerciseDone: boolean;
   bowelMovementCount: number | null;
+  aiBrief?: CoachingTodayAiBrief | null;
 };
 
 export type CoachingPortalContext = {

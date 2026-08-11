@@ -31,7 +31,35 @@ type DetailPayload = {
   recentLogs: Array<CoachingDailyLogDetail>;
   bodyRecords: BodyCompositionRecord[];
   progressPhotos: CustomerProgressPhoto[];
+  aiOutput: {
+    status: string;
+    finalInterventionLevel: "normal" | "watch" | "coach_attention" | null;
+    customer: {
+      encouragement: string;
+      today_feedback: string;
+      adjustment_priorities: string[];
+      tomorrow_focus: string;
+    } | null;
+    coach: {
+      daily_summary: string;
+      recurring_issue: string | null;
+      improved_issue: string | null;
+      proposed_intervention_level: string;
+      coach_attention_required: boolean;
+      attention_reason: string | null;
+      evidence: string[];
+    } | null;
+    errorMessage: string | null;
+  } | null;
+  historicalTomorrowFocus: Array<{ logDate: string; tomorrowFocus: string }>;
 };
+
+function formatInterventionLevel(level: string | null | undefined): string {
+  if (level === "watch") return "觀察";
+  if (level === "coach_attention") return "需關心";
+  if (level === "normal") return "正常";
+  return "—";
+}
 
 export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: string }) {
   const [payload, setPayload] = useState<DetailPayload | null>(null);
@@ -191,6 +219,75 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
             ) : (
               <p className="text-[0.9375rem] text-[#86868b]">今天尚未建立回報。</p>
             )}
+          </CrmCard>
+
+          <CrmCard className="space-y-4">
+            <CrmSectionTitle>AI Daily Coach</CrmSectionTitle>
+            {!payload.aiOutput || payload.aiOutput.status === "pending" || payload.aiOutput.status === "processing" ? (
+              <p className="text-[0.9375rem] text-[#86868b]">
+                {payload.dailyLog.submittedAt ? "教練回饋生成中…" : "送出回報後會生成 AI 回饋。"}
+              </p>
+            ) : null}
+            {payload.aiOutput?.status === "failed" ? (
+              <p className="text-[0.9375rem] text-[#86868b]">今日教練回饋暫時無法生成。</p>
+            ) : null}
+            {payload.aiOutput?.status === "completed" && payload.aiOutput.customer ? (
+              <div className="space-y-4 text-[0.9375rem]">
+                <div className="space-y-2">
+                  <p className="text-[0.8125rem] font-medium text-[#86868b]">給顧客</p>
+                  <p className="text-[#1d1d1f]">{payload.aiOutput.customer.encouragement}</p>
+                  <p className="text-[#636366]">{payload.aiOutput.customer.today_feedback}</p>
+                  {payload.aiOutput.customer.adjustment_priorities.length > 0 ? (
+                    <ul className="list-disc space-y-1 pl-5 text-[#636366]">
+                      {payload.aiOutput.customer.adjustment_priorities.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <p className="text-[#1d1d1f]">
+                    <span className="text-[#86868b]">明日焦點：</span>
+                    {payload.aiOutput.customer.tomorrow_focus}
+                  </p>
+                </div>
+                {payload.aiOutput.coach ? (
+                  <div className="space-y-2 border-t border-[#eef2ea] pt-3">
+                    <p className="text-[0.8125rem] font-medium text-[#86868b]">教練摘要</p>
+                    <p className="text-[#1d1d1f]">{payload.aiOutput.coach.daily_summary}</p>
+                    <CrmField
+                      label="最終介入等級"
+                      value={formatInterventionLevel(payload.aiOutput.finalInterventionLevel)}
+                    />
+                    {payload.aiOutput.coach.coach_attention_required ? (
+                      <CrmField label="需關心" value={payload.aiOutput.coach.attention_reason ?? "是"} />
+                    ) : null}
+                    <CrmField label="重複議題" value={payload.aiOutput.coach.recurring_issue ?? "—"} />
+                    <CrmField label="改善議題" value={payload.aiOutput.coach.improved_issue ?? "—"} />
+                    {payload.aiOutput.coach.evidence.length > 0 ? (
+                      <div>
+                        <p className="text-[0.8125rem] font-medium text-[#86868b]">證據</p>
+                        <ul className="mt-1 list-disc space-y-1 pl-5 text-[0.875rem] text-[#636366]">
+                          {payload.aiOutput.coach.evidence.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {payload.historicalTomorrowFocus.length > 0 ? (
+              <div className="border-t border-[#eef2ea] pt-3">
+                <p className="text-[0.8125rem] font-medium text-[#86868b]">歷史明日焦點</p>
+                <ul className="mt-2 space-y-1 text-[0.875rem] text-[#636366]">
+                  {payload.historicalTomorrowFocus.map((item) => (
+                    <li key={item.logDate}>
+                      {item.logDate}：{item.tomorrowFocus}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </CrmCard>
 
           <CrmCard className="space-y-4">

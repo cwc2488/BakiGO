@@ -9,6 +9,7 @@ import {
   serializeCoachingDailyLogDetail,
   upsertCoachingDailyLog,
 } from "@/lib/coaching/coaching-service";
+import { enqueueDailyCoachGenerationAfterSubmit } from "@/lib/coaching/ai/enqueue-daily-coach-generation";
 import { COACHING_MEAL_SLOTS, type CoachingMealSlot } from "@/types/coaching";
 
 export const runtime = "nodejs";
@@ -51,6 +52,25 @@ export async function PUT(
       markSubmitted: body.markSubmitted,
     });
 
+    // AI enqueue is best-effort — never fail the daily submit response.
+    let generationEnqueue: { action: string; reason?: string } | null = null;
+    if (body.markSubmitted) {
+      try {
+        const enqueueResult = await enqueueDailyCoachGenerationAfterSubmit({
+          enrollmentId: portal.enrollmentId,
+          ownerMemberId: portal.ownerMemberId,
+          logDate,
+        });
+        generationEnqueue = {
+          action: enqueueResult.action,
+          reason: enqueueResult.reason,
+        };
+      } catch (enqueueError) {
+        console.error("[coaching] daily coach enqueue failed", enqueueError);
+        generationEnqueue = { action: "enqueue_error" };
+      }
+    }
+
     const serialized = serializeCoachingDailyLogDetail(detail);
     const meals = await Promise.all(
       serialized.meals.map(async (meal) => {
@@ -74,6 +94,7 @@ export async function PUT(
         ...serialized,
         meals,
       },
+      generationEnqueue,
     });
   } catch (error) {
     const message = toCoachingApiErrorMessage(error, "Failed to save daily report.");

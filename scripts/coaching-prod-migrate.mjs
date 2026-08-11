@@ -151,6 +151,42 @@ async function verify028(supabase) {
   };
 }
 
+async function verify029(supabase) {
+  const tables = [
+    "coaching_coach_directives",
+    "coaching_ai_outputs",
+    "coaching_generation_jobs",
+    "ai_llm_call_log",
+  ];
+  const tableChecks = {};
+  for (const table of tables) {
+    tableChecks[table] = await tableExists(supabase, table);
+  }
+  return {
+    tables: tableChecks,
+    allTablesExist: tables.every((table) => tableChecks[table]?.exists),
+  };
+}
+
+async function verify030(supabase) {
+  const { error: reclaimError } = await supabase.rpc("reclaim_stale_coaching_generation_jobs", {
+    p_stale_after_minutes: 15,
+  });
+  const reclaimExists = reclaimError?.code !== "PGRST202";
+
+  const { error: claimError } = await supabase.rpc("claim_coaching_generation_jobs", {
+    p_limit: 0,
+    p_locked_by: "migrate-verify",
+  });
+  const claimExists = claimError?.code !== "PGRST202";
+
+  return {
+    reclaim: { exists: reclaimExists, message: reclaimError?.message ?? null },
+    claim: { exists: claimExists, message: claimError?.message ?? null },
+    ok: reclaimExists && claimExists,
+  };
+}
+
 async function applyMigration({ migration, sqlPath, token, projectRef }) {
   const sql = readFileSync(sqlPath, "utf8");
   const attempt = await runSqlViaManagementApi(sql, token, projectRef);
@@ -195,6 +231,8 @@ async function main() {
 
   out.migrations["027"] = await verify027(supabase);
   out.migrations["028"] = await verify028(supabase);
+  out.migrations["029"] = await verify029(supabase);
+  out.migrations["030"] = await verify030(supabase);
 
   if (mode === "apply") {
     if (!serviceKey && !accessToken) {
@@ -237,12 +275,42 @@ async function main() {
       }
       out.migrations["028"] = await verify028(supabase);
     }
+
+    if (out.migrations["027"].allTablesExist && out.migrations["028"].ok && !out.migrations["029"].allTablesExist) {
+      for (const [label, token] of tokens) {
+        const attempt = await applyMigration({
+          migration: "029_coaching_ai_phase2a.sql",
+          sqlPath: "supabase/migrations/029_coaching_ai_phase2a.sql",
+          token,
+          projectRef: out.projectRef,
+        });
+        out.applyAttempts.push({ label, ...attempt });
+        if (attempt.ok) break;
+      }
+      out.migrations["029"] = await verify029(supabase);
+    }
+
+    if (out.migrations["029"].allTablesExist && !out.migrations["030"].ok) {
+      for (const [label, token] of tokens) {
+        const attempt = await applyMigration({
+          migration: "030_coaching_generation_job_claim.sql",
+          sqlPath: "supabase/migrations/030_coaching_generation_job_claim.sql",
+          token,
+          projectRef: out.projectRef,
+        });
+        out.applyAttempts.push({ label, ...attempt });
+        if (attempt.ok) break;
+      }
+      out.migrations["030"] = await verify030(supabase);
+    }
   }
 
   out.ok =
     out.migrations["027"].allTablesExist &&
     out.migrations["027"].rpc?.exists &&
     out.migrations["028"].ok &&
+    out.migrations["029"].allTablesExist &&
+    out.migrations["030"].ok &&
     (serviceKey
       ? !!out.migrations["027"].storage?.bucket && out.migrations["027"].storage.bucket.public === false
       : true);

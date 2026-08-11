@@ -155,9 +155,9 @@ Member (coach)
 
 **Migration `028_coaching_sleep_times.sql`:** adds `sleep_bedtime`, `sleep_wake_time` to `coaching_daily_logs`.
 
-### AI Coaching Phase 2b-1 (`029_coaching_ai_phase2a.sql`)
+### AI Coaching Phase 2b-1 / 2c (`029_coaching_ai_phase2a.sql` + `030_coaching_generation_job_claim.sql`)
 
-**Status:** Schema + pure helpers only. Not applied to production yet. No OpenAI integration.
+**Status:** Phase 2c production Daily Coach integration. Apply `029` then `030` via `node scripts/coaching-prod-migrate.mjs apply`.
 
 | Table | Purpose |
 |-------|---------|
@@ -166,11 +166,13 @@ Member (coach)
 | `coaching_generation_jobs` | Lightweight async queue; service role worker only |
 | `ai_llm_call_log` | Cross-feature append-only LLM usage + cost telemetry |
 
+**Worker RPCs (`030`):** `claim_coaching_generation_jobs`, `reclaim_stale_coaching_generation_jobs`.
+
 **`coaching_ai_outputs` key columns:** `input_fingerprint`, `input_snapshot`, `output_json`, `status` (`pending|processing|completed|failed`), `regeneration_count`, `ai_proposed_intervention_level` (audit), `final_intervention_level` (deterministic engine — authoritative), `started_at`, `completed_at`. Unique: `(enrollment_id, log_date, point_key)` where `point_key = daily_coach_generation`.
 
 **`coaching_generation_jobs` idempotency:** partial unique index on `(output_id, input_fingerprint) WHERE status IN ('queued','processing')`.
 
-**Code:** `src/lib/coaching/ai/build-input-snapshot.ts`, `coaching-generation-submit.ts`, `coaching-daily-output-schema.ts`, `coaching-prior-ai-context.ts`, `src/lib/ai/llm-telemetry.ts`
+**Code:** `enqueue-daily-coach-generation.ts`, `process-coaching-generation-job.ts`, `run-coaching-generation-worker.ts`, `POST /api/coaching/jobs/process`, portal `ai-output` poll.
 
 **RLS:** Coach SELECT on `coaching_ai_outputs` + `ai_llm_call_log` only. No authenticated policies on `coaching_generation_jobs`. Customer anon has no direct table access.
 

@@ -1,6 +1,11 @@
+/**
+ * DEPRECATED for production: controlled eval build hook.
+ * Phase 2c removed this from `npm run build`. Keep for optional local/manual use only:
+ *   RUN_COACHING_CONTROLLED_EVAL=1 node scripts/run-coaching-eval-on-vercel-build.mjs
+ * Do not re-wire into package.json build for production deploys.
+ */
 import { execSync } from "node:child_process";
 
-/** One-shot controlled eval during Vercel build when RUN_COACHING_CONTROLLED_EVAL=1. */
 if (process.env.RUN_COACHING_CONTROLLED_EVAL !== "1") {
   process.exit(0);
 }

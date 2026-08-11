@@ -780,6 +780,20 @@ export async function getCoachingDashboardRows(ownerMemberId: string, logDate: s
 
   const customerNameById = new Map((customers ?? []).map((row) => [String(row.id), String(row.display_name)]));
 
+  const { listCoachingAiOutputsForOwnerDay } = await import("@/lib/coaching/ai/coaching-ai-store");
+  let aiByEnrollment = new Map<string, Awaited<ReturnType<typeof listCoachingAiOutputsForOwnerDay>>[number]>();
+  try {
+    const aiOutputs = await listCoachingAiOutputsForOwnerDay({
+      ownerMemberId,
+      logDate,
+      enrollmentIds: enrollments.map((enrollment) => enrollment.id),
+    });
+    aiByEnrollment = new Map(aiOutputs.map((output) => [output.enrollmentId, output]));
+  } catch {
+    // AI tables may be unavailable during rollout — dashboard still works without briefs.
+    aiByEnrollment = new Map();
+  }
+
   const rows = await Promise.all(
     enrollments.map(async (enrollment) => {
       const detail = await getCoachingDailyLogDetail({
@@ -789,8 +803,7 @@ export async function getCoachingDashboardRows(ownerMemberId: string, logDate: s
       });
 
       const { buildCoachingTodayStatus } = await import("@/lib/coaching/coaching-completion");
-
-      return buildCoachingTodayStatus({
+      const status = buildCoachingTodayStatus({
         enrollmentId: enrollment.id,
         customerId: enrollment.customerId,
         customerDisplayName: customerNameById.get(enrollment.customerId) ?? "顧客",
@@ -799,6 +812,24 @@ export async function getCoachingDashboardRows(ownerMemberId: string, logDate: s
         log: detail.id ? detail : null,
         meals: detail.meals,
       });
+
+      const ai = aiByEnrollment.get(enrollment.id);
+      if (!ai) {
+        return { ...status, aiBrief: { status: "missing" as const, dailySummary: null, finalInterventionLevel: null, coachAttentionRequired: false } };
+      }
+
+      return {
+        ...status,
+        aiBrief: {
+          status: ai.status,
+          dailySummary: ai.status === "completed" && ai.outputJson ? ai.outputJson.coach.daily_summary : null,
+          finalInterventionLevel: ai.finalInterventionLevel,
+          // Deterministic coach attention only — never AI proposed level.
+          coachAttentionRequired: Boolean(
+            ai.status === "completed" && ai.outputJson?.coach.coach_attention_required,
+          ),
+        },
+      };
     }),
   );
 

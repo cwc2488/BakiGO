@@ -3,6 +3,7 @@ import { buildLlmCallLogEntry } from "@/lib/ai/llm-telemetry";
 import {
   buildCoachingAiFixtureGenerationInput,
 } from "@/lib/coaching/ai/coaching-ai-fixtures";
+import { buildScenarioDecisionContext } from "@/lib/coaching/ai/build-scenario-decision-context";
 import {
   buildOpenAiDailyCoachUserMessageContent,
   callOpenAiDailyCoachStructuredOutput,
@@ -79,7 +80,7 @@ describe("coaching daily generation schema", () => {
 describe("model config", () => {
   it("uses centralized model and prompt version", () => {
     expect(COACHING_DAILY_AI_MODEL_ID).toBe("gpt-4o-mini-2024-07-18");
-    expect(COACHING_DAILY_AI_PROMPT_VERSION).toBe("coaching_daily_v1");
+    expect(COACHING_DAILY_AI_PROMPT_VERSION).toBe("coaching_daily_v2b7");
     expect(COACHING_DAILY_AI_TIMEOUT_MS).toBeGreaterThan(0);
   });
 });
@@ -97,31 +98,37 @@ describe("provider factory", () => {
 });
 
 describe("prompt architecture", () => {
-  it("includes finalInterventionLevel and prior AI provenance guidance", () => {
-    const { generationInput, finalInterventionLevel } = buildCoachingAiFixtureGenerationInput("C_watch_pattern");
+  it("includes decisionContext contract and finalInterventionLevel guidance", () => {
+    const packed = buildScenarioDecisionContext("C_watch_pattern");
     const systemPrompt = buildCoachingDailyCoachSystemPrompt();
     const userPrompt = buildCoachingDailyCoachUserPrompt({
-      generationInput,
-      finalInterventionLevel,
+      generationInput: packed.generationInput,
+      finalInterventionLevel: packed.finalInterventionLevel,
       preparedMealImages: [],
+      decisionContext: packed.decisionContext,
     });
 
     expect(systemPrompt).toContain("持續 > 完美");
-    expect(systemPrompt).toContain("priorAiContext");
+    expect(systemPrompt).toContain("鼓勵的是人，不是錯誤行為");
+    expect(systemPrompt).toContain("Plan authority");
+    expect(systemPrompt).toContain("DecisionContext contract");
     expect(systemPrompt).toContain("finalInterventionLevel");
     expect(userPrompt).toContain("finalInterventionLevel = watch");
+    expect(userPrompt).toContain("decisionContext");
     expect(userPrompt).toContain("priorAiInference");
+    expect(userPrompt).toContain("鼓勵的是人，不是錯誤行為");
   });
 });
 
 describe("OpenAiCoachingAiProvider", () => {
   it("maps mealSlot labels into multimodal request content", async () => {
-    const { generationInput, finalInterventionLevel } = buildCoachingAiFixtureGenerationInput("A_normal");
+    const packed = buildScenarioDecisionContext("A_normal");
     const images = [preparedImage("breakfast"), preparedImage("lunch")];
     const content = buildOpenAiDailyCoachUserMessageContent({
-      generationInput,
-      finalInterventionLevel,
+      generationInput: packed.generationInput,
+      finalInterventionLevel: packed.finalInterventionLevel,
       preparedMealImages: images,
+      decisionContext: packed.decisionContext,
     });
 
     expect(content.some((part) => part.type === "text" && part.text.includes("breakfast"))).toBe(true);
@@ -143,11 +150,12 @@ describe("OpenAiCoachingAiProvider", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { generationInput, finalInterventionLevel } = buildCoachingAiFixtureGenerationInput("A_normal");
+    const packed = buildScenarioDecisionContext("A_normal");
     const provider = new OpenAiCoachingAiProvider("test-key");
     const result = await provider.generateDailyCoach({
-      generationInput,
-      finalInterventionLevel,
+      generationInput: packed.generationInput,
+      finalInterventionLevel: packed.finalInterventionLevel,
+      decisionContext: packed.decisionContext,
       preparedMealImages: [preparedImage("breakfast")],
     });
 
@@ -168,10 +176,15 @@ describe("OpenAiCoachingAiProvider", () => {
       }),
     );
 
-    const { generationInput, finalInterventionLevel } = buildCoachingAiFixtureGenerationInput("A_normal");
+    const packed = buildScenarioDecisionContext("A_normal");
     const provider = new OpenAiCoachingAiProvider("test-key");
     await expect(
-      provider.generateDailyCoach({ generationInput, finalInterventionLevel, preparedMealImages: [] }),
+      provider.generateDailyCoach({
+        generationInput: packed.generationInput,
+        finalInterventionLevel: packed.finalInterventionLevel,
+        decisionContext: packed.decisionContext,
+        preparedMealImages: [],
+      }),
     ).rejects.toThrow("invalid JSON");
 
     vi.unstubAllGlobals();
@@ -216,12 +229,13 @@ describe("telemetry", () => {
   });
 
   it("records telemetry from fixture provider without persisting image bytes", async () => {
-    const { generationInput, finalInterventionLevel } = buildCoachingAiFixtureGenerationInput("B_breakfast_deviation");
+    const packed = buildScenarioDecisionContext("B_breakfast_deviation");
     const { result, telemetryEntry } = await generateDailyCoachWithTelemetry({
       provider: new FixtureCoachingAiProvider(),
       request: {
-        generationInput,
-        finalInterventionLevel,
+        generationInput: packed.generationInput,
+        finalInterventionLevel: packed.finalInterventionLevel,
+        decisionContext: packed.decisionContext,
         preparedMealImages: [preparedImage("breakfast")],
       },
       imageUsageMetadata: {
@@ -246,10 +260,11 @@ describe("fixture scenarios A/B/C", () => {
     const provider = new FixtureCoachingAiProvider();
 
     for (const scenario of ["A_normal", "B_breakfast_deviation", "C_watch_pattern"] as const) {
-      const fixture = buildCoachingAiFixtureGenerationInput(scenario);
+      const packed = buildScenarioDecisionContext(scenario);
       const result = await provider.generateDailyCoach({
-        generationInput: fixture.generationInput,
-        finalInterventionLevel: fixture.finalInterventionLevel,
+        generationInput: packed.generationInput,
+        finalInterventionLevel: packed.finalInterventionLevel,
+        decisionContext: packed.decisionContext,
         preparedMealImages: [],
       });
 
@@ -258,7 +273,8 @@ describe("fixture scenarios A/B/C", () => {
         expect(result.output.customer.today_feedback).toContain("蛋餅");
       }
       if (scenario === "C_watch_pattern") {
-        expect(result.output.coach.recurring_issue).toContain("早餐");
+        expect(result.output.coach.recurring_issue).toBe("late_sleep_pattern");
+        expect(result.output.coach.coach_attention_required).toBe(false);
       }
     }
   });
@@ -305,11 +321,12 @@ describe("callOpenAiDailyCoachStructuredOutput", () => {
       }),
     );
 
-    const { generationInput, finalInterventionLevel } = buildCoachingAiFixtureGenerationInput("A_normal");
+    const packed = buildScenarioDecisionContext("A_normal");
     const upstream = await callOpenAiDailyCoachStructuredOutput({
       apiKey: "test-key",
-      generationInput,
-      finalInterventionLevel,
+      generationInput: packed.generationInput,
+      finalInterventionLevel: packed.finalInterventionLevel,
+      decisionContext: packed.decisionContext,
       preparedMealImages: [preparedImage("breakfast"), preparedImage("dinner")],
     });
 

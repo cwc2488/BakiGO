@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { buildCoachingAiFixtureGenerationInput } from "../src/lib/coaching/ai/coaching-ai-fixtures";
+import { buildScenarioDecisionContext } from "../src/lib/coaching/ai/build-scenario-decision-context";
 import { OpenAiCoachingAiProvider } from "../src/lib/coaching/ai/coaching-ai-provider";
 import { buildLlmCallLogEntry } from "../src/lib/ai/llm-telemetry";
 import { COACHING_DAILY_AI_PROMPT_VERSION } from "../src/lib/coaching/ai/model-config";
@@ -29,13 +29,14 @@ async function main() {
     return;
   }
 
-  const fixture = buildCoachingAiFixtureGenerationInput("B_breakfast_deviation");
+  const packed = buildScenarioDecisionContext("B_breakfast_deviation");
   const provider = new OpenAiCoachingAiProvider(process.env.OPENAI_API_KEY.trim());
 
   const startedAt = Date.now();
   const result = await provider.generateDailyCoach({
-    generationInput: fixture.generationInput,
-    finalInterventionLevel: fixture.finalInterventionLevel,
+    generationInput: packed.generationInput,
+    finalInterventionLevel: packed.finalInterventionLevel,
+    decisionContext: packed.decisionContext,
     preparedMealImages: [],
   });
   const elapsedMs = Date.now() - startedAt;
@@ -43,8 +44,8 @@ async function main() {
   const telemetry = buildLlmCallLogEntry({
     feature: "coaching",
     pointKey: "daily_coach_generation",
-    customerId: fixture.generationInput.customerId,
-    enrollmentId: fixture.generationInput.enrollmentId,
+    customerId: packed.generationInput.customerId,
+    enrollmentId: packed.generationInput.enrollmentId,
     ownerMemberId: null,
     model: result.model,
     promptVersion: COACHING_DAILY_AI_PROMPT_VERSION,

@@ -50,7 +50,30 @@ async function main() {
   if (process.env.RUN_COACHING_CONTROLLED_EVAL === "1") {
     console.log("COACHING_EVAL_REPORT_START");
     for (const scenario of report.scenarios) {
-      console.log(`COACHING_EVAL_SCENARIO:${scenario.scenario}:${JSON.stringify(scenario)}`);
+      const compact = {
+        scenario: scenario.scenario,
+        model: scenario.model,
+        latencyMs: scenario.latencyMs,
+        inputTokens: scenario.inputTokens,
+        cachedInputTokens: scenario.cachedInputTokens,
+        outputTokens: scenario.outputTokens,
+        imageCount: scenario.imageCount,
+        estimatedCostUsd: scenario.estimatedCostUsd,
+        decision: {
+          finalInterventionLevel: scenario.decisionContext.finalInterventionLevel,
+          priorities: scenario.decisionContext.priorities.map((item) => ({
+            rank: item.rank,
+            reason: item.reason,
+            signalKey: item.signalKey,
+            tomorrowFocusSubject: item.tomorrowFocusSubject,
+          })),
+          recurringIssue: scenario.decisionContext.recurringIssue?.key ?? null,
+          improvedIssue: scenario.decisionContext.improvedIssue?.key ?? null,
+          coachAttentionRequired: scenario.decisionContext.coachAttention.required,
+        },
+        output: scenario.output,
+      };
+      console.log(`COACHING_EVAL_SCENARIO:${scenario.scenario}:${JSON.stringify(compact)}`);
     }
     console.log(
       `COACHING_EVAL_SUMMARY:${JSON.stringify({

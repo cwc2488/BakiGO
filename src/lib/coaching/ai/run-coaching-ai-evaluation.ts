@@ -1,9 +1,7 @@
 import { buildLlmCallLogEntry } from "@/lib/ai/llm-telemetry";
-import {
-  buildCoachingAiFixtureGenerationInput,
-  type CoachingAiFixtureScenario,
-} from "@/lib/coaching/ai/coaching-ai-fixtures";
+import type { CoachingAiFixtureScenario } from "@/lib/coaching/ai/coaching-ai-fixtures";
 import { OpenAiCoachingAiProvider } from "@/lib/coaching/ai/coaching-ai-provider";
+import { buildScenarioDecisionContext } from "@/lib/coaching/ai/build-scenario-decision-context";
 import {
   buildCoachingEvalImageTelemetry,
   loadPreparedCoachingEvalMealImages,
@@ -15,6 +13,7 @@ import {
 } from "@/lib/coaching/ai/coaching-ai-quality-check";
 import { COACHING_DAILY_AI_MODEL_ID } from "@/lib/coaching/ai/model-config";
 import type { CoachingDailyGenerationOutputJson, CoachingMealImageUsageMetadata } from "@/types/coaching-ai";
+import type { CoachingDecisionContext } from "@/types/coaching-signals";
 
 export type CoachingAiEvaluationScenarioResult = {
   scenario: CoachingAiFixtureScenario;
@@ -27,6 +26,7 @@ export type CoachingAiEvaluationScenarioResult = {
   imageResizeMetadata: CoachingMealImageUsageMetadata;
   pricingFound: boolean;
   estimatedCostUsd: number | null;
+  decisionContext: CoachingDecisionContext;
   output: CoachingDailyGenerationOutputJson;
   quality: CoachingAiQualityReport;
 };
@@ -59,21 +59,22 @@ export async function runCoachingAiControlledEvaluation(input?: {
   const results: CoachingAiEvaluationScenarioResult[] = [];
 
   for (const scenario of scenarios) {
-    const fixture = buildCoachingAiFixtureGenerationInput(scenario);
+    const packed = buildScenarioDecisionContext(scenario);
     const preparedMealImages = await loadPreparedCoachingEvalMealImages(scenario);
     const imageResizeMetadata = buildCoachingEvalImageTelemetry(preparedMealImages);
 
     const result = await provider.generateDailyCoach({
-      generationInput: fixture.generationInput,
-      finalInterventionLevel: fixture.finalInterventionLevel,
+      generationInput: packed.generationInput,
+      finalInterventionLevel: packed.finalInterventionLevel,
+      decisionContext: packed.decisionContext,
       preparedMealImages,
     });
 
     const telemetryEntry = buildLlmCallLogEntry({
       feature: "coaching",
       pointKey: "daily_coach_generation",
-      customerId: fixture.generationInput.customerId,
-      enrollmentId: fixture.generationInput.enrollmentId,
+      customerId: packed.generationInput.customerId,
+      enrollmentId: packed.generationInput.enrollmentId,
       ownerMemberId: null,
       model: result.model,
       promptVersion: result.promptVersion,
@@ -98,11 +99,13 @@ export async function runCoachingAiControlledEvaluation(input?: {
       imageResizeMetadata,
       pricingFound: telemetryEntry.pricingFound,
       estimatedCostUsd: telemetryEntry.estimatedCostUsd,
+      decisionContext: packed.decisionContext,
       output: result.output,
       quality: evaluateCoachingAiOutputQuality({
         output: result.output,
-        finalInterventionLevel: fixture.finalInterventionLevel,
-        priorTomorrowFocus: fixture.generationInput.priorAiContext?.tomorrowFocus?.value ?? null,
+        finalInterventionLevel: packed.finalInterventionLevel,
+        priorTomorrowFocus: packed.generationInput.priorAiContext?.tomorrowFocus?.value ?? null,
+        generationInput: packed.generationInput,
       }),
     });
   }

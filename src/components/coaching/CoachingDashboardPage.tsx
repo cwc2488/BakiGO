@@ -9,6 +9,17 @@ import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetc
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 import type { CoachingTodayStatus } from "@/types/coaching";
 
+function formatInterventionLevel(level: CoachingTodayStatus["aiBrief"] extends infer T
+  ? T extends { finalInterventionLevel: infer L }
+    ? L
+    : never
+  : never): string {
+  if (level === "watch") return "觀察";
+  if (level === "coach_attention") return "需關心";
+  if (level === "normal") return "正常";
+  return "—";
+}
+
 export default function CoachingDashboardPage() {
   const [rows, setRows] = useState<CoachingTodayStatus[]>([]);
   const [logDate, setLogDate] = useState(coachingTodayLogDate());
@@ -93,6 +104,20 @@ export default function CoachingDashboardPage() {
                     </p>
                   ))}
                 </div>
+                {row.aiBrief && row.aiBrief.status === "completed" && row.aiBrief.dailySummary ? (
+                  <div className="mt-3 border-t border-[#eef2ea] pt-3 text-[0.8125rem] leading-relaxed text-[#636366]">
+                    <p className="line-clamp-2">{row.aiBrief.dailySummary}</p>
+                    <p className="mt-1 text-[#86868b]">
+                      介入：{formatInterventionLevel(row.aiBrief.finalInterventionLevel)}
+                      {row.aiBrief.coachAttentionRequired ? " · 需關心" : ""}
+                    </p>
+                  </div>
+                ) : null}
+                {row.aiBrief &&
+                (row.aiBrief.status === "pending" || row.aiBrief.status === "processing") &&
+                row.isSubmitted ? (
+                  <p className="mt-3 text-[0.8125rem] text-[#86868b]">AI 摘要生成中…</p>
+                ) : null}
               </Link>
             );
           })}

@@ -86,6 +86,27 @@ export async function GET(
     const dailyLogWithSignedUrls = await attachSignedMealPhotoUrls(dailyLog);
     const recentLogsWithSignedUrls = await Promise.all(recentLogs.map(attachSignedMealPhotoUrls));
 
+    const { getCoachingAiOutputForDay, listCoachingAiOutputsForEnrollment } = await import(
+      "@/lib/coaching/ai/coaching-ai-store"
+    );
+
+    let aiOutput = null;
+    let historicalTomorrowFocus: Array<{ logDate: string; tomorrowFocus: string }> = [];
+    try {
+      aiOutput = await getCoachingAiOutputForDay({ enrollmentId, logDate });
+      const priorOutputs = await listCoachingAiOutputsForEnrollment({ enrollmentId, limit: 7 });
+      historicalTomorrowFocus = priorOutputs
+        .filter((output) => output.status === "completed" && output.outputJson && output.logDate < logDate)
+        .slice(0, 5)
+        .map((output) => ({
+          logDate: output.logDate,
+          tomorrowFocus: output.outputJson!.customer.tomorrow_focus,
+        }));
+    } catch {
+      aiOutput = null;
+      historicalTomorrowFocus = [];
+    }
+
     return NextResponse.json({
       ok: true,
       enrollment: serializeCoachingEnrollment(enrollment),
@@ -94,6 +115,16 @@ export async function GET(
       recentLogs: recentLogsWithSignedUrls,
       bodyRecords: (bodyRecords ?? []).map(mapBodyRecordRow),
       progressPhotos: (progressPhotos ?? []).map(mapProgressPhotoRow),
+      aiOutput: aiOutput
+        ? {
+            status: aiOutput.status,
+            finalInterventionLevel: aiOutput.finalInterventionLevel,
+            customer: aiOutput.outputJson?.customer ?? null,
+            coach: aiOutput.outputJson?.coach ?? null,
+            errorMessage: aiOutput.errorMessage,
+          }
+        : null,
+      historicalTomorrowFocus,
     });
   } catch (error) {
     const message = toCoachingApiErrorMessage(error, "Failed to load coaching detail.");

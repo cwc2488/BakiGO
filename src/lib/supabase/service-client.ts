@@ -101,3 +101,21 @@ export function isRadarCronAuthorized(request: Request): boolean {
   if (!header?.startsWith("Bearer ")) return false;
   return header.slice("Bearer ".length) === secret;
 }
+
+export function readCoachingCronSecret(): string {
+  // Prefer dedicated coaching secret; accept Vercel Cron's CRON_SECRET and radar fallback.
+  return (
+    process.env.COACHING_CRON_SECRET ??
+    process.env.CRON_SECRET ??
+    process.env.RADAR_CRON_SECRET ??
+    ""
+  );
+}
+
+export function isCoachingCronAuthorized(request: Request): boolean {
+  const secret = readCoachingCronSecret();
+  if (!secret) return false;
+  const header = request.headers.get("authorization");
+  if (!header?.startsWith("Bearer ")) return false;
+  return header.slice("Bearer ".length) === secret;
+}

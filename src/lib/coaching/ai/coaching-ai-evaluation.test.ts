@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getCoachingEvalFixtureImageSpecs, loadPreparedCoachingEvalMealImages } from "@/lib/coaching/ai/coaching-eval-fixture-images";
 import { evaluateCoachingAiOutputQuality, projectCoachingAiMonthlyCostUsd } from "@/lib/coaching/ai/coaching-ai-quality-check";
 import { isCoachingAiEvalAuthorized, readCoachingAiEvalSecret } from "@/lib/coaching/ai/coaching-ai-eval-auth";
+import { buildCoachingAiFixtureGenerationInput } from "@/lib/coaching/ai/coaching-ai-fixtures";
 import { getFixtureScenarioOutput } from "@/lib/coaching/ai/fixture-coaching-ai-provider";
 import { COACHING_DAILY_AI_MODEL_ID } from "@/lib/coaching/ai/model-config";
 import { getModelPricing } from "@/lib/ai/model-pricing";
@@ -26,13 +27,16 @@ describe("coaching eval fixture images", () => {
 
 describe("coaching ai quality check", () => {
   it("passes fixture A output heuristics", () => {
+    const { generationInput } = buildCoachingAiFixtureGenerationInput("A_normal");
     const output = getFixtureScenarioOutput("A_normal");
     const report = evaluateCoachingAiOutputQuality({
       output,
       finalInterventionLevel: "normal",
+      generationInput,
     });
     expect(report.overall).not.toBe("fail");
     expect(output.customer.adjustment_priorities.length).toBeLessThanOrEqual(2);
+    expect(output.customer.adjustment_priorities).toEqual([]);
   });
 
   it("flags too many adjustment priorities", () => {

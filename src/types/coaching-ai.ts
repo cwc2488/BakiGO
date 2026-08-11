@@ -31,7 +31,7 @@ export const COACHING_GENERATION_INPUT_VERSION = 1 as const;
 
 export const COACHING_DAILY_GENERATION_OUTPUT_VERSION = 1 as const;
 
-export const COACHING_AI_PROMPT_VERSION = "coaching_daily_v1" as const;
+export const COACHING_AI_PROMPT_VERSION = "coaching_daily_v2b7" as const;
 
 export const COACHING_ROLLING_WINDOW_DAYS = 14 as const;
 
@@ -41,6 +41,21 @@ export const COACHING_AI_MAX_REGENERATIONS_PER_DAY = 2 as const;
 
 /** Jobs stuck in processing longer than this may be reclaimed by a worker. */
 export const COACHING_GENERATION_JOB_STALE_MS = 15 * 60 * 1000;
+
+/** Max claim+process attempts before permanent failure (includes first try). */
+export const COACHING_GENERATION_MAX_ATTEMPTS = 3 as const;
+
+/** Retry delays after failed attempts: 5s then 20s. */
+export const COACHING_GENERATION_RETRY_DELAYS_MS = [5_000, 20_000] as const;
+
+/** Default jobs claimed per worker invoke (supports ~1000 customers with frequent cron). */
+export const COACHING_GENERATION_CLAIM_LIMIT = 10 as const;
+
+/** In-process concurrency within one worker batch. */
+export const COACHING_GENERATION_WORKER_CONCURRENCY = 3 as const;
+
+/** Customer complete-page polling gives up after this duration. */
+export const COACHING_AI_CUSTOMER_POLL_TIMEOUT_MS = 90_000 as const;
 
 export type CoachingAiLlmFeature = "coaching" | "consultation" | "radar" | "quiz";
 

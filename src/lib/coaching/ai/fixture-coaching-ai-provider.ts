@@ -5,12 +5,24 @@ import {
 } from "@/types/coaching-ai";
 import {
   buildCoachingAiFixtureGenerationInput,
-  detectCoachingAiFixtureScenario,
   type CoachingAiFixtureScenario,
 } from "@/lib/coaching/ai/coaching-ai-fixtures";
 import type { CoachingAiProvider, GenerateDailyCoachInput, GenerateDailyCoachResult } from "@/lib/coaching/ai/coaching-ai-provider";
+import { applyCoachingDecisionContextToOutput } from "@/lib/coaching/ai/apply-coaching-decision-context";
+import { buildScenarioDecisionContext } from "@/lib/coaching/ai/build-scenario-decision-context";
 import { COACHING_DAILY_AI_PROMPT_VERSION } from "@/lib/coaching/ai/model-config";
 import { parseCoachingDailyGenerationOutput } from "@/lib/coaching/ai/coaching-daily-output-schema";
+import type { CoachingDecisionContext } from "@/types/coaching-signals";
+
+function pickScenarioFromDecision(decision: CoachingDecisionContext): CoachingAiFixtureScenario {
+  if (decision.priorities.some((item) => item.signalKey.includes("low_protein") || item.signalKey.includes("sugary_drink"))) {
+    return "B_breakfast_deviation";
+  }
+  if (decision.priorities.some((item) => item.signalKey === "late_sleep_pattern")) {
+    return "C_watch_pattern";
+  }
+  return "A_normal";
+}
 
 function fixtureOutputForScenario(
   scenario: CoachingAiFixtureScenario,
@@ -28,11 +40,11 @@ function fixtureOutputForScenario(
       coach: {
         daily_summary: "回報完整，短期執行穩定。",
         recurring_issue: null,
-        improved_issue: "整體參與度穩定",
+        improved_issue: null,
         proposed_intervention_level: "normal",
         coach_attention_required: false,
         attention_reason: null,
-        evidence: ["3 餐皆有回報", "water 1800ml", "sleep 7h30m"],
+        evidence: [],
       },
     };
   }
@@ -41,19 +53,19 @@ function fixtureOutputForScenario(
     return {
       version: COACHING_DAILY_GENERATION_OUTPUT_VERSION,
       customer: {
-        encouragement: "你有回報就已经很棒，我們一起把下一餐調回計畫節奏。",
-        today_feedback: "早餐選了蛋餅奶茶，和計畫的奶昔不同；午餐、晚餐相對正常。",
-        adjustment_priorities: ["早餐改回奶昔或增加蛋白質選項"],
-        tomorrow_focus: "早餐先準備好奶昔",
+        encouragement: "你有完整回報，這已經很棒；我們一起把明天早餐調回更好執行的版本。",
+        today_feedback: "早餐選了蛋餅奶茶，和計畫的奶昔不同；午餐、晚餐相對正常。先處理影響最大的兩點即可。",
+        adjustment_priorities: ["早餐蛋白質", "含糖飲料替代"],
+        tomorrow_focus: "早餐蛋白質",
       },
       coach: {
-        daily_summary: "單餐偏離，整體仍可拉回。",
+        daily_summary: "單餐偏離，整體仍可拉回；不因單次外食/偏離升級關注。",
         recurring_issue: null,
         improved_issue: null,
         proposed_intervention_level: "normal",
         coach_attention_required: false,
         attention_reason: null,
-        evidence: ["breakfast text: 蛋餅 + 奶茶", "lunch/dinner 正常回報"],
+        evidence: [],
       },
     };
   }
@@ -61,27 +73,28 @@ function fixtureOutputForScenario(
   return {
     version: COACHING_DAILY_GENERATION_OUTPUT_VERSION,
     customer: {
-      encouragement: "我看到你仍在堅持回報，這很重要；我們把要求提高一點，但一起用更簡單的方式做到。",
-      today_feedback: "最近幾天晚睡和早餐不穩的模式仍在，今天睡眠也偏晚。",
-      adjustment_priorities: ["先把早餐固定成可完成的最低版本", "睡眠往前 30 分鐘"],
-      tomorrow_focus: "23:30 前躺床",
+      encouragement: "我看到你仍願意持續回報，這很重要；我們把要求提高一點，但一起用更簡單的方式做到。",
+      today_feedback: "最近晚睡模式仍在，早餐也不穩。先把睡眠往前，再做可完成的早餐最低版本。",
+      adjustment_priorities: ["晚睡模式", "補上可完成的早餐"],
+      tomorrow_focus: "睡眠往前",
     },
     coach: {
-      daily_summary: "出現重複的早餐/睡眠模式，需提高關注但仍保持支持語氣。",
-      recurring_issue: "早餐不穩 + 晚睡",
+      daily_summary: "出現重複晚睡模式，需提高要求但仍保持支持語氣。",
+      recurring_issue: "late_sleep_pattern",
       improved_issue: null,
       proposed_intervention_level: finalInterventionLevel === "watch" ? "watch" : "normal",
-      coach_attention_required: finalInterventionLevel !== "normal",
-      attention_reason: finalInterventionLevel !== "normal" ? "recent late sleep + breakfast misses" : null,
-      evidence: ["rolling late sleep days", "recent breakfast misses"],
+      coach_attention_required: false,
+      attention_reason: null,
+      evidence: [],
     },
   };
 }
 
 export class FixtureCoachingAiProvider implements CoachingAiProvider {
   async generateDailyCoach(input: GenerateDailyCoachInput): Promise<GenerateDailyCoachResult> {
-    const scenario = detectCoachingAiFixtureScenario(input.generationInput);
-    const output = fixtureOutputForScenario(scenario, input.finalInterventionLevel);
+    const scenario = pickScenarioFromDecision(input.decisionContext);
+    const raw = fixtureOutputForScenario(scenario, input.finalInterventionLevel);
+    const output = applyCoachingDecisionContextToOutput(raw, input.decisionContext);
     const validation = parseCoachingDailyGenerationOutput(output);
     if (!validation.ok) {
       throw new Error(validation.error);
@@ -89,7 +102,7 @@ export class FixtureCoachingAiProvider implements CoachingAiProvider {
 
     return {
       output: validation.data,
-      model: "fixture_coaching_daily_v1",
+      model: "fixture_coaching_daily_v2b7",
       promptVersion: COACHING_DAILY_AI_PROMPT_VERSION,
       rawJson: JSON.stringify(output),
       usage: {
@@ -104,6 +117,7 @@ export class FixtureCoachingAiProvider implements CoachingAiProvider {
 }
 
 export function getFixtureScenarioOutput(scenario: CoachingAiFixtureScenario): CoachingDailyGenerationOutputJson {
-  const { finalInterventionLevel } = buildCoachingAiFixtureGenerationInput(scenario);
-  return fixtureOutputForScenario(scenario, finalInterventionLevel);
+  const packed = buildScenarioDecisionContext(scenario);
+  const raw = fixtureOutputForScenario(scenario, packed.finalInterventionLevel);
+  return applyCoachingDecisionContextToOutput(raw, packed.decisionContext);
 }
