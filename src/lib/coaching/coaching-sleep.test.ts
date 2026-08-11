@@ -3,8 +3,10 @@ import {
   calculateSleepDurationMinutes,
   computeSleepDurationLabel,
   formatSleepDurationMinutes,
+  isLateBedtime,
   normalizeClockTimeInput,
   parseClockTimeToMinutes,
+  parseSleepDurationLabelToMinutes,
 } from "@/lib/coaching/coaching-sleep";
 
 describe("coaching sleep", () => {
@@ -28,5 +30,18 @@ describe("coaching sleep", () => {
   it("normalizes input clock values", () => {
     expect(normalizeClockTimeInput("7:05")).toBe("07:05");
     expect(normalizeClockTimeInput("")).toBeNull();
+  });
+
+  it("parses sleep duration labels", () => {
+    expect(parseSleepDurationLabelToMinutes("7小時30分")).toBe(450);
+    expect(parseSleepDurationLabelToMinutes("7小時")).toBe(420);
+  });
+
+  it("flags late bedtime across midnight window", () => {
+    expect(isLateBedtime("22:30")).toBe(false);
+    expect(isLateBedtime("23:00")).toBe(true);
+    expect(isLateBedtime("00:30")).toBe(true);
+    expect(isLateBedtime("02:00")).toBe(true);
+    expect(isLateBedtime("06:30")).toBe(false);
   });
 });

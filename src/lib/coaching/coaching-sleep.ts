@@ -78,3 +78,47 @@ export function formatSleepTimeRange(bedtime: string | null, wakeTime: string | 
   }
   return `${bedtime} → ${wakeTime}`;
 }
+
+/** Parse stored label like "7小時30分" or "7小時" into minutes. */
+export function parseSleepDurationLabelToMinutes(label: string | null | undefined): number | null {
+  if (!label?.trim()) {
+    return null;
+  }
+
+  const trimmed = label.trim();
+  const match = /^(\d+)小時(?:(\d+)分)?$/.exec(trimmed);
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = match[2] ? Number(match[2]) : 0;
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
+export function resolveSleepDurationMinutes(input: {
+  sleepDurationLabel?: string | null;
+  sleepBedtime?: string | null;
+  sleepWakeTime?: string | null;
+}): number | null {
+  if (input.sleepBedtime && input.sleepWakeTime) {
+    return calculateSleepDurationMinutes(input.sleepBedtime, input.sleepWakeTime);
+  }
+  return parseSleepDurationLabelToMinutes(input.sleepDurationLabel);
+}
+
+/** Phase 2a late bedtime: 23:00–23:59 and 00:00–05:59 count as late; 06:00–22:59 do not. */
+export function isLateBedtime(time: string | null | undefined): boolean {
+  const minutes = time ? parseClockTimeToMinutes(time) : null;
+  if (minutes == null) {
+    return false;
+  }
+
+  const sixAm = 6 * 60;
+  const elevenPm = 23 * 60;
+  return minutes >= elevenPm || minutes < sixAm;
+}

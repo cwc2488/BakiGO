@@ -45,6 +45,37 @@ Consultation Engine remains `experimental_hidden` and is not used by coaching.
 - Customer member accounts
 - Refactoring progress photos off base64
 
+## Phase 2a — Memory Architecture + Cost Telemetry (in progress)
+
+**Status:** Schema, types, snapshot builder, and cost telemetry foundation. **No OpenAI calls. No AI output generation.**
+
+Phase 2a establishes stable DB-backed memory for future AI — not chat history.
+
+### Memory layers (`buildCoachingInputSnapshot()`)
+
+| Layer | Contents |
+|-------|----------|
+| **Profile Memory** | Goal, plan snapshot, customer context, baseline body measurement |
+| **Rolling Memory** | 14-day deterministic aggregates + recurring patterns + last 3 days raw summary |
+| **Outcome Memory** | Baseline vs latest body measurement, trend deltas (weight, body fat, visceral fat, etc.) |
+| **Coach Directives** | Future coach-set focus / priority / instruction (`coaching_coach_directives`) |
+| **Today Context** | Today's meals, photo storage refs, water, sleep, exercise, bowel, customer note |
+
+AI memory source is **DB only** — never model chat history.
+
+### Intervention domain rule (non-negotiable)
+
+- **要求可以提高，情緒壓力不能提高。**
+- One week flat → **observe first** (`intervention_level: observe`)
+- Two consecutive weeks no overall improvement or worsening trend → future AI may raise intervention — **without blame**
+- Strictness must combine: execution, 14-day patterns, body data, coach directives — never single meal or single weight alone
+
+### Future AI output writeback (schema only)
+
+Structured `output_json` fields reserved: `tomorrow_focus`, `recurring_issue`, `improved_issue`, `coach_attention_required`, `intervention_level`.
+
+See [COACHING_AI_PHASE2_PLAN.md](./COACHING_AI_PHASE2_PLAN.md) for full architecture.
+
 ## Future AI domain rules (Phase 2+ — not implemented)
 
 AI context must include:

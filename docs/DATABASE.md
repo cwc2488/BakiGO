@@ -149,11 +149,30 @@ Member (coach)
 | Table | Purpose |
 |-------|---------|
 | `coaching_enrollments` | Active/paused/completed coaching relationship; plan snapshot + onboarding state |
-| `coaching_daily_logs` | One row per enrollment per `log_date` (Asia/Taipei). Sleep: `sleep_bedtime`, `sleep_wake_time` (raw times for AI); `sleep_duration` computed on save. |
-
-**Migration `028_coaching_sleep_times.sql`:** adds `sleep_bedtime`, `sleep_wake_time` to `coaching_daily_logs`.
+| `coaching_daily_logs` | One row per enrollment per `log_date` (Asia/Taipei). Sleep: `sleep_bedtime`, `sleep_wake_time`; `sleep_duration` computed on save |
 | `coaching_meal_entries` | Meal slot rows linked to daily log |
 | `coaching_meal_photos` | Storage path refs for meal photos (private bucket) |
+
+**Migration `028_coaching_sleep_times.sql`:** adds `sleep_bedtime`, `sleep_wake_time` to `coaching_daily_logs`.
+
+### AI Coaching Phase 2b-1 (`029_coaching_ai_phase2a.sql`)
+
+**Status:** Schema + pure helpers only. Not applied to production yet. No OpenAI integration.
+
+| Table | Purpose |
+|-------|---------|
+| `coaching_coach_directives` | Coach-set focus / priority / instruction for AI context |
+| `coaching_ai_outputs` | One `daily_coach_generation` row per `(enrollment_id, log_date)` — customer + coach JSON in `output_json` |
+| `coaching_generation_jobs` | Lightweight async queue; service role worker only |
+| `ai_llm_call_log` | Cross-feature append-only LLM usage + cost telemetry |
+
+**`coaching_ai_outputs` key columns:** `input_fingerprint`, `input_snapshot`, `output_json`, `status` (`pending|processing|completed|failed`), `regeneration_count`, `ai_proposed_intervention_level` (audit), `final_intervention_level` (deterministic engine — authoritative), `started_at`, `completed_at`. Unique: `(enrollment_id, log_date, point_key)` where `point_key = daily_coach_generation`.
+
+**`coaching_generation_jobs` idempotency:** partial unique index on `(output_id, input_fingerprint) WHERE status IN ('queued','processing')`.
+
+**Code:** `src/lib/coaching/ai/build-input-snapshot.ts`, `coaching-generation-submit.ts`, `coaching-daily-output-schema.ts`, `coaching-prior-ai-context.ts`, `src/lib/ai/llm-telemetry.ts`
+
+**RLS:** Coach SELECT on `coaching_ai_outputs` + `ai_llm_call_log` only. No authenticated policies on `coaching_generation_jobs`. Customer anon has no direct table access.
 
 **Storage:** `coaching-meal-photos` (private). No public URL; signed URLs via service role API.
 
