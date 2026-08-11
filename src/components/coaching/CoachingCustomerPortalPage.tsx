@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CoachingDailyCompleteView } from "@/components/coaching/CoachingDailyCompleteView";
+import { CoachingMealPhotoInput } from "@/components/coaching/CoachingMealPhotoInput";
 import { CrmButton, CrmCard } from "@/components/members/ui";
+import { computeSleepDurationLabel } from "@/lib/coaching/coaching-sleep";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 import { uploadCoachingMealPhotoWithRetry } from "@/lib/coaching/coaching-meal-photo-client";
 import {
@@ -24,10 +27,13 @@ type DailyDraft = {
   waterMl: string;
   exerciseNote: string;
   bowelMovementCount: string;
-  sleepDuration: string;
+  sleepBedtime: string;
+  sleepWakeTime: string;
   customerNote: string;
   meals: Record<CoachingMealSlot, MealDraft>;
 };
+
+type PortalDailyView = "form" | "complete";
 
 function emptyMealDraft(): MealDraft {
   return {
@@ -43,7 +49,8 @@ function buildEmptyDraft(): DailyDraft {
     waterMl: "",
     exerciseNote: "",
     bowelMovementCount: "",
-    sleepDuration: "",
+    sleepBedtime: "",
+    sleepWakeTime: "",
     customerNote: "",
     meals: {
       breakfast: emptyMealDraft(),
@@ -94,6 +101,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [dailyView, setDailyView] = useState<PortalDailyView>("form");
   const logDate = coachingTodayLogDate();
 
   const load = useCallback(async () => {
@@ -122,6 +130,9 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
       if (payload.dailyLog) {
         setDailyLog(payload.dailyLog);
         setDraft((current) => mergeDailyLogIntoDraft(current, payload.dailyLog!));
+        setDailyView(payload.dailyLog.submittedAt ? "complete" : "form");
+      } else {
+        setDailyView("form");
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "無法載入陪跑");
@@ -136,6 +147,12 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
 
   const plan = context?.planSnapshot;
   const needsOnboarding = Boolean(context?.hasActiveEnrollment && !context.onboardingCompletedAt);
+  const sleepDurationPreview = useMemo(() => {
+    if (!draft.sleepBedtime.trim() || !draft.sleepWakeTime.trim()) {
+      return null;
+    }
+    return computeSleepDurationLabel(draft.sleepBedtime, draft.sleepWakeTime);
+  }, [draft.sleepBedtime, draft.sleepWakeTime]);
 
   const completeOnboarding = async () => {
     setSubmitting(true);
@@ -179,7 +196,8 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
           waterMl: draft.waterMl.trim() ? Number(draft.waterMl) : null,
           exerciseNote: draft.exerciseNote.trim() || null,
           bowelMovementCount: draft.bowelMovementCount.trim() ? Number(draft.bowelMovementCount) : null,
-          sleepDuration: draft.sleepDuration.trim() || null,
+          sleepBedtime: draft.sleepBedtime.trim() || null,
+          sleepWakeTime: draft.sleepWakeTime.trim() || null,
           customerNote: draft.customerNote.trim() || null,
           meals,
           markSubmitted,
@@ -197,7 +215,14 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
       }
 
       setDailyLog(payload.dailyLog);
-      setSavedMessage(markSubmitted ? "今日回報已送出" : "已自動儲存");
+      setDraft((current) => mergeDailyLogIntoDraft(current, payload.dailyLog!));
+
+      if (markSubmitted) {
+        setDailyView("complete");
+        return;
+      }
+
+      setSavedMessage("已自動儲存");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "儲存失敗");
     } finally {
@@ -345,6 +370,24 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
     );
   }
 
+  if (dailyView === "complete" && dailyLog) {
+    return (
+      <div className="home-container space-y-4 py-8">
+        <header className="space-y-1 px-1">
+          <p className="text-[0.875rem] text-[#86868b]">{logDate} · 今日陪跑</p>
+          <h1 className="text-[1.75rem] font-semibold text-[#1d1d1f]">{context.displayName}</h1>
+        </header>
+        {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
+        <CoachingDailyCompleteView
+          dailyLog={dailyLog}
+          logDate={logDate}
+          mealDrafts={draft.meals}
+          onEdit={() => setDailyView("form")}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="home-container space-y-4 py-8">
       <header className="space-y-1 px-1">
@@ -373,7 +416,6 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
                 },
               }))
             }
-            primary
           />
         ))}
       </CrmCard>
@@ -383,6 +425,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
         {(["fourth_meal", "snacks", "drinks"] as const).map((slot) => (
           <MealReportField
             key={slot}
+            compact
             draft={draft.meals[slot]}
             label={COACHING_MEAL_SLOT_LABELS[slot]}
             onPhotoSelect={(file) => void handlePhotoSelect(slot, file)}
@@ -402,7 +445,13 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
       <CrmCard className="space-y-4">
         <h2 className="text-[1.0625rem] font-semibold text-[#1d1d1f]">今日狀態</h2>
         <FieldInput label="水分 (ml)" onChange={(value) => setDraft((current) => ({ ...current, waterMl: value }))} value={draft.waterMl} />
-        <FieldInput label="睡眠" onChange={(value) => setDraft((current) => ({ ...current, sleepDuration: value }))} value={draft.sleepDuration} />
+        <SleepTimeFields
+          bedtime={draft.sleepBedtime}
+          durationPreview={sleepDurationPreview}
+          onBedtimeChange={(value) => setDraft((current) => ({ ...current, sleepBedtime: value }))}
+          onWakeTimeChange={(value) => setDraft((current) => ({ ...current, sleepWakeTime: value }))}
+          wakeTime={draft.sleepWakeTime}
+        />
         <FieldInput label="運動" onChange={(value) => setDraft((current) => ({ ...current, exerciseNote: value }))} value={draft.exerciseNote} />
         <FieldInput label="排便次數" inputMode="numeric" onChange={(value) => setDraft((current) => ({ ...current, bowelMovementCount: value }))} value={draft.bowelMovementCount} />
         <label className="block space-y-2">
@@ -423,10 +472,6 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
           送出今日回報
         </CrmButton>
       </div>
-
-      {dailyLog?.submittedAt ? (
-        <p className="text-center text-[0.875rem] text-[#86868b]">最後送出：{new Date(dailyLog.submittedAt).toLocaleString("zh-TW")}</p>
-      ) : null}
     </div>
   );
 }
@@ -454,6 +499,49 @@ function PlanInstructionSections({ plan }: { plan: CoachingPlanSnapshot }) {
           </ul>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SleepTimeFields({
+  bedtime,
+  wakeTime,
+  durationPreview,
+  onBedtimeChange,
+  onWakeTimeChange,
+}: {
+  bedtime: string;
+  wakeTime: string;
+  durationPreview: string | null;
+  onBedtimeChange: (value: string) => void;
+  onWakeTimeChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <p className="text-[0.875rem] font-medium text-[#636366]">睡眠</p>
+      <label className="block space-y-2">
+        <span className="text-[0.8125rem] text-[#86868b]">入睡時間</span>
+        <input
+          className="w-full rounded-[1rem] border border-[#e5e5ea] px-4 py-3 text-[1rem]"
+          onChange={(event) => onBedtimeChange(event.target.value)}
+          type="time"
+          value={bedtime}
+        />
+      </label>
+      <label className="block space-y-2">
+        <span className="text-[0.8125rem] text-[#86868b]">起床時間</span>
+        <input
+          className="w-full rounded-[1rem] border border-[#e5e5ea] px-4 py-3 text-[1rem]"
+          onChange={(event) => onWakeTimeChange(event.target.value)}
+          type="time"
+          value={wakeTime}
+        />
+      </label>
+      {durationPreview ? (
+        <p className="text-[0.875rem] text-[var(--brand-primary-dark)]">約 {durationPreview}</p>
+      ) : (
+        <p className="text-[0.8125rem] text-[#86868b]">填寫入睡與起床時間後，系統會自動計算睡眠時數。</p>
+      )}
     </div>
   );
 }
@@ -487,47 +575,22 @@ function MealReportField({
   draft,
   onTextChange,
   onPhotoSelect,
-  primary = false,
+  compact = false,
 }: {
   label: string;
   draft: MealDraft;
   onTextChange: (value: string) => void;
   onPhotoSelect: (file: File | null) => void;
-  primary?: boolean;
+  compact?: boolean;
 }) {
   return (
-    <div className="rounded-[1rem] border border-[#eef2ea] p-3 space-y-3">
+    <div className="space-y-3 rounded-[1rem] border border-[#eef2ea] p-3">
       <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">{label}</p>
-      {primary ? (
-        <label className="inline-flex cursor-pointer rounded-[0.875rem] bg-[var(--brand-bg)] px-4 py-3 text-[0.9375rem] font-medium text-[var(--brand-primary-dark)]">
-          {draft.uploading ? "上傳中…" : "拍照 / 選擇照片"}
-          <input
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0] ?? null;
-              onPhotoSelect(file);
-              event.target.value = "";
-            }}
-            type="file"
-          />
-        </label>
-      ) : (
-        <label className="inline-flex cursor-pointer rounded-[0.875rem] bg-[#f7f7f8] px-4 py-3 text-[0.875rem] font-medium text-[#636366]">
-          {draft.uploading ? "上傳中…" : "附加照片（選填）"}
-          <input
-            accept="image/*"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0] ?? null;
-              onPhotoSelect(file);
-              event.target.value = "";
-            }}
-            type="file"
-          />
-        </label>
-      )}
+      <CoachingMealPhotoInput
+        compact={compact}
+        onSelect={onPhotoSelect}
+        uploading={draft.uploading}
+      />
       {draft.previewUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img alt={`${label}預覽`} className="max-h-40 w-full rounded-[0.75rem] object-cover" src={draft.previewUrl} />
@@ -536,7 +599,7 @@ function MealReportField({
       <input
         className="w-full rounded-[1rem] border border-[#e5e5ea] px-4 py-3 text-[1rem]"
         onChange={(event) => onTextChange(event.target.value)}
-        placeholder={primary ? "補充文字（選填）" : "簡短描述（選填）"}
+        placeholder={compact ? "簡短描述（選填）" : "補充文字（選填）"}
         value={draft.textNote}
       />
     </div>
@@ -559,7 +622,8 @@ function mergeDailyLogIntoDraft(current: DailyDraft, dailyLog: CoachingDailyLogD
     waterMl: dailyLog.waterMl != null ? String(dailyLog.waterMl) : "",
     exerciseNote: dailyLog.exerciseNote ?? "",
     bowelMovementCount: dailyLog.bowelMovementCount != null ? String(dailyLog.bowelMovementCount) : "",
-    sleepDuration: dailyLog.sleepDuration ?? "",
+    sleepBedtime: dailyLog.sleepBedtime ?? "",
+    sleepWakeTime: dailyLog.sleepWakeTime ?? "",
     customerNote: dailyLog.customerNote ?? "",
     meals,
   };

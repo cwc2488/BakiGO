@@ -30,6 +30,8 @@ export async function PUT(
       exerciseNote?: string | null;
       bowelMovementCount?: number | null;
       sleepDuration?: string | null;
+      sleepBedtime?: string | null;
+      sleepWakeTime?: string | null;
       customerNote?: string | null;
       meals?: Partial<Record<CoachingMealSlot, { textNote?: string | null; eatenAt?: string | null }>>;
       markSubmitted?: boolean;
@@ -42,7 +44,8 @@ export async function PUT(
       waterMl: body.waterMl,
       exerciseNote: body.exerciseNote,
       bowelMovementCount: body.bowelMovementCount,
-      sleepDuration: body.sleepDuration,
+      sleepBedtime: body.sleepBedtime,
+      sleepWakeTime: body.sleepWakeTime,
       customerNote: body.customerNote,
       meals: body.meals,
       markSubmitted: body.markSubmitted,

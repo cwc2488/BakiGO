@@ -19,6 +19,10 @@ export function countPrimaryMealsDone(meals: CoachingMealEntryWithPhoto[]): numb
   }).length;
 }
 
+function isSleepReported(log: CoachingDailyLog | null): boolean {
+  return Boolean(log?.sleepBedtime?.trim() && log?.sleepWakeTime?.trim()) || Boolean(log?.sleepDuration?.trim());
+}
+
 export function buildCoachingTodayStatus(input: {
   enrollmentId: string;
   customerId: string;
@@ -29,6 +33,14 @@ export function buildCoachingTodayStatus(input: {
   meals: CoachingMealEntryWithPhoto[];
 }): CoachingTodayStatus {
   const primaryMealsDone = countPrimaryMealsDone(input.meals);
+  const log = input.log;
+  const waterMl = log?.waterMl ?? null;
+  const exerciseNote = log?.exerciseNote?.trim() || null;
+  const bowelMovementCount = log?.bowelMovementCount ?? null;
+  const sleepBedtime = log?.sleepBedtime ?? null;
+  const sleepWakeTime = log?.sleepWakeTime ?? null;
+  const sleepDuration = log?.sleepDuration ?? null;
+  const isSubmitted = Boolean(log?.submittedAt);
 
   return {
     enrollmentId: input.enrollmentId,
@@ -36,12 +48,25 @@ export function buildCoachingTodayStatus(input: {
     customerDisplayName: input.customerDisplayName,
     goal: input.goal,
     logDate: input.logDate,
-    hasReport: Boolean(input.log?.submittedAt) || primaryMealsDone > 0 || Boolean(input.log?.waterMl) || Boolean(input.log?.sleepDuration) || Boolean(input.log?.exerciseNote),
+    hasReport:
+      isSubmitted ||
+      primaryMealsDone > 0 ||
+      waterMl != null ||
+      isSleepReported(log) ||
+      Boolean(exerciseNote) ||
+      bowelMovementCount != null,
+    isSubmitted,
     primaryMealsDone,
     primaryMealsTotal: PRIMARY_MEAL_SLOTS.length,
-    waterDone: input.log?.waterMl != null,
-    sleepDone: Boolean(input.log?.sleepDuration?.trim()),
-    exerciseDone: Boolean(input.log?.exerciseNote?.trim()),
+    waterMl,
+    waterDone: waterMl != null,
+    sleepDuration,
+    sleepBedtime,
+    sleepWakeTime,
+    sleepDone: isSleepReported(log),
+    exerciseNote,
+    exerciseDone: Boolean(exerciseNote),
+    bowelMovementCount,
   };
 }
 
@@ -55,4 +80,26 @@ export function formatCoachingTodayStatusLine(status: CoachingTodayStatus): stri
   parts.push(`睡眠 ${status.sleepDone ? "✓" : "—"}`);
   parts.push(`運動 ${status.exerciseDone ? "✓" : "—"}`);
   return parts.join(" · ");
+}
+
+export function formatCoachingCoachDailySummary(status: CoachingTodayStatus): string[] {
+  if (!status.hasReport && !status.isSubmitted) {
+    return ["尚未回報"];
+  }
+
+  const lines = [`主要三餐 ${status.primaryMealsDone}/${status.primaryMealsTotal}`];
+  lines.push(`水分 ${status.waterMl != null ? `${status.waterMl} ml` : "—"}`);
+
+  if (status.sleepDuration) {
+    lines.push(`睡眠 ${status.sleepDuration}`);
+  } else if (status.sleepBedtime && status.sleepWakeTime) {
+    lines.push(`睡眠 ${status.sleepBedtime} → ${status.sleepWakeTime}`);
+  } else {
+    lines.push("睡眠 —");
+  }
+
+  lines.push(`運動 ${status.exerciseDone ? "已填" : "—"}`);
+  lines.push(`排便 ${status.bowelMovementCount != null ? `${status.bowelMovementCount} 次` : "—"}`);
+  lines.push(status.isSubmitted ? "已送出" : "尚未送出");
+  return lines;
 }

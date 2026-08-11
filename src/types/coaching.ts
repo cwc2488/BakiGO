@@ -60,7 +60,12 @@ export type CoachingDailyLog = {
   waterMl: number | null;
   exerciseNote: string | null;
   bowelMovementCount: number | null;
+  /** Computed display label, e.g. 7小時30分 */
   sleepDuration: string | null;
+  /** HH:MM — preserved for future AI */
+  sleepBedtime: string | null;
+  /** HH:MM — preserved for future AI */
+  sleepWakeTime: string | null;
   customerNote: string | null;
   submittedAt: string | null;
   createdAt: string;
@@ -101,11 +106,18 @@ export type CoachingTodayStatus = {
   goal: string | null;
   logDate: ISODateString;
   hasReport: boolean;
+  isSubmitted: boolean;
   primaryMealsDone: number;
   primaryMealsTotal: number;
+  waterMl: number | null;
   waterDone: boolean;
+  sleepDuration: string | null;
+  sleepBedtime: string | null;
+  sleepWakeTime: string | null;
   sleepDone: boolean;
+  exerciseNote: string | null;
   exerciseDone: boolean;
+  bowelMovementCount: number | null;
 };
 
 export type CoachingPortalContext = {

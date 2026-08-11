@@ -7,8 +7,9 @@ import { CustomerPhotoCompareSection } from "@/components/customers/CustomerPhot
 import { CrmButton, CrmCard, CrmField, CrmSectionTitle } from "@/components/members/ui";
 import { PageShell } from "@/components/ui/PageShell";
 import { compareBodyRecords } from "@/lib/customers/body-composition-compare";
+import { formatSleepTimeRange } from "@/lib/coaching/coaching-sleep";
 import { buildBodyCompositionTrendSeries } from "@/lib/customers/body-composition-trends";
-import { formatCoachingTodayStatusLine } from "@/lib/coaching/coaching-completion";
+import { buildCoachingTodayStatus, formatCoachingTodayStatusLine } from "@/lib/coaching/coaching-completion";
 import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetch";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 import {
@@ -79,23 +80,24 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
   const customerDisplayName = payload?.customerDisplayName ?? "陪跑詳情";
 
   const todayStatus = payload
-    ? formatCoachingTodayStatusLine({
-        enrollmentId: payload.enrollment.id,
-        customerId: payload.enrollment.customerId,
-        customerDisplayName,
-        goal: payload.enrollment.goal,
-        logDate,
-        hasReport: Boolean(payload.dailyLog.submittedAt || payload.dailyLog.meals.length > 0),
-        primaryMealsDone: payload.dailyLog.meals.filter((meal) =>
-          ["breakfast", "lunch", "dinner"].includes(meal.mealSlot) &&
-          (meal.textNote || meal.photo),
-        ).length,
-        primaryMealsTotal: 3,
-        waterDone: payload.dailyLog.waterMl != null,
-        sleepDone: Boolean(payload.dailyLog.sleepDuration?.trim()),
-        exerciseDone: Boolean(payload.dailyLog.exerciseNote?.trim()),
-      })
+    ? formatCoachingTodayStatusLine(
+        buildCoachingTodayStatus({
+          enrollmentId: payload.enrollment.id,
+          customerId: payload.enrollment.customerId,
+          customerDisplayName,
+          goal: payload.enrollment.goal,
+          logDate,
+          log: payload.dailyLog.id ? payload.dailyLog : null,
+          meals: payload.dailyLog.meals,
+        }),
+      )
     : "";
+
+  const sleepDisplay =
+    payload?.dailyLog.sleepDuration ??
+    (payload?.dailyLog.sleepBedtime && payload?.dailyLog.sleepWakeTime
+      ? formatSleepTimeRange(payload.dailyLog.sleepBedtime, payload.dailyLog.sleepWakeTime)
+      : null);
 
   const updateStatus = async (status: CoachingEnrollment["status"]) => {
     setBusy(true);
@@ -162,7 +164,7 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
               <div className="space-y-4">
                 <dl>
                   <CrmField label="水分 (ml)" value={payload.dailyLog.waterMl} />
-                  <CrmField label="睡眠" value={payload.dailyLog.sleepDuration} />
+                  <CrmField label="睡眠" value={sleepDisplay} />
                   <CrmField label="運動" value={payload.dailyLog.exerciseNote} />
                   <CrmField label="排便次數" value={payload.dailyLog.bowelMovementCount} />
                   <CrmField label="心得" value={payload.dailyLog.customerNote} />

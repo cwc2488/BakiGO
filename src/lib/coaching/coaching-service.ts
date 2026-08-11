@@ -10,6 +10,7 @@ import type {
   CoachingPortalContext,
 } from "@/types/coaching";
 import { cloneDefaultCoachingPlanSnapshot, parseCoachingPlanSnapshot } from "@/lib/coaching/default-instructions";
+import { computeSleepDurationLabel, normalizeClockTimeInput } from "@/lib/coaching/coaching-sleep";
 
 export class CoachingServiceError extends Error {
   constructor(
@@ -53,6 +54,8 @@ type DailyLogRow = {
   exercise_note: string | null;
   bowel_movement_count: number | null;
   sleep_duration: string | null;
+  sleep_bedtime: string | null;
+  sleep_wake_time: string | null;
   customer_note: string | null;
   submitted_at: string | null;
   created_at: string;
@@ -93,6 +96,13 @@ function mapEnrollment(row: EnrollmentRow): CoachingEnrollment {
   };
 }
 
+function mapClockTimeFromDb(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  return normalizeClockTimeInput(value);
+}
+
 function mapDailyLog(row: DailyLogRow): CoachingDailyLog {
   return {
     id: row.id,
@@ -104,6 +114,8 @@ function mapDailyLog(row: DailyLogRow): CoachingDailyLog {
     exerciseNote: row.exercise_note,
     bowelMovementCount: row.bowel_movement_count,
     sleepDuration: row.sleep_duration,
+    sleepBedtime: mapClockTimeFromDb(row.sleep_bedtime),
+    sleepWakeTime: mapClockTimeFromDb(row.sleep_wake_time),
     customerNote: row.customer_note,
     submittedAt: row.submitted_at,
     createdAt: row.created_at,
@@ -472,7 +484,8 @@ export async function upsertCoachingDailyLog(input: {
   waterMl?: number | null;
   exerciseNote?: string | null;
   bowelMovementCount?: number | null;
-  sleepDuration?: string | null;
+  sleepBedtime?: string | null;
+  sleepWakeTime?: string | null;
   customerNote?: string | null;
   meals?: Partial<Record<CoachingMealSlot, { textNote?: string | null; eatenAt?: string | null }>>;
   markSubmitted?: boolean;
@@ -491,7 +504,29 @@ export async function upsertCoachingDailyLog(input: {
   if (input.waterMl !== undefined) patch.water_ml = input.waterMl;
   if (input.exerciseNote !== undefined) patch.exercise_note = input.exerciseNote?.trim() || null;
   if (input.bowelMovementCount !== undefined) patch.bowel_movement_count = input.bowelMovementCount;
-  if (input.sleepDuration !== undefined) patch.sleep_duration = input.sleepDuration?.trim() || null;
+
+  if (input.sleepBedtime !== undefined || input.sleepWakeTime !== undefined) {
+    const bedtime =
+      input.sleepBedtime !== undefined ? normalizeClockTimeInput(input.sleepBedtime) : undefined;
+    const wakeTime =
+      input.sleepWakeTime !== undefined ? normalizeClockTimeInput(input.sleepWakeTime) : undefined;
+
+    if (input.sleepBedtime !== undefined) {
+      patch.sleep_bedtime = bedtime;
+    }
+    if (input.sleepWakeTime !== undefined) {
+      patch.sleep_wake_time = wakeTime;
+    }
+
+    const resolvedBedtime = input.sleepBedtime !== undefined ? bedtime : undefined;
+    const resolvedWake = input.sleepWakeTime !== undefined ? wakeTime : undefined;
+
+    if (resolvedBedtime !== undefined && resolvedWake !== undefined) {
+      patch.sleep_duration =
+        resolvedBedtime && resolvedWake ? computeSleepDurationLabel(resolvedBedtime, resolvedWake) : null;
+    }
+  }
+
   if (input.customerNote !== undefined) patch.customer_note = input.customerNote?.trim() || null;
   if (input.markSubmitted) patch.submitted_at = new Date().toISOString();
 
@@ -575,6 +610,8 @@ export async function getCoachingDailyLogDetail(input: {
       exerciseNote: null,
       bowelMovementCount: null,
       sleepDuration: null,
+      sleepBedtime: null,
+      sleepWakeTime: null,
       customerNote: null,
       submittedAt: null,
       createdAt: "",

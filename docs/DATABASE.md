@@ -149,7 +149,9 @@ Member (coach)
 | Table | Purpose |
 |-------|---------|
 | `coaching_enrollments` | Active/paused/completed coaching relationship; plan snapshot + onboarding state |
-| `coaching_daily_logs` | One row per enrollment per `log_date` (Asia/Taipei) |
+| `coaching_daily_logs` | One row per enrollment per `log_date` (Asia/Taipei). Sleep: `sleep_bedtime`, `sleep_wake_time` (raw times for AI); `sleep_duration` computed on save. |
+
+**Migration `028_coaching_sleep_times.sql`:** adds `sleep_bedtime`, `sleep_wake_time` to `coaching_daily_logs`.
 | `coaching_meal_entries` | Meal slot rows linked to daily log |
 | `coaching_meal_photos` | Storage path refs for meal photos (private bucket) |
 
