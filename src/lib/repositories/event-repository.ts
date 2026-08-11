@@ -10,7 +10,17 @@ import { createRetailRepository } from "./retail-repository";
 export interface EventRepository {
   getAll(): BakiEvent[];
   getByMemberId(memberId: EntityId): BakiEvent[];
+  getById(id: EntityId): BakiEvent | null;
   create(input: BakiEventCreateInput): BakiEvent;
+  update(id: EntityId, input: BakiEventUpdateInput): BakiEvent | null;
+  delete(id: EntityId): boolean;
+}
+
+export interface BakiEventUpdateInput {
+  eventTypeKey?: string;
+  eventDate?: string;
+  value?: number;
+  metadata?: BakiEvent["metadata"];
 }
 
 function parseEvents(raw: string | null): BakiEvent[] {
@@ -66,6 +76,10 @@ export class LocalStorageEventRepository implements EventRepository {
     return this.getAll().filter((event) => event.memberId === memberId);
   }
 
+  getById(id: EntityId): BakiEvent | null {
+    return this.getAll().find((event) => event.id === id) ?? null;
+  }
+
   create(input: BakiEventCreateInput): BakiEvent {
     const now = new Date().toISOString();
     const event: BakiEvent = {
@@ -78,6 +92,37 @@ export class LocalStorageEventRepository implements EventRepository {
     const next = [...this.getAll(), event];
     this.storage.setItem(STORAGE_KEYS.bakiEvents, JSON.stringify(next));
     return event;
+  }
+
+  update(id: EntityId, input: BakiEventUpdateInput): BakiEvent | null {
+    const events = this.getAll();
+    const index = events.findIndex((event) => event.id === id);
+    if (index < 0) {
+      return null;
+    }
+
+    const current = events[index];
+    const updated: BakiEvent = {
+      ...current,
+      ...input,
+      metadata: input.metadata ? { ...current.metadata, ...input.metadata } : current.metadata,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const next = [...events];
+    next[index] = updated;
+    this.storage.setItem(STORAGE_KEYS.bakiEvents, JSON.stringify(next));
+    return updated;
+  }
+
+  delete(id: EntityId): boolean {
+    const events = this.getAll();
+    const next = events.filter((event) => event.id !== id);
+    if (next.length === events.length) {
+      return false;
+    }
+    this.storage.setItem(STORAGE_KEYS.bakiEvents, JSON.stringify(next));
+    return true;
   }
 
   private migrateLegacyTransactionsIfNeeded(): void {

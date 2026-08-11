@@ -19,28 +19,28 @@ const QUADRANT_CONFIG: Record<
 > = {
   new_customer: {
     transactionTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.NEW_CUSTOMER_NTD,
-    title: "本週新顧客",
+    title: "新顧客",
     presentationTitle: "新顧客",
-    valueLabel: "金額",
+    valueLabel: "金額 / 點數",
     monthlyLabel: "新顧客",
   },
   returning_customer: {
     transactionTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_CUSTOMER_NTD,
-    title: "本週續訂顧客",
+    title: "舊顧客",
     presentationTitle: "舊顧客",
-    valueLabel: "金額",
+    valueLabel: "金額 / 點數",
     monthlyLabel: "舊顧客",
   },
   new_member: {
     transactionTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.NEW_MEMBER_VP,
-    title: "本週新會員",
+    title: "新會員",
     presentationTitle: "新會員",
     valueLabel: "VP",
     monthlyLabel: "新會員",
   },
   returning_member: {
     transactionTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_MEMBER_VP,
-    title: "本週舊會員下點",
+    title: "舊會員",
     presentationTitle: "舊會員",
     valueLabel: "VP",
     monthlyLabel: "舊會員",
@@ -82,9 +82,11 @@ function buildQuadrantView(
     presentationTitle: config.presentationTitle,
     valueLabel: config.valueLabel,
     unit: category?.unit ?? (key.includes("member") ? "VP" : "NTD"),
+    showPoints: key === "new_customer" || key === "returning_customer",
     weeklyItems: category?.weeklyItems ?? [],
     monthlyLabel: config.monthlyLabel,
     monthlyTotal: category?.monthlyTotal ?? 0,
+    periodPointsTotal: category?.periodPointsTotal ?? 0,
   };
 }
 

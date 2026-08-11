@@ -1,5 +1,10 @@
 import { DEFAULT_BUSINESS_RULES } from "@/lib/business-engine/rules";
 import { RETAIL_TRANSACTION_TYPE_KEYS } from "@/lib/business-engine/rules/keys";
+import type { RetailHouseDateRangePreset } from "@/lib/retail-house/retail-house-date-range";
+import {
+  isCustomerTransactionType,
+  resolveTransactionPoints,
+} from "@/lib/retail-house/resolve-transaction-points";
 import type { VpResult } from "@/lib/business-engine/types";
 import { isInYearMonth } from "@/lib/business-engine/utils";
 import type { MonthlyChallengeProgress } from "@/types/monthly-challenge";
@@ -43,12 +48,45 @@ function shiftDate(date: ISODateString, offsetDays: number): ISODateString {
   return parsed.toISOString().slice(0, 10) as ISODateString;
 }
 
-function isWithinWeek(
+function isWithinRange(
   transactionDate: ISODateString,
-  weekStartDate: ISODateString,
-  weekEndDate: ISODateString,
+  rangeStartDate: ISODateString,
+  rangeEndDate: ISODateString,
 ): boolean {
-  return transactionDate >= weekStartDate && transactionDate <= weekEndDate;
+  return transactionDate >= rangeStartDate && transactionDate <= rangeEndDate;
+}
+
+function toLineItem(transaction: RetailTransaction, unit: "NTD" | "VP"): RetailReportLineItem {
+  const points = isCustomerTransactionType(transaction.transactionTypeKey)
+    ? resolveTransactionPoints(transaction.transactionTypeKey)
+    : undefined;
+
+  return {
+    transactionId: transaction.id,
+    transactionTypeKey: transaction.transactionTypeKey,
+    customerName: transaction.customerName,
+    customerPhone:
+      typeof transaction.metadata?.customerPhone === "string"
+        ? transaction.metadata.customerPhone
+        : undefined,
+    amount: transaction.amount,
+    unit,
+    points,
+    transactionDate: transaction.transactionDate,
+    note: transaction.note,
+  };
+}
+
+export interface BuildRetailWeeklyReportInput {
+  memberId: EntityId;
+  referenceDate: ISODateString;
+  yearMonth: YearMonth;
+  transactions: RetailTransaction[];
+  monthlyChallenge: MonthlyChallengeProgress;
+  vp: VpResult;
+  rangeStartDate?: ISODateString;
+  rangeEndDate?: ISODateString;
+  rangePreset?: RetailHouseDateRangePreset;
 }
 
 function resolveMonthlyTotal(
@@ -75,26 +113,6 @@ function resolveMonthlyTotal(
     .reduce((sum, transaction) => sum + transaction.amount, 0);
 }
 
-function toLineItem(transaction: RetailTransaction, unit: "NTD" | "VP"): RetailReportLineItem {
-  return {
-    transactionId: transaction.id,
-    customerName: transaction.customerName,
-    amount: transaction.amount,
-    unit,
-    transactionDate: transaction.transactionDate,
-    note: transaction.note,
-  };
-}
-
-export interface BuildRetailWeeklyReportInput {
-  memberId: EntityId;
-  referenceDate: ISODateString;
-  yearMonth: YearMonth;
-  transactions: RetailTransaction[];
-  monthlyChallenge: MonthlyChallengeProgress;
-  vp: VpResult;
-}
-
 /**
  * Assembles the retail house weekly share report from Engine outputs and source transactions.
  * Not a Business Engine — presentation assembly only; monthly totals come from Engine.
@@ -102,13 +120,19 @@ export interface BuildRetailWeeklyReportInput {
 export function buildRetailWeeklyReport(
   input: BuildRetailWeeklyReportInput,
 ): RetailWeeklyReport {
-  const weekEndDate = input.referenceDate;
-  const weekStartDate = shiftDate(input.referenceDate, -6);
+  const periodEndDate = input.rangeEndDate ?? input.referenceDate;
+  const periodStartDate =
+    input.rangeStartDate ?? shiftDate(input.referenceDate, -6);
+  const weekEndDate = periodEndDate;
+  const weekStartDate = periodStartDate;
+  const useEngineMonthlyTotals = (input.rangePreset ?? "week") === "month";
 
-  const memberMonthTransactions = input.transactions.filter(
-    (transaction) =>
-      transaction.memberId === input.memberId &&
-      isInYearMonth(transaction.transactionDate, input.yearMonth),
+  const memberTransactions = input.transactions.filter(
+    (transaction) => transaction.memberId === input.memberId,
+  );
+
+  const memberMonthTransactions = memberTransactions.filter((transaction) =>
+    isInYearMonth(transaction.transactionDate, input.yearMonth),
   );
 
   const categories: RetailReportCategory[] = DEFAULT_BUSINESS_RULES.retailTransactionTypes.map(
@@ -119,31 +143,42 @@ export function buildRetailWeeklyReport(
         unit: typeConfig.valueUnit,
       };
 
-      const weeklyItems = memberMonthTransactions
+      const sourceTransactions = useEngineMonthlyTotals
+        ? memberMonthTransactions
+        : memberTransactions;
+
+      const periodItems = sourceTransactions
         .filter(
           (transaction) =>
             transaction.transactionTypeKey === typeConfig.key &&
-            isWithinWeek(transaction.transactionDate, weekStartDate, weekEndDate),
+            isWithinRange(transaction.transactionDate, periodStartDate, periodEndDate),
         )
         .sort((left, right) => right.transactionDate.localeCompare(left.transactionDate))
         .map((transaction) => toLineItem(transaction, presentation.unit));
 
-      const weeklyTotal = weeklyItems.reduce((sum, item) => sum + item.amount, 0);
-      const monthlyTotal = resolveMonthlyTotal(
-        typeConfig.key,
-        typeConfig,
-        input.monthlyChallenge,
-        input.vp,
-        memberMonthTransactions,
+      const weeklyTotal = periodItems.reduce((sum, item) => sum + item.amount, 0);
+      const periodPointsTotal = periodItems.reduce(
+        (sum, item) => sum + (item.points ?? 0),
+        0,
       );
+      const monthlyTotal = useEngineMonthlyTotals
+        ? resolveMonthlyTotal(
+            typeConfig.key,
+            typeConfig,
+            input.monthlyChallenge,
+            input.vp,
+            memberMonthTransactions,
+          )
+        : weeklyTotal;
 
       return {
         transactionTypeKey: typeConfig.key,
         title: presentation.title,
         icon: presentation.icon,
         unit: presentation.unit,
-        weeklyItems,
+        weeklyItems: periodItems,
         weeklyTotal,
+        periodPointsTotal,
         monthlyTotal,
       };
     },

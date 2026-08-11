@@ -13,9 +13,11 @@ export interface RetailHouseQuadrantView {
   presentationTitle: string;
   valueLabel: string;
   unit: "NTD" | "VP";
+  showPoints: boolean;
   weeklyItems: RetailReportLineItem[];
   monthlyLabel: string;
   monthlyTotal: number;
+  periodPointsTotal: number;
 }
 
 export interface RetailHouseSnapshot {

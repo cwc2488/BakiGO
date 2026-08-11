@@ -3,9 +3,13 @@ import type { ISODateString, YearMonth } from "@/types";
 /** Single retail transaction line — never merged with others. */
 export interface RetailReportLineItem {
   transactionId: string;
+  transactionTypeKey: string;
   customerName: string;
+  customerPhone?: string;
   amount: number;
   unit: "NTD" | "VP";
+  /** Gamification points from Business Rules — shown for customer (NTD) types. */
+  points?: number;
   transactionDate: ISODateString;
   note?: string;
 }
@@ -18,6 +22,8 @@ export interface RetailReportCategory {
   weeklyItems: RetailReportLineItem[];
   /** Sum of weeklyItems — computed when report is built. */
   weeklyTotal: number;
+  /** Sum of points in period — customer types only. */
+  periodPointsTotal: number;
   /** From Monthly Challenge / VP Engine — null if Rule Missing. */
   monthlyTotal: number | null;
 }
