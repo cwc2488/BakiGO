@@ -326,6 +326,7 @@ Guided consultation (`consultation_sessions`) is **coach-owned customer data**, 
 | Customer profile | Step 1 reads/writes `customers` fields: name, phone, `birth_date`, height, `sex`, region, occupation — not duplicated in `consultation_data` |
 | Duplicate protection | Before creating a new customer, match normalized phone within the same `owner_member_id`; if found, UI shows「可能已有此客戶」and offers existing customer or cancel — no auto-create, no name-only dedupe |
 | Commitment gate | Step 7 writes `consultation_sessions.commitment_score` (1–10). Step 8 completes the gate — **never ends the session at Step 7**. Step 8 routing: **10** → execution confirm → `ready` → `current_step = 9`; **6–9** → barrier explore → `readyIfBarrierSolved = true` → step 9, else `not_ready`; **1–5** → not ready confirm → `not_ready`. `not_ready` retains all prior data and blocks Step 9+ |
+| Steps 9–14 | Success stories (≥3, `success_story_count`), method interest, education cards by `goalType`, four cooperation items, meals + services, final outcome. Completing Step 14 writes `brief_snapshot`, sets `status`/`completed_at`, and emits `consultation` activity KPI only when outcome = `started` |
 | Success stories | Step 10+ (future): partner self-reports count ≥ 3 — **not implemented in Phase 1–2** |
 
 Configuration: `consultation_sessions.status`, `consultation_sessions.health_safety_flag`, `consultation_sessions.commitment_score` — Step 8 gate thresholds defined in Phase 2; success-story thresholds remain future work.

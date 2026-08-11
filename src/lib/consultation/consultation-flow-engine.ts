@@ -1,17 +1,29 @@
 import {
   CONSULTATION_BARRIER_KEYS,
+  CONSULTATION_EXERCISE_METHOD_KEYS,
   CONSULTATION_PHASE1_MAX_STEP,
   CONSULTATION_PHASE2_MAX_STEP,
   CONSULTATION_TOTAL_STEPS,
   type ConsultationBarriersData,
   type ConsultationBarrierKey,
+  type ConsultationCooperationData,
+  type ConsultationCooperationItemData,
+  type ConsultationCooperationStatus,
+  type ConsultationExerciseMethodKey,
   type ConsultationGoalsData,
   type ConsultationHealthData,
+  type ConsultationMealsData,
+  type ConsultationMethodInterest,
+  type ConsultationMethodInterestData,
   type ConsultationMotivationsData,
+  type ConsultationOutcomeData,
+  type ConsultationOutcomeValue,
   type ConsultationPreviousExperienceData,
   type ConsultationReadinessData,
+  type ConsultationServicesData,
   type ConsultationSession,
   type ConsultationStatus,
+  type ConsultationEducationData,
 } from "@/types/consultation";
 
 export function isValidConsultationStep(step: number): boolean {
@@ -26,6 +38,14 @@ export function isPhase2Step(step: number): boolean {
   return step >= 4 && step <= CONSULTATION_PHASE2_MAX_STEP;
 }
 
+export function isPhase3Step(step: number): boolean {
+  return step >= 9 && step <= CONSULTATION_TOTAL_STEPS;
+}
+
+export function isConsultationFlowComplete(status: ConsultationStatus): boolean {
+  return status === "completed";
+}
+
 export function canAccessConsultationStep(
   currentStep: number,
   requestedStep: number,
@@ -36,6 +56,12 @@ export function canAccessConsultationStep(
   }
   if (status === "not_ready") {
     return requestedStep <= Math.min(currentStep, CONSULTATION_PHASE2_MAX_STEP);
+  }
+  if (status === "follow_up") {
+    return requestedStep <= currentStep;
+  }
+  if (status === "completed") {
+    return requestedStep <= CONSULTATION_TOTAL_STEPS;
   }
   return requestedStep <= Math.max(currentStep, 1);
 }
@@ -244,6 +270,222 @@ export function validateStep8Submission(input: {
   return null;
 }
 
+export const CONSULTATION_MIN_SUCCESS_STORIES = 3;
+
+export function validateStep9CanComplete(successStoryCount: number): string | null {
+  if (successStoryCount < CONSULTATION_MIN_SUCCESS_STORIES) {
+    return `請至少分享 ${CONSULTATION_MIN_SUCCESS_STORIES} 個相近成功案例。`;
+  }
+  return null;
+}
+
+export function normalizeMethodInterestData(
+  input: Partial<ConsultationMethodInterestData>,
+): ConsultationMethodInterestData {
+  return {
+    interest: input.interest as ConsultationMethodInterest,
+    notes: trimOptional(input.notes),
+    decidedAt: trimOptional(input.decidedAt),
+  };
+}
+
+export type Step10Outcome =
+  | { type: "advance_to_step_11" }
+  | { type: "follow_up_pause" };
+
+export function resolveStep10Outcome(interest: ConsultationMethodInterest): Step10Outcome {
+  if (interest === "no") {
+    return { type: "follow_up_pause" };
+  }
+  return { type: "advance_to_step_11" };
+}
+
+export function validateStep10Submission(input: {
+  interest?: ConsultationMethodInterest;
+}): string | null {
+  if (!input.interest || !["yes", "unsure", "no"].includes(input.interest)) {
+    return "請確認客人是否願意了解成功案例背後的方法。";
+  }
+  return null;
+}
+
+export function normalizeEducationData(
+  input: Partial<ConsultationEducationData>,
+): ConsultationEducationData {
+  return {
+    goalType: input.goalType,
+    acknowledged: input.acknowledged === true,
+    acknowledgedAt: trimOptional(input.acknowledgedAt),
+  };
+}
+
+export function validateStep11CanComplete(education: ConsultationEducationData): string | null {
+  if (!education.acknowledged) {
+    return "請完成原理解說後再繼續。";
+  }
+  return null;
+}
+
+function normalizeCooperationItem(
+  input: Partial<ConsultationCooperationItemData> | undefined,
+): ConsultationCooperationItemData | undefined {
+  if (!input?.status) {
+    return undefined;
+  }
+  const status = input.status as ConsultationCooperationStatus;
+  if (!["can_do", "needs_adjustment", "cannot_do"].includes(status)) {
+    return undefined;
+  }
+  return {
+    status,
+    difficultyReason: trimOptional(input.difficultyReason),
+    notes: trimOptional(input.notes),
+  };
+}
+
+export function normalizeCooperationData(
+  input: Partial<ConsultationCooperationData>,
+): ConsultationCooperationData {
+  const exerciseMethods = (input.exercise?.methods ?? []).filter((value): value is ConsultationExerciseMethodKey => {
+    return typeof value === "string" && CONSULTATION_EXERCISE_METHOD_KEYS.includes(value as ConsultationExerciseMethodKey);
+  });
+
+  const hydration = normalizeCooperationItem(input.hydration);
+  const sleepSchedule = input.sleepSchedule?.status
+    ? {
+        ...normalizeCooperationItem(input.sleepSchedule)!,
+        currentSleepTime: trimOptional(input.sleepSchedule.currentSleepTime),
+        currentWakeTime: trimOptional(input.sleepSchedule.currentWakeTime),
+        targetAdjustment: trimOptional(input.sleepSchedule.targetAdjustment),
+      }
+    : undefined;
+  const exercise = input.exercise?.status
+    ? {
+        ...normalizeCooperationItem(input.exercise)!,
+        weeklyFrequency: trimOptional(input.exercise.weeklyFrequency),
+        methods: exerciseMethods.length > 0 ? exerciseMethods : undefined,
+        methodNotes: trimOptional(input.exercise.methodNotes),
+      }
+    : undefined;
+  const nutrition = normalizeCooperationItem(input.nutrition);
+
+  return {
+    hydration,
+    sleepSchedule,
+    exercise,
+    nutrition,
+  };
+}
+
+export function validateCooperationItem(
+  label: string,
+  item: ConsultationCooperationItemData | undefined,
+): string | null {
+  if (!item?.status) {
+    return `請完成「${label}」的評估。`;
+  }
+  if (
+    (item.status === "needs_adjustment" || item.status === "cannot_do") &&
+    !item.difficultyReason?.trim()
+  ) {
+    return `「${label}」若需要調整或無法配合，請記錄原因。`;
+  }
+  return null;
+}
+
+export function validateStep12CanComplete(cooperation: ConsultationCooperationData): string | null {
+  return (
+    validateCooperationItem("水分", cooperation.hydration) ??
+    validateCooperationItem("作息", cooperation.sleepSchedule) ??
+    validateCooperationItem("運動", cooperation.exercise) ??
+    validateCooperationItem("飲食／營養", cooperation.nutrition)
+  );
+}
+
+export function normalizeMealsData(input: Partial<ConsultationMealsData>): ConsultationMealsData {
+  function slot(value: ConsultationMealsData["breakfast"] | undefined) {
+    if (!value) {
+      return undefined;
+    }
+    const time = trimOptional(value.time);
+    const content = trimOptional(value.content);
+    if (!time && !content) {
+      return undefined;
+    }
+    return { time, content };
+  }
+
+  return {
+    breakfast: slot(input.breakfast),
+    lunch: slot(input.lunch),
+    dinner: slot(input.dinner),
+  };
+}
+
+export function validateStep13CanComplete(input: {
+  meals: ConsultationMealsData;
+  services: ConsultationServicesData;
+}): string | null {
+  if (!input.meals.breakfast?.content?.trim()) {
+    return "請記錄早餐內容。";
+  }
+  if (!input.meals.lunch?.content?.trim()) {
+    return "請記錄午餐內容。";
+  }
+  if (!input.meals.dinner?.content?.trim()) {
+    return "請記錄晚餐內容。";
+  }
+  if (!input.services.explained) {
+    return "請完成四項服務說明後再繼續。";
+  }
+  return null;
+}
+
+export function normalizeServicesData(input: Partial<ConsultationServicesData>): ConsultationServicesData {
+  return {
+    explained: input.explained === true,
+    explainedAt: trimOptional(input.explainedAt),
+  };
+}
+
+export function normalizeOutcomeData(input: Partial<ConsultationOutcomeData>): ConsultationOutcomeData {
+  return {
+    outcome: input.outcome as ConsultationOutcomeValue,
+    customerQuestions: trimOptional(input.customerQuestions),
+    objections: trimOptional(input.objections),
+    nextStep: trimOptional(input.nextStep),
+    followUpDate: trimOptional(input.followUpDate),
+    notes: trimOptional(input.notes),
+    decidedAt: trimOptional(input.decidedAt),
+  };
+}
+
+export function mapOutcomeToSessionStatus(outcome: ConsultationOutcomeValue): ConsultationStatus {
+  if (outcome === "started") {
+    return "completed";
+  }
+  if (outcome === "considering" || outcome === "follow_up") {
+    return "follow_up";
+  }
+  return "not_ready";
+}
+
+export function shouldEmitConsultationActivityForOutcome(outcome: ConsultationOutcomeValue): boolean {
+  return outcome === "started";
+}
+
+export function validateStep14Submission(input: {
+  outcome?: ConsultationOutcomeValue;
+}): string | null {
+  if (
+    !input.outcome ||
+    !["started", "considering", "follow_up", "not_ready", "declined"].includes(input.outcome)
+  ) {
+    return "請記錄這次諮詢的結果。";
+  }
+  return null;
+}
+
 export function resolveActiveConsultationStep(
   session: Pick<ConsultationSession, "currentStep" | "status">,
   requestedStep: number,
@@ -306,6 +548,30 @@ export const CONSULTATION_STEP_META: Record<
     title: "阻礙探索＋準備度確認",
     purpose: "依決心分數，確認真正卡關的地方，或確認是否準備好進入下一步。",
   },
+  9: {
+    title: "成功案例分享",
+    purpose: "分享至少 3 個與客人狀況相近的成功案例，建立信心與認同感。",
+  },
+  10: {
+    title: "願意了解方法",
+    purpose: "確認客人看完案例後，是否願意了解他們是怎麼做到的。",
+  },
+  11: {
+    title: "原理教育",
+    purpose: "讓夥伴理解並能轉述：訓練、營養、休息如何一起支持改變。",
+  },
+  12: {
+    title: "四項合作條件",
+    purpose: "逐一確認水分、作息、運動、飲食四項能否配合。",
+  },
+  13: {
+    title: "三餐盤點＋服務說明",
+    purpose: "完整聽完三餐習慣，再介紹四項服務內容。",
+  },
+  14: {
+    title: "意願／疑慮／結果",
+    purpose: "記錄客人最終意願、疑慮與後續安排，完成諮詢閉環。",
+  },
 };
 
 export const CONSULTATION_BARRIER_LABELS: Record<ConsultationBarrierKey, string> = {
@@ -322,6 +588,33 @@ export const CONSULTATION_BARRIER_LABELS: Record<ConsultationBarrierKey, string>
   other: "其他",
 };
 
+export const CONSULTATION_EXERCISE_METHOD_LABELS: Record<ConsultationExerciseMethodKey, string> = {
+  coach_class: "教練課",
+  self_guided: "自主運動",
+  home_video: "居家／影片",
+  online: "線上",
+  other: "其他",
+};
+
+export const CONSULTATION_COOPERATION_STATUS_LABELS: Record<ConsultationCooperationStatus, string> = {
+  can_do: "做得到",
+  needs_adjustment: "需要調整",
+  cannot_do: "目前做不到",
+};
+
+export const CONSULTATION_METHOD_INTEREST_LABELS: Record<ConsultationMethodInterest, string> = {
+  yes: "願意了解",
+  unsure: "還不確定",
+  no: "暫時不願意",
+};
+
+export const CONSULTATION_OUTCOME_LABELS: Record<ConsultationOutcomeValue, string> = {
+  started: "開始執行",
+  considering: "考慮中",
+  follow_up: "後續追蹤",
+  not_ready: "尚未準備好",
+  declined: "婉拒",
+};
 export const CONSULTATION_GOAL_TYPE_LABELS: Record<
   import("@/types/consultation").ConsultationGoalType,
   string

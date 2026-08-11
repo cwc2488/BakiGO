@@ -18,6 +18,16 @@ import {
   validateCommitmentScore,
   validateStep6CanComplete,
   validateStep8Submission,
+  validateStep9CanComplete,
+  validateStep10Submission,
+  validateStep12CanComplete,
+  validateStep13CanComplete,
+  validateStep14Submission,
+  mapOutcomeToSessionStatus,
+  resolveStep10Outcome,
+  shouldEmitConsultationActivityForOutcome,
+  normalizeCooperationData,
+  normalizeMealsData,
 } from "./consultation-flow-engine";
 
 describe("consultation-flow-engine", () => {
@@ -184,5 +194,88 @@ describe("consultation-flow-engine", () => {
     expect(CONSULTATION_STEP_META[1]?.title).toBe("基本資料");
     expect(CONSULTATION_STEP_META[4]?.title).toBe("數據解說＋目標身材");
     expect(CONSULTATION_STEP_META[8]?.title).toBe("阻礙探索＋準備度確認");
+    expect(CONSULTATION_STEP_META[14]?.title).toBe("意願／疑慮／結果");
+  });
+
+  it("requires at least three success stories for step 9 completion", () => {
+    expect(validateStep9CanComplete(2)).toMatch(/至少分享 3 個/);
+    expect(validateStep9CanComplete(3)).toBeNull();
+    expect(validateStep9CanComplete(5)).toBeNull();
+  });
+
+  it("routes method interest yes/unsure to step 11 and no to follow-up pause", () => {
+    expect(resolveStep10Outcome("yes")).toEqual({ type: "advance_to_step_11" });
+    expect(resolveStep10Outcome("unsure")).toEqual({ type: "advance_to_step_11" });
+    expect(resolveStep10Outcome("no")).toEqual({ type: "follow_up_pause" });
+  });
+
+  it("requires all four cooperation items for step 12", () => {
+    expect(validateStep12CanComplete({})).toMatch(/水分/);
+    expect(
+      validateStep12CanComplete({
+        hydration: { status: "can_do" },
+        sleepSchedule: { status: "can_do" },
+        exercise: { status: "can_do" },
+        nutrition: { status: "can_do" },
+      }),
+    ).toBeNull();
+    expect(
+      validateStep12CanComplete({
+        hydration: { status: "cannot_do" },
+        sleepSchedule: { status: "can_do" },
+        exercise: { status: "can_do" },
+        nutrition: { status: "can_do" },
+      }),
+    ).toMatch(/水分/);
+  });
+
+  it("normalizes cooperation statuses", () => {
+    const cooperation = normalizeCooperationData({
+      hydration: { status: "needs_adjustment", difficultyReason: "忘記喝水" },
+      sleepSchedule: { status: "can_do", currentSleepTime: "23:30" },
+      exercise: { status: "can_do", methods: ["coach_class", "home_video"] },
+      nutrition: { status: "can_do" },
+    });
+    expect(cooperation.hydration?.status).toBe("needs_adjustment");
+    expect(cooperation.exercise?.methods).toEqual(["coach_class", "home_video"]);
+  });
+
+  it("requires meals and services for step 13", () => {
+    expect(
+      validateStep13CanComplete({
+        meals: normalizeMealsData({ breakfast: { content: "蛋餅" } }),
+        services: { explained: false },
+      }),
+    ).toMatch(/午餐/);
+    expect(
+      validateStep13CanComplete({
+        meals: normalizeMealsData({
+          breakfast: { content: "蛋餅" },
+          lunch: { content: "便當" },
+          dinner: { content: "沙拉" },
+        }),
+        services: { explained: true },
+      }),
+    ).toBeNull();
+  });
+
+  it("maps step 14 outcomes to session status without mislabeling completed", () => {
+    expect(mapOutcomeToSessionStatus("started")).toBe("completed");
+    expect(mapOutcomeToSessionStatus("considering")).toBe("follow_up");
+    expect(mapOutcomeToSessionStatus("follow_up")).toBe("follow_up");
+    expect(mapOutcomeToSessionStatus("declined")).toBe("not_ready");
+    expect(mapOutcomeToSessionStatus("not_ready")).toBe("not_ready");
+    expect(shouldEmitConsultationActivityForOutcome("started")).toBe(true);
+    expect(shouldEmitConsultationActivityForOutcome("considering")).toBe(false);
+  });
+
+  it("allows follow_up sessions to resume active step below 14", () => {
+    expect(canAccessConsultationStep(10, 10, "follow_up")).toBe(true);
+    expect(canAccessConsultationStep(10, 11, "follow_up")).toBe(false);
+  });
+
+  it("validates step 14 outcome submission", () => {
+    expect(validateStep14Submission({})).not.toBeNull();
+    expect(validateStep14Submission({ outcome: "started" })).toBeNull();
   });
 });

@@ -83,6 +83,8 @@ Guided partner-led consultation SOP. **Customer is the only CRM anchor** — no 
 
 **Phase 2 `data_json` keys:** `goals` (Step 4), `previousExperience` (Step 5), `motivations` (Step 6), `barriers` + `readiness` (Step 8). `commitment_score` lives on `consultation_sessions`.
 
+**Phase 3 `data_json` keys:** `methodInterest` (Step 10), `education` (Step 11), `cooperation` (Step 12), `meals` + `services` (Step 13), `outcome` (Step 14). `success_story_count` lives on `consultation_sessions`; completed sessions store deterministic `brief_snapshot` JSONB.
+
 **RLS:** Owner-only — same pattern as `customers` (uplines excluded).
 
 **API access:** Service role + server-side `owner_member_id` check (mirrors quiz partner routes).

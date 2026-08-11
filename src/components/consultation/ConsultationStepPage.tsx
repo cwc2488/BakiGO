@@ -12,6 +12,12 @@ import { ConsultationStep04DataReviewGoals } from "@/components/consultation/ste
 import { ConsultationStep05PreviousExperience } from "@/components/consultation/steps/ConsultationStep05PreviousExperience";
 import { ConsultationStep06Motivations } from "@/components/consultation/steps/ConsultationStep06Motivations";
 import { ConsultationStep07CommitmentScore } from "@/components/consultation/steps/ConsultationStep07CommitmentScore";
+import { ConsultationStep09SuccessStories } from "@/components/consultation/steps/ConsultationStep09SuccessStories";
+import { ConsultationStep10MethodInterest } from "@/components/consultation/steps/ConsultationStep10MethodInterest";
+import { ConsultationStep11Education } from "@/components/consultation/steps/ConsultationStep11Education";
+import { ConsultationStep12Cooperation } from "@/components/consultation/steps/ConsultationStep12Cooperation";
+import { ConsultationStep13MealsServices } from "@/components/consultation/steps/ConsultationStep13MealsServices";
+import { ConsultationStep14Outcome } from "@/components/consultation/steps/ConsultationStep14Outcome";
 import { ConsultationStep08CommitmentGate } from "@/components/consultation/steps/ConsultationStep08CommitmentGate";
 import { isValidConsultationStep } from "@/lib/consultation/consultation-flow-engine";
 import { loadConsultationSessionApi, type ConsultationSessionPayload } from "@/lib/consultation/consultation-client";
@@ -61,31 +67,62 @@ function ConsultationPausedScreen({ record }: { record: ConsultationSessionRecor
   );
 }
 
-function ConsultationPhase2GateCompleteScreen({ record }: { record: ConsultationSessionRecord }) {
+function ConsultationFollowUpScreen({ record }: { record: ConsultationSessionRecord }) {
+  const methodInterest = record.data.dataJson.methodInterest;
+  const outcome = record.data.dataJson.outcome;
   return (
     <ConsultationFlowShell
-      step={8}
-      title="Decision Tree 已完成"
-      purpose="目標、過往經驗、理由、決心與準備度都已記錄。Step 9 之後的 SOP 將在後續 Phase 開放。"
+      step={record.session.currentStep}
+      title="本次諮詢待後續追蹤"
+      purpose="資料都已保留。可在準備好時從目前步驟繼續，或查看顧客檔案。"
     >
       <div className="space-y-4 rounded-[1.5rem] bg-white/90 p-5 ring-1 ring-[#eadfd6]">
         <p className="text-sm leading-7 text-[#6f5f57]">
-          準備度判定：
-          <span className="font-medium text-[#2f2622]">
-            {record.data.dataJson.readiness?.gateDecision === "ready" ? "ready" : "—"}
-          </span>
-          {record.session.commitmentScore !== undefined
-            ? ` · 決心 ${record.session.commitmentScore} 分`
-            : ""}
+          狀態：<span className="font-medium text-[#2f2622]">follow_up</span>
         </p>
-        <p className="text-xs text-[#9a8b82]">Session ID：{record.session.id}</p>
+        {methodInterest?.notes ? (
+          <p className="text-sm leading-7 text-[#6f5f57]">方法意願備註：{methodInterest.notes}</p>
+        ) : null}
+        {outcome?.nextStep ? (
+          <p className="text-sm leading-7 text-[#6f5f57]">下一步：{outcome.nextStep}</p>
+        ) : null}
+        {outcome?.followUpDate ? (
+          <p className="text-sm leading-7 text-[#6f5f57]">追蹤日期：{outcome.followUpDate}</p>
+        ) : null}
       </div>
       <div className="mt-6 space-y-3">
+        <Link href={`/consultation/${record.session.id}/step/${record.session.currentStep}`}>
+          <ConsultationPrimaryButton type="button">繼續目前步驟</ConsultationPrimaryButton>
+        </Link>
         <Link href={`/customers/${record.session.customerId}`}>
           <ConsultationPrimaryButton type="button">查看顧客檔案</ConsultationPrimaryButton>
         </Link>
-        <Link className="block text-center text-sm text-[#8b7d74]" href="/consultation/new">
-          開始另一場諮詢
+      </div>
+    </ConsultationFlowShell>
+  );
+}
+
+function ConsultationCompletedScreen({ record }: { record: ConsultationSessionRecord }) {
+  return (
+    <ConsultationFlowShell
+      step={14}
+      title="諮詢已完成"
+      purpose="完整 Consultation 閉環已記錄，可查看 Brief 摘要。"
+    >
+      <div className="space-y-4 rounded-[1.5rem] bg-white/90 p-5 ring-1 ring-[#eadfd6]">
+        <p className="text-sm leading-7 text-[#6f5f57]">
+          狀態：<span className="font-medium text-[#2f2622]">completed</span>
+        </p>
+        {record.data.dataJson.outcome?.outcome ? (
+          <p className="text-sm leading-7 text-[#6f5f57]">結果：{record.data.dataJson.outcome.outcome}</p>
+        ) : null}
+      </div>
+      <div className="mt-6 space-y-3">
+        <Link href={`/consultation/${record.session.id}/brief`}>
+          <ConsultationPrimaryButton type="button">查看 Consultation Brief</ConsultationPrimaryButton>
+        </Link>
+        <Link href={`/customers/${record.session.customerId}`}>
+          <ConsultationPrimaryButton type="button">查看顧客檔案</ConsultationPrimaryButton>
         </Link>
       </div>
     </ConsultationFlowShell>
@@ -106,6 +143,16 @@ function applySessionRouting(
 
   if (payload.session.status === "not_ready" && stepNumber > CONSULTATION_PHASE2_MAX_STEP) {
     router.replace(consultationStepPath(payload.session.id, CONSULTATION_PHASE2_MAX_STEP));
+    return false;
+  }
+
+  if (payload.session.status === "follow_up" && stepNumber > payload.session.currentStep) {
+    router.replace(consultationStepPath(payload.session.id, payload.session.currentStep));
+    return false;
+  }
+
+  if (payload.session.status === "completed" && stepNumber < 14 && stepNumber !== payload.session.currentStep) {
+    router.replace(`/consultation/${payload.session.id}/brief`);
     return false;
   }
 
@@ -260,8 +307,16 @@ export function ConsultationStepPage({
     return <ConsultationPausedScreen record={record} />;
   }
 
-  if (record.session.currentStep >= 9 && stepNumber >= 9) {
-    return <ConsultationPhase2GateCompleteScreen record={record} />;
+  if (record.session.status === "follow_up") {
+    const canResumeActiveStep =
+      record.session.currentStep < 14 && stepNumber === record.session.currentStep;
+    if (!canResumeActiveStep) {
+      return <ConsultationFollowUpScreen record={record} />;
+    }
+  }
+
+  if (record.session.status === "completed") {
+    return <ConsultationCompletedScreen record={record} />;
   }
 
   const stepContent = (() => {
@@ -290,6 +345,24 @@ export function ConsultationStepPage({
     }
     if (stepNumber === 8) {
       return <ConsultationStep08CommitmentGate sessionId={sessionId} record={record} onCompleted={completeBlocking} />;
+    }
+    if (stepNumber === 9) {
+      return <ConsultationStep09SuccessStories sessionId={sessionId} record={record} onCompleted={completeBlocking} />;
+    }
+    if (stepNumber === 10) {
+      return <ConsultationStep10MethodInterest sessionId={sessionId} record={record} onCompleted={completeBlocking} />;
+    }
+    if (stepNumber === 11) {
+      return <ConsultationStep11Education sessionId={sessionId} record={record} />;
+    }
+    if (stepNumber === 12) {
+      return <ConsultationStep12Cooperation sessionId={sessionId} record={record} onCompleted={completeBlocking} />;
+    }
+    if (stepNumber === 13) {
+      return <ConsultationStep13MealsServices sessionId={sessionId} record={record} />;
+    }
+    if (stepNumber === 14) {
+      return <ConsultationStep14Outcome sessionId={sessionId} record={record} onCompleted={completeBlocking} />;
     }
     return (
       <div className="flex min-h-full items-center justify-center bg-[#faf6f1] px-6 text-center text-sm text-[#8b7d74]">

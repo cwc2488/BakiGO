@@ -37,5 +37,11 @@ export function consultationSessionCacheCoversStep(
   if (record.session.status === "not_ready") {
     return stepNumber <= 8;
   }
+  if (record.session.status === "follow_up") {
+    return stepNumber <= record.session.currentStep;
+  }
+  if (record.session.status === "completed") {
+    return stepNumber <= 14;
+  }
   return record.session.currentStep >= stepNumber;
 }

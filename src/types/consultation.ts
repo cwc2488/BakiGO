@@ -29,7 +29,7 @@ export type ConsultationSession = StoredEntity & {
   commitmentScore?: number;
   healthSafetyFlag: HealthSafetyFlag;
   successStoryCount: number;
-  briefSnapshot?: Record<string, unknown>;
+  briefSnapshot?: ConsultationBriefSnapshot;
   startedAt: string;
   completedAt?: string;
 };
@@ -126,6 +126,125 @@ export type ConsultationReadinessData = {
   gateDecidedAt?: string;
 };
 
+export type ConsultationMethodInterest = "yes" | "unsure" | "no";
+
+export type ConsultationMethodInterestData = {
+  interest: ConsultationMethodInterest;
+  notes?: string;
+  decidedAt?: string;
+};
+
+export type ConsultationEducationData = {
+  goalType?: ConsultationGoalType;
+  acknowledged?: boolean;
+  acknowledgedAt?: string;
+};
+
+export type ConsultationCooperationStatus = "can_do" | "needs_adjustment" | "cannot_do";
+
+export const CONSULTATION_EXERCISE_METHOD_KEYS = [
+  "coach_class",
+  "self_guided",
+  "home_video",
+  "online",
+  "other",
+] as const;
+
+export type ConsultationExerciseMethodKey = (typeof CONSULTATION_EXERCISE_METHOD_KEYS)[number];
+
+export type ConsultationCooperationItemData = {
+  status: ConsultationCooperationStatus;
+  difficultyReason?: string;
+  notes?: string;
+};
+
+export type ConsultationHydrationCooperationData = ConsultationCooperationItemData;
+
+export type ConsultationSleepScheduleCooperationData = ConsultationCooperationItemData & {
+  currentSleepTime?: string;
+  currentWakeTime?: string;
+  targetAdjustment?: string;
+};
+
+export type ConsultationExerciseCooperationData = ConsultationCooperationItemData & {
+  weeklyFrequency?: string;
+  methods?: ConsultationExerciseMethodKey[];
+  methodNotes?: string;
+};
+
+export type ConsultationNutritionCooperationData = ConsultationCooperationItemData;
+
+export type ConsultationCooperationData = {
+  hydration?: ConsultationHydrationCooperationData;
+  sleepSchedule?: ConsultationSleepScheduleCooperationData;
+  exercise?: ConsultationExerciseCooperationData;
+  nutrition?: ConsultationNutritionCooperationData;
+};
+
+export type ConsultationMealSlotData = {
+  time?: string;
+  content?: string;
+};
+
+export type ConsultationMealsData = {
+  breakfast?: ConsultationMealSlotData;
+  lunch?: ConsultationMealSlotData;
+  dinner?: ConsultationMealSlotData;
+};
+
+export type ConsultationServicesData = {
+  explained?: boolean;
+  explainedAt?: string;
+};
+
+export type ConsultationOutcomeValue =
+  | "started"
+  | "considering"
+  | "follow_up"
+  | "not_ready"
+  | "declined";
+
+export type ConsultationOutcomeData = {
+  outcome: ConsultationOutcomeValue;
+  customerQuestions?: string;
+  objections?: string;
+  nextStep?: string;
+  followUpDate?: ISODateString;
+  notes?: string;
+  decidedAt?: string;
+};
+
+export type ConsultationBriefSnapshot = {
+  generatedAt: string;
+  sessionId: EntityId;
+  customerId: EntityId;
+  customerProfile: {
+    displayName: string;
+    phone?: string;
+    sex?: string;
+    birthDate?: string;
+    region?: string;
+    occupation?: string;
+    heightCm?: number;
+  };
+  bodyMeasurement?: Record<string, unknown>;
+  goal?: ConsultationGoalsData;
+  previousExperience?: ConsultationPreviousExperienceData;
+  motivations?: ConsultationMotivationsData;
+  commitmentScore?: number;
+  barriers?: ConsultationBarriersData;
+  readiness?: ConsultationReadinessData;
+  successStoryCount: number;
+  methodInterest?: ConsultationMethodInterestData;
+  education?: ConsultationEducationData;
+  cooperation?: ConsultationCooperationData;
+  meals?: ConsultationMealsData;
+  services?: ConsultationServicesData;
+  outcome?: ConsultationOutcomeData;
+  healthSafetyFlag: HealthSafetyFlag;
+  sessionStatus: ConsultationStatus;
+};
+
 export type ConsultationDataJson = {
   health?: ConsultationHealthData;
   basicInfoExtras?: ConsultationBasicInfoExtras;
@@ -135,6 +254,12 @@ export type ConsultationDataJson = {
   motivations?: ConsultationMotivationsData;
   barriers?: ConsultationBarriersData;
   readiness?: ConsultationReadinessData;
+  methodInterest?: ConsultationMethodInterestData;
+  education?: ConsultationEducationData;
+  cooperation?: ConsultationCooperationData;
+  meals?: ConsultationMealsData;
+  services?: ConsultationServicesData;
+  outcome?: ConsultationOutcomeData;
 };
 
 export type CreateConsultationSessionInput = {

@@ -1,25 +1,47 @@
 import { createSupabaseServiceClient, isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 import {
   getStepAfterCompletion,
+  mapOutcomeToSessionStatus,
   normalizeBarriersData,
+  normalizeCooperationData,
+  normalizeEducationData,
   normalizeGoalsData,
   normalizeHealthData,
+  normalizeMealsData,
+  normalizeMethodInterestData,
   normalizeMotivationsData,
+  normalizeOutcomeData,
   normalizePreviousExperienceData,
   normalizeReadinessData,
+  normalizeServicesData,
+  resolveStep10Outcome,
   resolveStep8Outcome,
+  shouldEmitConsultationActivityForOutcome,
   validateCommitmentScore,
+  validateStep10Submission,
+  validateStep11CanComplete,
+  validateStep12CanComplete,
+  validateStep13CanComplete,
+  validateStep14Submission,
   validateStep6CanComplete,
   validateStep8Submission,
+  validateStep9CanComplete,
 } from "@/lib/consultation/consultation-flow-engine";
+import { buildConsultationBriefSnapshot } from "@/lib/consultation/consultation-brief";
 import type {
   ConsultationBarriersData,
+  ConsultationBriefSnapshot,
+  ConsultationCooperationData,
   ConsultationData,
   ConsultationDataJson,
   ConsultationGoalsData,
+  ConsultationMealsData,
+  ConsultationMethodInterest,
   ConsultationMotivationsData,
+  ConsultationOutcomeData,
   ConsultationPreviousExperienceData,
   ConsultationReadinessData,
+  ConsultationServicesData,
   ConsultationSession,
   ConsultationSessionRecord,
   CreateConsultationSessionInput,
@@ -37,7 +59,7 @@ type SessionDbRow = {
   commitment_score: number | null;
   health_safety_flag: HealthSafetyFlag;
   success_story_count: number;
-  brief_snapshot: Record<string, unknown> | null;
+  brief_snapshot: ConsultationBriefSnapshot | null;
   started_at: string;
   completed_at: string | null;
   created_at: string;
@@ -367,9 +389,75 @@ async function assertStepIsActive(input: {
   if (input.record.session.status === "not_ready") {
     throw new Error("Consultation is paused. Cannot advance steps.");
   }
+  if (input.record.session.status === "completed") {
+    throw new Error("Consultation is already complete.");
+  }
   if (input.record.session.currentStep !== input.stepNumber) {
     throw new Error(`Step ${input.stepNumber} is not the active step.`);
   }
+}
+
+async function loadCustomerProfile(input: {
+  customerId: string;
+  memberId: string;
+}): Promise<{
+  display_name: string;
+  phone: string | null;
+  sex: string | null;
+  birth_date: string | null;
+  region: string | null;
+  occupation: string | null;
+  height_cm: number | null;
+}> {
+  const supabase = requireServiceClient();
+  const { data, error } = await supabase
+    .from("customers")
+    .select("display_name, phone, sex, birth_date, region, occupation, height_cm, owner_member_id")
+    .eq("id", input.customerId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (!data || data.owner_member_id !== input.memberId) {
+    throw new Error("Customer not found.");
+  }
+
+  return data;
+}
+
+async function loadBodyRecordForBrief(bodyCompositionRecordId: string | undefined) {
+  if (!bodyCompositionRecordId) {
+    return undefined;
+  }
+  const supabase = requireServiceClient();
+  const { data, error } = await supabase
+    .from("body_composition_records")
+    .select(
+      "record_date, weight_kg, body_fat_percent, skeletal_muscle_kg, body_fat_kg, bmi, visceral_fat_level, basal_metabolic_rate, body_age, age",
+    )
+    .eq("id", bodyCompositionRecordId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (!data) {
+    return undefined;
+  }
+
+  return {
+    recordDate: data.record_date,
+    weightKg: data.weight_kg,
+    bodyFatPercent: data.body_fat_percent,
+    skeletalMuscleKg: data.skeletal_muscle_kg,
+    bodyFatKg: data.body_fat_kg,
+    bmi: data.bmi,
+    visceralFatLevel: data.visceral_fat_level,
+    basalMetabolicRate: data.basal_metabolic_rate,
+    bodyAge: data.body_age,
+    age: data.age,
+  };
 }
 
 async function updateSessionData(input: {
@@ -574,6 +662,312 @@ export async function completeConsultationStep8(input: {
       status: "not_ready",
     },
     dataJson: nextDataJson,
+  });
+}
+
+export async function saveConsultationStep9(input: {
+  sessionId: string;
+  memberId: string;
+  storyAction: "increment" | "decrement" | "complete";
+}): Promise<ConsultationSessionRecord> {
+  const record = await loadSessionRecord(input);
+  if (record.session.currentStep < 9) {
+    throw new Error("Complete Step 8 before success stories.");
+  }
+  await assertStepIsActive({ record, stepNumber: 9 });
+
+  let nextCount = record.session.successStoryCount;
+  if (input.storyAction === "increment") {
+    nextCount += 1;
+  } else if (input.storyAction === "decrement") {
+    nextCount = Math.max(0, nextCount - 1);
+  } else {
+    const validationError = validateStep9CanComplete(record.session.successStoryCount);
+    if (validationError) {
+      throw new Error(validationError);
+    }
+    return updateSessionData({
+      sessionId: input.sessionId,
+      memberId: input.memberId,
+      sessionPatch: {
+        current_step: getStepAfterCompletion(9),
+        success_story_count: record.session.successStoryCount,
+      },
+      dataJson: record.data.dataJson,
+    });
+  }
+
+  const supabase = requireServiceClient();
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("consultation_sessions")
+    .update({ success_story_count: nextCount, updated_at: now })
+    .eq("id", input.sessionId)
+    .eq("owner_member_id", input.memberId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return loadSessionRecord(input);
+}
+
+export async function saveConsultationStep10(input: {
+  sessionId: string;
+  memberId: string;
+  interest: ConsultationMethodInterest;
+  notes?: string;
+}): Promise<ConsultationSessionRecord> {
+  const record = await loadSessionRecord(input);
+  if (record.session.currentStep < 10) {
+    throw new Error("Complete Step 9 before method interest.");
+  }
+  await assertStepIsActive({ record, stepNumber: 10 });
+
+  const validationError = validateStep10Submission({ interest: input.interest });
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const now = new Date().toISOString();
+  const methodInterest = normalizeMethodInterestData({
+    interest: input.interest,
+    notes: input.notes,
+    decidedAt: now,
+  });
+  const nextDataJson: ConsultationDataJson = {
+    ...record.data.dataJson,
+    methodInterest,
+  };
+  const outcome = resolveStep10Outcome(input.interest);
+
+  if (outcome.type === "follow_up_pause") {
+    return updateSessionData({
+      sessionId: input.sessionId,
+      memberId: input.memberId,
+      sessionPatch: {
+        current_step: 10,
+        status: "follow_up",
+      },
+      dataJson: nextDataJson,
+    });
+  }
+
+  return updateSessionData({
+    sessionId: input.sessionId,
+    memberId: input.memberId,
+    sessionPatch: {
+      current_step: getStepAfterCompletion(10),
+      status: "in_progress",
+    },
+    dataJson: nextDataJson,
+  });
+}
+
+export async function saveConsultationStep11(input: {
+  sessionId: string;
+  memberId: string;
+  acknowledged: boolean;
+}): Promise<ConsultationSessionRecord> {
+  const record = await loadSessionRecord(input);
+  if (record.session.currentStep < 11) {
+    throw new Error("Complete Step 10 before education.");
+  }
+  await assertStepIsActive({ record, stepNumber: 11 });
+
+  const now = new Date().toISOString();
+  const education = normalizeEducationData({
+    goalType: record.data.dataJson.goals?.goalType ?? "other",
+    acknowledged: input.acknowledged,
+    acknowledgedAt: input.acknowledged ? now : undefined,
+  });
+  const validationError = validateStep11CanComplete(education);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const nextDataJson: ConsultationDataJson = {
+    ...record.data.dataJson,
+    education,
+  };
+
+  return updateSessionData({
+    sessionId: input.sessionId,
+    memberId: input.memberId,
+    sessionPatch: { current_step: getStepAfterCompletion(11) },
+    dataJson: nextDataJson,
+  });
+}
+
+export async function saveConsultationStep12(input: {
+  sessionId: string;
+  memberId: string;
+  cooperation: Partial<ConsultationCooperationData>;
+}): Promise<ConsultationSessionRecord> {
+  const record = await loadSessionRecord(input);
+  if (record.session.currentStep < 12) {
+    throw new Error("Complete Step 11 before cooperation review.");
+  }
+  await assertStepIsActive({ record, stepNumber: 12 });
+
+  const cooperation = normalizeCooperationData(input.cooperation ?? {});
+  const validationError = validateStep12CanComplete(cooperation);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const nextDataJson: ConsultationDataJson = {
+    ...record.data.dataJson,
+    cooperation,
+  };
+
+  return updateSessionData({
+    sessionId: input.sessionId,
+    memberId: input.memberId,
+    sessionPatch: { current_step: getStepAfterCompletion(12) },
+    dataJson: nextDataJson,
+  });
+}
+
+export async function saveConsultationStep13(input: {
+  sessionId: string;
+  memberId: string;
+  meals: Partial<ConsultationMealsData>;
+  services: Partial<ConsultationServicesData>;
+}): Promise<ConsultationSessionRecord> {
+  const record = await loadSessionRecord(input);
+  if (record.session.currentStep < 13) {
+    throw new Error("Complete Step 12 before meals and services.");
+  }
+  await assertStepIsActive({ record, stepNumber: 13 });
+
+  const meals = normalizeMealsData(input.meals ?? {});
+  const services = normalizeServicesData({
+    ...input.services,
+    explained: input.services?.explained,
+    explainedAt: input.services?.explained ? new Date().toISOString() : undefined,
+  });
+  const validationError = validateStep13CanComplete({ meals, services });
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const nextDataJson: ConsultationDataJson = {
+    ...record.data.dataJson,
+    meals,
+    services,
+  };
+
+  return updateSessionData({
+    sessionId: input.sessionId,
+    memberId: input.memberId,
+    sessionPatch: { current_step: getStepAfterCompletion(13) },
+    dataJson: nextDataJson,
+  });
+}
+
+export async function completeConsultationStep14(input: {
+  sessionId: string;
+  memberId: string;
+  outcome: Partial<ConsultationOutcomeData>;
+}): Promise<{ record: ConsultationSessionRecord; emitConsultationActivity: boolean }> {
+  const record = await loadSessionRecord(input);
+  if (record.session.currentStep < 14) {
+    throw new Error("Complete Step 13 before final outcome.");
+  }
+  await assertStepIsActive({ record, stepNumber: 14 });
+
+  const now = new Date().toISOString();
+  const outcome = normalizeOutcomeData({
+    ...input.outcome,
+    decidedAt: now,
+  });
+  const validationError = validateStep14Submission({ outcome: outcome.outcome });
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const nextStatus = mapOutcomeToSessionStatus(outcome.outcome);
+  const customer = await loadCustomerProfile({
+    customerId: record.session.customerId,
+    memberId: input.memberId,
+  });
+  const bodyRecord = await loadBodyRecordForBrief(record.session.bodyCompositionRecordId);
+
+  const briefSnapshot = buildConsultationBriefSnapshot({
+    session: {
+      ...record.session,
+      status: nextStatus,
+      successStoryCount: record.session.successStoryCount,
+    },
+    dataJson: {
+      ...record.data.dataJson,
+      outcome,
+    },
+    customer: {
+      displayName: customer.display_name,
+      phone: customer.phone ?? undefined,
+      sex: (customer.sex as import("@/types/customer").CustomerSex | null) ?? undefined,
+      birthDate: customer.birth_date ?? undefined,
+      region: customer.region ?? undefined,
+      occupation: customer.occupation ?? undefined,
+      heightCm: customer.height_cm ?? undefined,
+    },
+    bodyRecord,
+    generatedAt: now,
+  });
+
+  const nextDataJson: ConsultationDataJson = {
+    ...record.data.dataJson,
+    outcome,
+  };
+
+  const updated = await updateSessionData({
+    sessionId: input.sessionId,
+    memberId: input.memberId,
+    sessionPatch: {
+      current_step: 14,
+      status: nextStatus,
+      completed_at: now,
+      brief_snapshot: briefSnapshot,
+    },
+    dataJson: nextDataJson,
+  });
+
+  return {
+    record: updated,
+    emitConsultationActivity: shouldEmitConsultationActivityForOutcome(outcome.outcome),
+  };
+}
+
+export async function getConsultationBrief(input: {
+  sessionId: string;
+  memberId: string;
+}): Promise<ConsultationBriefSnapshot> {
+  const record = await loadSessionRecord(input);
+  if (record.session.briefSnapshot) {
+    return record.session.briefSnapshot;
+  }
+
+  const customer = await loadCustomerProfile({
+    customerId: record.session.customerId,
+    memberId: input.memberId,
+  });
+  const bodyRecord = await loadBodyRecordForBrief(record.session.bodyCompositionRecordId);
+
+  return buildConsultationBriefSnapshot({
+    session: record.session,
+    dataJson: record.data.dataJson,
+    customer: {
+      displayName: customer.display_name,
+      phone: customer.phone ?? undefined,
+      sex: (customer.sex as import("@/types/customer").CustomerSex | null) ?? undefined,
+      birthDate: customer.birth_date ?? undefined,
+      region: customer.region ?? undefined,
+      occupation: customer.occupation ?? undefined,
+      heightCm: customer.height_cm ?? undefined,
+    },
+    bodyRecord,
   });
 }
 
