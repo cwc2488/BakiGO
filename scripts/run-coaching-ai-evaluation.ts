@@ -49,7 +49,17 @@ async function main() {
 
   if (process.env.RUN_COACHING_CONTROLLED_EVAL === "1") {
     console.log("COACHING_EVAL_REPORT_START");
-    console.log(JSON.stringify(payload));
+    for (const scenario of report.scenarios) {
+      console.log(`COACHING_EVAL_SCENARIO:${scenario.scenario}:${JSON.stringify(scenario)}`);
+    }
+    console.log(
+      `COACHING_EVAL_SUMMARY:${JSON.stringify({
+        ranAt: report.ranAt,
+        model: report.model,
+        averageEstimatedCostUsd: report.averageEstimatedCostUsd,
+        costProjection: report.costProjection,
+      })}`,
+    );
     console.log("COACHING_EVAL_REPORT_END");
   } else {
     console.log(JSON.stringify({ ok: true, scenarios: report.scenarios.length, outPath }));
