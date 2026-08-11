@@ -51,7 +51,9 @@ Consultation Engine remains `experimental_hidden` and is not used by coaching.
 
 **Authority:** System owns priorities / evidence / recurring / improved / coach attention / final intervention. AI owns wording only (`coaching_daily_v2b7` + `gpt-4o-mini-2024-07-18`).
 
-**Worker:** `POST /api/coaching/jobs/process` with `Authorization: Bearer $COACHING_CRON_SECRET` (falls back to `RADAR_CRON_SECRET`).
+**Worker:** `POST|GET /api/coaching/jobs/process` with `Authorization: Bearer $COACHING_CRON_SECRET` (also accepts `CRON_SECRET` / `RADAR_CRON_SECRET`). Default batch limit = 10.
+
+**Cron note:** Vercel Hobby only allows daily Cron Jobs. Minute-level Vercel Cron requires Pro (`* * * * *` on `/api/coaching/jobs/process`). Until then use an external scheduler POSTing the same route every minute, or upgrade to Pro and set `CRON_SECRET` equal to `COACHING_CRON_SECRET` (Vercel Cron GET auto-sends `Authorization: Bearer $CRON_SECRET`).
 
 **Not deployed to Customer AI until product confirmation.** Controlled eval public route removed; build no longer runs eval hook.
 
