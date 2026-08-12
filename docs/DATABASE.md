@@ -204,6 +204,23 @@ Member (coach)
 | Coach Action Memory | `coaching_coach_actions` (Phase 3d) |
 | Timeline events | **Derive** from daily logs / AI outputs / body records / coach actions — no duplicate event table |
 
+### AI Coaching Phase 4c–4e — Growth Opportunities & Experience Check-ins
+
+**Status:** Migration `032_growth_opportunities.sql` (unapplied). Renames prior 4c draft `referral_opportunities` → `growth_opportunities` before first apply.
+
+| Table | Purpose | Visibility |
+|-------|---------|------------|
+| `customer_experience_checkins` | Structured Experience authority (4 scales + free text + consent) | Customer portal: own create/read; Coach: owner read |
+| `growth_opportunities` | Coach-only Growth eligibility + lifecycle + primary path | Coach owner only; portal **no** access |
+
+**Experience columns (separate — no single score):** `outcome_perception` 1–5, `coach_helpfulness` 1–5, `experience_satisfaction` 1–5, `recommendation_willingness` 0–10.
+
+**Growth columns:** readiness, fingerprint, primary_growth_path, secondary_paths_json, outcome/experience band snapshots, source_checkin_id, celebration_class, lifecycle status.
+
+**RLS:** owner_member_id for coach; portal check-ins via service-role API after token resolve (same pattern as daily logs). Anon has no direct opportunity policies.
+
+**Out of scope in 4e:** share tokens, attribution, public share page, LINE.
+
 ## Migrations
 
 - All schema changes go through versioned migrations.

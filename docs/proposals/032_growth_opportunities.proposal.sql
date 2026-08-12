@@ -1,0 +1,2 @@
+-- Phase 4e proposal twin of applied migration 032_growth_opportunities.sql
+-- See supabase/migrations/032_growth_opportunities.sql

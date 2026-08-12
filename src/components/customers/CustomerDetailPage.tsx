@@ -18,6 +18,8 @@ import {
 } from "@/components/customers/CustomerReceiptPhotoSection";
 import { CrmButton, CrmCard, CrmField, CrmInput, CrmSectionTitle } from "@/components/members/ui";
 import { PageShell } from "@/components/ui/PageShell";
+import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetch";
+import { flushCustomerCloudPushAsync } from "@/lib/cloud/customer-cloud-service";
 import { getCurrentMember } from "@/lib/auth/auth-service";
 import {
   ensureCustomerPortalToken,
@@ -140,7 +142,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
   const comparison = useMemo(() => compareBodyRecords(records), [records]);
   const trendSeries = useMemo(() => buildBodyCompositionTrendSeries(records), [records]);
 
-  const handleCreateRecord = (values: CustomerBodyFormValues) => {
+  const handleCreateRecord = async (values: CustomerBodyFormValues) => {
     const currentCustomer = repo.getCustomerById(customerId);
     const weightKg = parseCustomerBodyNumber(values.weightKg);
     const bmi =
@@ -167,6 +169,28 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
       note: values.note,
     });
     reload();
+    // Await cloud push before Growth reconcile — prevents stale Opportunity (Phase 4e gate).
+    try {
+      await flushCustomerCloudPushAsync();
+    } catch {
+      // still attempt reconcile; API retries on missing measurement
+    }
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const res = await fetchCoachingWithMemberAuth(
+        `/api/coaching/customers/${encodeURIComponent(customerId)}/growth/reconcile`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reason: "body_measurement_saved",
+            logDate: values.recordDate,
+            expectRecordDate: values.recordDate,
+          }),
+        },
+      ).catch(() => null);
+      if (res?.ok) break;
+      await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+    }
   };
 
   const handleCreatePhoto = (values: CustomerProgressPhotoFormValues) => {

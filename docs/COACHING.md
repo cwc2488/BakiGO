@@ -215,4 +215,22 @@ Detail navigation reuses `/coaching/[enrollmentId]`. Timeline / Coach Actions = 
 
 **Intervention history:** derived only from consecutive completed `coaching_ai_outputs.final_intervention_level` changes. No fake history when outputs are missing.
 
-**Coach Action events:** contract reserved; not emitted until Phase 3d persistence.
+**Coach Action events:** emitted from `coaching_coach_actions` (Phase 3d).
+
+## Phase 4c–4e — Growth Intelligence
+
+**Layers:** Measured Outcome ≠ Experience ≠ Opportunity ≠ Path ≠ Ask ≠ Attribution.
+
+| Concern | Authority |
+|---------|-----------|
+| Body Outcome | Phase 2f unchanged |
+| Experience scales | `customer_experience_checkins` (structured) |
+| Note heuristic Path B | Bootstrap only when no valid check-in |
+| Growth Matrix | Deterministic bands + primary path (no single score) |
+| Persist | `growth_opportunities` + fingerprint reconcile |
+| Customer UI | Check-in only (≠ Growth Ask) |
+| Coach UI | Detail Growth section |
+
+**Rescue > Growth.** Event-driven reconcile only — no daily polling.
+
+**APIs:** portal check-in; coach `.../growth-opportunities` + growth summary on Detail.

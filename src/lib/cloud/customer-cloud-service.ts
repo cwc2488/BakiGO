@@ -747,3 +747,19 @@ export function flushCustomerCloudPush(storage?: StorageAdapter): void {
     console.error("Customer cloud sync push failed:", error);
   });
 }
+
+/** Awaitable flush — use before Growth reconcile to avoid local→cloud race. */
+export async function flushCustomerCloudPushAsync(storage?: StorageAdapter): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    return;
+  }
+
+  if (pushTimer) {
+    clearTimeout(pushTimer);
+    pushTimer = null;
+  }
+
+  pushStorage = storage ?? pushStorage ?? new LocalStorageAdapter();
+  const targetStorage = pushStorage ?? createLocalStorageAdapter();
+  await pushLocalCustomersToCloud(targetStorage);
+}

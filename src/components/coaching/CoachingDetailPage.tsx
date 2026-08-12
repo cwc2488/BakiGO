@@ -7,6 +7,7 @@ import { CustomerPhotoCompareSection } from "@/components/customers/CustomerPhot
 import { CrmButton, CrmCard, CrmField, CrmSectionTitle } from "@/components/members/ui";
 import { PageShell } from "@/components/ui/PageShell";
 import CoachingCoachActionPanel from "@/components/coaching/CoachingCoachActionPanel";
+import CoachingGrowthPanel from "@/components/coaching/CoachingGrowthPanel";
 import CoachingTimelinePanel from "@/components/coaching/CoachingTimelinePanel";
 import { compareBodyRecords } from "@/lib/customers/body-composition-compare";
 import { buildCoachingProgressView } from "@/lib/coaching/build-coaching-progress-view";
@@ -465,6 +466,8 @@ export default function CoachingDetailPage({
             ) : null}
             <BodyCompositionTrendCharts seriesList={trendSeries} />
           </CrmCard>
+
+          <CoachingGrowthPanel enrollmentId={enrollmentId} logDate={logDate} />
 
           {progressPhotos.some((photo) => photo.imageDataUrl) ? (
             <CrmCard className="space-y-4">

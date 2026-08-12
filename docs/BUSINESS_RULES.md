@@ -357,6 +357,101 @@ Decision Tree segment after Phase 1 body measurement. All step payloads live in 
 
 **Out of scope for Phase 2:** success stories, AI, case matching, brain-change / science / services / product / pricing / Consultation Brief (Steps 9–14).
 
+## Coaching Growth Intelligence (Phase 4c–4e)
+
+**Layers must never merge:**
+
+```text
+deterministic Measured Outcome   (Phase 2f)
+  ≠ Customer perceived outcome   (Experience check-in)
+  ≠ Coach / experience satisfaction
+  ≠ recommendation willingness
+  ≠ explicit referral intent
+  ≠ Growth Opportunity           (persist)
+  ≠ Growth Path                  (coach_assisted_referral | social_proof | friend_benefit)
+  ≠ Ask / Share / Invite
+  ≠ Attribution A→B              (future)
+```
+
+**Forbidden:** a single Referral Score / averaged NPS as eligibility authority.
+
+Phase 2f **Body Outcome** authority is unchanged. Growth must not invent a second body KPI set or rewrite `outcomeStatus`.
+
+### Outcome Signal (derive-only)
+
+Computed at `asOfLogDate` for one `owner_member_id` + `customer_id`. Includes measurement stage, outcome status, attention, celebration class, and Phase 4c **customer-confirmed heuristic** (Customer note only).
+
+### Customer Experience Check-in (persist authority)
+
+Structured Customer response — primary Experience authority:
+
+| Field | Scale | Meaning |
+|-------|-------|---------|
+| `outcome_perception` | 1–5 | 自己覺得改變程度 |
+| `coach_helpfulness` | 1–5 | Coach / 陪跑是否有幫助 |
+| `experience_satisfaction` | 1–5 | 整體體驗 |
+| `recommendation_willingness` | 0–10 | 願意推薦程度（分開存，不合成） |
+| `most_felt_change_text` | text | 最有感的改變（verbatim） |
+| `most_felt_change_consent` | `coach_only` \| `share_ok` | 預設 coach_only |
+| `explicit_referral_intent` | bool | Customer 主動肯定 |
+| `struggle_flag` / `decline_growth_ask` | bool | Rescue / cooldown |
+
+Check-in ≠ Growth Ask. Never auto-demand referral in the check-in flow.
+
+**Authority rank:** structured check-in > Phase 4c note heuristic > Coach/AI/photo (never).  
+Heuristic Path B only bootstraps when no valid check-in. Check-in low scores override vague positive heuristics.  
+`explicit_referral_intent` (check-in OR heuristic) is the highest Growth signal, still subject to **Rescue > Growth**.
+
+### Check-in triggers & cooldown
+
+Triggers (event, not daily): `post_measurement` | `milestone` | `major_breakthrough` | `coach_invite` | `recheck`.
+
+| Policy | Value |
+|--------|-------|
+| Min gap between check-ins | 14 days |
+| After `decline_growth_ask` | 30 days (no Growth surface; Rescue OK) |
+| After completed check-in | 21 days before auto recheck |
+| Coach invite soft cap | 1 / 7 days |
+| Hard suppress | `coach_attention` / struggle / owner mismatch |
+
+### Growth Matrix (Measured Outcome × Experience)
+
+Bands (separate — never averaged into one score):
+
+- **outcomeBand:** `blocked` | `low` | `mid` | `high`
+- **experienceBand:** `unknown` | `struggle` | `low` | `mid` | `high`
+
+Experience high example: perception≥4 AND satisfaction≥4 AND willingness≥8.  
+Experience low example: any key axis ≤2 OR `struggle_flag`.
+
+| | Exp struggle/low | Exp unknown | Exp mid | Exp high |
+|--|--|--|--|--|
+| Outcome blocked/low | Rescue only | Rescue / wait | Support; no Growth Ask | Soft celebrate; Friend Benefit prep only |
+| Outcome mid | Block Growth | Invite check-in | Coach-assisted emerging | Coach-assisted or Social Proof |
+| Outcome high | Repair Experience; block Growth | Check-in before strong | Social Proof + Coach-assisted candidates | **strong** Growth |
+
+**Rescue > Growth** hard blocks: `coach_attention`, struggle, worsening, mixed+muscle-loss, decline cooldown, owner mismatch, no enrollment.
+
+### Growth Paths
+
+| Path | When primary |
+|------|----------------|
+| `coach_assisted_referral` | explicit intent, or high×high default |
+| `social_proof` | high Outcome + mid/high Exp + share consent + willingness≥7 |
+| `friend_benefit` | high Exp with mid/low Outcome, or softer invite |
+
+Multi-path may be **internally eligible**; surface **one primary** only (14-day Growth Ask cooldown across paths). Friend Benefit v1 = abstract benefit/reward — no product discount hardcode.
+
+### Persistence & reconcile
+
+- Tables: `customer_experience_checkins` (Customer authority), `growth_opportunities` (Coach-only).
+- Same fingerprint → update; major evidence change → supersede.
+- Reconcile on events: measurement saved, check-in submitted, attention→coach_attention, growth action/snooze/decline, enrollment lifecycle. **No daily polling.**
+
+### Ownership / privacy
+
+Strict `owner_member_id`. Customer portal: create/read **own check-ins only**; never read Growth Opportunity / Matrix internals. Upline: no access. Share/attribution out of Phase 4e.
+
 ## Edge Cases & Exceptions
 
 Document any intentional exceptions to the rules above in this section.
@@ -371,3 +466,5 @@ Document any intentional exceptions to the rules above in this section.
 | 2026-08 | Sprint 13 — VP Rule Engine（Core Currency） | — |
 | 2026-08 | Consultation Engine V1 Phase 1 — sessions + JSONB step data | — |
 | 2026-08 | Consultation Engine V1 Phase 2 — Steps 4–8 decision tree + commitment gate | — |
+| 2026-08 | Coaching Phase 4c — Referral Opportunity Engine (Path A/B + persist) | — |
+| 2026-08 | Coaching Phase 4d–4e — Experience Check-in + Growth Matrix + Coach Growth UI | — |

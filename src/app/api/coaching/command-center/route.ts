@@ -37,6 +37,25 @@ export async function GET(request: Request) {
       asOfHourTaipei,
     });
 
+    // Event: Attention → coach_attention — best-effort Growth reconcile (Rescue > Growth)
+    const attentionIds = result.sections.needsAttention
+      .filter((item) => item.assessment.tier === "coach_attention")
+      .slice(0, 15)
+      .map((item) => item.enrollmentId);
+    if (attentionIds.length > 0) {
+      const { triggerGrowthReconcileBestEffort } = await import(
+        "@/lib/coaching/growth/trigger-growth-reconcile"
+      );
+      for (const enrollmentId of attentionIds) {
+        void triggerGrowthReconcileBestEffort({
+          enrollmentId,
+          ownerMemberId: memberId,
+          logDate,
+          forceCoachAttention: true,
+        });
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       ...result,

@@ -329,7 +329,19 @@ export async function updateCoachingEnrollment(input: {
     throw new CoachingServiceError("Forbidden", 403);
   }
 
-  return mapEnrollment(data as EnrollmentRow);
+  const enrollment = mapEnrollment(data as EnrollmentRow);
+
+  // Event: enrollment lifecycle → Growth reconcile (best-effort)
+  if (input.status) {
+    void import("@/lib/coaching/growth/trigger-growth-reconcile").then(({ triggerGrowthReconcileBestEffort }) =>
+      triggerGrowthReconcileBestEffort({
+        enrollmentId: input.enrollmentId,
+        ownerMemberId: input.ownerMemberId,
+      }),
+    );
+  }
+
+  return enrollment;
 }
 
 export async function getCoachingEnrollmentForCoach(input: {

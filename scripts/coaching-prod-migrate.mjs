@@ -212,6 +212,50 @@ async function verify031(supabase) {
   };
 }
 
+async function verify032(supabase) {
+  const growth = await tableExists(supabase, "growth_opportunities");
+  const checkins = await tableExists(supabase, "customer_experience_checkins");
+  const referralDraft = await tableExists(supabase, "referral_opportunities");
+  const growthColumns = {};
+  const checkinColumns = {};
+  if (growth.exists) {
+    for (const column of [
+      "fingerprint",
+      "primary_growth_path",
+      "outcome_band_snapshot",
+      "experience_band_snapshot",
+      "source_checkin_id",
+      "owner_member_id",
+    ]) {
+      growthColumns[column] = await columnExists(supabase, "growth_opportunities", column);
+    }
+  }
+  if (checkins.exists) {
+    for (const column of [
+      "outcome_perception",
+      "coach_helpfulness",
+      "experience_satisfaction",
+      "recommendation_willingness",
+      "most_felt_change_text",
+      "most_felt_change_consent",
+    ]) {
+      checkinColumns[column] = await columnExists(supabase, "customer_experience_checkins", column);
+    }
+  }
+  return {
+    growth,
+    checkins,
+    referralDraftAbsent: !referralDraft.exists,
+    growthColumns,
+    checkinColumns,
+    ok:
+      growth.exists &&
+      checkins.exists &&
+      Object.values(growthColumns).every((item) => item.exists) &&
+      Object.values(checkinColumns).every((item) => item.exists),
+  };
+}
+
 async function applyMigration({ migration, sqlPath, token, projectRef }) {
   const sql = readFileSync(sqlPath, "utf8");
   const attempt = await runSqlViaManagementApi(sql, token, projectRef);
@@ -259,6 +303,7 @@ async function main() {
   out.migrations["029"] = await verify029(supabase);
   out.migrations["030"] = await verify030(supabase);
   out.migrations["031"] = await verify031(supabase);
+  out.migrations["032"] = await verify032(supabase);
 
   if (mode === "apply") {
     if (!serviceKey && !accessToken) {
@@ -347,6 +392,23 @@ async function main() {
       }
       out.migrations["031"] = await verify031(supabase);
     }
+
+    if (
+      out.migrations["031"].ok &&
+      !out.migrations["032"].ok
+    ) {
+      for (const [label, token] of tokens) {
+        const attempt = await applyMigration({
+          migration: "032_growth_opportunities.sql",
+          sqlPath: "supabase/migrations/032_growth_opportunities.sql",
+          token,
+          projectRef: out.projectRef,
+        });
+        out.applyAttempts.push({ label, ...attempt });
+        if (attempt.ok) break;
+      }
+      out.migrations["032"] = await verify032(supabase);
+    }
   }
 
   out.ok =
@@ -356,6 +418,7 @@ async function main() {
     out.migrations["029"].allTablesExist &&
     out.migrations["030"].ok &&
     out.migrations["031"].ok &&
+    out.migrations["032"].ok &&
     (serviceKey
       ? !!out.migrations["027"].storage?.bucket && out.migrations["027"].storage.bucket.public === false
       : true);
