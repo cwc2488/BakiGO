@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { CrmButton, CrmCard, CrmField, CrmSectionTitle } from "@/components/members/ui";
 import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetch";
+import { GROWTH_UI_LABELS } from "@/lib/coaching/presentation/coaching-ui-copy";
 
 type CoachView = {
   suitableNow: boolean;
   headline: string;
+  summaryTone?: string;
+  sectionTitle?: string;
   measuredOutcome: string;
   perceivedOutcome: number | null;
   coachHelpfulness: number | null;
@@ -31,6 +34,7 @@ type GrowthPayload = {
 
 /**
  * Coach Growth section — answers: 適不適合談成果分享／轉介紹？為什麼？
+ * Default: collapsed summary for 5–10s decision.
  */
 export default function CoachingGrowthPanel({
   enrollmentId,
@@ -43,6 +47,7 @@ export default function CoachingGrowthPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const load = useCallback(
     async (reconcile = false) => {
@@ -56,11 +61,11 @@ export default function CoachingGrowthPanel({
         );
         const data = (await res.json()) as GrowthPayload;
         if (!res.ok || !data.ok || !data.coachView) {
-          throw new Error(data.error ?? "無法載入 Growth");
+          throw new Error(data.error ?? "無法載入成果與分享機會");
         }
         setPayload(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "無法載入 Growth");
+        setError(err instanceof Error ? err.message : "無法載入成果與分享機會");
       } finally {
         setLoading(false);
       }
@@ -97,93 +102,115 @@ export default function CoachingGrowthPanel({
   };
 
   const view = payload?.coachView;
+  const summaryTone = view?.summaryTone ?? GROWTH_UI_LABELS.summaryNotSuitable;
 
   return (
-    <CrmCard className="space-y-4">
-      <CrmSectionTitle>Growth（成果分享／轉介紹適配）</CrmSectionTitle>
+    <CrmCard className="min-w-0 space-y-4 overflow-hidden">
+      <CrmSectionTitle>{view?.sectionTitle ?? GROWTH_UI_LABELS.sectionTitle}</CrmSectionTitle>
       {loading ? <p className="text-[0.875rem] text-[#86868b]">載入中…</p> : null}
-      {error ? <p className="text-[0.875rem] text-[#c62828]">{error}</p> : null}
+      {error ? <p className="min-w-0 break-words text-[0.875rem] text-[#c62828] [overflow-wrap:anywhere]">{error}</p> : null}
       {view ? (
         <>
           <div
-            className={`rounded-2xl px-4 py-3 ${
+            className={`min-w-0 rounded-2xl px-4 py-3 ${
               view.suitableNow ? "bg-[#eef7f0]" : "bg-[#f5f5f7]"
             }`}
           >
-            <p className="text-[0.8125rem] font-medium text-[#86868b]">現在適不適合談？</p>
-            <p className="mt-1 text-[1.125rem] font-semibold text-[#1d1d1f]">{view.headline}</p>
+            <p className="text-[0.8125rem] font-medium text-[#86868b]">{GROWTH_UI_LABELS.suitableQuestion}</p>
+            <p className="mt-1 min-w-0 text-[1.125rem] font-semibold break-words text-[#1d1d1f] [overflow-wrap:anywhere]">
+              {summaryTone}
+            </p>
+            {view.headline && view.headline !== summaryTone ? (
+              <p className="mt-1 min-w-0 text-[0.875rem] break-words text-[#636366] [overflow-wrap:anywhere]">
+                {view.headline}
+              </p>
+            ) : null}
             {view.repairExperience ? (
-              <p className="mt-2 text-[0.875rem] text-[#636366]">
+              <p className="mt-2 min-w-0 text-[0.875rem] break-words text-[#636366] [overflow-wrap:anywhere]">
                 量測成果不錯，但體驗／感受偏低——請先修復信任與期待，不要當成功故事談介紹。
               </p>
             ) : null}
             {view.inviteCheckin ? (
-              <p className="mt-2 text-[0.875rem] text-[#636366]">
-                建議先邀請 Customer 做「陪跑小回顧」，再決定是否談分享／轉介紹。
+              <p className="mt-2 min-w-0 text-[0.875rem] break-words text-[#636366] [overflow-wrap:anywhere]">
+                {GROWTH_UI_LABELS.inviteCheckinHint}
               </p>
             ) : null}
           </div>
 
-          <CrmField label="量測 Outcome" value={view.measuredOutcome} />
-          <CrmField
-            label="Customer 自覺改變"
-            value={view.perceivedOutcome != null ? `${view.perceivedOutcome} / 5` : "尚未回饋"}
-          />
-          <CrmField
-            label="Coach helpfulness"
-            value={view.coachHelpfulness != null ? `${view.coachHelpfulness} / 5` : "尚未回饋"}
-          />
-          <CrmField
-            label="整體體驗"
-            value={
-              view.experienceSatisfaction != null
-                ? `${view.experienceSatisfaction} / 5（${view.experienceBand}）`
-                : view.experienceBand
-            }
-          />
-          <CrmField
-            label="推薦意願"
-            value={
-              view.recommendationWillingness != null
-                ? `${view.recommendationWillingness} / 10`
-                : "尚未回饋"
-            }
-          />
-          <CrmField label="最有感的改變" value={view.mostFeltChange ?? "—"} />
-          <CrmField label="建議主路徑" value={view.primaryPath} />
+          <button
+            className="min-h-12 w-full rounded-2xl bg-[var(--brand-bg)] px-4 py-3 text-left text-[0.9375rem] font-semibold text-[var(--brand-primary-dark)]"
+            onClick={() => setExpanded((value) => !value)}
+            type="button"
+          >
+            {expanded ? GROWTH_UI_LABELS.collapseDetails : GROWTH_UI_LABELS.expandDetails}
+          </button>
 
-          {view.whyEvidence.length > 0 ? (
-            <div>
-              <p className="text-[0.8125rem] font-medium text-[#86868b]">為什麼（evidence）</p>
-              <ul className="mt-1 list-disc space-y-1 pl-5 text-[0.8125rem] text-[#636366]">
-                {view.whyEvidence.map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          {expanded ? (
+            <div className="min-w-0 space-y-1">
+              <CrmField label={GROWTH_UI_LABELS.measuredOutcome} value={view.measuredOutcome} />
+              <CrmField
+                label={GROWTH_UI_LABELS.perceivedOutcome}
+                value={view.perceivedOutcome != null ? `${view.perceivedOutcome} / 5` : "尚未回饋"}
+              />
+              <CrmField
+                label={GROWTH_UI_LABELS.coachHelpfulness}
+                value={view.coachHelpfulness != null ? `${view.coachHelpfulness} / 5` : "尚未回饋"}
+              />
+              <CrmField
+                label={GROWTH_UI_LABELS.experienceSatisfaction}
+                value={
+                  view.experienceSatisfaction != null
+                    ? `${view.experienceSatisfaction} / 5（${view.experienceBand}）`
+                    : view.experienceBand
+                }
+              />
+              <CrmField
+                label={GROWTH_UI_LABELS.recommendationWillingness}
+                value={
+                  view.recommendationWillingness != null
+                    ? `${view.recommendationWillingness} / 10`
+                    : "尚未回饋"
+                }
+              />
+              <CrmField label={GROWTH_UI_LABELS.mostFeltChange} value={view.mostFeltChange ?? "—"} />
+              <CrmField label={GROWTH_UI_LABELS.primaryPath} value={view.primaryPath} />
 
-          {payload?.opportunity?.id && view.suitableNow ? (
-            <div className="flex flex-wrap gap-2">
-              <CrmButton type="button" disabled={busy} onClick={() => void patchStatus("acted")}>
-                已談過
-              </CrmButton>
-              <CrmButton
-                type="button"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => void patchStatus("snoozed")}
-              >
-                稍後再說
-              </CrmButton>
-              <CrmButton
-                type="button"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => void patchStatus("declined")}
-              >
-                Customer 婉拒
-              </CrmButton>
+              {view.whyEvidence.length > 0 ? (
+                <div className="min-w-0 pt-2">
+                  <p className="text-[0.8125rem] font-medium text-[#86868b]">{GROWTH_UI_LABELS.whyTitle}</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-[0.8125rem] text-[#636366]">
+                    {view.whyEvidence.map((line) => (
+                      <li key={line} className="min-w-0 break-words [overflow-wrap:anywhere]">
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {payload?.opportunity?.id && view.suitableNow ? (
+                <div className="flex flex-wrap gap-2 pt-3">
+                  <CrmButton type="button" disabled={busy} onClick={() => void patchStatus("acted")}>
+                    已談過
+                  </CrmButton>
+                  <CrmButton
+                    type="button"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => void patchStatus("snoozed")}
+                  >
+                    稍後再說
+                  </CrmButton>
+                  <CrmButton
+                    type="button"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => void patchStatus("declined")}
+                  >
+                    {GROWTH_UI_LABELS.decline}
+                  </CrmButton>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </>

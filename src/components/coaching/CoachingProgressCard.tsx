@@ -48,7 +48,7 @@ export function CoachingProgressCard({ progress }: { progress: CoachingProgressV
             ))}
           </div>
           <div className="rounded-[1rem] bg-[#f5f5f7] px-4 py-3 space-y-1">
-            <p className="text-[0.9375rem] font-medium text-[#1d1d1f]">目前狀態：持續累積中</p>
+            <p className="text-[0.9375rem] font-medium text-[#1d1d1f]">目前狀態：尚未進行第二次量測</p>
             <p className="text-[0.875rem] text-[#636366]">{progress.customerSummary}</p>
           </div>
         </div>

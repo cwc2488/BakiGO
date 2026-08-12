@@ -74,23 +74,12 @@ function numberFromEvidence(block: CoachingAttentionEvidence, key: string): numb
   return null;
 }
 
+import { formatOutcomeStatusLabel as formatUiOutcomeStatusLabel } from "@/lib/coaching/presentation/coaching-ui-copy";
+
 export function formatOutcomeStatusLabel(status: string | null | undefined): string | null {
-  switch (status) {
-    case "improving":
-      return "Improving";
-    case "mixed":
-      return "Mixed";
-    case "flat":
-      return "Flat";
-    case "worsening":
-      return "Worsening";
-    case "not_yet_measurable":
-      return "持續累積中";
-    case "insufficient_data":
-      return "資料不足";
-    default:
-      return null;
-  }
+  if (!status) return null;
+  const label = formatUiOutcomeStatusLabel(status);
+  return label === "狀態更新中" ? null : label;
 }
 
 export function formatCommandCenterSectionLabel(

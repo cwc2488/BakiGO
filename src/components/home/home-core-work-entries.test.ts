@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { SIMPLE_QUICK_LINKS, WORK_HUB_LINKS } from "@/lib/ui/work-hub-links";
+import { MY_WORLD_SECONDARY_LINKS, SIDE_NAV_EXTRA_LINKS } from "@/lib/ui/work-hub-links";
 
-describe("home work hub links", () => {
-  it("keeps guided consultation hidden from home navigation", () => {
-    const serialized = JSON.stringify({ SIMPLE_QUICK_LINKS, WORK_HUB_LINKS });
+describe("three-world work links", () => {
+  it("keeps Meta Review and Radar out of my-world secondary links", () => {
+    const serialized = JSON.stringify({ MY_WORLD_SECONDARY_LINKS, SIDE_NAV_EXTRA_LINKS });
+    expect(serialized).not.toContain("/meta-review");
+    expect(serialized).not.toContain("/radar");
+  });
+
+  it("places guided consultation in customer journey, not my-world secondary", () => {
+    const serialized = JSON.stringify(MY_WORLD_SECONDARY_LINKS);
     expect(serialized).not.toContain("/consultation/new");
-    expect(serialized).not.toContain("引導式諮詢");
   });
 });

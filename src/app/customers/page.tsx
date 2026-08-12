@@ -1,5 +1,5 @@
-import CustomerListPage from "@/components/customers/CustomerListPage";
+import CustomerJourneyHubPage from "@/components/customers/CustomerJourneyHubPage";
 
 export default function CustomersRoute() {
-  return <CustomerListPage />;
+  return <CustomerJourneyHubPage />;
 }

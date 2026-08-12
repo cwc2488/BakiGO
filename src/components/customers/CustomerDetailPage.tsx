@@ -362,7 +362,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
         await revokeCustomerPortalToken(customerId).catch(() => undefined);
       }
       repo.deleteCustomer(customerId);
-      router.push("/customers");
+      router.push("/customers/list");
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "無法刪除顧客");
       setDeleteBusy(false);
@@ -371,7 +371,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
 
   if (!customer) {
     return (
-      <PageShell backHref="/customers" backLabel="返回顧客列表" title="顧客關懷" variant="plain">
+      <PageShell backHref="/customers/list" backLabel="返回顧客列表" title="顧客關懷" variant="plain">
         <p className="text-[0.9375rem] text-[#86868b]">找不到這位顧客。</p>
       </PageShell>
     );
@@ -379,7 +379,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
 
   return (
     <PageShell
-      backHref="/customers"
+      backHref="/customers/list"
       backLabel="返回顧客列表"
       subtitle="體組成資料僅你與顧客本人可見"
       title={customer.displayName}

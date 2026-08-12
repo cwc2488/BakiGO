@@ -30,9 +30,9 @@ export function CrmField({
   value: string | number | null | undefined;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-[#f2f2f7] py-3.5 last:border-b-0">
-      <dt className="text-[0.9375rem] text-[#636366]">{label}</dt>
-      <dd className="max-w-[60%] text-right text-[0.9375rem] font-medium text-[#1d1d1f]">
+    <div className="flex min-w-0 items-start justify-between gap-3 border-b border-[#f2f2f7] py-3.5 last:border-b-0 sm:gap-4">
+      <dt className="shrink-0 text-[0.9375rem] text-[#636366]">{label}</dt>
+      <dd className="min-w-0 flex-1 text-right text-[0.9375rem] font-medium break-words [overflow-wrap:anywhere] text-[#1d1d1f]">
         {value === null || value === undefined || value === "" ? "—" : value}
       </dd>
     </div>

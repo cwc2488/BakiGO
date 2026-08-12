@@ -460,25 +460,25 @@ export function assessCoachingOutcome(input: {
 }
 
 export const COACHING_OUTCOME_STATUS_LABELS: Record<CoachingOutcomeStatus, string> = {
-  not_yet_measurable: "持續累積中",
-  improving: "持續改善",
-  mixed: "結果好壞交錯",
-  flat: "持平觀察",
+  not_yet_measurable: "尚未進行第二次量測",
+  improving: "進展良好",
+  mixed: "有進展，仍需觀察",
+  flat: "目前變化不明顯",
   worsening: "需要調整",
   insufficient_data: "資料不足",
 };
 
 export const COACHING_TREND_STATUS_LABELS: Record<CoachingTrendStatus, string> = {
   not_applicable: "尚未進入趨勢判斷",
-  improving: "持續改善",
-  mixed: "結果好壞交錯",
-  flat: "持平觀察",
+  improving: "進展良好",
+  mixed: "有進展，仍需觀察",
+  flat: "目前變化不明顯",
   worsening: "需要調整",
   insufficient_data: "資料不足",
 };
 
 export const COACHING_MEASUREMENT_STAGE_LABELS: Record<CoachingMeasurementStage, string> = {
-  baseline_only: "只有起始量測",
+  baseline_only: "目前只有起始量測",
   comparison_available: "可比較起始與最新",
   trend_available: "可看趨勢",
 };

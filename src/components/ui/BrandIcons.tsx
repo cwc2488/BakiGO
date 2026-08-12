@@ -520,10 +520,9 @@ export const ROUTE_ICON_COMPONENTS = {
 } as const;
 
 export const NAV_ICONS = {
-  "/": IconHome,
-  "/daily-action": IconToday,
+  "/": IconProfile,
+  "/customers": IconNewCustomer,
   "/calendar": IconCalendar,
-  "/profile": IconProfile,
 } as const;
 
 export type QuickLinkHref = keyof typeof ROUTE_ICON_COMPONENTS;

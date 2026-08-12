@@ -144,7 +144,7 @@ function ProfileQuickLinks() {
   const links = [
     {
       href: "/customers",
-      label: followUpCount > 0 ? `顧客關懷 (${followUpCount})` : "顧客關懷",
+      label: followUpCount > 0 ? `顧客 (${followUpCount})` : "顧客",
     },
     ...(showPartnerCare
       ? [{
@@ -152,11 +152,11 @@ function ProfileQuickLinks() {
           label: partnerFollowUpCount > 0 ? `夥伴關懷 (${partnerFollowUpCount})` : "夥伴關懷",
         }]
       : []),
-    { href: "/leaderboard", label: "積分排行" },
-    { href: "/organization", label: "組織圖" },
+    { href: "/leaderboard", label: "排行榜" },
+    { href: "/organization", label: "我的組織" },
     { href: "/retail-house", label: "零售屋" },
-    { href: "/goals", label: "目標中心" },
-    { href: "/events", label: "活動紀錄" },
+    { href: "/goals", label: "我的目標" },
+    { href: "/calendar", label: "行事曆" },
   ] as const;
 
   return (

@@ -199,10 +199,10 @@ export default function CustomerListPage() {
 
   return (
     <PageShell
-      backHref="/profile"
-      backLabel="返回個人"
+      backHref="/customers"
+      backLabel="返回顧客"
       subtitle="管理顧客量測與追蹤，資料僅教練本人可見"
-      title="顧客關懷"
+      title="顧客列表"
       titleIcon={APP_ICON.quadrant.newCustomer}
       variant="plain"
     >

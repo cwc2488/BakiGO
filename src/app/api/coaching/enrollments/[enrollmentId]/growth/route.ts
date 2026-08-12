@@ -2,13 +2,17 @@ import { NextResponse } from "next/server";
 import { toCoachingApiErrorMessage } from "@/lib/coaching/coaching-api-error";
 import { CoachingServiceError, getCoachingEnrollmentForCoach } from "@/lib/coaching/coaching-service";
 import { mapBodyRecordRow } from "@/lib/coaching/ai/load-coaching-generation-context";
-import {
-  bandLabel,
-  buildGrowthIntelligence,
-  growthPathLabel,
-  readinessLabel,
-} from "@/lib/coaching/growth/build-growth-intelligence";
+import { buildGrowthIntelligence } from "@/lib/coaching/growth/build-growth-intelligence";
 import { getLatestExperienceCheckin } from "@/lib/coaching/growth/experience-checkin-service";
+import {
+  formatExperienceBandLabel,
+  formatGrowthPathLabel,
+  formatGrowthSummaryTone,
+  formatMeasuredOutcomeDisplay,
+  formatReadinessHeadline,
+  GROWTH_UI_LABELS,
+  mapGrowthWhyEvidenceToZh,
+} from "@/lib/coaching/presentation/coaching-ui-copy";
 import {
   listGrowthOpportunitiesForEnrollment,
   persistGrowthMatrixEvaluation,
@@ -117,17 +121,27 @@ async function loadGrowthBundle(input: {
     opportunity: record,
     coachView: {
       suitableNow: matrix.shouldOpen,
-      headline: readinessLabel(matrix.readiness),
-      measuredOutcome: `${matrix.outcomeSignal.outcomeStatus}（${bandLabel(matrix.outcomeBand)}）`,
+      headline: formatReadinessHeadline(matrix.readiness),
+      summaryTone: formatGrowthSummaryTone({
+        suitableNow: matrix.shouldOpen,
+        readiness: matrix.readiness,
+        inviteCheckin: matrix.inviteCheckin,
+        repairExperience: matrix.repairExperience,
+      }),
+      sectionTitle: GROWTH_UI_LABELS.sectionTitle,
+      measuredOutcome: formatMeasuredOutcomeDisplay({
+        outcomeStatus: matrix.outcomeSignal.outcomeStatus,
+        outcomeBand: matrix.outcomeBand,
+      }),
       perceivedOutcome: checkin?.outcomePerception ?? null,
       coachHelpfulness: checkin?.coachHelpfulness ?? null,
       experienceSatisfaction: checkin?.experienceSatisfaction ?? null,
       recommendationWillingness: checkin?.recommendationWillingness ?? null,
       mostFeltChange: checkin?.mostFeltChangeText ?? null,
-      experienceBand: bandLabel(matrix.experienceBand),
-      primaryPath: growthPathLabel(matrix.primaryGrowthPath),
+      experienceBand: formatExperienceBandLabel(matrix.experienceBand),
+      primaryPath: formatGrowthPathLabel(matrix.primaryGrowthPath),
       primaryPathCode: matrix.primaryGrowthPath,
-      whyEvidence: matrix.whyEvidence,
+      whyEvidence: mapGrowthWhyEvidenceToZh(matrix.whyEvidence),
       repairExperience: matrix.repairExperience,
       inviteCheckin: matrix.inviteCheckin,
       celebrationClass: matrix.celebrationClass,

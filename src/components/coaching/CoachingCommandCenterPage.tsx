@@ -232,7 +232,7 @@ export default function CoachingCommandCenterPage() {
   const searchActive = query.trim().length > 0 || filter !== "all";
 
   return (
-    <PageShell backHref="/" subtitle={`${logDate} · Asia/Taipei`} title="陪跑指揮中心">
+    <PageShell backHref="/customers" backLabel="返回顧客" subtitle={`${logDate} · Asia/Taipei`} title="陪跑指揮中心">
       <CrmCard className="space-y-4">
         <p className="text-[0.9375rem] leading-relaxed text-[#636366]">今天誰需要我？</p>
 
