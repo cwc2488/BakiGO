@@ -20,6 +20,9 @@ Consultation Engine remains `experimental_hidden` and is not used by coaching.
 - Reuse existing **`customer_portal_tokens`** and `/c/{token}/coaching`.
 - Customers are **not** members and do **not** log in.
 - Coaching data is **cloud-first only** (no localStorage persistence).
+- Customer may report **today / yesterday / day-before-yesterday** only (`Asia/Taipei` calendar days). Server validates the same 3-day allowlist.
+- Each `log_date` has its own daily log, photos, AI output, fingerprint, and generation job. Backfill must not overwrite another day's AI output.
+- Rolling 14-day memory naturally includes backfilled days on the next generation; completed today AI is not force-regenerated.
 
 ## Phase 1 scope
 
@@ -49,7 +52,7 @@ Consultation Engine remains `experimental_hidden` and is not used by coaching.
 
 **Status:** Wired. Daily submit enqueues generation jobs; service-role worker processes with claim/retry/stale recovery; customer complete page polls customer-facing fields; coach dashboard/detail show deterministic intervention + AI wording.
 
-**Authority:** System owns priorities / evidence / recurring / improved / coach attention / final intervention. AI owns wording only (`coaching_daily_v2b7` + `gpt-4o-mini-2024-07-18`).
+**Authority:** System owns priorities / evidence / recurring / improved / coach attention / final intervention. AI owns wording only (`coaching_daily_v2d` + `gpt-4o-mini-2024-07-18`).
 
 **Worker:** `POST|GET /api/coaching/jobs/process` with `Authorization: Bearer $COACHING_CRON_SECRET` (also accepts `CRON_SECRET` / `RADAR_CRON_SECRET`). Default batch limit = 10.
 

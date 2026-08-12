@@ -10,11 +10,13 @@ import {
   resolveActiveCoachingPortal,
   serializeCoachingDailyLogDetail,
 } from "@/lib/coaching/coaching-service";
+import { listCoachingRecentDaySummaries } from "@/lib/coaching/list-coaching-recent-day-summaries";
+import { requireAllowedCoachingLogDate } from "@/lib/coaching/require-allowed-coaching-log-date";
 
 export const runtime = "nodejs";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ token: string }> },
 ) {
   if (!isSupabaseServiceConfigured()) {
@@ -23,6 +25,10 @@ export async function GET(
 
   try {
     const { token } = await context.params;
+    const url = new URL(request.url);
+    const requestedLogDate = url.searchParams.get("logDate") ?? coachingTodayLogDate();
+    const logDate = requireAllowedCoachingLogDate(requestedLogDate);
+
     const contextPayload = await resolveCoachingPortalContext(token);
     if (!contextPayload?.validToken) {
       return NextResponse.json({ error: "連結無效或已過期" }, { status: 404 });
@@ -33,16 +39,30 @@ export async function GET(
         ok: true,
         context: contextPayload,
         dailyLog: null,
-        logDate: coachingTodayLogDate(),
+        logDate,
+        recentDays: [],
       });
     }
 
     const portal = await resolveActiveCoachingPortal(token);
-    const logDate = coachingTodayLogDate();
+    const recentDays = await listCoachingRecentDaySummaries({
+      enrollmentId: portal.enrollmentId,
+    });
+
     const dailyLog = await getCoachingDailyLogDetail({
       enrollmentId: portal.enrollmentId,
       logDate,
     });
+
+    if (!dailyLog.id) {
+      return NextResponse.json({
+        ok: true,
+        context: contextPayload,
+        logDate,
+        recentDays,
+        dailyLog: null,
+      });
+    }
 
     const serialized = serializeCoachingDailyLogDetail(dailyLog);
     const meals = await Promise.all(
@@ -65,6 +85,7 @@ export async function GET(
       ok: true,
       context: contextPayload,
       logDate,
+      recentDays,
       dailyLog: {
         ...serialized,
         meals,

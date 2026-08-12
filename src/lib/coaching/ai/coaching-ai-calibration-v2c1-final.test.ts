@@ -23,7 +23,7 @@ function cloneD(): CoachingDailyGenerationOutputJson {
 
 describe("coaching AI V2c1 final calibration", () => {
   it("prompt version is v2c1f and encodes the two final rules", () => {
-    expect(COACHING_DAILY_AI_PROMPT_VERSION).toBe("coaching_daily_v2c1f");
+    expect(COACHING_DAILY_AI_PROMPT_VERSION).toBe("coaching_daily_v2d");
 
     const systemPrompt = buildCoachingDailyCoachSystemPrompt();
     expect(systemPrompt).toContain("照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？");
@@ -32,6 +32,7 @@ describe("coaching AI V2c1 final calibration", () => {
     expect(systemPrompt).toContain("睡眠時數足夠，但入睡時間偏晚");
     expect(systemPrompt).toContain("duration");
     expect(systemPrompt).toContain("bedtime");
+    expect(systemPrompt).toContain("reportDayRelation");
 
     const packed = buildScenarioDecisionContext("D_hunger_shake_fried_rice");
     const userPrompt = buildCoachingDailyCoachUserPrompt({

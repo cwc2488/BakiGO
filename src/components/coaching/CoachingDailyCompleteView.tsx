@@ -26,14 +26,20 @@ export function CoachingDailyCompleteView({
   dailyLog,
   mealDrafts,
   logDate,
+  dayLabel,
   portalToken,
   onEdit,
+  continueBackfillLabel,
+  onContinueBackfill,
 }: {
   dailyLog: CoachingDailyLogDetail;
   mealDrafts: Record<CoachingMealSlot, MealDraft>;
   logDate: string;
+  dayLabel: string;
   portalToken: string;
   onEdit: () => void;
+  continueBackfillLabel?: string | null;
+  onContinueBackfill?: () => void;
 }) {
   const mealsFromLog = dailyLog.meals;
   const primaryDone = countPrimaryMealsDone(mealsFromLog);
@@ -121,8 +127,8 @@ export function CoachingDailyCompleteView({
           ✓
         </div>
         <div className="space-y-1">
-          <h2 className="text-[1.375rem] font-semibold text-[#1d1d1f]">今日回報完成</h2>
-          <p className="text-[0.9375rem] text-[#636366]">{logDate} · 謝謝你今天的紀錄</p>
+          <h2 className="text-[1.375rem] font-semibold text-[#1d1d1f]">{dayLabel}回報完成</h2>
+          <p className="text-[0.9375rem] text-[#636366]">{logDate} · 謝謝你這天的紀錄</p>
         </div>
       </CrmCard>
 
@@ -239,9 +245,16 @@ export function CoachingDailyCompleteView({
         ) : null}
       </CrmCard>
 
-      <CrmButton onClick={onEdit} type="button" variant="secondary">
-        修改今日回報
-      </CrmButton>
+      <div className="grid gap-2">
+        {continueBackfillLabel && onContinueBackfill ? (
+          <CrmButton onClick={onContinueBackfill} type="button">
+            {continueBackfillLabel}
+          </CrmButton>
+        ) : null}
+        <CrmButton onClick={onEdit} type="button" variant="secondary">
+          修改{dayLabel}回報
+        </CrmButton>
+      </div>
 
       {dailyLog.submittedAt ? (
         <p className="text-center text-[0.8125rem] text-[#86868b]">

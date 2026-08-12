@@ -3,6 +3,7 @@ import { getCoachingAiOutputForDay } from "@/lib/coaching/ai/coaching-ai-store";
 import { toCoachingApiErrorMessage } from "@/lib/coaching/coaching-api-error";
 import { CoachingServiceError, resolveActiveCoachingPortal } from "@/lib/coaching/coaching-service";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
+import { requireAllowedCoachingLogDate } from "@/lib/coaching/require-allowed-coaching-log-date";
 import { isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 import type { CoachingDailyGenerationCustomerOutput } from "@/types/coaching-ai";
 
@@ -27,7 +28,7 @@ export async function GET(
     const { token } = await context.params;
     const portal = await resolveActiveCoachingPortal(token);
     const url = new URL(request.url);
-    const logDate = url.searchParams.get("logDate") ?? coachingTodayLogDate();
+    const logDate = requireAllowedCoachingLogDate(url.searchParams.get("logDate") ?? coachingTodayLogDate());
 
     const output = await getCoachingAiOutputForDay({
       enrollmentId: portal.enrollmentId,

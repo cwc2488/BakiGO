@@ -10,6 +10,7 @@ import {
   resolveActiveCoachingPortal,
 } from "@/lib/coaching/coaching-service";
 import { isCoachingMealSlot } from "@/lib/coaching/coaching-api-error";
+import { requireAllowedCoachingLogDate } from "@/lib/coaching/require-allowed-coaching-log-date";
 
 export const runtime = "nodejs";
 
@@ -29,7 +30,7 @@ export async function POST(
 
     const portal = await resolveActiveCoachingPortal(token);
     const formData = await request.formData();
-    const logDate = String(formData.get("logDate") ?? coachingTodayLogDate());
+    const logDate = requireAllowedCoachingLogDate(String(formData.get("logDate") ?? coachingTodayLogDate()));
     const file = formData.get("photo");
 
     if (!(file instanceof File)) {

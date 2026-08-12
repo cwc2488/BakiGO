@@ -80,7 +80,7 @@ describe("coaching daily generation schema", () => {
 describe("model config", () => {
   it("uses centralized model and prompt version", () => {
     expect(COACHING_DAILY_AI_MODEL_ID).toBe("gpt-4o-mini-2024-07-18");
-    expect(COACHING_DAILY_AI_PROMPT_VERSION).toBe("coaching_daily_v2c1f");
+    expect(COACHING_DAILY_AI_PROMPT_VERSION).toBe("coaching_daily_v2d");
     expect(COACHING_DAILY_AI_TIMEOUT_MS).toBeGreaterThan(0);
   });
 });

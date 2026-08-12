@@ -10,6 +10,7 @@ import {
   upsertCoachingDailyLog,
 } from "@/lib/coaching/coaching-service";
 import { enqueueDailyCoachGenerationAfterSubmit } from "@/lib/coaching/ai/enqueue-daily-coach-generation";
+import { requireAllowedCoachingLogDate } from "@/lib/coaching/require-allowed-coaching-log-date";
 import { COACHING_MEAL_SLOTS, type CoachingMealSlot } from "@/types/coaching";
 
 export const runtime = "nodejs";
@@ -38,7 +39,7 @@ export async function PUT(
       markSubmitted?: boolean;
     };
 
-    const logDate = body.logDate ?? coachingTodayLogDate();
+    const logDate = requireAllowedCoachingLogDate(body.logDate ?? coachingTodayLogDate());
     const detail = await upsertCoachingDailyLog({
       portal,
       logDate,
@@ -115,7 +116,7 @@ export async function GET(
     const { token } = await context.params;
     const portal = await resolveActiveCoachingPortal(token);
     const url = new URL(request.url);
-    const logDate = url.searchParams.get("logDate") ?? coachingTodayLogDate();
+    const logDate = requireAllowedCoachingLogDate(url.searchParams.get("logDate") ?? coachingTodayLogDate());
 
     const { getCoachingDailyLogDetail, serializeCoachingDailyLogDetail, createSignedCoachingPhotoUrl: signUrl } =
       await import("@/lib/coaching/coaching-service");
@@ -124,6 +125,10 @@ export async function GET(
       enrollmentId: portal.enrollmentId,
       logDate,
     });
+
+    if (!detail.id) {
+      return NextResponse.json({ ok: true, logDate, dailyLog: null, mealSlots: COACHING_MEAL_SLOTS });
+    }
 
     const serialized = serializeCoachingDailyLogDetail(detail);
     const meals = await Promise.all(

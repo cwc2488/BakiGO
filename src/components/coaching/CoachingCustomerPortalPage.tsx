@@ -3,9 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CoachingDailyCompleteView } from "@/components/coaching/CoachingDailyCompleteView";
 import { CoachingMealPhotoInput } from "@/components/coaching/CoachingMealPhotoInput";
+import { CoachingRecentDaySelector } from "@/components/coaching/CoachingRecentDaySelector";
 import { CrmButton, CrmCard } from "@/components/members/ui";
+import type { CoachingRecentDaySummary } from "@/lib/coaching/coaching-day-status";
 import { computeSleepDurationLabel } from "@/lib/coaching/coaching-sleep";
-import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
+import { nextIncompleteBackfillDate, resolveBackfillContinueTarget } from "@/lib/coaching/coaching-backfill-flow";
+import {
+  coachingRelativeDayLabel,
+  coachingTodayLogDate,
+} from "@/lib/coaching/coaching-time";
 import { uploadCoachingMealPhotoWithRetry } from "@/lib/coaching/coaching-meal-photo-client";
 import {
   COACHING_MEAL_SLOT_LABELS,
@@ -34,6 +40,14 @@ type DailyDraft = {
 };
 
 type PortalDailyView = "form" | "complete";
+
+type DailyLogWithSignedPhotos = CoachingDailyLogDetail & {
+  meals: Array<
+    CoachingDailyLogDetail["meals"][number] & {
+      photo: (CoachingDailyLogDetail["meals"][number]["photo"] & { signedUrl?: string | null }) | null;
+    }
+  >;
+};
 
 function emptyMealDraft(): MealDraft {
   return {
@@ -102,48 +116,60 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
   const [submitting, setSubmitting] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [dailyView, setDailyView] = useState<PortalDailyView>("form");
-  const logDate = coachingTodayLogDate();
+  const [selectedLogDate, setSelectedLogDate] = useState(coachingTodayLogDate());
+  const [recentDays, setRecentDays] = useState<CoachingRecentDaySummary[]>([]);
+  const [backfillActive, setBackfillActive] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/coaching/portal/${encodeURIComponent(token)}/context`);
-      const payload = (await response.json()) as {
-        ok?: boolean;
-        context?: CoachingPortalContext;
-        dailyLog?: CoachingDailyLogDetail & {
-          meals: Array<
-            CoachingDailyLogDetail["meals"][number] & {
-              photo: (CoachingDailyLogDetail["meals"][number]["photo"] & { signedUrl?: string | null }) | null;
-            }
-          >;
+  const dayLabel = coachingRelativeDayLabel(selectedLogDate);
+
+  const load = useCallback(
+    async (logDate: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(
+          `/api/coaching/portal/${encodeURIComponent(token)}/context?logDate=${encodeURIComponent(logDate)}`,
+        );
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          context?: CoachingPortalContext;
+          logDate?: string;
+          recentDays?: CoachingRecentDaySummary[];
+          dailyLog?: DailyLogWithSignedPhotos | null;
+          error?: string;
         };
-        error?: string;
-      };
 
-      if (!response.ok || !payload.ok || !payload.context) {
-        throw new Error(payload.error ?? "連結無效或已過期");
-      }
+        if (!response.ok || !payload.ok || !payload.context) {
+          throw new Error(payload.error ?? "連結無效或已過期");
+        }
 
-      setContext(payload.context);
-      if (payload.dailyLog) {
-        setDailyLog(payload.dailyLog);
-        setDraft((current) => mergeDailyLogIntoDraft(current, payload.dailyLog!));
-        setDailyView(payload.dailyLog.submittedAt ? "complete" : "form");
-      } else {
-        setDailyView("form");
+        setContext(payload.context);
+        setSelectedLogDate(payload.logDate ?? logDate);
+        setRecentDays(payload.recentDays ?? []);
+
+        if (payload.dailyLog?.id) {
+          setDailyLog(payload.dailyLog);
+          setDraft(mergeDailyLogIntoDraft(buildEmptyDraft(), payload.dailyLog));
+          setDailyView(payload.dailyLog.submittedAt ? "complete" : "form");
+        } else {
+          setDailyLog(null);
+          setDraft(buildEmptyDraft());
+          setDailyView("form");
+        }
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "無法載入陪跑");
+      } finally {
+        setLoading(false);
       }
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "無法載入陪跑");
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
+    },
+    [token],
+  );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(selectedLogDate);
+    // Initial load only; subsequent day switches call load explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const plan = context?.planSnapshot;
   const needsOnboarding = Boolean(context?.hasActiveEnrollment && !context.onboardingCompletedAt);
@@ -153,6 +179,38 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
     }
     return computeSleepDurationLabel(draft.sleepBedtime, draft.sleepWakeTime);
   }, [draft.sleepBedtime, draft.sleepWakeTime]);
+
+  const continueBackfill = useMemo(() => {
+    if (!backfillActive) {
+      const incomplete = nextIncompleteBackfillDate(recentDays, selectedLogDate);
+      return incomplete ? { logDate: incomplete, kind: "incomplete" as const } : null;
+    }
+    return resolveBackfillContinueTarget({
+      recentDays,
+      afterLogDate: selectedLogDate,
+      backfillActive,
+    });
+  }, [backfillActive, recentDays, selectedLogDate]);
+
+  const continueBackfillDate = continueBackfill?.logDate ?? null;
+
+  const selectDay = async (logDate: string) => {
+    if (logDate === selectedLogDate) return;
+    setSavedMessage(null);
+    setBackfillActive(false);
+    await load(logDate);
+  };
+
+  const startBackfillFlow = async () => {
+    setBackfillActive(true);
+    const first = nextIncompleteBackfillDate(recentDays);
+    if (!first) {
+      setSavedMessage("最近三天都已送出");
+      return;
+    }
+    setSavedMessage(null);
+    await load(first);
+  };
 
   const completeOnboarding = async () => {
     setSubmitting(true);
@@ -165,7 +223,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error ?? "無法完成 onboarding");
       }
-      await load();
+      await load(coachingTodayLogDate());
       setOnboardingStep(0);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "無法完成 onboarding");
@@ -192,7 +250,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          logDate,
+          logDate: selectedLogDate,
           waterMl: draft.waterMl.trim() ? Number(draft.waterMl) : null,
           exerciseNote: draft.exerciseNote.trim() || null,
           bowelMovementCount: draft.bowelMovementCount.trim() ? Number(draft.bowelMovementCount) : null,
@@ -216,6 +274,18 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
 
       setDailyLog(payload.dailyLog);
       setDraft((current) => mergeDailyLogIntoDraft(current, payload.dailyLog!));
+
+      // Refresh recent-day statuses without losing form/complete view.
+      const contextResponse = await fetch(
+        `/api/coaching/portal/${encodeURIComponent(token)}/context?logDate=${encodeURIComponent(selectedLogDate)}`,
+      );
+      const contextPayload = (await contextResponse.json()) as {
+        ok?: boolean;
+        recentDays?: CoachingRecentDaySummary[];
+      };
+      if (contextResponse.ok && contextPayload.ok && contextPayload.recentDays) {
+        setRecentDays(contextPayload.recentDays);
+      }
 
       if (markSubmitted) {
         setDailyView("complete");
@@ -250,7 +320,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
     try {
       await uploadCoachingMealPhotoWithRetry({
         token,
-        logDate,
+        logDate: selectedLogDate,
         mealSlot,
         file,
       });
@@ -328,9 +398,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
       <div className="home-container space-y-4 py-10">
         <CrmCard>
           <h1 className="text-[1.5rem] font-semibold text-[#1d1d1f]">陪跑尚未開始</h1>
-          <p className="mt-3 text-[0.9375rem] text-[#636366]">
-            請聯絡你的教練確認陪跑是否已開始。
-          </p>
+          <p className="mt-3 text-[0.9375rem] text-[#636366]">請聯絡你的教練確認陪跑是否已開始。</p>
         </CrmCard>
       </div>
     );
@@ -370,20 +438,58 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
     );
   }
 
+  const header = (
+    <header className="space-y-3 px-1">
+      <div className="space-y-1">
+        <p className="text-[0.875rem] text-[#86868b]">
+          {selectedLogDate} · {dayLabel}陪跑
+        </p>
+        <h1 className="text-[1.75rem] font-semibold text-[#1d1d1f]">{context.displayName}</h1>
+        <p className="text-[0.9375rem] text-[#636366]">持續 &gt; 完美。拍照為主，文字為輔。</p>
+      </div>
+      {recentDays.length > 0 ? (
+        <CoachingRecentDaySelector
+          days={recentDays}
+          onSelect={(logDate) => void selectDay(logDate)}
+          selectedLogDate={selectedLogDate}
+        />
+      ) : null}
+      <button
+        className="text-[0.875rem] font-medium text-[var(--brand-primary-dark)]"
+        onClick={() => void startBackfillFlow()}
+        type="button"
+      >
+        補回最近幾天
+      </button>
+    </header>
+  );
+
   if (dailyView === "complete" && dailyLog) {
     return (
       <div className="home-container space-y-4 py-8">
-        <header className="space-y-1 px-1">
-          <p className="text-[0.875rem] text-[#86868b]">{logDate} · 今日陪跑</p>
-          <h1 className="text-[1.75rem] font-semibold text-[#1d1d1f]">{context.displayName}</h1>
-        </header>
+        {header}
         {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
         <CoachingDailyCompleteView
+          continueBackfillLabel={
+            continueBackfillDate
+              ? continueBackfill?.kind === "sequence"
+                ? `前往${coachingRelativeDayLabel(continueBackfillDate)}`
+                : `繼續補${coachingRelativeDayLabel(continueBackfillDate)}`
+              : null
+          }
           dailyLog={dailyLog}
-          logDate={logDate}
+          dayLabel={dayLabel}
+          logDate={selectedLogDate}
           mealDrafts={draft.meals}
-          portalToken={token}
+          onContinueBackfill={
+            continueBackfillDate
+              ? () => {
+                  void load(continueBackfillDate);
+                }
+              : undefined
+          }
           onEdit={() => setDailyView("form")}
+          portalToken={token}
         />
       </div>
     );
@@ -391,11 +497,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
 
   return (
     <div className="home-container space-y-4 py-8">
-      <header className="space-y-1 px-1">
-        <p className="text-[0.875rem] text-[#86868b]">{logDate} · 今日陪跑</p>
-        <h1 className="text-[1.75rem] font-semibold text-[#1d1d1f]">{context.displayName}</h1>
-        <p className="text-[0.9375rem] text-[#636366]">持續 &gt; 完美。拍照為主，文字為輔。</p>
-      </header>
+      {header}
 
       {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
       {savedMessage ? <p className="text-[0.9375rem] text-[var(--brand-primary-dark)]">{savedMessage}</p> : null}
@@ -444,8 +546,12 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
       </CrmCard>
 
       <CrmCard className="space-y-4">
-        <h2 className="text-[1.0625rem] font-semibold text-[#1d1d1f]">今日狀態</h2>
-        <FieldInput label="水分 (ml)" onChange={(value) => setDraft((current) => ({ ...current, waterMl: value }))} value={draft.waterMl} />
+        <h2 className="text-[1.0625rem] font-semibold text-[#1d1d1f]">{dayLabel}狀態</h2>
+        <FieldInput
+          label="水分 (ml)"
+          onChange={(value) => setDraft((current) => ({ ...current, waterMl: value }))}
+          value={draft.waterMl}
+        />
         <SleepTimeFields
           bedtime={draft.sleepBedtime}
           durationPreview={sleepDurationPreview}
@@ -453,10 +559,19 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
           onWakeTimeChange={(value) => setDraft((current) => ({ ...current, sleepWakeTime: value }))}
           wakeTime={draft.sleepWakeTime}
         />
-        <FieldInput label="運動" onChange={(value) => setDraft((current) => ({ ...current, exerciseNote: value }))} value={draft.exerciseNote} />
-        <FieldInput label="排便次數" inputMode="numeric" onChange={(value) => setDraft((current) => ({ ...current, bowelMovementCount: value }))} value={draft.bowelMovementCount} />
+        <FieldInput
+          label="運動"
+          onChange={(value) => setDraft((current) => ({ ...current, exerciseNote: value }))}
+          value={draft.exerciseNote}
+        />
+        <FieldInput
+          inputMode="numeric"
+          label="排便次數"
+          onChange={(value) => setDraft((current) => ({ ...current, bowelMovementCount: value }))}
+          value={draft.bowelMovementCount}
+        />
         <label className="block space-y-2">
-          <span className="text-[0.875rem] font-medium text-[#636366]">今日心得</span>
+          <span className="text-[0.875rem] font-medium text-[#636366]">{dayLabel}心得</span>
           <textarea
             className="min-h-24 w-full rounded-[1rem] border border-[#e5e5ea] px-4 py-3 text-[1rem]"
             onChange={(event) => setDraft((current) => ({ ...current, customerNote: event.target.value }))}
@@ -470,7 +585,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
           儲存草稿
         </CrmButton>
         <CrmButton disabled={submitting} onClick={() => void saveDaily(true)} type="button">
-          送出今日回報
+          送出{dayLabel}回報
         </CrmButton>
       </div>
     </div>
@@ -587,11 +702,7 @@ function MealReportField({
   return (
     <div className="space-y-3 rounded-[1rem] border border-[#eef2ea] p-3">
       <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">{label}</p>
-      <CoachingMealPhotoInput
-        compact={compact}
-        onSelect={onPhotoSelect}
-        uploading={draft.uploading}
-      />
+      <CoachingMealPhotoInput compact={compact} onSelect={onPhotoSelect} uploading={draft.uploading} />
       {draft.previewUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img alt={`${label}預覽`} className="max-h-40 w-full rounded-[0.75rem] object-cover" src={draft.previewUrl} />
@@ -613,7 +724,8 @@ function mergeDailyLogIntoDraft(current: DailyDraft, dailyLog: CoachingDailyLogD
     meals[meal.mealSlot] = {
       ...meals[meal.mealSlot],
       textNote: meal.textNote ?? "",
-      previewUrl: (meal.photo as { signedUrl?: string | null } | null)?.signedUrl ?? meals[meal.mealSlot].previewUrl,
+      previewUrl:
+        (meal.photo as { signedUrl?: string | null } | null)?.signedUrl ?? meals[meal.mealSlot].previewUrl,
       uploading: false,
       uploadError: null,
     };

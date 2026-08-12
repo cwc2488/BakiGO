@@ -11,7 +11,11 @@ import { formatSleepTimeRange } from "@/lib/coaching/coaching-sleep";
 import { buildBodyCompositionTrendSeries } from "@/lib/customers/body-composition-trends";
 import { buildCoachingTodayStatus, formatCoachingTodayStatusLine } from "@/lib/coaching/coaching-completion";
 import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetch";
-import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
+import {
+  coachingRelativeDayLabel,
+  coachingTodayLogDate,
+  listCoachingRecentLogDates,
+} from "@/lib/coaching/coaching-time";
 import {
   COACHING_MEAL_SLOT_LABELS,
   COACHING_STATUS_LABELS,
@@ -69,14 +73,15 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const logDate = coachingTodayLogDate();
+  const [logDate, setLogDate] = useState(coachingTodayLogDate());
+  const recentDates = useMemo(() => listCoachingRecentLogDates(), []);
 
-  const reload = async () => {
+  const reload = async (selectedLogDate = logDate) => {
     setLoading(true);
     setError(null);
     try {
       const response = await fetchCoachingWithMemberAuth(
-        `/api/coaching/enrollments/${encodeURIComponent(enrollmentId)}?logDate=${encodeURIComponent(logDate)}`,
+        `/api/coaching/enrollments/${encodeURIComponent(enrollmentId)}?logDate=${encodeURIComponent(selectedLogDate)}`,
       );
       const data = (await response.json()) as DetailPayload & { ok?: boolean; error?: string };
       if (!response.ok || !data.ok) {
@@ -91,8 +96,9 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
   };
 
   useEffect(() => {
-    void reload();
-  }, [enrollmentId]);
+    void reload(logDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrollmentId, logDate]);
 
   const bodyRecords = payload?.bodyRecords ?? [];
   const comparison = useMemo(() => compareBodyRecords(bodyRecords), [bodyRecords]);
@@ -163,7 +169,32 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
             <CrmSectionTitle>{customerDisplayName}</CrmSectionTitle>
             <CrmField label="狀態" value={COACHING_STATUS_LABELS[payload.enrollment.status]} />
             <CrmField label="目標" value={payload.enrollment.goal} />
-            <CrmField label="今日狀態" value={todayStatus} />
+            <CrmField label="當日狀態" value={todayStatus} />
+            <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="最近三天">
+              {recentDates.map((date) => {
+                const selected = date === logDate;
+                return (
+                  <button
+                    key={date}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    className={[
+                      "min-w-[5rem] flex-1 rounded-[0.875rem] border px-3 py-2 text-left",
+                      selected
+                        ? "border-[var(--brand-primary)] bg-[var(--brand-primary)]/10"
+                        : "border-[#e5e5ea] bg-white",
+                    ].join(" ")}
+                    onClick={() => setLogDate(date)}
+                  >
+                    <p className="text-[0.8125rem] font-semibold text-[#1d1d1f]">
+                      {coachingRelativeDayLabel(date)}
+                    </p>
+                    <p className="text-[0.6875rem] text-[#86868b]">{date}</p>
+                  </button>
+                );
+              })}
+            </div>
             <div className="grid gap-2 sm:grid-cols-3">
               {payload.enrollment.status === "active" ? (
                 <>
@@ -190,7 +221,7 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
           </CrmCard>
 
           <CrmCard className="space-y-4">
-            <CrmSectionTitle>今日回報</CrmSectionTitle>
+            <CrmSectionTitle>{coachingRelativeDayLabel(logDate)}回報</CrmSectionTitle>
             {payload.dailyLog.id ? (
               <div className="space-y-4">
                 <dl>
@@ -220,7 +251,9 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
                 </div>
               </div>
             ) : (
-              <p className="text-[0.9375rem] text-[#86868b]">今天尚未建立回報。</p>
+              <p className="text-[0.9375rem] text-[#86868b]">
+                {coachingRelativeDayLabel(logDate)}尚未建立回報。
+              </p>
             )}
           </CrmCard>
 

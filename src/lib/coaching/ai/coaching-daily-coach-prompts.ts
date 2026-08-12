@@ -1,5 +1,6 @@
 import type { CoachingGenerationInput, CoachingInterventionLevel, PreparedCoachingMealImage } from "@/types/coaching-ai";
 import type { CoachingDecisionContext } from "@/types/coaching-signals";
+import { coachingDaySpeechLabel, relativeCoachingDayKey } from "@/lib/coaching/coaching-time";
 
 export function buildCoachingDailyCoachSystemPrompt(): string {
   return [
@@ -18,6 +19,13 @@ export function buildCoachingDailyCoachSystemPrompt(): string {
     "- System owns：priorities / evidence / recurringIssue / improvedIssue / coachAttention / finalInterventionLevel",
     "- AI owns：怎麼講、逐餐簡評、對 customer_note 的回應、追問語氣",
     "- 系統決定今天要講什麼；AI 決定怎麼講。",
+    "",
+    "回報日期措辭（必用）：",
+    "- generationInput.logDate 是這份回報的日期；可能是今天、昨天或前天（補回報）",
+    "- 若 reportDayRelation = today：可用「今天」",
+    "- 若 reportDayRelation = yesterday：用「昨天」或「你昨天的回報裡…」，禁止說「今天你…」指這份回報",
+    "- 若 reportDayRelation = day_before_yesterday：用「前天」或「你 M/D 的回報裡…」，禁止說「今天你…」",
+    "- tomorrow_focus 仍是「下一天／之後要注意的事」，不要把補登日說成「明天」的事實",
     "",
     "DecisionContext contract：",
     "- adjustment_priorities 必須完全依 decisionContext.priorities 的主題產生（最多 2 個）",
@@ -65,8 +73,13 @@ export function buildCoachingDailyCoachUserPrompt(input: {
   decisionContext: CoachingDecisionContext;
 }): string {
   const { generationInput, finalInterventionLevel, preparedMealImages, decisionContext } = input;
+  const reportDayRelation = relativeCoachingDayKey(generationInput.logDate) ?? "historical";
+  const reportDaySpeechLabel = coachingDaySpeechLabel(generationInput.logDate);
   const payload = {
     logDate: generationInput.logDate,
+    reportDayRelation,
+    reportDaySpeechLabel,
+    isBackfillOrHistorical: reportDayRelation !== "today",
     finalInterventionLevel,
     decisionContext: {
       finalInterventionLevel: decisionContext.finalInterventionLevel,
@@ -138,6 +151,7 @@ export function buildCoachingDailyCoachUserPrompt(input: {
     "鼓勵的是人，不是錯誤行為。",
     "奶昔餐：禁止「似乎沒有搭配其他食物」；改用「照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？」",
     "睡眠：必須同時評估時數與入睡時間（例如 8h 足夠但 00:24 偏晚）。",
+    `這份回報日期是 ${generationInput.logDate}（${reportDaySpeechLabel} / ${reportDayRelation}）。若不是今天，禁止用「今天你…」描述這份回報。`,
     "",
     JSON.stringify(payload, null, 2),
   ].join("\n");
