@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CoachingDailyCompleteView } from "@/components/coaching/CoachingDailyCompleteView";
+import { CoachingCustomerHistoryView } from "@/components/coaching/CoachingCustomerHistoryView";
+import { CoachingProgressCard } from "@/components/coaching/CoachingProgressCard";
+import type { CoachingProgressView } from "@/lib/coaching/build-coaching-progress-view";
 import { CoachingMealPhotoInput } from "@/components/coaching/CoachingMealPhotoInput";
 import { CoachingRecentDaySelector } from "@/components/coaching/CoachingRecentDaySelector";
 import { CrmButton, CrmCard } from "@/components/members/ui";
@@ -39,7 +42,7 @@ type DailyDraft = {
   meals: Record<CoachingMealSlot, MealDraft>;
 };
 
-type PortalDailyView = "form" | "complete";
+type PortalDailyView = "form" | "complete" | "history";
 
 type DailyLogWithSignedPhotos = CoachingDailyLogDetail & {
   meals: Array<
@@ -118,6 +121,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
   const [dailyView, setDailyView] = useState<PortalDailyView>("form");
   const [selectedLogDate, setSelectedLogDate] = useState(coachingTodayLogDate());
   const [recentDays, setRecentDays] = useState<CoachingRecentDaySummary[]>([]);
+  const [progress, setProgress] = useState<CoachingProgressView | null>(null);
   const [backfillActive, setBackfillActive] = useState(false);
 
   const dayLabel = coachingRelativeDayLabel(selectedLogDate);
@@ -135,6 +139,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
           context?: CoachingPortalContext;
           logDate?: string;
           recentDays?: CoachingRecentDaySummary[];
+          progress?: CoachingProgressView | null;
           dailyLog?: DailyLogWithSignedPhotos | null;
           error?: string;
         };
@@ -146,6 +151,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
         setContext(payload.context);
         setSelectedLogDate(payload.logDate ?? logDate);
         setRecentDays(payload.recentDays ?? []);
+        setProgress(payload.progress ?? null);
 
         if (payload.dailyLog?.id) {
           setDailyLog(payload.dailyLog);
@@ -464,11 +470,28 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
     </header>
   );
 
+  if (dailyView === "history") {
+    return (
+      <div className="home-container space-y-4 py-8">
+        {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
+        {progress ? <CoachingProgressCard progress={progress} /> : null}
+        <CoachingCustomerHistoryView
+          days={recentDays}
+          onBackToToday={() => {
+            void load(coachingTodayLogDate());
+          }}
+          onSelectDay={(logDate) => void selectDay(logDate)}
+        />
+      </div>
+    );
+  }
+
   if (dailyView === "complete" && dailyLog) {
     return (
       <div className="home-container space-y-4 py-8">
         {header}
         {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
+        {progress ? <CoachingProgressCard progress={progress} /> : null}
         <CoachingDailyCompleteView
           continueBackfillLabel={
             continueBackfillDate
@@ -489,6 +512,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
               : undefined
           }
           onEdit={() => setDailyView("form")}
+          onOpenHistory={() => setDailyView("history")}
           portalToken={token}
         />
       </div>
@@ -498,6 +522,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
   return (
     <div className="home-container space-y-4 py-8">
       {header}
+      {progress ? <CoachingProgressCard progress={progress} /> : null}
 
       {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
       {savedMessage ? <p className="text-[0.9375rem] text-[var(--brand-primary-dark)]">{savedMessage}</p> : null}

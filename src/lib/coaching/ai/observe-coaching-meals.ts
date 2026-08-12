@@ -8,6 +8,7 @@ import { encodePreparedCoachingMealImageAsBase64 } from "@/lib/coaching/ai/coach
 import { parseOpenAiChatCompletionUsage } from "@/lib/coaching/ai/parse-openai-usage";
 import { buildLlmCallLogEntry, logLlmCall } from "@/lib/ai/llm-telemetry";
 import type { CoachingGenerationInput, PreparedCoachingMealImage } from "@/types/coaching-ai";
+import { normalizeMealObservation } from "@/lib/coaching/ai/normalize-meal-observations";
 import {
   COACHING_MEAL_OBSERVATION_SIGNALS,
   type CoachingMealObservation,
@@ -57,14 +58,26 @@ function heuristicObservationFromNote(input: {
   let followUpQuestion: string | null = null;
   let noOtherFoodVisible = false;
 
+  let solidFoodFromNote: boolean | null = null;
   if (/奶昔|蛋白飲|代餐/.test(note)) {
     shakeObserved = true;
     observedFoods.push(note.includes("奶昔") ? "奶昔" : "蛋白飲／代餐");
     signals.push("shake_dominant");
-    noOtherFoodVisible = true;
-    uncertainties.push("照片／備註無法證明這餐只有奶昔，可能還有其他食物未拍到");
-    possibleIssues.push("possible_meal_insufficiency");
-    followUpQuestion = "照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？";
+    const companionTokens = ["蛋", "青菜", "蔬菜", "沙拉", "雞胸", "魚", "肉", "便當", "飯", "堅果", "豆腐"];
+    const companions = companionTokens.filter((token) => note.includes(token));
+    if (companions.length > 0) {
+      for (const token of companions) {
+        if (!observedFoods.includes(token)) observedFoods.push(token);
+      }
+      noOtherFoodVisible = false;
+      solidFoodFromNote = true;
+      followUpQuestion = null;
+    } else {
+      noOtherFoodVisible = true;
+      uncertainties.push("照片／備註無法證明這餐只有奶昔，可能還有其他食物未拍到");
+      possibleIssues.push("possible_meal_insufficiency");
+      followUpQuestion = "照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？";
+    }
   }
 
   if (/炒飯|炒麵|炸雞|鹹酥雞|薯條|油炸/.test(note)) {
@@ -102,7 +115,8 @@ function heuristicObservationFromNote(input: {
     ],
     mealType: shakeObserved ? "shake" : null,
     shakeObserved,
-    solidFoodObserved: shakeObserved ? null : note ? true : null,
+    solidFoodObserved:
+      solidFoodFromNote === true ? true : shakeObserved ? null : note ? true : null,
     friedOrHighOilCookingObserved,
     noOtherFoodVisible,
     possibleIssues,
@@ -167,7 +181,10 @@ async function callOpenAiMealVisionObservation(input: {
     "你是餐點影像觀察器，只做可見事實與不確定性標記。",
     "禁止估算 calories / grams / macros。",
     "禁止把「沒看到其他食物」寫成「確定沒吃其他食物」。",
-    "若備註寫喝奶昔且照片主要是奶昔／本人，設 shakeObserved=true、noOtherFoodVisible=true；uncertainties 必須說明「照片沒看到≠實際沒吃」；followUpQuestion 用：「照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？」",
+    "若備註寫喝奶昔且照片主要是奶昔／本人，設 shakeObserved=true、noOtherFoodVisible=true；uncertainties 必須說明「照片沒看到≠實際沒吃」。",
+    "若照片或備註已看到蛋／青菜／其他固體食物：solidFoodObserved=true、noOtherFoodVisible=false、followUpQuestion 必須是 null（禁止再問有沒有搭配）。",
+    "只有在 shakeObserved 且 solidFoodObserved 不是 true、且照片沒看到其他食物時，才可用 followUpQuestion：「照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？」",
+    "shakeObserved 是 observation，不是錯誤；禁止把奶昔本身寫成負面定罪。",
     "禁止把 noOtherFoodVisible 解讀成確定只喝奶昔。",
     "若看到炒飯，observedFoods 含「炒飯」，可標記 fried_food 或 starch_concentrated，蛋白質／青菜看不清就寫 uncertainty。",
     "signals 只能使用指定 enum。",
@@ -349,7 +366,7 @@ export async function observeCoachingMeals(input: {
 
   const apiKey = input.apiKey?.trim() || process.env.OPENAI_API_KEY?.trim();
   if (!apiKey || input.preparedMealImages.length === 0) {
-    return { observations: heuristic, source: "heuristic", usage: emptyUsage, latencyMs: 0 };
+    return { observations: heuristic.map(normalizeMealObservation), source: "heuristic", usage: emptyUsage, latencyMs: 0 };
   }
 
   try {
@@ -401,7 +418,7 @@ export async function observeCoachingMeals(input: {
     }
 
     return {
-      observations: Array.from(bySlot.values()),
+      observations: Array.from(bySlot.values()).map(normalizeMealObservation),
       source: "merged",
       usage: vision.usage,
       latencyMs: vision.latencyMs,
@@ -426,6 +443,6 @@ export async function observeCoachingMeals(input: {
         // telemetry best-effort
       }
     }
-    return { observations: heuristic, source: "heuristic", usage: emptyUsage, latencyMs: 0 };
+    return { observations: heuristic.map(normalizeMealObservation), source: "heuristic", usage: emptyUsage, latencyMs: 0 };
   }
 }

@@ -13,7 +13,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service-client";
 import type { CoachingGenerationInput } from "@/types/coaching-ai";
 import type { BodyCompositionRecord, Customer } from "@/types/customer";
 
-function mapBodyRecordRow(row: Record<string, unknown>): BodyCompositionRecord {
+export function mapBodyRecordRow(row: Record<string, unknown>): BodyCompositionRecord {
   return {
     id: String(row.id),
     customerId: String(row.customer_id),

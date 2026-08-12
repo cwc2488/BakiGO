@@ -94,6 +94,16 @@ export type CoachingDailyGenerationCustomerOutput = {
   follow_up_for_tomorrow: string | null;
 };
 
+export type CoachingDailyNutritionAssessmentOutput = {
+  level: "on_track" | "needs_adjustment" | "off_track" | "insufficient_data";
+  /** Customer-safe short label (also shown on coach detail). */
+  label: string;
+  reasons: string[];
+  positive_factors: string[];
+  adjustment_subjects: string[];
+  confidence: number;
+};
+
 export type CoachingDailyGenerationCoachOutput = {
   daily_summary: string;
   recurring_issue: string | null;
@@ -115,6 +125,8 @@ export type CoachingDailyGenerationCoachOutput = {
     matched_log_date: string | null;
     method: string;
   }>;
+  /** System-owned whole-day fat-loss diet judgment — forced in apply layer. */
+  daily_nutrition_assessment: CoachingDailyNutritionAssessmentOutput | null;
 };
 
 export type CoachingDailyGenerationOutputJson = {
@@ -299,6 +311,10 @@ export type CoachingOutcomeMemory = {
   daysBetweenMeasurements: number | null;
   trendDeltas: CoachingBodyTrendDelta[];
   trendSummary: string | null;
+  /** Distinct valid measurement count used for stage/trend gates. */
+  measurementCount: number;
+  /** Ascending measurement summaries for period/trend evaluation (deduped by date). */
+  measurementSequence: CoachingBodyMeasurementSummary[];
 };
 
 export type CoachingCoachDirectivesMemory = {

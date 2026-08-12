@@ -27,6 +27,12 @@ export type CoachingRecentDaySummary = {
   statusLabel: string;
   submittedAt: string | null;
   hasLog: boolean;
+  /** 1-based day in 90-day coaching journey when enrollment start is known. */
+  dayNumber: number | null;
+  /** Customer-safe nutrition label from AI output when available. */
+  nutritionLabel: string | null;
+  /** Most important focus for the day (tomorrow_focus or top priority). */
+  focusSummary: string | null;
 };
 
 export function mapCoachingDayUiStatus(input: {

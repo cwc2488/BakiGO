@@ -1,4 +1,14 @@
 import { parseClockTimeToMinutes } from "@/lib/coaching/coaching-sleep";
+import { assessDailyNutrition } from "@/lib/coaching/ai/assess-daily-nutrition";
+import type { CoachingAiFixtureScenario } from "@/lib/coaching/ai/coaching-ai-fixtures";
+import {
+  assessCoachingOutcome,
+  interpretFatLossOutcome,
+  resolveBodyAwareInterventionLevel,
+} from "@/lib/coaching/ai/assess-coaching-outcome";
+import { buildMealFollowUpBudget } from "@/lib/coaching/ai/meal-follow-up-budget";
+import { buildMealPlanContext } from "@/lib/coaching/ai/meal-plan-context";
+import { normalizeMealObservations } from "@/lib/coaching/ai/normalize-meal-observations";
 import type {
   CoachingCoachDirectivesMemory,
   CoachingGenerationInput,
@@ -26,7 +36,8 @@ const MEAL_SIGNAL_PRIORITY_WEIGHT: Record<CoachingMealObservationSignal, number>
   meal_skipped: 520,
   low_protein: 510,
   sugary_drink: 505,
-  shake_dominant: 435,
+  // shake_dominant is observation-only — never auto-priority.
+  shake_dominant: 0,
   fried_food: 430,
   starch_concentrated: 425,
   processed_food: 410,
@@ -331,35 +342,18 @@ function buildBodyTrendSignals(outcome: CoachingOutcomeMemory): CoachingSignal[]
   if (outcome.baselineMeasurement.recordDate === outcome.latestMeasurement.recordDate) {
     return [];
   }
-
-  const weight = outcome.trendDeltas.find((item) => item.label === "體重");
-  const bodyFat = outcome.trendDeltas.find((item) => item.label === "體脂率");
-  const muscle = outcome.trendDeltas.find((item) => item.label === "骨骼肌");
-
-  // Require more than weight alone.
-  const supportingMetrics = [bodyFat, muscle].filter(Boolean);
-  if (!weight || supportingMetrics.length === 0) {
+  if (!outcome.trendDeltas.length) {
     return [];
   }
 
+  const interpreted = interpretFatLossOutcome(outcome.trendDeltas);
   const evidenceBase: CoachingSignalEvidence[] = [
     evidence("days_between_measurements", outcome.daysBetweenMeasurements),
-    evidence("weight_delta", weight.delta),
-    evidence("body_fat_delta", bodyFat?.delta ?? null),
-    evidence("muscle_delta", muscle?.delta ?? null),
-    evidence("trend_summary", outcome.trendSummary),
+    evidence("outcome_status", interpreted.status),
+    ...interpreted.evidence.slice(0, 6),
   ];
 
-  const improving =
-    weight.delta <= -0.3 &&
-    (bodyFat == null || bodyFat.delta <= 0.2) &&
-    (muscle == null || muscle.delta >= -0.2);
-  const worsening =
-    weight.delta >= 0.3 &&
-    ((bodyFat != null && bodyFat.delta > 0.2) || (muscle != null && muscle.delta < -0.2));
-  const flat = outcome.trendDeltas.every((item) => Math.abs(item.delta) < 0.2);
-
-  if (improving) {
+  if (interpreted.status === "improving") {
     return [
       signal({
         key: "body_trend_improving",
@@ -370,7 +364,7 @@ function buildBodyTrendSignals(outcome: CoachingOutcomeMemory): CoachingSignal[]
       }),
     ];
   }
-  if (worsening) {
+  if (interpreted.status === "worsening") {
     return [
       signal({
         key: "body_trend_worsening",
@@ -381,7 +375,7 @@ function buildBodyTrendSignals(outcome: CoachingOutcomeMemory): CoachingSignal[]
       }),
     ];
   }
-  if (flat || outcome.trendDeltas.length > 0) {
+  if (interpreted.status === "flat" || interpreted.status === "mixed") {
     return [
       signal({
         key: "body_trend_flat",
@@ -512,10 +506,11 @@ function mealPriorityReason(signalKey: string): { reason: string; subject: strin
     return { reason: "補上可完成的早餐", subject: "早餐最低版本" };
   }
   if (signalKey.includes("shake_dominant")) {
-    return { reason: "確認奶昔餐是否有搭配", subject: "確認奶昔餐搭配" };
+    // Shake is an observation, not an actionable priority by itself.
+    return null;
   }
   if (signalKey.includes("starch_concentrated") || signalKey.includes("fried_food")) {
-    return { reason: "主食份量收一點、補肉蛋青菜", subject: "炒飯份量與搭配" };
+    return { reason: "主食或炸物份量收一點、補肉蛋青菜", subject: "主食／炸物份量與搭配" };
   }
   if (signalKey.includes("processed_food")) {
     return { reason: "減少高油／加工選項", subject: "減少高油加工" };
@@ -748,7 +743,8 @@ export function buildCoachingDecisionContext(input: {
   /** Optional override when caller already resolved intervention (e.g. fixture C). */
   finalInterventionLevelOverride?: CoachingInterventionLevel;
 }): CoachingDecisionContext {
-  const mealObservations = input.mealObservations ?? [];
+  const mealPlanContext = buildMealPlanContext(input.generationInput.profileMemory.planSnapshot);
+  const mealObservations = normalizeMealObservations(input.mealObservations ?? []);
   const customerVoice = input.customerVoice ?? [];
   const photoReuse = input.photoReuse ?? [];
   const pendingFollowUps = input.pendingFollowUps ?? [];
@@ -765,14 +761,36 @@ export function buildCoachingDecisionContext(input: {
   );
   const safePositive = positiveSignals.filter((item) => !forbiddenPositive.includes(item));
 
+  const outcomeAssessment = assessCoachingOutcome({
+    generationInput: input.generationInput,
+  });
   const resolved = resolveFinalInterventionLevel(signals);
-  const finalInterventionLevel = input.finalInterventionLevelOverride ?? resolved.finalInterventionLevel;
+  const bodyAware = resolveBodyAwareInterventionLevel({
+    baseLevel: resolved.finalInterventionLevel,
+    measurementStage: outcomeAssessment.goalContext.measurementStage,
+    outcomeStatus: outcomeAssessment.outcomeStatus,
+    periods: outcomeAssessment.periods,
+    rollingMemory: input.generationInput.rollingMemory,
+  });
+  const finalInterventionLevel =
+    input.finalInterventionLevelOverride ?? bodyAware.finalInterventionLevel;
   const priorities = rankCoachingPriorities(signals);
   const recurringIssue = selectRecurringIssue(signals);
   const improvedIssue = selectImprovedIssue(signals);
   const coachAttention = resolveCoachAttention({
     signals,
     interventionLevel: finalInterventionLevel,
+  });
+
+  const dailyNutritionAssessment = assessDailyNutrition({
+    mealObservations,
+    customerVoice,
+    planContext: mealPlanContext,
+  });
+  const mealFollowUpBudget = buildMealFollowUpBudget({
+    mealObservations,
+    planContext: mealPlanContext,
+    hungerReported: customerVoice.some((item) => item.key === "hunger_reported"),
   });
 
   return {
@@ -787,15 +805,169 @@ export function buildCoachingDecisionContext(input: {
     mealObservations,
     photoReuse,
     pendingFollowUps,
+    dailyNutritionAssessment,
+    mealFollowUpBudget,
+    mealPlanContext,
+    goalContext: outcomeAssessment.goalContext,
+    outcomeAssessment,
   };
 }
 
 export function getFixtureMealObservations(
-  scenario: "A_normal" | "B_breakfast_deviation" | "C_watch_pattern" | "D_hunger_shake_fried_rice",
+  scenario: CoachingAiFixtureScenario,
 ): CoachingMealObservation[] {
   if (scenario === "D_hunger_shake_fried_rice") {
     // Controlled OpenAI eval uses live Meal Vision / heuristics; unit fixtures leave empty.
     return [];
+  }
+
+  if (scenario === "G_shake_hunger") {
+    return [
+      {
+        mealSlot: "breakfast",
+        observedFoods: ["奶昔"],
+        signals: ["shake_dominant"],
+        evidenceText: ["breakfast: shake"],
+        shakeObserved: true,
+        noOtherFoodVisible: true,
+        solidFoodObserved: false,
+        uncertainties: ["照片／備註無法證明這餐只有奶昔"],
+        followUpQuestion: "照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？",
+      },
+      {
+        mealSlot: "dinner",
+        observedFoods: ["奶昔"],
+        signals: ["shake_dominant"],
+        evidenceText: ["dinner: shake"],
+        shakeObserved: true,
+        noOtherFoodVisible: true,
+        solidFoodObserved: false,
+        uncertainties: ["照片／備註無法證明這餐只有奶昔"],
+        followUpQuestion: "照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？",
+      },
+    ];
+  }
+
+  if (scenario === "E_full_day_off_track") {
+    return [
+      {
+        mealSlot: "breakfast",
+        observedFoods: ["炒飯"],
+        signals: ["starch_concentrated", "fried_food"],
+        evidenceText: ["breakfast: fried rice"],
+        friedOrHighOilCookingObserved: true,
+        visibleCarbohydrate: true,
+      },
+      {
+        mealSlot: "lunch",
+        observedFoods: ["roti", "curry"],
+        signals: ["starch_concentrated", "high_sauce"],
+        evidenceText: ["lunch: roti + curry"],
+        visibleCarbohydrate: true,
+      },
+      {
+        mealSlot: "dinner",
+        observedFoods: ["肉骨", "炸物"],
+        signals: ["fried_food", "high_sauce"],
+        evidenceText: ["dinner: bak kut teh + fried"],
+        friedOrHighOilCookingObserved: true,
+      },
+    ];
+  }
+
+  if (scenario === "F_single_meal_fried") {
+    return [
+      {
+        mealSlot: "breakfast",
+        observedFoods: ["雞胸", "蛋", "青菜"],
+        signals: [],
+        evidenceText: ["breakfast balanced"],
+        visibleProteinSource: true,
+        visibleVegetables: true,
+      },
+      {
+        mealSlot: "lunch",
+        observedFoods: ["雞胸便當"],
+        signals: [],
+        evidenceText: ["lunch balanced"],
+        visibleProteinSource: true,
+      },
+      {
+        mealSlot: "dinner",
+        observedFoods: ["炸雞"],
+        signals: ["fried_food"],
+        evidenceText: ["dinner fried"],
+        friedOrHighOilCookingObserved: true,
+      },
+    ];
+  }
+
+  if (scenario === "A_normal") {
+    return [
+      {
+        mealSlot: "breakfast",
+        observedFoods: ["奶昔"],
+        signals: ["shake_dominant"],
+        evidenceText: ["breakfast: plan shake"],
+        shakeObserved: true,
+        noOtherFoodVisible: true,
+        solidFoodObserved: false,
+      },
+      {
+        mealSlot: "lunch",
+        observedFoods: ["雞胸", "沙拉"],
+        signals: [],
+        evidenceText: ["lunch ok"],
+        visibleProteinSource: true,
+        visibleVegetables: true,
+        solidFoodObserved: true,
+      },
+      {
+        mealSlot: "dinner",
+        observedFoods: ["奶昔", "青菜"],
+        signals: ["shake_dominant"],
+        evidenceText: ["dinner: plan shake + veg"],
+        shakeObserved: true,
+        solidFoodObserved: true,
+        visibleVegetables: true,
+        noOtherFoodVisible: false,
+      },
+    ];
+  }
+
+  if (scenario === "H_on_track_day") {
+    return [
+      {
+        mealSlot: "breakfast",
+        observedFoods: ["奶昔", "蛋"],
+        signals: ["shake_dominant"],
+        evidenceText: ["breakfast: shake + egg"],
+        shakeObserved: true,
+        solidFoodObserved: true,
+        visibleProteinSource: true,
+        noOtherFoodVisible: false,
+        followUpQuestion: null,
+      },
+      {
+        mealSlot: "lunch",
+        observedFoods: ["雞胸", "沙拉"],
+        signals: [],
+        evidenceText: ["lunch ok"],
+        visibleProteinSource: true,
+        visibleVegetables: true,
+        solidFoodObserved: true,
+      },
+      {
+        mealSlot: "dinner",
+        observedFoods: ["魚", "青菜", "一小碗飯"],
+        signals: [],
+        evidenceText: ["dinner ok"],
+        solidFoodObserved: true,
+        visibleProteinSource: true,
+        visibleVegetables: true,
+        visibleCarbohydrate: true,
+      },
+    ];
   }
 
   if (scenario === "B_breakfast_deviation") {
@@ -809,7 +981,7 @@ export function getFixtureMealObservations(
     ];
   }
 
-  if (scenario === "C_watch_pattern") {
+  if (scenario === "C_watch_pattern" || scenario === "N_two_periods_flat") {
     return [
       {
         mealSlot: "breakfast",
@@ -822,6 +994,41 @@ export function getFixtureMealObservations(
         observedFoods: ["火鍋"],
         signals: ["processed_food"],
         evidenceText: ["dinner text: 外食火鍋"],
+      },
+    ];
+  }
+
+  if (scenario === "I_baseline_only_fat_loss" || scenario === "M_baseline_only_day10") {
+    return getFixtureMealObservations("E_full_day_off_track");
+  }
+  if (scenario === "J_second_measurement_improving" || scenario === "L_recomposition") {
+    return getFixtureMealObservations("H_on_track_day");
+  }
+  if (scenario === "K_weight_down_muscle_loss") {
+    return [
+      {
+        mealSlot: "breakfast",
+        observedFoods: ["奶昔"],
+        signals: ["shake_dominant"],
+        evidenceText: ["breakfast shake"],
+        shakeObserved: true,
+        noOtherFoodVisible: true,
+        solidFoodObserved: false,
+      },
+      {
+        mealSlot: "lunch",
+        observedFoods: ["清湯麵"],
+        signals: ["starch_concentrated"],
+        evidenceText: ["lunch noodle"],
+      },
+      {
+        mealSlot: "dinner",
+        observedFoods: ["奶昔"],
+        signals: ["shake_dominant"],
+        evidenceText: ["dinner shake"],
+        shakeObserved: true,
+        noOtherFoodVisible: true,
+        solidFoodObserved: false,
       },
     ];
   }

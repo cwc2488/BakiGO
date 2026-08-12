@@ -208,6 +208,7 @@ describe("golden production case — shake / fried rice / hunger", () => {
         evidence: [],
         follow_ups: [],
         photo_reuse_flags: [],
+        daily_nutrition_assessment: null,
       },
     };
 
@@ -219,7 +220,12 @@ describe("golden production case — shake / fried rice / hunger", () => {
     expect(applied.coach.follow_ups.some((item) => item.subject === "hunger")).toBe(true);
     expect(applied.customer.daily_food_summary).toMatch(/炒飯|奶昔/);
     expect(applied.customer.meal_feedback.lunch?.summary).toMatch(/炒飯/);
-    expect(applied.customer.meal_feedback.breakfast?.follow_up_question).toMatch(/奶昔/);
+    // Hunger + dual shake: meal clarification budget suppresses duplicate per-meal asks.
+    const mealClarifications = (
+      ["breakfast", "lunch", "dinner"] as const
+    ).filter((slot) => applied.customer.meal_feedback[slot]?.follow_up_question);
+    expect(mealClarifications.length).toBeLessThanOrEqual(1);
+    expect(applied.coach.daily_nutrition_assessment?.level).toBeTruthy();
   });
 
   it("detects exact photo reuse via sha256", async () => {

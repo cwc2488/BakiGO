@@ -1,3 +1,7 @@
+import {
+  dailyNutritionAssessmentCustomerLabel,
+} from "@/lib/coaching/ai/assess-daily-nutrition";
+import { applyMealFollowUpBudgetToOutput } from "@/lib/coaching/ai/meal-follow-up-budget";
 import type { CoachingDailyGenerationOutputJson } from "@/types/coaching-ai";
 import type { CoachingDecisionContext, CoachingPriority } from "@/types/coaching-signals";
 
@@ -16,6 +20,8 @@ function collectDeterministicEvidence(decision: CoachingDecisionContext): string
       items.push(formatted);
     }
   };
+
+  push("daily_nutrition_level", decision.dailyNutritionAssessment.level);
 
   for (const observation of decision.mealObservations) {
     push(`${observation.mealSlot}_foods`, observation.observedFoods.join(",") || null);
@@ -117,6 +123,117 @@ function ensureCustomerVoiceResponse(
   return `你今天提到「${decision.customerVoice[0]!.rawExcerpt}」，我有收到，我們會一起看怎麼調整。`;
 }
 
+const BASELINE_ONLY_BODY_CLAIM_PATTERN =
+  /(最近).{0,12}(體脂|體重|肌肉|內臟脂肪).{0,12}(下降|上升|改善|惡化|變差|沒有變|卡住)|(身體正在|數據).{0,8}(改善|惡化|變差|卡住)|所以你的(體脂|體重)/u;
+
+function sanitizeBaselineOnlyBodyClaims(
+  text: string,
+  decision: CoachingDecisionContext,
+): string {
+  if (decision.goalContext.measurementStage !== "baseline_only") {
+    return text;
+  }
+  if (!BASELINE_ONLY_BODY_CLAIM_PATTERN.test(text)) {
+    return text;
+  }
+  const goal = decision.goalContext.goalLabel || "陪跑目標";
+  return `以你目前的${goal}來看，先把今天的執行節奏顧好；身體變化等下一次回測再一起看。`;
+}
+
+function shouldSurfaceDeterministicOutcome(decision: CoachingDecisionContext): boolean {
+  const stage = decision.goalContext.measurementStage;
+  if (stage !== "comparison_available" && stage !== "trend_available") {
+    return false;
+  }
+  return ["improving", "mixed", "flat", "worsening"].includes(
+    decision.outcomeAssessment.outcomeStatus,
+  );
+}
+
+/** True when customer prose already conveys the deterministic outcome in natural language. */
+function customerTextReflectsOutcome(
+  text: string,
+  decision: CoachingDecisionContext,
+): boolean {
+  const status = decision.outcomeAssessment.outcomeStatus;
+  const summary = decision.outcomeAssessment.customerSummary;
+
+  switch (status) {
+    case "improving":
+      if (/重組/.test(summary)) {
+        return (
+          /重組|身體重組/.test(text) ||
+          (/(體脂).{0,10}(下降|降低)/.test(text) &&
+            /(肌肉).{0,10}(上升|增加|維持)/.test(text))
+        );
+      }
+      return (
+        /(體重|體脂).{0,12}(下降|降低)|(下降|降低).{0,12}(體重|體脂)/.test(text) &&
+        /肌肉/.test(text)
+      );
+    case "mixed":
+      return (
+        /肌肉/.test(text) &&
+        /(流失|下降)/.test(text) &&
+        /(不能只|不是單純|別只|減脂成功)/.test(text)
+      );
+    case "flat":
+      return (
+        /(變化不大|沒有明顯變化|持平|先觀察)/.test(text) &&
+        /(身體|數據|回測|體重|體脂)/.test(text)
+      );
+    case "worsening":
+      return /(需要調整|未朝|還沒朝|結果.{0,8}(不理想|偏離)|方向.{0,6}偏)/.test(text);
+    default:
+      return true;
+  }
+}
+
+/**
+ * DecisionContext authority: when comparison/trend evidence exists, customer-facing
+ * today_feedback must surface outcomeAssessment.customerSummary (no new schema field).
+ */
+function ensureCustomerOutcomeWording(
+  todayFeedback: string,
+  decision: CoachingDecisionContext,
+  otherCustomerText: string,
+): string {
+  if (!shouldSurfaceDeterministicOutcome(decision)) {
+    return todayFeedback;
+  }
+
+  const combined = `${otherCustomerText} ${todayFeedback}`;
+  if (customerTextReflectsOutcome(combined, decision)) {
+    return todayFeedback;
+  }
+
+  const summary = decision.outcomeAssessment.customerSummary.trim();
+  if (!summary) {
+    return todayFeedback;
+  }
+
+  const normalized = summary.endsWith("。") ? summary : `${summary}。`;
+  const trimmed = todayFeedback.trim();
+  if (!trimmed) {
+    return normalized;
+  }
+  return `${normalized}${trimmed}`;
+}
+
+function appendOutcomeEvidence(items: string[], decision: CoachingDecisionContext): string[] {
+  const outcomeItems = [
+    `measurement_stage=${formatEvidenceValue(decision.goalContext.measurementStage)}`,
+    `outcome_status=${formatEvidenceValue(decision.outcomeAssessment.outcomeStatus)}`,
+    `trend_status=${formatEvidenceValue(decision.outcomeAssessment.trendStatus)}`,
+    `goal_type=${formatEvidenceValue(decision.goalContext.goalType)}`,
+  ];
+  const merged = [...outcomeItems];
+  for (const item of items) {
+    if (!merged.includes(item)) merged.push(item);
+  }
+  return merged.slice(0, 8);
+}
+
 function buildDeterministicFollowUps(decision: CoachingDecisionContext): Array<{
   subject: string;
   question: string;
@@ -132,11 +249,18 @@ function buildDeterministicFollowUps(decision: CoachingDecisionContext): Array<{
     });
   }
 
-  for (const observation of decision.mealObservations) {
-    if (observation.followUpQuestion) {
+  const budget = decision.mealFollowUpBudget;
+  if (budget.allowCustomerMealClarification) {
+    if (budget.consolidatedQuestion) {
       followUps.push({
-        subject: `meal_${observation.mealSlot}`,
-        question: observation.followUpQuestion,
+        subject: "meal_clarification",
+        question: budget.consolidatedQuestion,
+        status: "pending",
+      });
+    } else if (budget.selectedMealSlot && budget.selectedQuestion) {
+      followUps.push({
+        subject: `meal_${budget.selectedMealSlot}`,
+        question: budget.selectedQuestion,
         status: "pending",
       });
     }
@@ -173,13 +297,25 @@ export function applyCoachingDecisionContextToOutput(
     method: item.method,
   }));
 
-  return {
+  const assessment = decision.dailyNutritionAssessment;
+  const customerVoiceResponse = sanitizeBaselineOnlyBodyClaims(
+    ensureCustomerVoiceResponse(output.customer.customer_voice_response, decision) ?? "",
+    decision,
+  );
+  const todayFeedbackWithOutcome = ensureCustomerOutcomeWording(
+    output.customer.today_feedback,
+    decision,
+    `${output.customer.encouragement} ${output.customer.daily_food_summary ?? ""}`,
+  );
+  const withSystemFields: CoachingDailyGenerationOutputJson = {
     ...output,
     customer: {
       ...output.customer,
+      encouragement: sanitizeBaselineOnlyBodyClaims(output.customer.encouragement, decision),
+      today_feedback: sanitizeBaselineOnlyBodyClaims(todayFeedbackWithOutcome, decision),
       adjustment_priorities,
-      tomorrow_focus,
-      customer_voice_response: ensureCustomerVoiceResponse(output.customer.customer_voice_response, decision),
+      tomorrow_focus: sanitizeBaselineOnlyBodyClaims(tomorrow_focus, decision),
+      customer_voice_response: customerVoiceResponse || null,
       follow_up_for_tomorrow:
         output.customer.follow_up_for_tomorrow?.trim() ||
         followUps[0]?.question ||
@@ -187,14 +323,25 @@ export function applyCoachingDecisionContextToOutput(
     },
     coach: {
       ...output.coach,
+      daily_summary: sanitizeBaselineOnlyBodyClaims(output.coach.daily_summary, decision),
       recurring_issue: decision.recurringIssue?.key ?? null,
       improved_issue: decision.improvedIssue?.key ?? null,
       coach_attention_required: decision.coachAttention.required,
       attention_reason: decision.coachAttention.reason,
-      evidence: collectDeterministicEvidence(decision),
+      evidence: appendOutcomeEvidence(collectDeterministicEvidence(decision), decision),
       proposed_intervention_level: decision.finalInterventionLevel,
       follow_ups: followUps,
       photo_reuse_flags: photoReuseFlags.length > 0 ? photoReuseFlags : output.coach.photo_reuse_flags ?? [],
+      daily_nutrition_assessment: {
+        level: assessment.level,
+        label: dailyNutritionAssessmentCustomerLabel(assessment.level),
+        reasons: assessment.reasons,
+        positive_factors: assessment.positiveFactors,
+        adjustment_subjects: assessment.adjustmentSubjects,
+        confidence: assessment.confidence,
+      },
     },
   };
+
+  return applyMealFollowUpBudgetToOutput(withSystemFields, decision);
 }

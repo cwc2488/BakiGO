@@ -160,6 +160,9 @@ function summarizeDays(
       statusLabel: COACHING_DAY_UI_STATUS_LABELS[status],
       submittedAt: log?.submittedAt ?? null,
       hasLog: Boolean(log),
+      dayNumber: null,
+      nutritionLabel: null,
+      focusSummary: null,
     };
   });
 }

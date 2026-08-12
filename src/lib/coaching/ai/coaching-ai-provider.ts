@@ -218,6 +218,9 @@ function normalizeDailyCoachDraftJson(value: unknown): unknown {
     if (!Array.isArray(coachRecord.photo_reuse_flags)) {
       coachRecord.photo_reuse_flags = [];
     }
+    if (!("daily_nutrition_assessment" in coachRecord)) {
+      coachRecord.daily_nutrition_assessment = null;
+    }
   }
   return root;
 }

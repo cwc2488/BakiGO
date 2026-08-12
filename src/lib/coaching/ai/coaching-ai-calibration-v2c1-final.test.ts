@@ -22,17 +22,20 @@ function cloneD(): CoachingDailyGenerationOutputJson {
 }
 
 describe("coaching AI V2c1 final calibration", () => {
-  it("prompt version is v2c1f and encodes the two final rules", () => {
-    expect(COACHING_DAILY_AI_PROMPT_VERSION).toBe("coaching_daily_v2d");
+  it("prompt version is v2e and keeps uncertainty + sleep + history contracts", () => {
+    expect(COACHING_DAILY_AI_PROMPT_VERSION).toBe("coaching_daily_v2f1");
 
     const systemPrompt = buildCoachingDailyCoachSystemPrompt();
-    expect(systemPrompt).toContain("照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？");
+    expect(systemPrompt).toContain("mealFollowUpBudget");
+    expect(systemPrompt).toContain("DailyNutritionAssessment");
     expect(systemPrompt).toContain("似乎沒有搭配其他食物");
     expect(systemPrompt).toContain("noOtherFoodVisible=true");
     expect(systemPrompt).toContain("睡眠時數足夠，但入睡時間偏晚");
     expect(systemPrompt).toContain("duration");
     expect(systemPrompt).toContain("bedtime");
     expect(systemPrompt).toContain("reportDayRelation");
+    expect(systemPrompt).toContain("鼓勵的是人，不是錯誤行為");
+    expect(systemPrompt).toContain("最多 1 個 meal clarification");
 
     const packed = buildScenarioDecisionContext("D_hunger_shake_fried_rice");
     const userPrompt = buildCoachingDailyCoachUserPrompt({
@@ -41,8 +44,10 @@ describe("coaching AI V2c1 final calibration", () => {
       preparedMealImages: [],
       decisionContext: packed.decisionContext,
     });
-    expect(userPrompt).toContain("禁止「似乎沒有搭配其他食物」");
+    expect(userPrompt).toContain("似乎沒有搭配其他食物");
     expect(userPrompt).toContain("必須同時評估時數與入睡時間");
+    expect(userPrompt).toContain("dailyNutritionAssessment");
+    expect(userPrompt).toContain("mealFollowUpBudget");
   });
 
   it("regression: forbids「似乎沒有搭配其他食物」certainty wording", () => {

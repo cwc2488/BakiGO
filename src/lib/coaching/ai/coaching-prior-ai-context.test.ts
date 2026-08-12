@@ -31,6 +31,7 @@ describe("buildPriorAiContextFromOutput", () => {
           evidence: [],
           follow_ups: [{ subject: "hunger", question: "還會餓嗎？", status: "pending" }],
           photo_reuse_flags: [],
+        daily_nutrition_assessment: null,
         },
       },
     });

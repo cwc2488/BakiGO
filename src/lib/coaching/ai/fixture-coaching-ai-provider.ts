@@ -12,8 +12,33 @@ import { parseCoachingDailyGenerationOutput } from "@/lib/coaching/ai/coaching-d
 import type { CoachingDecisionContext } from "@/types/coaching-signals";
 
 function pickScenarioFromDecision(decision: CoachingDecisionContext): CoachingAiFixtureScenario {
+  if (decision.dailyNutritionAssessment.level === "off_track" || decision.dailyNutritionAssessment.level === "needs_adjustment") {
+    if (decision.mealObservations.some((item) => item.observedFoods.join("").includes("roti"))) {
+      return "E_full_day_off_track";
+    }
+  }
+  if (
+    decision.customerVoice.some((item) => item.key === "hunger_reported") &&
+    decision.mealObservations.filter((item) => item.shakeObserved).length >= 2 &&
+    !decision.mealObservations.some((item) => item.signals.includes("fried_food") || item.signals.includes("starch_concentrated"))
+  ) {
+    return "G_shake_hunger";
+  }
   if (decision.priorities.some((item) => item.signalKey.includes("hunger") || item.signalKey.includes("customer_voice"))) {
     return "D_hunger_shake_fried_rice";
+  }
+  if (
+    decision.mealObservations.filter((item) => item.signals.includes("fried_food")).length === 1 &&
+    decision.dailyNutritionAssessment.level === "on_track"
+  ) {
+    return "F_single_meal_fried";
+  }
+  if (
+    decision.dailyNutritionAssessment.level === "on_track" &&
+    decision.priorities.length === 0 &&
+    decision.mealObservations.length >= 3
+  ) {
+    return "H_on_track_day";
   }
   if (decision.priorities.some((item) => item.signalKey.includes("low_protein") || item.signalKey.includes("sugary_drink"))) {
     return "B_breakfast_deviation";
@@ -69,6 +94,7 @@ function fixtureOutputForScenario(
         evidence: [],
         follow_ups: [],
         photo_reuse_flags: [],
+        daily_nutrition_assessment: null,
       },
     };
   }
@@ -106,6 +132,7 @@ function fixtureOutputForScenario(
         evidence: [],
         follow_ups: [],
         photo_reuse_flags: [],
+        daily_nutrition_assessment: null,
       },
     };
   }
@@ -116,10 +143,11 @@ function fixtureOutputForScenario(
       customer: {
         encouragement: "今天還是有完整回報，這很重要；先聽你說還是會很餓。",
         today_feedback: "我看到早晚餐偏奶昔、午餐有炒飯；水分比計畫少一些。先處理飢餓與可執行的下一餐。",
-        daily_food_summary: "早晚餐看起來偏奶昔，午餐是炒飯；蛋白質／青菜是否有搭配還需要確認。",
+        daily_food_summary:
+          "如果以減脂來看，今天午餐炒飯偏澱粉油脂，早晚餐又偏奶昔，整天比較容易餓也比較偏離。明天先挑一餐補蛋白質＋有咀嚼感的食物。",
         meal_feedback: {
           breakfast: {
-            summary: "照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？",
+            summary: "早餐主要回報奶昔。",
             good_point: "有照計畫回報奶昔。",
             adjustment: null,
             follow_up_question: "照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？",
@@ -131,7 +159,7 @@ function fixtureOutputForScenario(
             follow_up_question: null,
           },
           dinner: {
-            summary: "照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？",
+            summary: "晚餐主要回報奶昔。",
             good_point: null,
             adjustment: null,
             follow_up_question: "照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？",
@@ -142,27 +170,179 @@ function fixtureOutputForScenario(
           sleep: "睡眠時數足夠，但入睡時間偏晚。",
           exercise: "有運動回報，很棒。",
         },
-        customer_voice_response: "你說還是會很餓，我會先幫你看哪一餐比較容易餓，再一起調可執行的版本。",
+        customer_voice_response:
+          "你說還是會很餓，我有注意到。從今天回報看起來，有幾餐比較偏液體或澱粉，有可能比較快餓。先不用硬撐。",
         adjustment_priorities: ["回應飢餓", "補水往計畫靠近"],
         tomorrow_focus: "先把容易餓的那餐補穩",
-        follow_up_for_tomorrow: "明天早／晚餐除了奶昔，還有吃其他東西嗎？會不會還是很餓？",
+        follow_up_for_tomorrow: null,
       },
       coach: {
-        daily_summary: "客戶回報飢餓；早晚餐奶昔需追問是否有其他食物；午餐炒飯；水分未達計畫。",
+        daily_summary: "客戶回報飢餓；早晚餐奶昔；午餐炒飯；水分未達計畫。",
         recurring_issue: null,
         improved_issue: null,
         proposed_intervention_level: "normal",
         coach_attention_required: false,
         attention_reason: null,
         evidence: ["customer_note:還是會很餓", "lunch:炒飯", "water 3000/5000"],
-        follow_ups: [
-          {
-            subject: "meal_sufficiency",
-            question: "照片裡目前只看到奶昔，我想確認這餐還有沒有搭配其他東西？",
-            status: "pending",
-          },
-        ],
+        follow_ups: [],
         photo_reuse_flags: [],
+        daily_nutrition_assessment: null,
+      },
+    };
+  }
+
+  if (scenario === "E_full_day_off_track") {
+    return {
+      version: COACHING_DAILY_GENERATION_OUTPUT_VERSION,
+      customer: {
+        encouragement: "三餐都有認真回報，這點很好。",
+        today_feedback: "如果以減脂來看，今天整體的飲食確實比較偏離目前的方向，但不是某一餐完全不能吃。",
+        daily_food_summary:
+          "如果以減脂來看，今天三餐的油脂和精製澱粉比較集中。不是某一餐完全不能吃，而是三餐累積起來會讓今天比較偏離減脂方向。明天不用全部重來，先挑一餐改成蛋白質＋蔬菜比較完整的組合。",
+        meal_feedback: {
+          breakfast: {
+            summary: "早餐是炒飯，澱粉與油脂偏集中。",
+            good_point: null,
+            adjustment: "可改成蛋白質＋蔬菜為主。",
+            follow_up_question: null,
+          },
+          lunch: {
+            summary: "午餐 roti 配 curry，澱粉偏多。",
+            good_point: null,
+            adjustment: "份量收一點，或搭配更多蛋白質。",
+            follow_up_question: null,
+          },
+          dinner: {
+            summary: "晚餐有肉骨與炸物。",
+            good_point: null,
+            adjustment: "炸物先減一次就好。",
+            follow_up_question: null,
+          },
+        },
+        lifestyle_feedback: { hydration: null, sleep: null, exercise: null },
+        customer_voice_response: null,
+        adjustment_priorities: ["挑一餐改成蛋白質＋蔬菜", "減少整天澱粉油脂累積"],
+        tomorrow_focus: "挑一餐改成蛋白質＋蔬菜",
+        follow_up_for_tomorrow: null,
+      },
+      coach: {
+        daily_summary: "整天多餐偏離減脂方向，需調整但不可羞辱。",
+        recurring_issue: null,
+        improved_issue: null,
+        proposed_intervention_level: "normal",
+        coach_attention_required: false,
+        attention_reason: null,
+        evidence: [],
+        follow_ups: [],
+        photo_reuse_flags: [],
+        daily_nutrition_assessment: null,
+      },
+    };
+  }
+
+  if (scenario === "F_single_meal_fried") {
+    return {
+      version: COACHING_DAILY_GENERATION_OUTPUT_VERSION,
+      customer: {
+        encouragement: "早午餐都回報得很清楚，這點很好。",
+        today_feedback: "整體方向大致可以，晚餐炸物先提醒一下就好，不用因為一餐覺得整天失敗。",
+        daily_food_summary:
+          "今天早午餐大致穩，只有晚餐偏炸物。整天還不算偏離，明天晚餐改回較清爽的蛋白質＋蔬菜即可。",
+        meal_feedback: {
+          breakfast: emptyMealFeedback("早餐蛋白質與蔬菜都有。"),
+          lunch: emptyMealFeedback("午餐便當大致正常。"),
+          dinner: {
+            summary: "晚餐是炸雞。",
+            good_point: null,
+            adjustment: "下次改烤或煎會更接近減脂方向。",
+            follow_up_question: null,
+          },
+        },
+        lifestyle_feedback: { hydration: null, sleep: null, exercise: null },
+        customer_voice_response: null,
+        adjustment_priorities: [],
+        tomorrow_focus: "維持目前節奏",
+        follow_up_for_tomorrow: null,
+      },
+      coach: {
+        daily_summary: "單餐炸物，不升級關注。",
+        recurring_issue: null,
+        improved_issue: null,
+        proposed_intervention_level: "normal",
+        coach_attention_required: false,
+        attention_reason: null,
+        evidence: [],
+        follow_ups: [],
+        photo_reuse_flags: [],
+        daily_nutrition_assessment: null,
+      },
+    };
+  }
+
+  if (scenario === "G_shake_hunger") {
+    return {
+      version: COACHING_DAILY_GENERATION_OUTPUT_VERSION,
+      customer: {
+        encouragement: "你願意誠實寫下還是會很餓，這點很重要。",
+        today_feedback: "我們先不用硬撐，明天試著把其中一餐補完整，看飽足感有沒有比較好。",
+        daily_food_summary:
+          "早晚餐主要是奶昔，午餐相對完整。若蛋白質與有咀嚼感的食物偏少，整天比較容易餓；明天先補其中一餐即可。",
+        meal_feedback: {
+          breakfast: emptyMealFeedback("早餐主要回報奶昔。"),
+          lunch: emptyMealFeedback("午餐有雞胸沙拉。"),
+          dinner: emptyMealFeedback("晚餐主要回報奶昔。"),
+        },
+        lifestyle_feedback: { hydration: null, sleep: null, exercise: null },
+        customer_voice_response:
+          "你說還是會很餓，我有注意到。從今天回報看起來，有幾餐比較偏液體，有可能比較快餓。",
+        adjustment_priorities: ["先回應飢餓感受"],
+        tomorrow_focus: "先把容易餓的那餐補穩",
+        follow_up_for_tomorrow: null,
+      },
+      coach: {
+        daily_summary: "飢餓＋雙奶昔，追問預算最多一次。",
+        recurring_issue: null,
+        improved_issue: null,
+        proposed_intervention_level: "normal",
+        coach_attention_required: false,
+        attention_reason: null,
+        evidence: [],
+        follow_ups: [],
+        photo_reuse_flags: [],
+        daily_nutrition_assessment: null,
+      },
+    };
+  }
+
+  if (scenario === "H_on_track_day") {
+    return {
+      version: COACHING_DAILY_GENERATION_OUTPUT_VERSION,
+      customer: {
+        encouragement: "今天三餐方向清楚，回報也很完整，這樣陪跑會越來越穩。",
+        today_feedback: "沒有需要硬找的問題，維持這個節奏就很好。",
+        daily_food_summary: "今天三餐整體符合減脂方向，蛋白質與蔬菜都有看到，先維持即可。",
+        meal_feedback: {
+          breakfast: emptyMealFeedback("早餐奶昔有搭配蛋。"),
+          lunch: emptyMealFeedback("午餐雞胸沙拉很穩。"),
+          dinner: emptyMealFeedback("晚餐魚＋青菜＋一小碗飯。"),
+        },
+        lifestyle_feedback: { hydration: null, sleep: null, exercise: null },
+        customer_voice_response: null,
+        adjustment_priorities: [],
+        tomorrow_focus: "維持目前節奏",
+        follow_up_for_tomorrow: null,
+      },
+      coach: {
+        daily_summary: "正常減脂日，無需硬找問題。",
+        recurring_issue: null,
+        improved_issue: null,
+        proposed_intervention_level: "normal",
+        coach_attention_required: false,
+        attention_reason: null,
+        evidence: [],
+        follow_ups: [],
+        photo_reuse_flags: [],
+        daily_nutrition_assessment: null,
       },
     };
   }
@@ -203,6 +383,7 @@ function fixtureOutputForScenario(
       evidence: [],
       follow_ups: [{ subject: "sleep", question: "明天還會不會那麼晚睡？", status: "pending" }],
       photo_reuse_flags: [],
+        daily_nutrition_assessment: null,
     },
   };
 }

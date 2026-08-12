@@ -28,6 +28,7 @@ const validOutput: CoachingDailyGenerationOutputJson = {
     evidence: ["water 1500ml"],
     follow_ups: [],
     photo_reuse_flags: [],
+        daily_nutrition_assessment: null,
   },
 };
 

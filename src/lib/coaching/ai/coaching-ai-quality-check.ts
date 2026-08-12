@@ -4,6 +4,8 @@ import type {
   CoachingInterventionLevel,
 } from "@/types/coaching-ai";
 import type { CoachingPlanSnapshot } from "@/types/coaching";
+import { assertCustomerFoodStatementEvidenceBacked } from "@/lib/coaching/ai/meal-follow-up-budget";
+import type { CoachingMealObservation } from "@/types/coaching-signals";
 import { parseClockTimeToMinutes } from "@/lib/coaching/coaching-sleep";
 
 export type CoachingAiQualityCheckItem = {
@@ -40,6 +42,20 @@ const PRAISE_BAD_BEHAVIOR_PATTERNS = [
   /沒吃.{0,8}但喝水.{0,12}(好|棒|正確)/,
   /(火鍋|外食).{0,16}(沒關係|也很好|很棒的選擇)/,
 ];
+
+/** Praising the diet itself when the day needs adjustment. */
+const PRAISE_OFFTRACK_DIET_PATTERNS = [
+  /今天.{0,12}(飲食|吃得).{0,8}(很好|很棒|很不錯|不錯)/,
+  /吃得很棒/,
+  /飲食很不錯/,
+  /吃得開心最重要/,
+  /繼續保持這樣吃/,
+  /你今天做得不錯.{0,12}吃/,
+  /吃得開心.{0,8}我很開心/,
+];
+
+const CLARIFICATION_QUESTION_PATTERN =
+  /還有沒有搭配|除了.{0,8}還有|還有吃別的|其他東西|其他食物|有沒有搭配/;
 
 const INVENTED_FIXED_STANDARD_PATTERNS = [
   /每天[要需]?喝?\s*\d{3,4}\s*(ml|毫升|c\.?c\.?)/i,
@@ -147,6 +163,141 @@ function checkNoPraiseBadBehavior(customerText: string): CoachingAiQualityCheckI
     detail: hit
       ? `May praise undesirable behavior rather than the person: ${hit.source}`
       : "No praise-of-bad-behavior phrasing detected.",
+  };
+}
+
+function checkNoPraiseOffTrackDiet(output: CoachingDailyGenerationOutputJson): CoachingAiQualityCheckItem {
+  const level = output.coach.daily_nutrition_assessment?.level;
+  if (level !== "needs_adjustment" && level !== "off_track") {
+    return {
+      id: "customer_no_praise_offtrack_diet",
+      status: "pass",
+      detail: "Day is not needs_adjustment/off_track; diet-praise guard skipped.",
+    };
+  }
+
+  const text = `${output.customer.encouragement} ${output.customer.today_feedback} ${output.customer.daily_food_summary}`;
+  const hit = PRAISE_OFFTRACK_DIET_PATTERNS.find((pattern) => pattern.test(text));
+  return {
+    id: "customer_no_praise_offtrack_diet",
+    status: hit ? "fail" : "pass",
+    detail: hit
+      ? `Praised diet behavior on ${level} day: ${hit.source}`
+      : "No diet-behavior praise on needs_adjustment/off_track day.",
+  };
+}
+
+function checkMealFollowUpBudget(output: CoachingDailyGenerationOutputJson): CoachingAiQualityCheckItem {
+  const questions = (["breakfast", "lunch", "dinner"] as const)
+    .map((slot) => output.customer.meal_feedback[slot]?.follow_up_question)
+    .filter((value): value is string => Boolean(value && CLARIFICATION_QUESTION_PATTERN.test(value)));
+
+  if (
+    output.customer.follow_up_for_tomorrow &&
+    CLARIFICATION_QUESTION_PATTERN.test(output.customer.follow_up_for_tomorrow)
+  ) {
+    questions.push(output.customer.follow_up_for_tomorrow);
+  }
+
+  if (questions.length > 1) {
+    return {
+      id: "customer_meal_followup_budget",
+      status: "fail",
+      detail: `Meal clarification questions=${questions.length}; max 1 per log_date.`,
+    };
+  }
+
+  return {
+    id: "customer_meal_followup_budget",
+    status: "pass",
+    detail: `Meal clarification questions=${questions.length} (budget <= 1).`,
+  };
+}
+
+function checkOffTrackNotSoftened(output: CoachingDailyGenerationOutputJson): CoachingAiQualityCheckItem {
+  const level = output.coach.daily_nutrition_assessment?.level;
+  if (level !== "off_track") {
+    return {
+      id: "customer_offtrack_clear_wording",
+      status: "pass",
+      detail: "Not off_track; soft-wording guard skipped.",
+    };
+  }
+
+  const text = `${output.customer.today_feedback} ${output.customer.daily_food_summary}`;
+  const softened = /稍微調整|小調整|差不多就好|還算可以/.test(text);
+  const clear =
+    /偏離|需要調整|不太理想|不太符合|比較偏|需要改/.test(text) &&
+    !softened;
+
+  return {
+    id: "customer_offtrack_clear_wording",
+    status: clear ? "pass" : "fail",
+    detail: clear
+      ? "off_track customer wording clearly indicates meaningful deviation."
+      : `off_track wording too soft or unclear: ${text.slice(0, 120)}`,
+  };
+}
+
+function checkFollowUpFoodEvidence(
+  output: CoachingDailyGenerationOutputJson,
+  mealObservations: CoachingMealObservation[] | null | undefined,
+): CoachingAiQualityCheckItem {
+  if (!mealObservations || mealObservations.length === 0) {
+    return {
+      id: "customer_followup_food_evidence",
+      status: "pass",
+      detail: "No mealObservations provided; evidence binding skipped.",
+    };
+  }
+
+  const statements = [
+    output.customer.follow_up_for_tomorrow,
+    ...(["breakfast", "lunch", "dinner"] as const).map(
+      (slot) => output.customer.meal_feedback[slot]?.follow_up_question ?? null,
+    ),
+  ];
+
+  for (const statement of statements) {
+    const error = assertCustomerFoodStatementEvidenceBacked({
+      statement,
+      mealObservations,
+    });
+    if (error) {
+      return {
+        id: "customer_followup_food_evidence",
+        status: "fail",
+        detail: error,
+      };
+    }
+  }
+
+  // Explicit F regression: fabricated whole-day shake wording.
+  const joined = statements.filter(Boolean).join(" ");
+  if (/早餐和午餐和晚餐.*奶昔|三餐.*奶昔/.test(joined)) {
+    const breakfast = mealObservations.find((item) => item.mealSlot === "breakfast");
+    const lunch = mealObservations.find((item) => item.mealSlot === "lunch");
+    const dinner = mealObservations.find((item) => item.mealSlot === "dinner");
+    const allShake = [breakfast, lunch, dinner].every(
+      (item) =>
+        item &&
+        (item.shakeObserved ||
+          item.signals.includes("shake_dominant") ||
+          item.observedFoods.some((food) => /奶昔|蛋白飲|代餐/.test(food))),
+    );
+    if (!allShake) {
+      return {
+        id: "customer_followup_food_evidence",
+        status: "fail",
+        detail: "Fabricated multi-meal shake follow-up without evidence.",
+      };
+    }
+  }
+
+  return {
+    id: "customer_followup_food_evidence",
+    status: "pass",
+    detail: "Customer follow-up food statements are evidence-backed.",
   };
 }
 
@@ -474,8 +625,15 @@ export function evaluateCoachingAiOutputQuality(input: {
   finalInterventionLevel: CoachingInterventionLevel;
   priorTomorrowFocus?: string | null;
   generationInput?: CoachingGenerationInput | null;
+  mealObservations?: CoachingMealObservation[] | null;
 }): CoachingAiQualityReport {
-  const { output, finalInterventionLevel, priorTomorrowFocus = null, generationInput = null } = input;
+  const {
+    output,
+    finalInterventionLevel,
+    priorTomorrowFocus = null,
+    generationInput = null,
+    mealObservations = null,
+  } = input;
   const customerText = `${output.customer.encouragement} ${output.customer.today_feedback} ${output.customer.adjustment_priorities.join(" ")} ${output.customer.tomorrow_focus}`;
   const planAuthorityText = flattenPlanAuthorityText(
     generationInput?.profileMemory.planSnapshot,
@@ -509,6 +667,10 @@ export function evaluateCoachingAiOutputQuality(input: {
     checkBreakfastDeviationPriorityOrder(output, generationInput),
     checkPlanAuthority(customerText, planAuthorityText),
     checkNoPraiseBadBehavior(customerText),
+    checkNoPraiseOffTrackDiet(output),
+    checkMealFollowUpBudget(output),
+    checkOffTrackNotSoftened(output),
+    checkFollowUpFoodEvidence(output, mealObservations),
     checkNoShakeCertaintyAssertion(output),
     checkSleepDurationAndBedtime(output, generationInput),
     {

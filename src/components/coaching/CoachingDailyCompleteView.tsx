@@ -31,6 +31,7 @@ export function CoachingDailyCompleteView({
   onEdit,
   continueBackfillLabel,
   onContinueBackfill,
+  onOpenHistory,
 }: {
   dailyLog: CoachingDailyLogDetail;
   mealDrafts: Record<CoachingMealSlot, MealDraft>;
@@ -40,6 +41,7 @@ export function CoachingDailyCompleteView({
   onEdit: () => void;
   continueBackfillLabel?: string | null;
   onContinueBackfill?: () => void;
+  onOpenHistory?: () => void;
 }) {
   const mealsFromLog = dailyLog.meals;
   const primaryDone = countPrimaryMealsDone(mealsFromLog);
@@ -249,6 +251,11 @@ export function CoachingDailyCompleteView({
         {continueBackfillLabel && onContinueBackfill ? (
           <CrmButton onClick={onContinueBackfill} type="button">
             {continueBackfillLabel}
+          </CrmButton>
+        ) : null}
+        {onOpenHistory ? (
+          <CrmButton onClick={onOpenHistory} type="button">
+            回到陪跑紀錄
           </CrmButton>
         ) : null}
         <CrmButton onClick={onEdit} type="button" variant="secondary">

@@ -62,6 +62,17 @@ export const coachingDailyGenerationCoachOutputSchema = z.object({
       }),
     )
     .max(3),
+  daily_nutrition_assessment: z
+    .object({
+      level: z.enum(["on_track", "needs_adjustment", "off_track", "insufficient_data"]),
+      label: z.string().min(1).max(80),
+      reasons: z.array(z.string().min(1).max(200)).max(6),
+      positive_factors: z.array(z.string().min(1).max(160)).max(4),
+      adjustment_subjects: z.array(z.string().min(1).max(160)).max(6),
+      confidence: z.number().min(0).max(1),
+    })
+    .nullable()
+    .default(null),
 });
 
 export const coachingDailyGenerationOutputSchema = z.object({

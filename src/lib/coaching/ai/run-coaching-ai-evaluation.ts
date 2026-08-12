@@ -63,6 +63,16 @@ const ALL_SCENARIOS: CoachingAiFixtureScenario[] = [
   "B_breakfast_deviation",
   "C_watch_pattern",
   "D_hunger_shake_fried_rice",
+  "E_full_day_off_track",
+  "F_single_meal_fried",
+  "G_shake_hunger",
+  "H_on_track_day",
+  "I_baseline_only_fat_loss",
+  "J_second_measurement_improving",
+  "K_weight_down_muscle_loss",
+  "L_recomposition",
+  "M_baseline_only_day10",
+  "N_two_periods_flat",
 ];
 
 export async function runCoachingAiControlledEvaluation(input?: {
@@ -148,6 +158,7 @@ export async function runCoachingAiControlledEvaluation(input?: {
         finalInterventionLevel: decisionContext.finalInterventionLevel,
         priorTomorrowFocus: fixture.generationInput.priorAiContext?.tomorrowFocus?.value ?? null,
         generationInput: fixture.generationInput,
+        mealObservations: decisionContext.mealObservations,
       }),
     });
   }

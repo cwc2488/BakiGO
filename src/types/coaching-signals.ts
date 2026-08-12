@@ -136,6 +136,112 @@ export type CoachingPhotoReuseDetection = {
   mealSlot: "breakfast" | "lunch" | "dinner";
 };
 
+export const COACHING_DAILY_NUTRITION_ASSESSMENT_LEVELS = [
+  "on_track",
+  "needs_adjustment",
+  "off_track",
+  "insufficient_data",
+] as const;
+
+export type CoachingDailyNutritionAssessmentLevel =
+  (typeof COACHING_DAILY_NUTRITION_ASSESSMENT_LEVELS)[number];
+
+export type CoachingDailyNutritionAssessment = {
+  level: CoachingDailyNutritionAssessmentLevel;
+  evidence: CoachingSignalEvidence[];
+  reasons: string[];
+  positiveFactors: string[];
+  adjustmentSubjects: string[];
+  confidence: number;
+};
+
+/** Deterministic customer-facing meal clarification budget for one log_date. */
+export type CoachingMealFollowUpBudget = {
+  maxCustomerMealClarifications: 1;
+  selectedMealSlot: "breakfast" | "lunch" | "dinner" | null;
+  selectedQuestion: string | null;
+  suppressedMealSlots: Array<"breakfast" | "lunch" | "dinner">;
+  /** Day-level consolidated ask when multiple meals share the same uncertainty family. */
+  consolidatedQuestion: string | null;
+  allowCustomerMealClarification: boolean;
+};
+
+/** Plan-aware shake allowance per meal slot (from enrollment plan_snapshot_json). */
+export type CoachingMealPlanContext = {
+  breakfastAllowsShake: boolean;
+  lunchAllowsShake: boolean;
+  dinnerAllowsShake: boolean;
+};
+
+
+export const COACHING_MEASUREMENT_STAGES = [
+  "baseline_only",
+  "comparison_available",
+  "trend_available",
+] as const;
+
+export type CoachingMeasurementStage = (typeof COACHING_MEASUREMENT_STAGES)[number];
+
+export const COACHING_OUTCOME_STATUSES = [
+  "not_yet_measurable",
+  "improving",
+  "mixed",
+  "flat",
+  "worsening",
+  "insufficient_data",
+] as const;
+
+export type CoachingOutcomeStatus = (typeof COACHING_OUTCOME_STATUSES)[number];
+
+export const COACHING_TREND_STATUSES = [
+  "not_applicable",
+  "improving",
+  "mixed",
+  "flat",
+  "worsening",
+  "insufficient_data",
+] as const;
+
+export type CoachingTrendStatus = (typeof COACHING_TREND_STATUSES)[number];
+
+export type CoachingGoalContext = {
+  goalType: string;
+  goalLabel: string;
+  measurementStage: CoachingMeasurementStage;
+  baselineDate: string | null;
+  latestMeasurementDate: string | null;
+  measurementCount: number;
+  daysSinceBaseline: number | null;
+  daysSinceLatestMeasurement: number | null;
+  daysSinceEnrollmentStart: number;
+  goalRelevantMetrics: string[];
+};
+
+export type CoachingMeasurementComparison = {
+  baseline: import("@/types/coaching-ai").CoachingBodyMeasurementSummary;
+  latest: import("@/types/coaching-ai").CoachingBodyMeasurementSummary;
+  deltas: import("@/types/coaching-ai").CoachingBodyTrendDelta[];
+  interpretation: CoachingOutcomeStatus;
+  reasons: string[];
+  evidence: CoachingSignalEvidence[];
+};
+
+export type CoachingOutcomeAssessment = {
+  goalContext: CoachingGoalContext;
+  comparison: CoachingMeasurementComparison | null;
+  outcomeStatus: CoachingOutcomeStatus;
+  trendStatus: CoachingTrendStatus;
+  periods: Array<{
+    fromDate: string;
+    toDate: string;
+    status: CoachingOutcomeStatus;
+    spanDays: number;
+  }>;
+  reasons: string[];
+  evidence: CoachingSignalEvidence[];
+  customerSummary: string;
+};
+
 export type CoachingDecisionContext = {
   signals: CoachingSignal[];
   positiveSignals: CoachingSignal[];
@@ -148,6 +254,11 @@ export type CoachingDecisionContext = {
   mealObservations: CoachingMealObservation[];
   photoReuse: CoachingPhotoReuseDetection[];
   pendingFollowUps: CoachingFollowUpMemory[];
+  dailyNutritionAssessment: CoachingDailyNutritionAssessment;
+  mealFollowUpBudget: CoachingMealFollowUpBudget;
+  mealPlanContext: CoachingMealPlanContext;
+  goalContext: CoachingGoalContext;
+  outcomeAssessment: CoachingOutcomeAssessment;
 };
 
 /** Continuity contract: priority[0] owns tomorrow_focus subject. */

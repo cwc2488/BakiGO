@@ -7,6 +7,7 @@ import { CustomerPhotoCompareSection } from "@/components/customers/CustomerPhot
 import { CrmButton, CrmCard, CrmField, CrmSectionTitle } from "@/components/members/ui";
 import { PageShell } from "@/components/ui/PageShell";
 import { compareBodyRecords } from "@/lib/customers/body-composition-compare";
+import { buildCoachingProgressView } from "@/lib/coaching/build-coaching-progress-view";
 import { formatSleepTimeRange } from "@/lib/coaching/coaching-sleep";
 import { buildBodyCompositionTrendSeries } from "@/lib/customers/body-composition-trends";
 import { buildCoachingTodayStatus, formatCoachingTodayStatusLine } from "@/lib/coaching/coaching-completion";
@@ -55,6 +56,14 @@ type DetailPayload = {
       coach_attention_required: boolean;
       attention_reason: string | null;
       evidence: string[];
+      daily_nutrition_assessment?: {
+        level: string;
+        label: string;
+        reasons: string[];
+        positive_factors: string[];
+        adjustment_subjects: string[];
+        confidence: number;
+      } | null;
     } | null;
     errorMessage: string | null;
   } | null;
@@ -112,6 +121,17 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
   }, [bodyRecords, payload?.enrollment.baselineBodyRecordId]);
 
   const latestRecord = bodyRecords[0] ?? null;
+  const progress = useMemo(
+    () =>
+      payload
+        ? buildCoachingProgressView({
+            enrollment: payload.enrollment,
+            bodyRecords,
+            logDate,
+          })
+        : null,
+    [payload, bodyRecords, logDate],
+  );
   const progressPhotos = payload?.progressPhotos ?? [];
 
   const customerDisplayName = payload?.customerDisplayName ?? "陪跑詳情";
@@ -297,6 +317,26 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
                   <div className="space-y-2 border-t border-[#eef2ea] pt-3">
                     <p className="text-[0.8125rem] font-medium text-[#86868b]">教練摘要</p>
                     <p className="text-[#1d1d1f]">{payload.aiOutput.coach.daily_summary}</p>
+                    {payload.aiOutput.coach.daily_nutrition_assessment ? (
+                      <div className="space-y-1 rounded-[1rem] bg-[#f7faf5] px-3 py-3">
+                        <p className="text-[0.8125rem] font-medium text-[#86868b]">今日飲食判斷</p>
+                        <p className="text-[#1d1d1f]">
+                          {payload.aiOutput.coach.daily_nutrition_assessment.label}
+                        </p>
+                        {payload.aiOutput.coach.daily_nutrition_assessment.adjustment_subjects.length > 0 ? (
+                          <ul className="list-disc space-y-1 pl-5 text-[0.875rem] text-[#636366]">
+                            {payload.aiOutput.coach.daily_nutrition_assessment.adjustment_subjects.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {payload.aiOutput.coach.daily_nutrition_assessment.reasons.slice(0, 3).map((reason) => (
+                          <p key={reason} className="text-[0.875rem] text-[#636366]">
+                            {reason}
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
                     <CrmField
                       label="最終介入等級"
                       value={formatInterventionLevel(payload.aiOutput.finalInterventionLevel)}
@@ -335,10 +375,50 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
           </CrmCard>
 
           <CrmCard className="space-y-4">
-            <CrmSectionTitle>每週結果（reuse body records）</CrmSectionTitle>
+            <CrmSectionTitle>Goal & Outcome</CrmSectionTitle>
+            <CrmField label="目標" value={progress?.goalLabel ?? payload.enrollment.goal ?? "—"} />
+            <CrmField
+              label="Day"
+              value={
+                progress?.dayNumber != null
+                  ? `${progress.dayNumber} / ${progress.dayTotal}`
+                  : "—"
+              }
+            />
+            <CrmField label="量測階段" value={progress?.measurementStageLabel ?? "—"} />
+            <CrmField label="結果狀態" value={progress?.outcomeStatusLabel ?? "—"} />
+            <CrmField label="趨勢" value={progress?.trendStatusLabel ?? "—"} />
+            <CrmField
+              label="Intervention"
+              value={formatInterventionLevel(payload.aiOutput?.finalInterventionLevel ?? null)}
+            />
             <CrmField label="起始量測" value={baselineRecord?.recordDate ?? "—"} />
             <CrmField label="最新量測" value={latestRecord?.recordDate ?? "—"} />
-            {comparison?.summary ? <p className="text-[0.9375rem] text-[#636366]">{comparison.summary}</p> : null}
+            {progress?.baselineMissing ? (
+              <p className="text-[0.9375rem] text-[#636366]">Baseline missing</p>
+            ) : null}
+            {progress?.waitingForRetest ? (
+              <p className="text-[0.9375rem] text-[#636366]">等待回測後比較身體變化</p>
+            ) : null}
+            {progress && !progress.waitingForRetest && !progress.baselineMissing ? (
+              <div className="space-y-1 text-[0.875rem] text-[#636366]">
+                {progress.metrics.map((metric) => (
+                  <p key={metric.key}>
+                    {metric.label}：{metric.baseline ?? "—"}
+                    {" → "}
+                    {metric.latest ?? "—"}
+                    {metric.delta != null
+                      ? `（${metric.delta > 0 ? "+" : ""}${metric.delta}${metric.unit}）`
+                      : ""}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            {progress?.customerSummary ? (
+              <p className="text-[0.9375rem] text-[#1d1d1f]">{progress.customerSummary}</p>
+            ) : comparison?.summary ? (
+              <p className="text-[0.9375rem] text-[#636366]">{comparison.summary}</p>
+            ) : null}
             <BodyCompositionTrendCharts seriesList={trendSeries} />
           </CrmCard>
 

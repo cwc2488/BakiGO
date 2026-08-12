@@ -1,11 +1,11 @@
 import { buildCoachingRollingMemory } from "@/lib/coaching/ai/coaching-rolling-aggregates";
+import { buildOutcomeMemoryForProgress } from "@/lib/coaching/ai/build-outcome-memory";
 import { resolveSleepDurationMinutes } from "@/lib/coaching/coaching-sleep";
 import {
   COACHING_AI_SNAPSHOT_VERSION,
   COACHING_ROLLING_WINDOW_DAYS,
   type CoachingAiInputSnapshot,
   type CoachingBodyMeasurementSummary,
-  type CoachingBodyTrendDelta,
   type CoachingCoachDirectivesMemory,
   type CoachingOutcomeMemory,
   type CoachingProfileMemory,
@@ -66,77 +66,6 @@ function buildProfileMemory(input: {
       occupation: input.customer.occupation ?? null,
     },
     baselineMeasurement: mapBodyMeasurement(input.baselineRecord),
-  };
-}
-
-function buildBodyTrendDelta(
-  label: string,
-  baseline: number | null,
-  latest: number | null,
-  unit: string,
-): CoachingBodyTrendDelta | null {
-  if (baseline == null || latest == null) {
-    return null;
-  }
-  return {
-    label,
-    baseline,
-    latest,
-    delta: Math.round((latest - baseline) * 10) / 10,
-    unit,
-  };
-}
-
-function buildOutcomeTrendSummary(deltas: CoachingBodyTrendDelta[]): string | null {
-  const weight = deltas.find((item) => item.label === "體重");
-  const bodyFat = deltas.find((item) => item.label === "體脂率");
-  if (weight && weight.delta < -0.3 && bodyFat && bodyFat.delta <= 0) {
-    return "比基準期輕了，體脂沒有反彈。";
-  }
-  if (deltas.every((item) => Math.abs(item.delta) < 0.2)) {
-    return "與基準期相比變化不大，適合先觀察。";
-  }
-  return "身體組成相較基準期出現變化。";
-}
-
-function buildOutcomeMemory(input: {
-  bodyRecords: BodyCompositionRecord[];
-  baselineBodyRecordId: string | null;
-}): CoachingOutcomeMemory {
-  const sorted = [...input.bodyRecords].sort((left, right) => right.recordDate.localeCompare(left.recordDate));
-  const latestRecord = sorted[0] ?? null;
-
-  let baselineRecord: BodyCompositionRecord | null = null;
-  if (input.baselineBodyRecordId) {
-    baselineRecord = sorted.find((record) => record.id === input.baselineBodyRecordId) ?? null;
-  }
-  baselineRecord ??= sorted.at(-1) ?? null;
-
-  const baseline = mapBodyMeasurement(baselineRecord);
-  const latest = mapBodyMeasurement(latestRecord);
-
-  let trendDeltas: CoachingBodyTrendDelta[] = [];
-  let trendSummary: string | null = null;
-  let daysBetweenMeasurements: number | null = null;
-
-  if (baselineRecord && latestRecord && baselineRecord.id !== latestRecord.id) {
-    daysBetweenMeasurements = daysBetweenDates(baselineRecord.recordDate, latestRecord.recordDate);
-    trendDeltas = [
-      buildBodyTrendDelta("體重", baselineRecord.weightKg, latestRecord.weightKg, "kg"),
-      buildBodyTrendDelta("體脂率", baselineRecord.bodyFatPercent, latestRecord.bodyFatPercent, "%"),
-      buildBodyTrendDelta("骨骼肌", baselineRecord.skeletalMuscleKg, latestRecord.skeletalMuscleKg, "kg"),
-      buildBodyTrendDelta("內臟脂肪", baselineRecord.visceralFatLevel, latestRecord.visceralFatLevel, ""),
-      buildBodyTrendDelta("BMI", baselineRecord.bmi, latestRecord.bmi, ""),
-    ].filter((item): item is CoachingBodyTrendDelta => item !== null);
-    trendSummary = buildOutcomeTrendSummary(trendDeltas);
-  }
-
-  return {
-    baselineMeasurement: baseline,
-    latestMeasurement: latest,
-    daysBetweenMeasurements,
-    trendDeltas,
-    trendSummary,
   };
 }
 
@@ -206,7 +135,7 @@ export function buildCoachingInputSnapshot(input: {
       logDate: input.logDate,
     }),
     rollingMemory: buildCoachingRollingMemory(rollingLogs, COACHING_ROLLING_WINDOW_DAYS),
-    outcomeMemory: buildOutcomeMemory({
+    outcomeMemory: buildOutcomeMemoryForProgress({
       bodyRecords: input.bodyRecords,
       baselineBodyRecordId: input.enrollment.baselineBodyRecordId,
     }),

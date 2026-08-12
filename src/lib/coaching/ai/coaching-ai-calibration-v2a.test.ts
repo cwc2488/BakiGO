@@ -40,7 +40,7 @@ describe("coaching AI prompt calibration V2-A", () => {
       decisionContext: packed.decisionContext,
     });
     expect(userPrompt).toContain("鼓勵的是人，不是錯誤行為");
-    expect(userPrompt).toContain("adjustment_priorities 只能改寫 decisionContext.priorities");
+    expect(userPrompt).toContain("adjustment_priorities 最多 2 個，只能改寫 priorities 主題");
   });
 
   it("A_normal allows 0 priorities and passes quality", () => {

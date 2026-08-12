@@ -33,6 +33,55 @@ const SCENARIO_IMAGES: Record<CoachingAiFixtureScenario, CoachingEvalFixtureImag
     { mealSlot: "lunch", fileName: "lunch-fried-rice.jpg" },
     { mealSlot: "dinner", fileName: "dinner-shake-person.jpg" },
   ],
+  E_full_day_off_track: [
+    { mealSlot: "breakfast", fileName: "lunch-fried-rice.jpg" },
+    { mealSlot: "lunch", fileName: "lunch-bento.jpg" },
+    { mealSlot: "dinner", fileName: "dinner-hotpot.jpg" },
+  ],
+  F_single_meal_fried: [
+    { mealSlot: "breakfast", fileName: "lunch-chicken-salad.jpg" },
+    { mealSlot: "lunch", fileName: "lunch-bento.jpg" },
+    { mealSlot: "dinner", fileName: "dinner-hotpot.jpg" },
+  ],
+  G_shake_hunger: [
+    { mealSlot: "breakfast", fileName: "breakfast-shake.jpg" },
+    { mealSlot: "dinner", fileName: "dinner-shake-person.jpg" },
+  ],
+  H_on_track_day: [
+    { mealSlot: "breakfast", fileName: "breakfast-shake.jpg" },
+    { mealSlot: "lunch", fileName: "lunch-chicken-salad.jpg" },
+    { mealSlot: "dinner", fileName: "dinner-shake-veg.jpg" },
+  ],
+  I_baseline_only_fat_loss: [
+    { mealSlot: "breakfast", fileName: "lunch-fried-rice.jpg" },
+    { mealSlot: "lunch", fileName: "lunch-bento.jpg" },
+    { mealSlot: "dinner", fileName: "dinner-hotpot.jpg" },
+  ],
+  J_second_measurement_improving: [
+    { mealSlot: "breakfast", fileName: "breakfast-shake.jpg" },
+    { mealSlot: "lunch", fileName: "lunch-chicken-salad.jpg" },
+    { mealSlot: "dinner", fileName: "dinner-shake-veg.jpg" },
+  ],
+  K_weight_down_muscle_loss: [
+    { mealSlot: "breakfast", fileName: "breakfast-shake.jpg" },
+    { mealSlot: "lunch", fileName: "lunch-bento.jpg" },
+    { mealSlot: "dinner", fileName: "dinner-shake-person.jpg" },
+  ],
+  L_recomposition: [
+    { mealSlot: "breakfast", fileName: "breakfast-shake.jpg" },
+    { mealSlot: "lunch", fileName: "lunch-chicken-salad.jpg" },
+    { mealSlot: "dinner", fileName: "dinner-shake-veg.jpg" },
+  ],
+  M_baseline_only_day10: [
+    { mealSlot: "breakfast", fileName: "lunch-fried-rice.jpg" },
+    { mealSlot: "lunch", fileName: "lunch-bento.jpg" },
+    { mealSlot: "dinner", fileName: "dinner-hotpot.jpg" },
+  ],
+  N_two_periods_flat: [
+    { mealSlot: "breakfast", fileName: "breakfast-egg-pancake-tea.jpg" },
+    { mealSlot: "lunch", fileName: "lunch-bento.jpg" },
+    { mealSlot: "dinner", fileName: "dinner-hotpot.jpg" },
+  ],
 };
 
 export function getCoachingEvalFixtureImageSpecs(scenario: CoachingAiFixtureScenario): CoachingEvalFixtureImageSpec[] {
