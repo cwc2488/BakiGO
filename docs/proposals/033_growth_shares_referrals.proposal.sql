@@ -1,0 +1,2 @@
+-- Phase 4f proposal twin of applied migration 033_growth_shares_referrals.sql
+-- See supabase/migrations/033_growth_shares_referrals.sql

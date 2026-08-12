@@ -8,6 +8,7 @@ import { formatCommandCenterSectionLabel } from "@/lib/coaching/attention/comman
 import { extractFocusDatesFromAttentionEvidence } from "@/lib/coaching/timeline/build-timeline-events";
 import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetch";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
+import { formatCoachingDayProgressLabel } from "@/lib/coaching/presentation/coaching-ui-copy";
 import type {
   CoachingCommandCenterCard,
   CoachingCommandCenterFilter,
@@ -75,8 +76,7 @@ function buildEvidenceHref(card: CoachingCommandCenterCard): string {
 
 function CommandCenterCardView({ card }: { card: CoachingCommandCenterCard }) {
   const section = card.assessment.commandCenterSection;
-  const dayLabel =
-    card.dayNumber != null ? `Day ${card.dayNumber} / ${card.dayTotal}` : `Day — / ${card.dayTotal}`;
+  const dayLabel = formatCoachingDayProgressLabel(card.dayNumber, card.dayTotal);
   const goalLabel = card.goal?.trim() || "陪跑中";
   const evidenceHref = buildEvidenceHref(card);
 
@@ -103,7 +103,7 @@ function CommandCenterCardView({ card }: { card: CoachingCommandCenterCard }) {
       ) : null}
 
       {section !== "measurement_due" && card.outcomeStatusLabel ? (
-        <p className="mt-2 text-[0.8125rem] text-[#86868b]">目前 Body Outcome：{card.outcomeStatusLabel}</p>
+        <p className="mt-2 text-[0.8125rem] text-[#86868b]">目前身體狀態：{card.outcomeStatusLabel}</p>
       ) : null}
 
       {section === "measurement_due" ? (
@@ -114,7 +114,7 @@ function CommandCenterCardView({ card }: { card: CoachingCommandCenterCard }) {
 
       {card.recommendedActionLabel ? (
         <div className="mt-3 rounded-[1rem] bg-[#f7faf5] px-3 py-2">
-          <p className="text-[0.75rem] font-medium tracking-wide text-[#86868b]">建議</p>
+          <p className="text-[0.75rem] font-medium tracking-wide text-[#86868b]">建議現在做</p>
           <p className="mt-1 text-[0.875rem] leading-relaxed text-[#1d1d1f]">{card.recommendedActionLabel}</p>
         </div>
       ) : null}
@@ -124,14 +124,14 @@ function CommandCenterCardView({ card }: { card: CoachingCommandCenterCard }) {
           className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#1d1d1f] px-4 text-[0.875rem] font-medium text-white"
           href={card.detailHref}
         >
-          查看詳情
+          去處理
         </Link>
         {card.assessment.evidence.length > 0 || card.evidenceSummary ? (
           <Link
             className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#d2d2d7] bg-white px-4 text-[0.875rem] font-medium text-[#1d1d1f]"
             href={evidenceHref}
           >
-            查看原因
+            為什麼提醒
           </Link>
         ) : null}
       </div>

@@ -164,7 +164,7 @@ export function CoachingCustomerSection({
           <CrmField label="狀態" value={COACHING_STATUS_LABELS[enrollment.status]} />
           <CrmField label="目標" value={enrollment.goal} />
           <CrmField
-            label="Day 1"
+            label="開跑設定"
             value={enrollment.onboardingCompletedAt ? "已完成" : "尚未完成"}
           />
           {portalLink ? (

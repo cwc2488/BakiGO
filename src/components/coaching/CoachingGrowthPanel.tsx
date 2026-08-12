@@ -74,7 +74,8 @@ export default function CoachingGrowthPanel({
   );
 
   useEffect(() => {
-    void load(true);
+    // UX-1.2: read-only load by default — avoid reconcile=1 DB write on every Detail mount.
+    void load(false);
   }, [load]);
 
   const patchStatus = async (status: "acted" | "snoozed" | "declined") => {
@@ -137,13 +138,23 @@ export default function CoachingGrowthPanel({
             ) : null}
           </div>
 
-          <button
-            className="min-h-12 w-full rounded-2xl bg-[var(--brand-bg)] px-4 py-3 text-left text-[0.9375rem] font-semibold text-[var(--brand-primary-dark)]"
-            onClick={() => setExpanded((value) => !value)}
-            type="button"
-          >
-            {expanded ? GROWTH_UI_LABELS.collapseDetails : GROWTH_UI_LABELS.expandDetails}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="min-h-12 flex-1 rounded-2xl bg-[var(--brand-bg)] px-4 py-3 text-left text-[0.9375rem] font-semibold text-[var(--brand-primary-dark)]"
+              onClick={() => setExpanded((value) => !value)}
+              type="button"
+            >
+              {expanded ? GROWTH_UI_LABELS.collapseDetails : GROWTH_UI_LABELS.expandDetails}
+            </button>
+            <CrmButton
+              type="button"
+              variant="secondary"
+              disabled={loading || busy}
+              onClick={() => void load(true)}
+            >
+              重新評估
+            </CrmButton>
+          </div>
 
           {expanded ? (
             <div className="min-w-0 space-y-1">
@@ -190,6 +201,15 @@ export default function CoachingGrowthPanel({
 
               {payload?.opportunity?.id && view.suitableNow ? (
                 <div className="flex flex-wrap gap-2 pt-3">
+                  <CrmButton
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      window.location.href = "/customers/referrals";
+                    }}
+                  >
+                    去轉介紹中心開始
+                  </CrmButton>
                   <CrmButton type="button" disabled={busy} onClick={() => void patchStatus("acted")}>
                     已談過
                   </CrmButton>

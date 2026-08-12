@@ -105,10 +105,10 @@ const SECTIONS: HubSection[] = [
     subtitle: "陪跑成果 → 體驗 → 適合分享 → 轉介紹",
     items: [
       {
+        href: "/customers/referrals",
         title: "轉介紹中心",
-        desc: "建置中：成果分享／朋友優惠／A 介紹 B（尚未開放）",
+        desc: "成果分享／朋友體驗／A 介紹 B",
         iconName: APP_ICON.section.growth,
-        comingSoon: true,
       },
     ],
   },
@@ -119,7 +119,9 @@ function HubLinkCard({ item }: { item: HubItem }) {
   const badge = item.locked
     ? (item.lockLabel ?? "即將開放")
     : item.comingSoon
-      ? "建置中"
+      ? item.title.includes("Radar")
+        ? "開發中"
+        : "建置中"
       : null;
   const content = (
     <>
@@ -200,7 +202,7 @@ export default function CustomerJourneyHubPage() {
           </section>
         ))}
         <p className="text-center text-[0.8125rem] text-[#86868b]">
-          成果與分享機會仍在陪跑詳情中查看；轉介紹中心為下一階段正式入口。
+          轉介紹中心會列出你的所有顧客；陪跑詳情仍可查看成果與分享時機。
         </p>
       </div>
     </PageShell>

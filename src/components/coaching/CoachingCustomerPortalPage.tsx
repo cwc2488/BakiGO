@@ -5,6 +5,7 @@ import { CoachingDailyCompleteView } from "@/components/coaching/CoachingDailyCo
 import { CoachingCustomerHistoryView } from "@/components/coaching/CoachingCustomerHistoryView";
 import { CoachingProgressCard } from "@/components/coaching/CoachingProgressCard";
 import CoachingExperienceCheckinCard from "@/components/coaching/CoachingExperienceCheckinCard";
+import CoachingPortalShareCard from "@/components/coaching/CoachingPortalShareCard";
 import type { CoachingProgressView } from "@/lib/coaching/build-coaching-progress-view";
 import { CoachingMealPhotoInput } from "@/components/coaching/CoachingMealPhotoInput";
 import { CoachingRecentDaySelector } from "@/components/coaching/CoachingRecentDaySelector";
@@ -525,6 +526,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
       {header}
       {progress ? <CoachingProgressCard progress={progress} /> : null}
       <CoachingExperienceCheckinCard token={token} />
+      <CoachingPortalShareCard token={token} />
 
       {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
       {savedMessage ? <p className="text-[0.9375rem] text-[var(--brand-primary-dark)]">{savedMessage}</p> : null}

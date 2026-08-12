@@ -312,9 +312,11 @@ export default function CoachingTimelinePanel({
     <div className="space-y-4">
       {(focusDates.length > 0 || reasonCodes.length > 0) && (
         <CrmCard className="space-y-2">
-          <p className="text-[0.75rem] font-medium tracking-wide text-[#86868b]">系統判斷／Evidence</p>
+          <p className="text-[0.75rem] font-medium tracking-wide text-[#86868b]">為什麼提醒</p>
           {reasonCodes.length > 0 ? (
-            <p className="text-[0.875rem] text-[#1d1d1f]">原因：{reasonCodes.join("、")}</p>
+            <p className="text-[0.875rem] text-[#1d1d1f]">
+              系統依近期回報與量測判斷需要你留意（詳細內容見下方紀錄）
+            </p>
           ) : null}
           {focusDates.length > 0 ? (
             <p className="text-[0.8125rem] text-[#636366]">相關日期：{focusDates.join("、")}</p>

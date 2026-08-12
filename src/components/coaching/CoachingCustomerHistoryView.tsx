@@ -2,6 +2,7 @@
 
 import type { CoachingRecentDaySummary } from "@/lib/coaching/coaching-day-status";
 import { CrmButton, CrmCard } from "@/components/members/ui";
+import { formatCoachingDayProgressLabel } from "@/lib/coaching/presentation/coaching-ui-copy";
 
 export function CoachingCustomerHistoryView({
   days,
@@ -32,7 +33,9 @@ export function CoachingCustomerHistoryView({
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
                 <p className="text-[0.8125rem] font-medium text-[#86868b]">
-                  {day.dayNumber != null ? `Day ${day.dayNumber} / 90` : day.relativeLabel}
+                  {day.dayNumber != null
+                    ? formatCoachingDayProgressLabel(day.dayNumber, 90)
+                    : day.relativeLabel}
                   {" · "}
                   {day.shortDate}
                 </p>

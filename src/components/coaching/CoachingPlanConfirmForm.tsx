@@ -111,7 +111,7 @@ export function CoachingPlanConfirmForm({
       </div>
 
       <PlanTextareaField
-        hint="僅存入陪跑方案 snapshot，供 Day 1 與後續參考"
+        hint="僅存入陪跑方案，供開跑與後續參考"
         label="其他教練備註"
         onChange={(value) => update({ coachNotes: value })}
         rows={3}

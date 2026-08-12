@@ -206,7 +206,7 @@ Member (coach)
 
 ### AI Coaching Phase 4c–4e — Growth Opportunities & Experience Check-ins
 
-**Status:** Migration `032_growth_opportunities.sql` (unapplied). Renames prior 4c draft `referral_opportunities` → `growth_opportunities` before first apply.
+**Status:** Migration `032_growth_opportunities.sql` (applied on shared DB).
 
 | Table | Purpose | Visibility |
 |-------|---------|------------|
@@ -220,6 +220,25 @@ Member (coach)
 **RLS:** owner_member_id for coach; portal check-ins via service-role API after token resolve (same pattern as daily logs). Anon has no direct opportunity policies.
 
 **Out of scope in 4e:** share tokens, attribution, public share page, LINE.
+
+### AI Coaching Phase 4f — Growth Shares & Referral Attribution
+
+**Status:** Migration `033_growth_shares_referrals.sql`.
+
+| Table | Purpose | Visibility |
+|-------|---------|------------|
+| `growth_shares` | Coach-started share/invite campaign; hashed public token; consent + public display config | Coach owner CRUD (no DELETE); portal activate via service-role after portal token; anon **no** table access |
+| `growth_referral_attributions` | A→B attribution + pending Friend B identity before/after Customer conversion | Coach owner read/update; public submit via service-role after share token verify; anon **no** table access |
+
+**Share token:** plaintext returned once to Customer / Coach UI; DB stores `token_hash` (SHA-256 hex) only. Status: `pending_consent | active | paused | revoked | expired | declined`.
+
+**Nullable FKs (by design):** `growth_shares.enrollment_id` and `growth_shares.growth_opportunity_id` may be null — Coach may start a share from any owned Customer without Coaching enrollment / Growth Opportunity (UX-1.2). Opportunity remains optional timing evidence.
+
+**Attribution status:** `visited | interested | submitted | customer_created | declined`.
+
+**Public route:** `/r/[token]` — open public; server resolves by hash; returns consented non-health payload only.
+
+**Do not reuse:** `customer_portal_tokens` (health capability) or `quiz_share_links` (member referrer).
 
 ## Migrations
 

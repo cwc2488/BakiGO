@@ -21,6 +21,11 @@ import {
   listCoachingRecentLogDates,
 } from "@/lib/coaching/coaching-time";
 import {
+  formatCoachingDayProgressLabel,
+  formatInterventionSuggestionLabel,
+  sanitizeCoachFacingEvidenceLines,
+} from "@/lib/coaching/presentation/coaching-ui-copy";
+import {
   COACHING_MEAL_SLOT_LABELS,
   COACHING_STATUS_LABELS,
   type CoachingDailyLogDetail,
@@ -73,13 +78,6 @@ type DetailPayload = {
   historicalTomorrowFocus: Array<{ logDate: string; tomorrowFocus: string }>;
 };
 
-function formatInterventionLevel(level: string | null | undefined): string {
-  if (level === "watch") return "觀察";
-  if (level === "coach_attention") return "需關心";
-  if (level === "normal") return "正常";
-  return "—";
-}
-
 export default function CoachingDetailPage({
   enrollmentId,
   initialTab = "overview",
@@ -97,6 +95,9 @@ export default function CoachingDetailPage({
   const [busy, setBusy] = useState(false);
   const [logDate, setLogDate] = useState(coachingTodayLogDate());
   const [tab, setTab] = useState<"overview" | "timeline">(initialTab);
+  const [showAiDetails, setShowAiDetails] = useState(false);
+  const [showOutcomeDetails, setShowOutcomeDetails] = useState(false);
+  const [showPhotos, setShowPhotos] = useState(false);
   const recentDates = useMemo(() => listCoachingRecentLogDates(), []);
 
   const reload = async (selectedLogDate = logDate) => {
@@ -230,9 +231,29 @@ export default function CoachingDetailPage({
         <div className="space-y-5">
           <CrmCard className="space-y-4">
             <CrmSectionTitle>{customerDisplayName}</CrmSectionTitle>
-            <CrmField label="狀態" value={COACHING_STATUS_LABELS[payload.enrollment.status]} />
+            <p className="text-[0.9375rem] text-[#636366]">
+              {formatCoachingDayProgressLabel(progress?.dayNumber, progress?.dayTotal ?? 90)}
+            </p>
+            <CrmField label="目前狀態" value={COACHING_STATUS_LABELS[payload.enrollment.status]} />
             <CrmField label="目標" value={payload.enrollment.goal} />
-            <CrmField label="當日狀態" value={todayStatus} />
+            <CrmField label="今天回報" value={todayStatus} />
+            {payload.aiOutput?.finalInterventionLevel === "coach_attention" ||
+            payload.aiOutput?.coach?.coach_attention_required ? (
+              <div className="rounded-[1rem] bg-[#fff1f0] px-3 py-3">
+                <p className="text-[0.8125rem] font-medium text-[#b42318]">需要注意</p>
+                <p className="mt-1 text-[0.9375rem] text-[#1d1d1f]">
+                  {payload.aiOutput.coach?.attention_reason?.trim() || "建議今天關心這位顧客"}
+                </p>
+              </div>
+            ) : null}
+            {payload.aiOutput?.status === "completed" && payload.aiOutput.coach?.daily_summary ? (
+              <div className="rounded-[1rem] bg-[#f7faf5] px-3 py-3">
+                <p className="text-[0.8125rem] font-medium text-[#86868b]">今天建議做什麼</p>
+                <p className="mt-1 text-[0.9375rem] leading-relaxed text-[#1d1d1f]">
+                  {payload.aiOutput.coach.daily_summary}
+                </p>
+              </div>
+            ) : null}
             <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="最近三天">
               {recentDates.map((date) => {
                 const selected = date === logDate;
@@ -323,28 +344,43 @@ export default function CoachingDetailPage({
           </CrmCard>
 
           <CrmCard className="space-y-4">
-            <CrmSectionTitle>AI Daily Coach</CrmSectionTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CrmSectionTitle>今日教練回饋</CrmSectionTitle>
+              <button
+                type="button"
+                className="text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]"
+                onClick={() => setShowAiDetails((v) => !v)}
+              >
+                {showAiDetails ? "收合詳細" : "查看詳細"}
+              </button>
+            </div>
             {!payload.aiOutput || payload.aiOutput.status === "pending" || payload.aiOutput.status === "processing" ? (
               <p className="text-[0.9375rem] text-[#86868b]">
-                {payload.dailyLog.submittedAt ? "教練回饋生成中…" : "送出回報後會生成 AI 回饋。"}
+                {payload.dailyLog.submittedAt ? "教練回饋生成中…" : "送出回報後會生成教練回饋。"}
               </p>
             ) : null}
             {payload.aiOutput?.status === "failed" ? (
               <p className="text-[0.9375rem] text-[#86868b]">今日教練回饋暫時無法生成。</p>
             ) : null}
             {payload.aiOutput?.status === "completed" && payload.aiOutput.customer ? (
-              <div className="space-y-4 text-[0.9375rem]">
-                {payload.aiOutput.customer ? (
-                  <div className="space-y-2">
-                    <p className="text-[0.8125rem] font-medium text-[#86868b]">給顧客</p>
-                    <p className="text-[#1d1d1f]">{payload.aiOutput.customer.encouragement}</p>
+              <div className="space-y-3 text-[0.9375rem]">
+                <p className="text-[#1d1d1f]">{payload.aiOutput.customer.encouragement}</p>
+                <p className="text-[#636366]">{payload.aiOutput.customer.today_feedback}</p>
+                <CrmField
+                  label="建議處理方式"
+                  value={formatInterventionSuggestionLabel(payload.aiOutput.finalInterventionLevel)}
+                />
+                {showAiDetails ? (
+                  <div className="space-y-4 border-t border-[#eef2ea] pt-3">
                     {payload.aiOutput.customer.customer_voice_response ? (
-                      <p className="text-[#1d1d1f]">{payload.aiOutput.customer.customer_voice_response}</p>
+                      <div>
+                        <p className="text-[0.8125rem] font-medium text-[#86868b]">顧客回饋回應</p>
+                        <p className="mt-1 text-[#1d1d1f]">{payload.aiOutput.customer.customer_voice_response}</p>
+                      </div>
                     ) : null}
                     {payload.aiOutput.customer.daily_food_summary ? (
                       <p className="text-[#636366]">飲食總評：{payload.aiOutput.customer.daily_food_summary}</p>
                     ) : null}
-                    <p className="text-[#636366]">{payload.aiOutput.customer.today_feedback}</p>
                     {payload.aiOutput.customer.adjustment_priorities.length > 0 ? (
                       <ul className="list-disc space-y-1 pl-5 text-[#636366]">
                         {payload.aiOutput.customer.adjustment_priorities.map((item) => (
@@ -356,47 +392,46 @@ export default function CoachingDetailPage({
                       <span className="text-[#86868b]">明日焦點：</span>
                       {payload.aiOutput.customer.tomorrow_focus}
                     </p>
-                  </div>
-                ) : null}
-                {payload.aiOutput.coach ? (
-                  <div className="space-y-2 border-t border-[#eef2ea] pt-3">
-                    <p className="text-[0.8125rem] font-medium text-[#86868b]">教練摘要</p>
-                    <p className="text-[#1d1d1f]">{payload.aiOutput.coach.daily_summary}</p>
-                    {payload.aiOutput.coach.daily_nutrition_assessment ? (
-                      <div className="space-y-1 rounded-[1rem] bg-[#f7faf5] px-3 py-3">
-                        <p className="text-[0.8125rem] font-medium text-[#86868b]">今日飲食判斷</p>
-                        <p className="text-[#1d1d1f]">
-                          {payload.aiOutput.coach.daily_nutrition_assessment.label}
-                        </p>
-                        {payload.aiOutput.coach.daily_nutrition_assessment.adjustment_subjects.length > 0 ? (
-                          <ul className="list-disc space-y-1 pl-5 text-[0.875rem] text-[#636366]">
-                            {payload.aiOutput.coach.daily_nutrition_assessment.adjustment_subjects.map((item) => (
-                              <li key={item}>{item}</li>
-                            ))}
-                          </ul>
+                    {payload.aiOutput.coach ? (
+                      <div className="space-y-2">
+                        <p className="text-[0.8125rem] font-medium text-[#86868b]">教練摘要補充</p>
+                        {payload.aiOutput.coach.daily_nutrition_assessment ? (
+                          <div className="space-y-1 rounded-[1rem] bg-[#f7faf5] px-3 py-3">
+                            <p className="text-[0.8125rem] font-medium text-[#86868b]">今日飲食判斷</p>
+                            <p className="text-[#1d1d1f]">
+                              {payload.aiOutput.coach.daily_nutrition_assessment.label}
+                            </p>
+                            {payload.aiOutput.coach.daily_nutrition_assessment.adjustment_subjects.length > 0 ? (
+                              <ul className="list-disc space-y-1 pl-5 text-[0.875rem] text-[#636366]">
+                                {payload.aiOutput.coach.daily_nutrition_assessment.adjustment_subjects.map((item) => (
+                                  <li key={item}>{item}</li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </div>
                         ) : null}
-                        {payload.aiOutput.coach.daily_nutrition_assessment.reasons.slice(0, 3).map((reason) => (
-                          <p key={reason} className="text-[0.875rem] text-[#636366]">
-                            {reason}
-                          </p>
-                        ))}
+                        <CrmField label="重複議題" value={payload.aiOutput.coach.recurring_issue ?? "—"} />
+                        <CrmField label="改善議題" value={payload.aiOutput.coach.improved_issue ?? "—"} />
+                        {sanitizeCoachFacingEvidenceLines(payload.aiOutput.coach.evidence).length > 0 ? (
+                          <div>
+                            <p className="text-[0.8125rem] font-medium text-[#86868b]">為什麼提醒</p>
+                            <ul className="mt-1 list-disc space-y-1 pl-5 text-[0.875rem] text-[#636366]">
+                              {sanitizeCoachFacingEvidenceLines(payload.aiOutput.coach.evidence).map((item) => (
+                                <li key={item}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
-                    <CrmField
-                      label="最終介入等級"
-                      value={formatInterventionLevel(payload.aiOutput.finalInterventionLevel)}
-                    />
-                    {payload.aiOutput.coach.coach_attention_required ? (
-                      <CrmField label="需關心" value={payload.aiOutput.coach.attention_reason ?? "是"} />
-                    ) : null}
-                    <CrmField label="重複議題" value={payload.aiOutput.coach.recurring_issue ?? "—"} />
-                    <CrmField label="改善議題" value={payload.aiOutput.coach.improved_issue ?? "—"} />
-                    {payload.aiOutput.coach.evidence.length > 0 ? (
+                    {payload.historicalTomorrowFocus.length > 0 ? (
                       <div>
-                        <p className="text-[0.8125rem] font-medium text-[#86868b]">證據</p>
-                        <ul className="mt-1 list-disc space-y-1 pl-5 text-[0.875rem] text-[#636366]">
-                          {payload.aiOutput.coach.evidence.map((item) => (
-                            <li key={item}>{item}</li>
+                        <p className="text-[0.8125rem] font-medium text-[#86868b]">歷史明日焦點</p>
+                        <ul className="mt-2 space-y-1 text-[0.875rem] text-[#636366]">
+                          {payload.historicalTomorrowFocus.map((item) => (
+                            <li key={item.logDate}>
+                              {item.logDate}：{item.tomorrowFocus}
+                            </li>
                           ))}
                         </ul>
                       </div>
@@ -405,78 +440,86 @@ export default function CoachingDetailPage({
                 ) : null}
               </div>
             ) : null}
-            {payload.historicalTomorrowFocus.length > 0 ? (
-              <div className="border-t border-[#eef2ea] pt-3">
-                <p className="text-[0.8125rem] font-medium text-[#86868b]">歷史明日焦點</p>
-                <ul className="mt-2 space-y-1 text-[0.875rem] text-[#636366]">
-                  {payload.historicalTomorrowFocus.map((item) => (
-                    <li key={item.logDate}>
-                      {item.logDate}：{item.tomorrowFocus}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
           </CrmCard>
 
           <CrmCard className="space-y-4">
-            <CrmSectionTitle>Goal & Outcome</CrmSectionTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CrmSectionTitle>目標與身體進展</CrmSectionTitle>
+              <button
+                type="button"
+                className="text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]"
+                onClick={() => setShowOutcomeDetails((v) => !v)}
+              >
+                {showOutcomeDetails ? "收合詳細" : "查看詳細"}
+              </button>
+            </div>
             <CrmField label="目標" value={progress?.goalLabel ?? payload.enrollment.goal ?? "—"} />
             <CrmField
-              label="Day"
-              value={
-                progress?.dayNumber != null
-                  ? `${progress.dayNumber} / ${progress.dayTotal}`
-                  : "—"
-              }
+              label="陪跑天數"
+              value={formatCoachingDayProgressLabel(progress?.dayNumber, progress?.dayTotal ?? 90)}
             />
-            <CrmField label="量測階段" value={progress?.measurementStageLabel ?? "—"} />
-            <CrmField label="結果狀態" value={progress?.outcomeStatusLabel ?? "—"} />
-            <CrmField label="趨勢" value={progress?.trendStatusLabel ?? "—"} />
-            <CrmField
-              label="Intervention"
-              value={formatInterventionLevel(payload.aiOutput?.finalInterventionLevel ?? null)}
-            />
-            <CrmField label="起始量測" value={baselineRecord?.recordDate ?? "—"} />
-            <CrmField label="最新量測" value={latestRecord?.recordDate ?? "—"} />
-            {progress?.baselineMissing ? (
-              <p className="text-[0.9375rem] text-[#636366]">Baseline missing</p>
-            ) : null}
-            {progress?.waitingForRetest ? (
-              <p className="text-[0.9375rem] text-[#636366]">等待回測後比較身體變化</p>
-            ) : null}
-            {progress && !progress.waitingForRetest && !progress.baselineMissing ? (
-              <div className="space-y-1 text-[0.875rem] text-[#636366]">
-                {progress.metrics.map((metric) => (
-                  <p key={metric.key}>
-                    {metric.label}：{metric.baseline ?? "—"}
-                    {" → "}
-                    {metric.latest ?? "—"}
-                    {metric.delta != null
-                      ? `（${metric.delta > 0 ? "+" : ""}${metric.delta}${metric.unit}）`
-                      : ""}
-                  </p>
-                ))}
+            <CrmField label="量測進度" value={progress?.measurementStageLabel ?? "—"} />
+            <CrmField label="目前狀態" value={progress?.outcomeStatusLabel ?? "—"} />
+            {showOutcomeDetails ? (
+              <div className="space-y-3 border-t border-[#eef2ea] pt-3">
+                <CrmField label="最近趨勢" value={progress?.trendStatusLabel ?? "—"} />
+                <CrmField
+                  label="建議處理方式"
+                  value={formatInterventionSuggestionLabel(payload.aiOutput?.finalInterventionLevel ?? null)}
+                />
+                <CrmField label="起始量測" value={baselineRecord?.recordDate ?? "—"} />
+                <CrmField label="最新量測" value={latestRecord?.recordDate ?? "—"} />
+                {progress?.baselineMissing ? (
+                  <p className="text-[0.9375rem] text-[#636366]">尚未建立起始量測</p>
+                ) : null}
+                {progress?.waitingForRetest ? (
+                  <p className="text-[0.9375rem] text-[#636366]">等待回測後比較身體變化</p>
+                ) : null}
+                {progress && !progress.waitingForRetest && !progress.baselineMissing ? (
+                  <div className="space-y-1 text-[0.875rem] text-[#636366]">
+                    {progress.metrics.map((metric) => (
+                      <p key={metric.key}>
+                        {metric.label}：{metric.baseline ?? "—"}
+                        {" → "}
+                        {metric.latest ?? "—"}
+                        {metric.delta != null
+                          ? `（${metric.delta > 0 ? "+" : ""}${metric.delta}${metric.unit}）`
+                          : ""}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+                {progress?.customerSummary ? (
+                  <p className="text-[0.9375rem] text-[#1d1d1f]">{progress.customerSummary}</p>
+                ) : comparison?.summary ? (
+                  <p className="text-[0.9375rem] text-[#636366]">{comparison.summary}</p>
+                ) : null}
+                <BodyCompositionTrendCharts seriesList={trendSeries} />
               </div>
             ) : null}
-            {progress?.customerSummary ? (
-              <p className="text-[0.9375rem] text-[#1d1d1f]">{progress.customerSummary}</p>
-            ) : comparison?.summary ? (
-              <p className="text-[0.9375rem] text-[#636366]">{comparison.summary}</p>
-            ) : null}
-            <BodyCompositionTrendCharts seriesList={trendSeries} />
           </CrmCard>
 
           <CoachingGrowthPanel enrollmentId={enrollmentId} logDate={logDate} />
 
           {progressPhotos.some((photo) => photo.imageDataUrl) ? (
             <CrmCard className="space-y-4">
-              <CrmSectionTitle>體態照片（既有 progress photos）</CrmSectionTitle>
-              <CustomerPhotoCompareSection
-                customerName={customerDisplayName}
-                photos={progressPhotos.filter((photo) => photo.imageDataUrl)}
-                readOnly
-              />
+              <div className="flex items-center justify-between gap-3">
+                <CrmSectionTitle>體態照片</CrmSectionTitle>
+                <button
+                  type="button"
+                  className="text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]"
+                  onClick={() => setShowPhotos((v) => !v)}
+                >
+                  {showPhotos ? "收合" : "查看"}
+                </button>
+              </div>
+              {showPhotos ? (
+                <CustomerPhotoCompareSection
+                  customerName={customerDisplayName}
+                  photos={progressPhotos.filter((photo) => photo.imageDataUrl)}
+                  readOnly
+                />
+              ) : null}
             </CrmCard>
           ) : null}
         </div>

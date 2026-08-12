@@ -7,18 +7,8 @@ import { PageShell } from "@/components/ui/PageShell";
 import { formatCoachingCoachDailySummary } from "@/lib/coaching/coaching-completion";
 import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetch";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
+import { formatInterventionSuggestionLabel } from "@/lib/coaching/presentation/coaching-ui-copy";
 import type { CoachingTodayStatus } from "@/types/coaching";
-
-function formatInterventionLevel(level: CoachingTodayStatus["aiBrief"] extends infer T
-  ? T extends { finalInterventionLevel: infer L }
-    ? L
-    : never
-  : never): string {
-  if (level === "watch") return "觀察";
-  if (level === "coach_attention") return "需關心";
-  if (level === "normal") return "正常";
-  return "—";
-}
 
 export default function CoachingDashboardPage() {
   const [rows, setRows] = useState<CoachingTodayStatus[]>([]);
@@ -108,7 +98,7 @@ export default function CoachingDashboardPage() {
                   <div className="mt-3 border-t border-[#eef2ea] pt-3 text-[0.8125rem] leading-relaxed text-[#636366]">
                     <p className="line-clamp-2">{row.aiBrief.dailySummary}</p>
                     <p className="mt-1 text-[#86868b]">
-                      介入：{formatInterventionLevel(row.aiBrief.finalInterventionLevel)}
+                      建議：{formatInterventionSuggestionLabel(row.aiBrief.finalInterventionLevel)}
                       {row.aiBrief.coachAttentionRequired ? " · 需關心" : ""}
                     </p>
                   </div>

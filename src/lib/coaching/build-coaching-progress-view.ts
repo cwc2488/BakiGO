@@ -1,11 +1,13 @@
 import {
   assessCoachingOutcome,
-  COACHING_MEASUREMENT_STAGE_LABELS,
-  COACHING_OUTCOME_STATUS_LABELS,
-  COACHING_TREND_STATUS_LABELS,
   buildGoalContext,
 } from "@/lib/coaching/ai/assess-coaching-outcome";
 import { buildOutcomeMemoryForProgress } from "@/lib/coaching/ai/build-outcome-memory";
+import {
+  formatMeasurementStageLabel,
+  formatOutcomeStatusLabel,
+  formatTrendStatusLabel,
+} from "@/lib/coaching/presentation/coaching-ui-copy";
 import type { CoachingEnrollment } from "@/types/coaching";
 import type { BodyCompositionRecord } from "@/types/customer";
 import type {
@@ -130,11 +132,11 @@ export function buildCoachingProgressView(input: {
     dayTotal: 90,
     goalLabel: goalContext.goalLabel,
     measurementStage: goalContext.measurementStage,
-    measurementStageLabel: COACHING_MEASUREMENT_STAGE_LABELS[goalContext.measurementStage],
+    measurementStageLabel: formatMeasurementStageLabel(goalContext.measurementStage),
     outcomeStatus,
-    outcomeStatusLabel: COACHING_OUTCOME_STATUS_LABELS[outcomeStatus],
+    outcomeStatusLabel: formatOutcomeStatusLabel(outcomeStatus),
     trendStatus,
-    trendStatusLabel: COACHING_TREND_STATUS_LABELS[trendStatus],
+    trendStatusLabel: formatTrendStatusLabel(trendStatus),
     baselineDate: goalContext.baselineDate,
     latestDate: goalContext.latestMeasurementDate,
     daysSinceLatestMeasurement: goalContext.daysSinceLatestMeasurement,

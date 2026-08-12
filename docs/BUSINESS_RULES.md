@@ -450,7 +450,32 @@ Multi-path may be **internally eligible**; surface **one primary** only (14-day 
 
 ### Ownership / privacy
 
-Strict `owner_member_id`. Customer portal: create/read **own check-ins only**; never read Growth Opportunity / Matrix internals. Upline: no access. Share/attribution out of Phase 4e.
+Strict `owner_member_id`. Customer portal: create/read **own check-ins only**; never read Growth Opportunity / Matrix internals. Upline: no access.
+
+### Growth Loop Share × Referral (Phase 4f)
+
+**Layers still must never merge:**
+
+```text
+Customer (Referral Center parent set)
+  ≠ Growth Opportunity (4e timing evidence only)
+  ≠ Share / Invite (growth_shares)
+  ≠ Referral Attribution A→B (growth_referral_attributions)
+  ≠ Customer B
+```
+
+- **Referral Center parent set = all owner Customers.** Coaching enrollment / 90-day / second measurement / Growth Opportunity / Experience Check-in are **not** gates to appear or to start a manual share.
+- Growth Opportunity / Growth Intelligence = **timing evidence** for presentation state (適合分享／持續培養／先關心…), not permission authority.
+- Outcome ≠ Referral. Growth Opportunity ≠ Referral Permission. Coaching Enrollment ≠ Referral Requirement.
+- Coach may start a share from any owned Customer (`growth_shares.enrollment_id` / `growth_opportunity_id` nullable). Customer consent still required before public token activation.
+- No second referral score / Outcome authority in Referral Center presentation.
+- **Rescue warning:** struggle / dissatisfaction / coach_attention may warn「目前建議先處理顧客狀況」and suppress auto-recommend; Coach may still manually start (warning, not hard block for missing outcome data).
+- **Rescue > Growth:** if Growth becomes blocked after start, active share CTAs pause.
+- Public share pages are privacy-first: no weight / body fat / muscle / notes / Growth Matrix / AI. Measurement delta only if Customer explicitly opts in (summary text only).
+- Friend benefit v1 label =「朋友專屬體驗」— no Herbalife discount / VP / pricing claims.
+- Attribution persists pending Friend B identity before Customer creation; after conversion keep `introduced_customer_id` forever.
+- Same-owner phone soft dedupe links existing Customer B (no duplicate). Name-only never auto-merges. Cross-owner never merges.
+- Do not auto-enroll B, auto-start AI Coaching, or auto-create Member.
 
 ## Edge Cases & Exceptions
 
@@ -468,3 +493,5 @@ Document any intentional exceptions to the rules above in this section.
 | 2026-08 | Consultation Engine V1 Phase 2 — Steps 4–8 decision tree + commitment gate | — |
 | 2026-08 | Coaching Phase 4c — Referral Opportunity Engine (Path A/B + persist) | — |
 | 2026-08 | Coaching Phase 4d–4e — Experience Check-in + Growth Matrix + Coach Growth UI | — |
+| 2026-08 | Coaching Phase 4f — Growth share tokens + A→B attribution + Referral Center | — |
+| 2026-08 | UX-1.2 — Referral Center = all Customers; Growth = timing evidence; Coach UI humanization | — |

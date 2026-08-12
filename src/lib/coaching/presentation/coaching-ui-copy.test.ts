@@ -16,7 +16,9 @@ describe("coaching-ui-copy", () => {
       "blocks=ask_recent,cooldown_active",
       "primary_path=coach_assisted_referral",
     ]);
-    expect(lines.some((l) => l.includes("尚未進行第二次量測"))).toBe(true);
+    expect(lines.some((l) => l.includes("等待下一次量測") || l.includes("尚未進行第二次量測"))).toBe(
+      true,
+    );
     expect(lines.some((l) => l.includes("目前只有起始量測"))).toBe(true);
     expect(lines.some((l) => l.includes("顧客體驗回饋偏高"))).toBe(true);
     expect(lines.some((l) => l.includes("精神明顯變好"))).toBe(true);
@@ -39,7 +41,7 @@ describe("coaching-ui-copy", () => {
       outcomeStatus: "not_yet_measurable",
       outcomeBand: "low",
     });
-    expect(text).toContain("尚未進行第二次量測");
+    expect(text).toContain("等待下一次量測");
     expect(text).not.toContain("not_yet_measurable");
   });
 });

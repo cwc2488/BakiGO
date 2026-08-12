@@ -2,6 +2,7 @@
 
 import { CrmCard } from "@/components/members/ui";
 import type { CoachingProgressView } from "@/lib/coaching/build-coaching-progress-view";
+import { formatCoachingDayProgressLabel } from "@/lib/coaching/presentation/coaching-ui-copy";
 
 function formatMetric(value: number | null, unit: string): string {
   if (value == null) return "—";
@@ -22,7 +23,7 @@ export function CoachingProgressCard({ progress }: { progress: CoachingProgressV
       <div className="space-y-1">
         <h2 className="text-[1.375rem] font-semibold text-[#1d1d1f]">我的 90 天進度</h2>
         <p className="text-[0.9375rem] text-[#636366]">
-          {progress.dayNumber != null ? `Day ${progress.dayNumber} / ${progress.dayTotal}` : `90 天陪跑`}
+          {formatCoachingDayProgressLabel(progress.dayNumber, progress.dayTotal)}
           {" · "}
           目標 {progress.goalLabel}
         </p>

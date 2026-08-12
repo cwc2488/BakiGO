@@ -11,23 +11,86 @@ import {
 import { bandLabel, growthPathLabel, readinessLabel } from "@/lib/coaching/growth/build-growth-intelligence";
 import type { CoachingMeasurementStage, CoachingOutcomeStatus, CoachingTrendStatus } from "@/types/coaching-signals";
 
-/** UX-1 preferred outcome labels (reuse keys from COACHING_* authority). */
+/** UX-1.2 Coach-facing outcome labels (presentation only). */
 export const UI_OUTCOME_STATUS_LABELS: Record<CoachingOutcomeStatus, string> = {
   ...COACHING_OUTCOME_STATUS_LABELS,
-  not_yet_measurable: "尚未進行第二次量測",
+  not_yet_measurable: "等待下一次量測",
   improving: "進展良好",
-  mixed: "有進展，仍需觀察",
-  flat: "目前變化不明顯",
+  mixed: "有進展，仍需留意",
+  flat: "最近變化不明顯",
+  worsening: "需要調整",
+  insufficient_data: "資料不足",
 };
 
 export const UI_MEASUREMENT_STAGE_LABELS: Record<CoachingMeasurementStage, string> = {
   ...COACHING_MEASUREMENT_STAGE_LABELS,
   baseline_only: "目前只有起始量測",
+  comparison_available: "已可對照起始與最新",
+  trend_available: "已可看趨勢",
 };
 
 export const UI_TREND_STATUS_LABELS: Record<CoachingTrendStatus, string> = {
   ...COACHING_TREND_STATUS_LABELS,
+  not_applicable: "尚不能看趨勢",
+  improving: "進展良好",
+  mixed: "有進展，仍需留意",
+  flat: "最近變化不明顯",
+  worsening: "需要調整",
+  insufficient_data: "資料不足",
 };
+
+export const UI_ATTENTION_TIER_LABELS: Record<string, string> = {
+  routine: "陪跑中",
+  watch: "持續觀察",
+  coach_attention: "建議今天關心",
+  normal: "正常",
+  measurement_due: "建議安排回測",
+  positive_progress: "進展良好",
+};
+
+/** Day N/90 → 第 N 天｜90 天陪跑 */
+export function formatCoachingDayProgressLabel(
+  dayNumber: number | null | undefined,
+  dayTotal = 90,
+): string {
+  if (dayNumber == null || !Number.isFinite(dayNumber)) {
+    return `${dayTotal} 天陪跑`;
+  }
+  return `第 ${Math.max(0, Math.floor(dayNumber))} 天｜${dayTotal} 天陪跑`;
+}
+
+export function formatAttentionTierLabel(tier: string | null | undefined): string {
+  if (!tier) return "—";
+  return UI_ATTENTION_TIER_LABELS[tier] ?? "狀態更新中";
+}
+
+export function formatInterventionSuggestionLabel(level: string | null | undefined): string {
+  if (level === "coach_attention") return "建議今天關心";
+  if (level === "watch") return "持續觀察";
+  if (level === "normal") return "維持目前節奏";
+  return "—";
+}
+
+/**
+ * Drop raw enums / snake_case / UUID from coach-facing evidence lines.
+ * Prefer Chinese lines; map known codes; otherwise omit.
+ */
+export function sanitizeCoachFacingEvidenceLines(lines: string[] | null | undefined): string[] {
+  if (!lines?.length) return [];
+  const mapped = mapGrowthWhyEvidenceToZh(lines);
+  if (mapped.length > 0) return mapped;
+  return lines
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false;
+      if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(line)) {
+        return false;
+      }
+      if (/^[a-z0-9_]+(=|:)/i.test(line)) return false;
+      if (/^[a-z]+_[a-z0-9_]+$/i.test(line)) return false;
+      return /[\u4e00-\u9fff]/.test(line);
+    });
+}
 
 export const GROWTH_UI_LABELS = {
   sectionTitle: "成果與分享機會",

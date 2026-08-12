@@ -256,6 +256,52 @@ async function verify032(supabase) {
   };
 }
 
+async function verify033(supabase) {
+  const shares = await tableExists(supabase, "growth_shares");
+  const attributions = await tableExists(supabase, "growth_referral_attributions");
+  const shareColumns = {};
+  const attributionColumns = {};
+  if (shares.exists) {
+    for (const column of [
+      "owner_member_id",
+      "introducer_customer_id",
+      "share_type",
+      "token_hash",
+      "status",
+      "consent_snapshot_json",
+      "public_display_json",
+      "benefit_json",
+    ]) {
+      shareColumns[column] = await columnExists(supabase, "growth_shares", column);
+    }
+  }
+  if (attributions.exists) {
+    for (const column of [
+      "owner_member_id",
+      "share_id",
+      "introducer_customer_id",
+      "introduced_customer_id",
+      "status",
+      "lead_display_name",
+      "lead_phone",
+      "linked_existing_customer",
+    ]) {
+      attributionColumns[column] = await columnExists(supabase, "growth_referral_attributions", column);
+    }
+  }
+  return {
+    shares,
+    attributions,
+    shareColumns,
+    attributionColumns,
+    ok:
+      shares.exists &&
+      attributions.exists &&
+      Object.values(shareColumns).every((item) => item.exists) &&
+      Object.values(attributionColumns).every((item) => item.exists),
+  };
+}
+
 async function applyMigration({ migration, sqlPath, token, projectRef }) {
   const sql = readFileSync(sqlPath, "utf8");
   const attempt = await runSqlViaManagementApi(sql, token, projectRef);
@@ -304,6 +350,7 @@ async function main() {
   out.migrations["030"] = await verify030(supabase);
   out.migrations["031"] = await verify031(supabase);
   out.migrations["032"] = await verify032(supabase);
+  out.migrations["033"] = await verify033(supabase);
 
   if (mode === "apply") {
     if (!serviceKey && !accessToken) {
@@ -409,6 +456,20 @@ async function main() {
       }
       out.migrations["032"] = await verify032(supabase);
     }
+
+    if (out.migrations["032"].ok && !out.migrations["033"].ok) {
+      for (const [label, token] of tokens) {
+        const attempt = await applyMigration({
+          migration: "033_growth_shares_referrals.sql",
+          sqlPath: "supabase/migrations/033_growth_shares_referrals.sql",
+          token,
+          projectRef: out.projectRef,
+        });
+        out.applyAttempts.push({ label, ...attempt });
+        if (attempt.ok) break;
+      }
+      out.migrations["033"] = await verify033(supabase);
+    }
   }
 
   out.ok =
@@ -419,6 +480,7 @@ async function main() {
     out.migrations["030"].ok &&
     out.migrations["031"].ok &&
     out.migrations["032"].ok &&
+    out.migrations["033"].ok &&
     (serviceKey
       ? !!out.migrations["027"].storage?.bucket && out.migrations["027"].storage.bucket.public === false
       : true);

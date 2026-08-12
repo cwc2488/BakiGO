@@ -48,6 +48,17 @@ export async function triggerGrowthReconcileBestEffort(input: {
       matrix,
       asOfIso: new Date().toISOString(),
     });
+
+    // Rescue > Growth: pause active referral CTAs when Growth becomes blocked.
+    if (matrix.blockedReasons.length > 0 || !matrix.shouldOpen) {
+      const { pauseActiveSharesForCustomer } = await import(
+        "@/lib/coaching/referral-share/share-service"
+      );
+      await pauseActiveSharesForCustomer({
+        ownerMemberId: input.ownerMemberId,
+        customerId: enrollment.customerId,
+      }).catch(() => undefined);
+    }
   } catch {
     // best-effort
   }
