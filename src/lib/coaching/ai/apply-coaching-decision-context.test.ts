@@ -2,24 +2,51 @@ import { describe, expect, it } from "vitest";
 import { applyCoachingDecisionContextToOutput } from "@/lib/coaching/ai/apply-coaching-decision-context";
 import { buildScenarioDecisionContext } from "@/lib/coaching/ai/build-scenario-decision-context";
 import { getFixtureScenarioOutput } from "@/lib/coaching/ai/fixture-coaching-ai-provider";
-import { COACHING_DAILY_GENERATION_OUTPUT_VERSION } from "@/types/coaching-ai";
+import { COACHING_DAILY_GENERATION_OUTPUT_VERSION, type CoachingDailyGenerationOutputJson } from "@/types/coaching-ai";
+
+function baseCustomer(): CoachingDailyGenerationOutputJson["customer"] {
+  return {
+    encouragement: "很好",
+    today_feedback: "不錯",
+    daily_food_summary: "今天有餐點回報。",
+    meal_feedback: { breakfast: null, lunch: null, dinner: null },
+    lifestyle_feedback: { hydration: null, sleep: null, exercise: null },
+    customer_voice_response: null,
+    adjustment_priorities: [],
+    tomorrow_focus: "維持節奏",
+    follow_up_for_tomorrow: null,
+  };
+}
+
+function baseCoach(): CoachingDailyGenerationOutputJson["coach"] {
+  return {
+    daily_summary: "summary",
+    recurring_issue: null,
+    improved_issue: null,
+    proposed_intervention_level: "normal",
+    coach_attention_required: false,
+    attention_reason: null,
+    evidence: [],
+    follow_ups: [],
+    photo_reuse_flags: [],
+  };
+}
 
 describe("applyCoachingDecisionContextToOutput", () => {
   it("forces empty priorities and no invented coach fields for A", () => {
     const packed = buildScenarioDecisionContext("A_normal");
-    const drifted = {
+    const drifted: CoachingDailyGenerationOutputJson = {
       version: COACHING_DAILY_GENERATION_OUTPUT_VERSION,
       customer: {
-        encouragement: "很好",
-        today_feedback: "不錯",
+        ...baseCustomer(),
         adjustment_priorities: ["自己亂加的改善"],
         tomorrow_focus: "每天喝 2000ml",
       },
       coach: {
-        daily_summary: "summary",
+        ...baseCoach(),
         recurring_issue: "fake",
         improved_issue: "fake",
-        proposed_intervention_level: "coach_attention" as const,
+        proposed_intervention_level: "coach_attention",
         coach_attention_required: true,
         attention_reason: "hotpot",
         evidence: ["invented"],
@@ -42,20 +69,13 @@ describe("applyCoachingDecisionContextToOutput", () => {
       {
         version: COACHING_DAILY_GENERATION_OUTPUT_VERSION,
         customer: {
+          ...baseCustomer(),
           encouragement: "有回報很棒",
           today_feedback: "早餐偏離",
           adjustment_priorities: ["午餐少醬料", "配菜"],
           tomorrow_focus: "午餐清淡",
         },
-        coach: {
-          daily_summary: "ok",
-          recurring_issue: null,
-          improved_issue: null,
-          proposed_intervention_level: "normal",
-          coach_attention_required: false,
-          attention_reason: null,
-          evidence: [],
-        },
+        coach: baseCoach(),
       },
       packed.decisionContext,
     );

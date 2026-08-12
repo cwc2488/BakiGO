@@ -4,6 +4,7 @@ import type {
   CoachingInterventionLevel,
 } from "@/types/coaching-ai";
 import type { CoachingPlanSnapshot } from "@/types/coaching";
+import { parseClockTimeToMinutes } from "@/lib/coaching/coaching-sleep";
 
 export type CoachingAiQualityCheckItem = {
   id: string;
@@ -146,6 +147,89 @@ function checkNoPraiseBadBehavior(customerText: string): CoachingAiQualityCheckI
     detail: hit
       ? `May praise undesirable behavior rather than the person: ${hit.source}`
       : "No praise-of-bad-behavior phrasing detected.",
+  };
+}
+
+function checkNoShakeCertaintyAssertion(output: CoachingDailyGenerationOutputJson): CoachingAiQualityCheckItem {
+  const mealTexts = [
+    output.customer.daily_food_summary,
+    output.customer.meal_feedback.breakfast?.summary,
+    output.customer.meal_feedback.breakfast?.adjustment,
+    output.customer.meal_feedback.dinner?.summary,
+    output.customer.meal_feedback.dinner?.adjustment,
+    output.customer.today_feedback,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join("\n");
+
+  const forbidden = [
+    /似乎沒有搭配其他食物/,
+    /沒有搭配其他食物/,
+    /確定只喝奶昔/,
+    /只有奶昔/,
+    /實際沒吃其他/,
+  ].find((pattern) => pattern.test(mealTexts));
+
+  return {
+    id: "customer_shake_uncertainty_wording",
+    status: forbidden ? "fail" : "pass",
+    detail: forbidden
+      ? `Forbidden shake certainty phrasing: ${forbidden.source}`
+      : "No forbidden shake-only certainty phrasing detected.",
+  };
+}
+
+function isAfterMidnightBedtimeForQuality(time: string | null | undefined): boolean {
+  const minutes = time ? parseClockTimeToMinutes(time) : null;
+  if (minutes == null) {
+    return false;
+  }
+  return minutes < 6 * 60;
+}
+
+function checkSleepDurationAndBedtime(
+  output: CoachingDailyGenerationOutputJson,
+  generationInput: CoachingGenerationInput | null | undefined,
+): CoachingAiQualityCheckItem {
+  const bedtime = generationInput?.todayContext.sleepBedtime ?? null;
+  const durationMinutes = generationInput?.todayContext.sleepDurationMinutes ?? null;
+  const sleepText = output.customer.lifestyle_feedback.sleep ?? "";
+
+  if (!bedtime || durationMinutes == null) {
+    return {
+      id: "customer_sleep_duration_and_bedtime",
+      status: "pass",
+      detail: "No duration+late-bedtime pair in fixture; check skipped.",
+    };
+  }
+
+  const adequateDuration = durationMinutes >= 7 * 60;
+  const lateBedtime = isAfterMidnightBedtimeForQuality(bedtime);
+  if (!adequateDuration || !lateBedtime) {
+    return {
+      id: "customer_sleep_duration_and_bedtime",
+      status: "pass",
+      detail: "Fixture is not adequate-duration + late-bedtime; check skipped.",
+    };
+  }
+
+  const mentionsAdequate =
+    /時數足夠|睡夠|睡滿|睡眠足夠|睡眠時數足夠|還算充足|充足/.test(sleepText);
+  const mentionsLate =
+    /偏晚|入睡.*晚|躺床.*晚|太晚睡|睡覺偏晚|00:24|半夜|凌晨/.test(sleepText);
+
+  if (mentionsAdequate && mentionsLate) {
+    return {
+      id: "customer_sleep_duration_and_bedtime",
+      status: "pass",
+      detail: "Sleep feedback covers both adequate duration and late bedtime.",
+    };
+  }
+
+  return {
+    id: "customer_sleep_duration_and_bedtime",
+    status: "fail",
+    detail: `Expected both adequate duration + late bedtime. sleep="${sleepText}"`,
   };
 }
 
@@ -425,6 +509,8 @@ export function evaluateCoachingAiOutputQuality(input: {
     checkBreakfastDeviationPriorityOrder(output, generationInput),
     checkPlanAuthority(customerText, planAuthorityText),
     checkNoPraiseBadBehavior(customerText),
+    checkNoShakeCertaintyAssertion(output),
+    checkSleepDurationAndBedtime(output, generationInput),
     {
       id: "customer_zh_tw_natural",
       status: /[\u4e00-\u9fff]/.test(customerText) ? "pass" : "warn",

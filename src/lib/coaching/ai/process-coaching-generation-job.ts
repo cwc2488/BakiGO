@@ -11,15 +11,22 @@ import {
   markGenerationJobSuperseded,
 } from "@/lib/coaching/ai/coaching-ai-store";
 import { buildCoachingDecisionContext } from "@/lib/coaching/ai/coaching-signal-engine";
+import {
+  detectCoachingPhotoReuse,
+  type PriorMealPhotoHash,
+} from "@/lib/coaching/ai/detect-photo-reuse";
+import { extractCustomerVoiceSignals } from "@/lib/coaching/ai/extract-customer-voice";
 import { generateDailyCoachWithTelemetry } from "@/lib/coaching/ai/generate-daily-coach";
 import { loadAuthoritativeCoachingGenerationInput } from "@/lib/coaching/ai/load-coaching-generation-context";
+import { observeCoachingMeals } from "@/lib/coaching/ai/observe-coaching-meals";
 import { prepareCoachingMealImagesForGeneration } from "@/lib/coaching/ai/prepare-coaching-meal-images";
-import { getCoachingDailyLogDetail } from "@/lib/coaching/coaching-service";
+import { getCoachingDailyLogDetail, listCoachingDailyLogsForEnrollment } from "@/lib/coaching/coaching-service";
 import {
   COACHING_GENERATION_MAX_ATTEMPTS,
   COACHING_GENERATION_RETRY_DELAYS_MS,
   type CoachingGenerationJobRecord,
 } from "@/types/coaching-ai";
+import type { CoachingFollowUpMemory } from "@/types/coaching-signals";
 
 export type ProcessCoachingGenerationJobResult =
   | { outcome: "completed" }
@@ -28,13 +35,58 @@ export type ProcessCoachingGenerationJobResult =
   | { outcome: "failed"; error: string };
 
 function resolveRetryAvailableAt(attemptCount: number, nowMs: number): string | null {
-  // attemptCount is post-claim count. First failure → index 0 (5s), second → index 1 (20s).
   const failureIndex = Math.max(0, attemptCount - 1);
   const delayMs = COACHING_GENERATION_RETRY_DELAYS_MS[failureIndex];
   if (delayMs == null) {
     return null;
   }
   return new Date(nowMs + delayMs).toISOString();
+}
+
+async function loadPriorPhotoHashes(input: {
+  enrollmentId: string;
+  ownerMemberId: string;
+  logDate: string;
+}): Promise<PriorMealPhotoHash[]> {
+  try {
+    const recentLogs = await listCoachingDailyLogsForEnrollment({
+      enrollmentId: input.enrollmentId,
+      ownerMemberId: input.ownerMemberId,
+      limit: 14,
+    });
+    const { downloadCoachingMealPhotoFromStorage } = await import(
+      "@/lib/coaching/ai/coaching-meal-image-processor"
+    );
+    const { computeMealImageContentSha256, computeMealImagePhash } = await import(
+      "@/lib/coaching/ai/detect-photo-reuse"
+    );
+
+    const hashes: PriorMealPhotoHash[] = [];
+    for (const log of recentLogs) {
+      if (log.logDate >= input.logDate) continue;
+      for (const meal of log.meals) {
+        if (meal.mealSlot !== "breakfast" && meal.mealSlot !== "lunch" && meal.mealSlot !== "dinner") {
+          continue;
+        }
+        const path = meal.photo?.storagePath;
+        if (!path) continue;
+        try {
+          const buffer = await downloadCoachingMealPhotoFromStorage(path);
+          hashes.push({
+            logDate: log.logDate,
+            mealSlot: meal.mealSlot,
+            contentSha256: computeMealImageContentSha256(buffer),
+            phash: await computeMealImagePhash(buffer),
+          });
+        } catch {
+          // skip failed prior downloads
+        }
+      }
+    }
+    return hashes;
+  } catch {
+    return [];
+  }
 }
 
 export async function processCoachingGenerationJob(
@@ -88,9 +140,34 @@ export async function processCoachingGenerationJob(
       logDate: job.logDate,
     });
 
+    const { observations: mealObservations } = await observeCoachingMeals({
+      generationInput: loaded.generationInput,
+      preparedMealImages: preparedImages.prepared,
+      ownerMemberId: job.ownerMemberId,
+      persistTelemetry: true,
+    });
+
+    const customerVoice = extractCustomerVoiceSignals(loaded.generationInput.todayContext.customerNote);
+
+    const priorHashes = await loadPriorPhotoHashes({
+      enrollmentId: job.enrollmentId,
+      ownerMemberId: job.ownerMemberId,
+      logDate: job.logDate,
+    });
+    const photoReuse = await detectCoachingPhotoReuse({
+      preparedImages: preparedImages.prepared,
+      priorHashes,
+    });
+
+    const pendingFollowUps: CoachingFollowUpMemory[] =
+      loaded.generationInput.priorAiContext?.pendingFollowUps ?? [];
+
     const decisionContext = buildCoachingDecisionContext({
       generationInput: loaded.generationInput,
-      mealObservations: [],
+      mealObservations,
+      customerVoice,
+      photoReuse,
+      pendingFollowUps,
     });
     const finalInterventionLevel = decisionContext.finalInterventionLevel;
 
@@ -108,7 +185,6 @@ export async function processCoachingGenerationJob(
       persistTelemetry: true,
     });
 
-    // Provider already applies decision context; re-apply for safety at persistence boundary.
     const outputJson = applyCoachingDecisionContextToOutput(result.output, decisionContext);
 
     await markCoachingAiOutputCompleted({

@@ -173,12 +173,54 @@ export function CoachingDailyCompleteView({
           </p>
         ) : null}
         {aiState === "ready" && customerFeedback ? (
-          <div className="space-y-3 text-left text-[0.9375rem] leading-relaxed text-[#1d1d1f]">
+          <div className="space-y-4 text-left text-[0.9375rem] leading-relaxed text-[#1d1d1f]">
             <p>{customerFeedback.encouragement}</p>
+            {customerFeedback.customer_voice_response ? (
+              <p className="rounded-[1rem] bg-[#f7faf5] px-4 py-3 text-[#1d1d1f]">
+                {customerFeedback.customer_voice_response}
+              </p>
+            ) : null}
+            <div className="space-y-1">
+              <p className="text-[0.8125rem] font-medium text-[#86868b]">今天飲食總評</p>
+              <p className="text-[#636366]">{customerFeedback.daily_food_summary}</p>
+            </div>
+            <div className="space-y-2">
+              {(["breakfast", "lunch", "dinner"] as const).map((slot) => {
+                const meal = customerFeedback.meal_feedback?.[slot];
+                if (!meal) return null;
+                const label = slot === "breakfast" ? "早餐" : slot === "lunch" ? "午餐" : "晚餐";
+                return (
+                  <div key={slot} className="rounded-[1rem] border border-[#eef2ea] px-3 py-3">
+                    <p className="font-medium text-[#1d1d1f]">{label}</p>
+                    <p className="mt-1 text-[#636366]">{meal.summary}</p>
+                    {meal.adjustment ? <p className="mt-1 text-[#636366]">調整：{meal.adjustment}</p> : null}
+                    {meal.follow_up_question ? (
+                      <p className="mt-1 text-[#86868b]">想確認：{meal.follow_up_question}</p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+            {(customerFeedback.lifestyle_feedback?.hydration ||
+              customerFeedback.lifestyle_feedback?.sleep ||
+              customerFeedback.lifestyle_feedback?.exercise) && (
+              <div className="space-y-1">
+                <p className="text-[0.8125rem] font-medium text-[#86868b]">生活作息</p>
+                {customerFeedback.lifestyle_feedback.hydration ? (
+                  <p className="text-[#636366]">水分：{customerFeedback.lifestyle_feedback.hydration}</p>
+                ) : null}
+                {customerFeedback.lifestyle_feedback.sleep ? (
+                  <p className="text-[#636366]">睡眠：{customerFeedback.lifestyle_feedback.sleep}</p>
+                ) : null}
+                {customerFeedback.lifestyle_feedback.exercise ? (
+                  <p className="text-[#636366]">運動：{customerFeedback.lifestyle_feedback.exercise}</p>
+                ) : null}
+              </div>
+            )}
             <p className="text-[#636366]">{customerFeedback.today_feedback}</p>
             {customerFeedback.adjustment_priorities.length > 0 ? (
               <div className="space-y-1">
-                <p className="text-[0.8125rem] font-medium text-[#86868b]">今日調整優先</p>
+                <p className="text-[0.8125rem] font-medium text-[#86868b]">今天最重要的調整</p>
                 <ul className="list-disc space-y-1 pl-5">
                   {customerFeedback.adjustment_priorities.slice(0, 2).map((item) => (
                     <li key={item}>{item}</li>
@@ -189,6 +231,9 @@ export function CoachingDailyCompleteView({
             <div className="rounded-[1rem] bg-[var(--brand-bg)] px-4 py-3">
               <p className="text-[0.8125rem] font-medium text-[#86868b]">明日焦點</p>
               <p className="mt-1">{customerFeedback.tomorrow_focus}</p>
+              {customerFeedback.follow_up_for_tomorrow ? (
+                <p className="mt-2 text-[0.875rem] text-[#636366]">{customerFeedback.follow_up_for_tomorrow}</p>
+              ) : null}
             </div>
           </div>
         ) : null}

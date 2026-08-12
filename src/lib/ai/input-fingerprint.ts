@@ -19,6 +19,11 @@ function priorAiContextForFingerprint(context: CoachingPriorAiContext | null): u
     tomorrowFocus: context.tomorrowFocus?.value ?? null,
     recurringIssue: context.recurringIssue?.value ?? null,
     improvedIssue: context.improvedIssue?.value ?? null,
+    pendingFollowUps: (context.pendingFollowUps ?? []).map((item) => ({
+      subject: item.subject,
+      question: item.question,
+      status: item.status,
+    })),
   };
 }
 

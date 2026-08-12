@@ -26,8 +26,10 @@ const MEAL_SIGNAL_PRIORITY_WEIGHT: Record<CoachingMealObservationSignal, number>
   meal_skipped: 520,
   low_protein: 510,
   sugary_drink: 505,
-  fried_food: 320,
-  processed_food: 310,
+  shake_dominant: 435,
+  fried_food: 430,
+  starch_concentrated: 425,
+  processed_food: 410,
   high_sauce: 200,
   vegetable_low: 180,
 };
@@ -40,6 +42,8 @@ const SINGLE_MEAL_DEVIATION_KEYS = new Set([
   "meal_processed_food",
   "meal_vegetable_low",
   "meal_meal_skipped",
+  "meal_shake_dominant",
+  "meal_starch_concentrated",
 ]);
 
 function evidence(
@@ -429,12 +433,16 @@ function buildMealObservationSignals(observations: CoachingMealObservation[]): C
           category: "meal",
           severity: kind === "high_sauce" || kind === "vegetable_low" ? "minor" : "moderate",
           source: "today",
-          confidence: "deterministic",
+          confidence: "vision_assisted",
           evidence: [
             evidence("meal_slot", observation.mealSlot),
             evidence("observation_signal", kind),
             evidence("observed_foods", observation.observedFoods.join(", ") || null),
+            evidence("shake_observed", observation.shakeObserved ?? null),
+            evidence("no_other_food_visible", observation.noOtherFoodVisible ?? null),
+            evidence("follow_up_question", observation.followUpQuestion ?? null),
             ...observation.evidenceText.map((text, index) => evidence(`evidence_text_${index + 1}`, text)),
+            ...(observation.uncertainties ?? []).map((text, index) => evidence(`uncertainty_${index + 1}`, text)),
           ],
         }),
       );
@@ -443,11 +451,27 @@ function buildMealObservationSignals(observations: CoachingMealObservation[]): C
   return signals;
 }
 
+function buildCustomerVoiceCoachingSignals(
+  voices: import("@/types/coaching-signals").CoachingCustomerVoiceSignal[],
+): CoachingSignal[] {
+  return voices.map((voice) =>
+    signal({
+      key: `customer_voice_${voice.key}`,
+      category: "customer_voice",
+      severity: voice.key === "hunger_reported" ? "moderate" : "moderate",
+      source: "today",
+      confidence: "deterministic",
+      evidence: voice.evidence,
+    }),
+  );
+}
+
 export function collectCoachingSignals(input: {
   generationInput: CoachingGenerationInput;
   mealObservations?: CoachingMealObservation[];
+  customerVoice?: import("@/types/coaching-signals").CoachingCustomerVoiceSignal[];
 }): CoachingSignal[] {
-  const { generationInput, mealObservations = [] } = input;
+  const { generationInput, mealObservations = [], customerVoice = [] } = input;
   const planSnapshot = generationInput.profileMemory.planSnapshot;
 
   return [
@@ -458,6 +482,7 @@ export function collectCoachingSignals(input: {
     ...buildBodyTrendSignals(generationInput.outcomeMemory),
     ...buildCoachDirectiveSignals(generationInput.coachDirectives),
     ...buildMealObservationSignals(mealObservations),
+    ...buildCustomerVoiceCoachingSignals(customerVoice),
   ];
 }
 
@@ -486,7 +511,13 @@ function mealPriorityReason(signalKey: string): { reason: string; subject: strin
   if (signalKey.includes("meal_skipped")) {
     return { reason: "補上可完成的早餐", subject: "早餐最低版本" };
   }
-  if (signalKey.includes("fried_food") || signalKey.includes("processed_food")) {
+  if (signalKey.includes("shake_dominant")) {
+    return { reason: "確認奶昔餐是否有搭配", subject: "確認奶昔餐搭配" };
+  }
+  if (signalKey.includes("starch_concentrated") || signalKey.includes("fried_food")) {
+    return { reason: "主食份量收一點、補肉蛋青菜", subject: "炒飯份量與搭配" };
+  }
+  if (signalKey.includes("processed_food")) {
     return { reason: "減少高油／加工選項", subject: "減少高油加工" };
   }
   if (signalKey.includes("high_sauce")) {
@@ -545,6 +576,14 @@ function candidateScore(item: CoachingSignal): { score: number; reason: string; 
 
   if (item.key === "hydration_below_plan" && item.severity !== "minor") {
     return { score: 450, reason: "水分未達計畫", subject: "依計畫補水" };
+  }
+
+  if (item.key === "customer_voice_hunger_reported") {
+    return { score: 470, reason: "你說還是會餓", subject: "找出比較有飽足感的吃法" };
+  }
+
+  if (item.key.startsWith("customer_voice_")) {
+    return { score: 460, reason: "回應你今天的感受", subject: "回應你今天提到的狀況" };
   }
 
   if (item.key === "body_trend_worsening") {
@@ -703,10 +742,22 @@ export function resolveFinalInterventionLevel(signals: CoachingSignal[]): {
 export function buildCoachingDecisionContext(input: {
   generationInput: CoachingGenerationInput;
   mealObservations?: CoachingMealObservation[];
+  customerVoice?: import("@/types/coaching-signals").CoachingCustomerVoiceSignal[];
+  photoReuse?: import("@/types/coaching-signals").CoachingPhotoReuseDetection[];
+  pendingFollowUps?: import("@/types/coaching-signals").CoachingFollowUpMemory[];
   /** Optional override when caller already resolved intervention (e.g. fixture C). */
   finalInterventionLevelOverride?: CoachingInterventionLevel;
 }): CoachingDecisionContext {
-  const signals = collectCoachingSignals(input);
+  const mealObservations = input.mealObservations ?? [];
+  const customerVoice = input.customerVoice ?? [];
+  const photoReuse = input.photoReuse ?? [];
+  const pendingFollowUps = input.pendingFollowUps ?? [];
+
+  const signals = collectCoachingSignals({
+    generationInput: input.generationInput,
+    mealObservations,
+    customerVoice,
+  });
   const positiveSignals = signals.filter((item) => item.severity === "positive");
   // Never treat skipped-meal-adjacent wording as positive — already enforced by not emitting such keys.
   const forbiddenPositive = positiveSignals.filter((item) =>
@@ -732,12 +783,21 @@ export function buildCoachingDecisionContext(input: {
     improvedIssue,
     coachAttention,
     finalInterventionLevel,
+    customerVoice,
+    mealObservations,
+    photoReuse,
+    pendingFollowUps,
   };
 }
 
 export function getFixtureMealObservations(
-  scenario: "A_normal" | "B_breakfast_deviation" | "C_watch_pattern",
+  scenario: "A_normal" | "B_breakfast_deviation" | "C_watch_pattern" | "D_hunger_shake_fried_rice",
 ): CoachingMealObservation[] {
+  if (scenario === "D_hunger_shake_fried_rice") {
+    // Controlled OpenAI eval uses live Meal Vision / heuristics; unit fixtures leave empty.
+    return [];
+  }
+
   if (scenario === "B_breakfast_deviation") {
     return [
       {

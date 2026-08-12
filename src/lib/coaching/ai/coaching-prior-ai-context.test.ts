@@ -13,8 +13,13 @@ describe("buildPriorAiContextFromOutput", () => {
         customer: {
           encouragement: "a",
           today_feedback: "b",
+          daily_food_summary: "c",
+          meal_feedback: { breakfast: null, lunch: null, dinner: null },
+          lifestyle_feedback: { hydration: null, sleep: null, exercise: null },
+          customer_voice_response: null,
           adjustment_priorities: [],
           tomorrow_focus: "  明天多喝水  ",
+          follow_up_for_tomorrow: null,
         },
         coach: {
           daily_summary: "s",
@@ -24,6 +29,8 @@ describe("buildPriorAiContextFromOutput", () => {
           coach_attention_required: false,
           attention_reason: null,
           evidence: [],
+          follow_ups: [{ subject: "hunger", question: "還會餓嗎？", status: "pending" }],
+          photo_reuse_flags: [],
         },
       },
     });
@@ -43,6 +50,14 @@ describe("buildPriorAiContextFromOutput", () => {
         sourceLogDate: "2026-08-10",
       },
       improvedIssue: null,
+      pendingFollowUps: [
+        {
+          subject: "hunger",
+          question: "還會餓嗎？",
+          sourceLogDate: "2026-08-10",
+          status: "pending",
+        },
+      ],
     });
   });
 

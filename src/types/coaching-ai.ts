@@ -31,7 +31,7 @@ export const COACHING_GENERATION_INPUT_VERSION = 1 as const;
 
 export const COACHING_DAILY_GENERATION_OUTPUT_VERSION = 1 as const;
 
-export const COACHING_AI_PROMPT_VERSION = "coaching_daily_v2b7" as const;
+export const COACHING_AI_PROMPT_VERSION = "coaching_daily_v2c1" as const;
 
 export const COACHING_ROLLING_WINDOW_DAYS = 14 as const;
 
@@ -65,11 +65,33 @@ export type CoachingAiLlmCallStatus = "completed" | "failed";
 // Daily generation output JSON (schema only — not generated in 2b-1)
 // ---------------------------------------------------------------------------
 
+export type CoachingDailyMealFeedback = {
+  summary: string;
+  good_point: string | null;
+  adjustment: string | null;
+  follow_up_question: string | null;
+};
+
 export type CoachingDailyGenerationCustomerOutput = {
   encouragement: string;
   today_feedback: string;
+  /** Short overall food read for the day — must mention what was actually observed. */
+  daily_food_summary: string;
+  meal_feedback: {
+    breakfast: CoachingDailyMealFeedback | null;
+    lunch: CoachingDailyMealFeedback | null;
+    dinner: CoachingDailyMealFeedback | null;
+  };
+  lifestyle_feedback: {
+    hydration: string | null;
+    sleep: string | null;
+    exercise: string | null;
+  };
+  /** Required when customer_note expressed a concern. */
+  customer_voice_response: string | null;
   adjustment_priorities: string[];
   tomorrow_focus: string;
+  follow_up_for_tomorrow: string | null;
 };
 
 export type CoachingDailyGenerationCoachOutput = {
@@ -81,6 +103,18 @@ export type CoachingDailyGenerationCoachOutput = {
   coach_attention_required: boolean;
   attention_reason: string | null;
   evidence: string[];
+  /** Structured follow-ups for next-day continuity (system may also derive). */
+  follow_ups: Array<{
+    subject: string;
+    question: string;
+    status: "pending" | "resolved" | "improved";
+  }>;
+  photo_reuse_flags: Array<{
+    meal_slot: "breakfast" | "lunch" | "dinner";
+    suspected: boolean;
+    matched_log_date: string | null;
+    method: string;
+  }>;
 };
 
 export type CoachingDailyGenerationOutputJson = {
@@ -105,6 +139,12 @@ export type CoachingPriorAiContext = {
   tomorrowFocus: CoachingPriorAiInferenceField<string> | null;
   recurringIssue: CoachingPriorAiInferenceField<string> | null;
   improvedIssue: CoachingPriorAiInferenceField<string> | null;
+  pendingFollowUps: Array<{
+    subject: string;
+    question: string;
+    sourceLogDate: ISODateString;
+    status: "pending" | "resolved" | "improved";
+  }>;
 };
 
 export type CoachingInterventionContext = {

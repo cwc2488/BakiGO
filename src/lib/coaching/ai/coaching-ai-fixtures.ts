@@ -3,7 +3,11 @@ import { cloneDefaultCoachingPlanSnapshot } from "@/lib/coaching/default-instruc
 import type { CoachingGenerationInput, CoachingInterventionLevel } from "@/types/coaching-ai";
 import type { CoachingDailyLogDetail, CoachingEnrollment } from "@/types/coaching";
 
-export type CoachingAiFixtureScenario = "A_normal" | "B_breakfast_deviation" | "C_watch_pattern";
+export type CoachingAiFixtureScenario =
+  | "A_normal"
+  | "B_breakfast_deviation"
+  | "C_watch_pattern"
+  | "D_hunger_shake_fried_rice";
 
 const FIXTURE_ENROLLMENT: CoachingEnrollment = {
   id: "fixture-enroll",
@@ -23,6 +27,7 @@ const FIXTURE_ENROLLMENT: CoachingEnrollment = {
 function meal(
   slot: CoachingDailyLogDetail["meals"][number]["mealSlot"],
   textNote: string | null,
+  options?: { withPhoto?: boolean },
 ): CoachingDailyLogDetail["meals"][number] {
   return {
     id: `${slot}-entry`,
@@ -32,7 +37,15 @@ function meal(
     eatenAt: null,
     createdAt: "2026-08-11T08:00:00.000Z",
     updatedAt: "2026-08-11T08:00:00.000Z",
-    photo: null,
+    photo: options?.withPhoto
+      ? {
+          id: `${slot}-photo`,
+          mealEntryId: `${slot}-entry`,
+          storagePath: `eval-fixtures/${slot}.jpg`,
+          uploadedAt: "2026-08-11T08:00:00.000Z",
+          createdAt: "2026-08-11T08:00:00.000Z",
+        }
+      : null,
   };
 }
 
@@ -110,6 +123,47 @@ export function buildCoachingAiFixtureGenerationInput(
     };
   }
 
+  if (scenario === "D_hunger_shake_fried_rice") {
+    const plan = cloneDefaultCoachingPlanSnapshot();
+    const enrollment: CoachingEnrollment = {
+      ...FIXTURE_ENROLLMENT,
+      id: "fixture-enroll-d",
+      planSnapshot: {
+        ...plan,
+        dailyInstructions: {
+          ...plan.dailyInstructions,
+          hydration: ["每天喝水 5000 ml"],
+        },
+      },
+    };
+    const todayLog = baseLog({
+      waterMl: 3000,
+      exerciseNote: "1 小時",
+      bowelMovementCount: 2,
+      sleepBedtime: "00:24",
+      sleepWakeTime: "08:24",
+      sleepDuration: "8小時",
+      customerNote: "還是會很餓",
+      meals: [
+        meal("breakfast", "喝奶昔", { withPhoto: true }),
+        meal("lunch", "炒飯", { withPhoto: true }),
+        meal("dinner", "喝奶昔", { withPhoto: true }),
+      ],
+    });
+    return {
+      finalInterventionLevel: "normal",
+      generationInput: buildCoachingGenerationInput({
+        enrollment,
+        customer: { displayName: "合成評測", heightCm: 165, sex: "female", region: "台北", occupation: "設計師" },
+        logDate: "2026-08-11",
+        todayLog,
+        recentLogs: [todayLog],
+        bodyRecords: [],
+        builtAt: "2026-08-11T12:00:00.000Z",
+      }),
+    };
+  }
+
   const todayLog = baseLog({
     sleepBedtime: "00:45",
     sleepWakeTime: "07:30",
@@ -147,6 +201,10 @@ export function buildCoachingAiFixtureGenerationInput(
 }
 
 export function detectCoachingAiFixtureScenario(input: CoachingGenerationInput): CoachingAiFixtureScenario {
+  if (input.todayContext.customerNote?.includes("還是會很餓")) {
+    return "D_hunger_shake_fried_rice";
+  }
+
   const breakfastNote =
     input.todayContext.primaryMeals.find((item) => item.mealSlot === "breakfast")?.textNote ?? "";
   if (breakfastNote.includes("蛋餅") || breakfastNote.includes("奶茶")) {

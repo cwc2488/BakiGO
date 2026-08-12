@@ -1,7 +1,12 @@
 import { buildLlmCallLogEntry } from "@/lib/ai/llm-telemetry";
-import type { CoachingAiFixtureScenario } from "@/lib/coaching/ai/coaching-ai-fixtures";
-import { OpenAiCoachingAiProvider } from "@/lib/coaching/ai/coaching-ai-provider";
-import { buildScenarioDecisionContext } from "@/lib/coaching/ai/build-scenario-decision-context";
+import {
+  buildCoachingAiFixtureGenerationInput,
+  type CoachingAiFixtureScenario,
+} from "@/lib/coaching/ai/coaching-ai-fixtures";
+import {
+  OpenAiCoachingAiProvider,
+  parseDailyCoachProviderJson,
+} from "@/lib/coaching/ai/coaching-ai-provider";
 import {
   buildCoachingEvalImageTelemetry,
   loadPreparedCoachingEvalMealImages,
@@ -11,22 +16,36 @@ import {
   projectCoachingAiMonthlyCostUsd,
   type CoachingAiQualityReport,
 } from "@/lib/coaching/ai/coaching-ai-quality-check";
+import { extractCustomerVoiceSignals } from "@/lib/coaching/ai/extract-customer-voice";
 import { COACHING_DAILY_AI_MODEL_ID } from "@/lib/coaching/ai/model-config";
+import { observeCoachingMeals } from "@/lib/coaching/ai/observe-coaching-meals";
+import { buildCoachingDecisionContext } from "@/lib/coaching/ai/coaching-signal-engine";
 import type { CoachingDailyGenerationOutputJson, CoachingMealImageUsageMetadata } from "@/types/coaching-ai";
-import type { CoachingDecisionContext } from "@/types/coaching-signals";
+import type {
+  CoachingCustomerVoiceSignal,
+  CoachingDecisionContext,
+  CoachingMealObservation,
+} from "@/types/coaching-signals";
 
 export type CoachingAiEvaluationScenarioResult = {
   scenario: CoachingAiFixtureScenario;
   model: string;
   latencyMs: number;
+  observationLatencyMs: number;
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
+  observationInputTokens: number;
+  observationOutputTokens: number;
   imageCount: number;
   imageResizeMetadata: CoachingMealImageUsageMetadata;
   pricingFound: boolean;
   estimatedCostUsd: number | null;
+  mealObservations: CoachingMealObservation[];
+  customerVoice: CoachingCustomerVoiceSignal[];
   decisionContext: CoachingDecisionContext;
+  rawOutput: CoachingDailyGenerationOutputJson;
+  rawJson: string;
   output: CoachingDailyGenerationOutputJson;
   quality: CoachingAiQualityReport;
 };
@@ -43,6 +62,7 @@ const ALL_SCENARIOS: CoachingAiFixtureScenario[] = [
   "A_normal",
   "B_breakfast_deviation",
   "C_watch_pattern",
+  "D_hunger_shake_fried_rice",
 ];
 
 export async function runCoachingAiControlledEvaluation(input?: {
@@ -59,53 +79,75 @@ export async function runCoachingAiControlledEvaluation(input?: {
   const results: CoachingAiEvaluationScenarioResult[] = [];
 
   for (const scenario of scenarios) {
-    const packed = buildScenarioDecisionContext(scenario);
+    const fixture = buildCoachingAiFixtureGenerationInput(scenario);
     const preparedMealImages = await loadPreparedCoachingEvalMealImages(scenario);
     const imageResizeMetadata = buildCoachingEvalImageTelemetry(preparedMealImages);
 
-    const result = await provider.generateDailyCoach({
-      generationInput: packed.generationInput,
-      finalInterventionLevel: packed.finalInterventionLevel,
-      decisionContext: packed.decisionContext,
+    const observed = await observeCoachingMeals({
+      apiKey,
+      generationInput: fixture.generationInput,
       preparedMealImages,
     });
+    const customerVoice = extractCustomerVoiceSignals(fixture.generationInput.todayContext.customerNote);
+    const decisionContext = buildCoachingDecisionContext({
+      generationInput: fixture.generationInput,
+      mealObservations: observed.observations,
+      customerVoice,
+      finalInterventionLevelOverride: fixture.finalInterventionLevel,
+    });
+
+    const result = await provider.generateDailyCoach({
+      generationInput: fixture.generationInput,
+      finalInterventionLevel: decisionContext.finalInterventionLevel,
+      decisionContext,
+      preparedMealImages,
+    });
+
+    const rawOutput = parseDailyCoachProviderJson(result.rawJson);
 
     const telemetryEntry = buildLlmCallLogEntry({
       feature: "coaching",
       pointKey: "daily_coach_generation",
-      customerId: packed.generationInput.customerId,
-      enrollmentId: packed.generationInput.enrollmentId,
+      customerId: fixture.generationInput.customerId,
+      enrollmentId: fixture.generationInput.enrollmentId,
       ownerMemberId: null,
       model: result.model,
       promptVersion: result.promptVersion,
       usage: {
-        inputTokens: result.usage.inputTokens,
-        cachedInputTokens: result.usage.cachedInputTokens,
-        outputTokens: result.usage.outputTokens,
+        inputTokens: result.usage.inputTokens + observed.usage.inputTokens,
+        cachedInputTokens: result.usage.cachedInputTokens + observed.usage.cachedInputTokens,
+        outputTokens: result.usage.outputTokens + observed.usage.outputTokens,
         imageCount: result.usage.imageCount,
       },
       imageUsageMetadata: { coachingMealImages: imageResizeMetadata },
-      latencyMs: result.latencyMs,
+      latencyMs: result.latencyMs + observed.latencyMs,
     });
 
     results.push({
       scenario,
       model: result.model,
       latencyMs: result.latencyMs,
+      observationLatencyMs: observed.latencyMs,
       inputTokens: result.usage.inputTokens,
       cachedInputTokens: result.usage.cachedInputTokens,
       outputTokens: result.usage.outputTokens,
+      observationInputTokens: observed.usage.inputTokens,
+      observationOutputTokens: observed.usage.outputTokens,
       imageCount: result.usage.imageCount,
       imageResizeMetadata,
       pricingFound: telemetryEntry.pricingFound,
       estimatedCostUsd: telemetryEntry.estimatedCostUsd,
-      decisionContext: packed.decisionContext,
+      mealObservations: observed.observations,
+      customerVoice,
+      decisionContext,
+      rawOutput,
+      rawJson: result.rawJson,
       output: result.output,
       quality: evaluateCoachingAiOutputQuality({
         output: result.output,
-        finalInterventionLevel: packed.finalInterventionLevel,
-        priorTomorrowFocus: packed.generationInput.priorAiContext?.tomorrowFocus?.value ?? null,
-        generationInput: packed.generationInput,
+        finalInterventionLevel: decisionContext.finalInterventionLevel,
+        priorTomorrowFocus: fixture.generationInput.priorAiContext?.tomorrowFocus?.value ?? null,
+        generationInput: fixture.generationInput,
       }),
     });
   }
@@ -118,11 +160,7 @@ export async function runCoachingAiControlledEvaluation(input?: {
     ranAt: new Date().toISOString(),
     model: COACHING_DAILY_AI_MODEL_ID,
     scenarios: results,
-    averageEstimatedCostUsd,
     costProjection: projectCoachingAiMonthlyCostUsd(averageEstimatedCostUsd),
+    averageEstimatedCostUsd,
   };
-}
-
-export function isCoachingAiEvaluationAvailable(): boolean {
-  return Boolean(process.env.OPENAI_API_KEY?.trim());
 }

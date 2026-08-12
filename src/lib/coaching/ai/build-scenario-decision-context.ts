@@ -2,6 +2,7 @@ import {
   buildCoachingAiFixtureGenerationInput,
   type CoachingAiFixtureScenario,
 } from "@/lib/coaching/ai/coaching-ai-fixtures";
+import { extractCustomerVoiceSignals } from "@/lib/coaching/ai/extract-customer-voice";
 import {
   buildCoachingDecisionContext,
   getFixtureMealObservations,
@@ -19,6 +20,7 @@ export function buildScenarioDecisionContext(
   const decisionContext = buildCoachingDecisionContext({
     generationInput: fixture.generationInput,
     mealObservations: getFixtureMealObservations(scenario),
+    customerVoice: extractCustomerVoiceSignals(fixture.generationInput.todayContext.customerNote),
     finalInterventionLevelOverride: fixture.finalInterventionLevel,
   });
 

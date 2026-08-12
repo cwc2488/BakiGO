@@ -10,8 +10,13 @@ const validOutput: CoachingDailyGenerationOutputJson = {
   customer: {
     encouragement: "做得好",
     today_feedback: "飲水充足",
+    daily_food_summary: "三餐大致穩定",
+    meal_feedback: { breakfast: null, lunch: null, dinner: null },
+    lifestyle_feedback: { hydration: "水分夠", sleep: null, exercise: null },
+    customer_voice_response: null,
     adjustment_priorities: ["早餐"],
     tomorrow_focus: "維持飲水",
+    follow_up_for_tomorrow: null,
   },
   coach: {
     daily_summary: "整體穩定",
@@ -21,6 +26,8 @@ const validOutput: CoachingDailyGenerationOutputJson = {
     coach_attention_required: false,
     attention_reason: null,
     evidence: ["water 1500ml"],
+    follow_ups: [],
+    photo_reuse_flags: [],
   },
 };
 
@@ -47,7 +54,7 @@ describe("validateCoachingDailyGenerationOutputJson", () => {
         ...validOutput,
         coach: {
           ...validOutput.coach,
-          proposed_intervention_level: "observe",
+          proposed_intervention_level: "observe" as "normal",
         },
       }),
     ).toBeNull();

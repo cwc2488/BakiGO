@@ -11,12 +11,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const outDir = resolve(here, "../test-fixtures/coaching-meals");
 
 const fixtures = [
-  { name: "breakfast-shake.jpg", label: "Breakfast Shake", color: { r: 245, g: 230, b: 200 } },
+  { name: "breakfast-shake.jpg", label: "Breakfast Shake / Person", color: { r: 245, g: 230, b: 200 } },
   { name: "lunch-chicken-salad.jpg", label: "Lunch Chicken Salad", color: { r: 180, g: 220, b: 160 } },
   { name: "dinner-shake-veg.jpg", label: "Dinner Shake Veg", color: { r: 210, g: 200, b: 240 } },
   { name: "breakfast-egg-pancake-tea.jpg", label: "Egg Pancake + Milk Tea", color: { r: 235, g: 200, b: 150 } },
   { name: "lunch-bento.jpg", label: "Chicken Bento", color: { r: 190, g: 210, b: 190 } },
   { name: "dinner-hotpot.jpg", label: "Hotpot", color: { r: 220, g: 170, b: 150 } },
+  { name: "lunch-fried-rice.jpg", label: "Lunch Fried Rice", color: { r: 230, g: 210, b: 140 } },
+  { name: "dinner-shake-person.jpg", label: "Dinner Shake / Person", color: { r: 235, g: 220, b: 195 } },
 ];
 
 async function main() {

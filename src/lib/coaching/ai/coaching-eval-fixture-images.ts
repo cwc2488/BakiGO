@@ -28,6 +28,11 @@ const SCENARIO_IMAGES: Record<CoachingAiFixtureScenario, CoachingEvalFixtureImag
     { mealSlot: "lunch", fileName: "lunch-bento.jpg" },
     { mealSlot: "dinner", fileName: "dinner-hotpot.jpg" },
   ],
+  D_hunger_shake_fried_rice: [
+    { mealSlot: "breakfast", fileName: "breakfast-shake.jpg" },
+    { mealSlot: "lunch", fileName: "lunch-fried-rice.jpg" },
+    { mealSlot: "dinner", fileName: "dinner-shake-person.jpg" },
+  ],
 };
 
 export function getCoachingEvalFixtureImageSpecs(scenario: CoachingAiFixtureScenario): CoachingEvalFixtureImageSpec[] {

@@ -190,8 +190,34 @@ function normalizeDailyCoachDraftJson(value: unknown): unknown {
   if (typeof customerRecord.today_feedback !== "string" || customerRecord.today_feedback.trim().length === 0) {
     customerRecord.today_feedback = "今天先依系統重點調整即可。";
   }
+  if (typeof customerRecord.daily_food_summary !== "string" || customerRecord.daily_food_summary.trim().length === 0) {
+    customerRecord.daily_food_summary = "今天有餐點回報，細節我們再一起看。";
+  }
+  if (!customerRecord.meal_feedback || typeof customerRecord.meal_feedback !== "object") {
+    customerRecord.meal_feedback = { breakfast: null, lunch: null, dinner: null };
+  }
+  if (!customerRecord.lifestyle_feedback || typeof customerRecord.lifestyle_feedback !== "object") {
+    customerRecord.lifestyle_feedback = { hydration: null, sleep: null, exercise: null };
+  }
+  if (!("customer_voice_response" in customerRecord)) {
+    customerRecord.customer_voice_response = null;
+  }
+  if (!("follow_up_for_tomorrow" in customerRecord)) {
+    customerRecord.follow_up_for_tomorrow = null;
+  }
   if (!Array.isArray(customerRecord.adjustment_priorities)) {
     customerRecord.adjustment_priorities = [];
+  }
+
+  const coach = root.coach;
+  if (coach && typeof coach === "object") {
+    const coachRecord = coach as Record<string, unknown>;
+    if (!Array.isArray(coachRecord.follow_ups)) {
+      coachRecord.follow_ups = [];
+    }
+    if (!Array.isArray(coachRecord.photo_reuse_flags)) {
+      coachRecord.photo_reuse_flags = [];
+    }
   }
   return root;
 }

@@ -1,9 +1,9 @@
 import type { CoachingAiOutputRecord } from "@/types/coaching-ai";
 
-export type PriorAiOutputCandidate = Pick<
-  CoachingAiOutputRecord,
-  "id" | "logDate" | "outputJson" | "status"
->;
+export type PriorAiOutputCandidate = Pick<CoachingAiOutputRecord, "id" | "logDate" | "status"> & {
+  /** Allow legacy incomplete customer/coach JSON when selecting prior memory. */
+  outputJson: CoachingAiOutputRecord["outputJson"] | Record<string, unknown> | null;
+};
 
 /** Most recent completed output strictly before the target log date. */
 export function selectPriorCompletedAiOutput(

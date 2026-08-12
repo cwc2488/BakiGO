@@ -50,8 +50,13 @@ export async function GET(
           ? {
               encouragement: output.outputJson.customer.encouragement,
               today_feedback: output.outputJson.customer.today_feedback,
+              daily_food_summary: output.outputJson.customer.daily_food_summary,
+              meal_feedback: output.outputJson.customer.meal_feedback,
+              lifestyle_feedback: output.outputJson.customer.lifestyle_feedback,
+              customer_voice_response: output.outputJson.customer.customer_voice_response,
               adjustment_priorities: output.outputJson.customer.adjustment_priorities.slice(0, 2),
               tomorrow_focus: output.outputJson.customer.tomorrow_focus,
+              follow_up_for_tomorrow: output.outputJson.customer.follow_up_for_tomorrow,
             }
           : null,
       errorMessage: output.status === "failed" ? output.errorMessage : null,

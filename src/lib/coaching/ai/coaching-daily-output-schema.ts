@@ -8,11 +8,31 @@ import {
 
 const interventionLevelSchema = z.enum(COACHING_INTERVENTION_LEVELS);
 
+const mealFeedbackSchema = z.object({
+  summary: z.string().min(1).max(240),
+  good_point: z.string().min(1).max(160).nullable(),
+  adjustment: z.string().min(1).max(200).nullable(),
+  follow_up_question: z.string().min(1).max(200).nullable(),
+});
+
 export const coachingDailyGenerationCustomerOutputSchema = z.object({
   encouragement: z.string().min(1).max(240),
   today_feedback: z.string().min(1).max(500),
+  daily_food_summary: z.string().min(1).max(320),
+  meal_feedback: z.object({
+    breakfast: mealFeedbackSchema.nullable(),
+    lunch: mealFeedbackSchema.nullable(),
+    dinner: mealFeedbackSchema.nullable(),
+  }),
+  lifestyle_feedback: z.object({
+    hydration: z.string().min(1).max(200).nullable(),
+    sleep: z.string().min(1).max(200).nullable(),
+    exercise: z.string().min(1).max(200).nullable(),
+  }),
+  customer_voice_response: z.string().min(1).max(320).nullable(),
   adjustment_priorities: z.array(z.string().min(1).max(120)).max(2),
   tomorrow_focus: z.string().min(1).max(160),
+  follow_up_for_tomorrow: z.string().min(1).max(200).nullable(),
 });
 
 export const coachingDailyGenerationCoachOutputSchema = z.object({
@@ -22,7 +42,26 @@ export const coachingDailyGenerationCoachOutputSchema = z.object({
   proposed_intervention_level: interventionLevelSchema,
   coach_attention_required: z.boolean(),
   attention_reason: z.string().min(1).max(240).nullable(),
-  evidence: z.array(z.string().min(1).max(200)).max(6),
+  evidence: z.array(z.string().min(1).max(200)).max(8),
+  follow_ups: z
+    .array(
+      z.object({
+        subject: z.string().min(1).max(80),
+        question: z.string().min(1).max(200),
+        status: z.enum(["pending", "resolved", "improved"]),
+      }),
+    )
+    .max(4),
+  photo_reuse_flags: z
+    .array(
+      z.object({
+        meal_slot: z.enum(["breakfast", "lunch", "dinner"]),
+        suspected: z.boolean(),
+        matched_log_date: z.string().nullable(),
+        method: z.string().min(1).max(40),
+      }),
+    )
+    .max(3),
 });
 
 export const coachingDailyGenerationOutputSchema = z.object({
@@ -70,14 +109,92 @@ export const coachingDailyGenerationOpenAiJsonSchema = {
       properties: {
         encouragement: { type: "string" },
         today_feedback: { type: "string" },
+        daily_food_summary: { type: "string" },
+        meal_feedback: {
+          type: "object",
+          properties: {
+            breakfast: {
+              anyOf: [
+                {
+                  type: "object",
+                  properties: {
+                    summary: { type: "string" },
+                    good_point: { type: ["string", "null"] },
+                    adjustment: { type: ["string", "null"] },
+                    follow_up_question: { type: ["string", "null"] },
+                  },
+                  required: ["summary", "good_point", "adjustment", "follow_up_question"],
+                  additionalProperties: false,
+                },
+                { type: "null" },
+              ],
+            },
+            lunch: {
+              anyOf: [
+                {
+                  type: "object",
+                  properties: {
+                    summary: { type: "string" },
+                    good_point: { type: ["string", "null"] },
+                    adjustment: { type: ["string", "null"] },
+                    follow_up_question: { type: ["string", "null"] },
+                  },
+                  required: ["summary", "good_point", "adjustment", "follow_up_question"],
+                  additionalProperties: false,
+                },
+                { type: "null" },
+              ],
+            },
+            dinner: {
+              anyOf: [
+                {
+                  type: "object",
+                  properties: {
+                    summary: { type: "string" },
+                    good_point: { type: ["string", "null"] },
+                    adjustment: { type: ["string", "null"] },
+                    follow_up_question: { type: ["string", "null"] },
+                  },
+                  required: ["summary", "good_point", "adjustment", "follow_up_question"],
+                  additionalProperties: false,
+                },
+                { type: "null" },
+              ],
+            },
+          },
+          required: ["breakfast", "lunch", "dinner"],
+          additionalProperties: false,
+        },
+        lifestyle_feedback: {
+          type: "object",
+          properties: {
+            hydration: { type: ["string", "null"] },
+            sleep: { type: ["string", "null"] },
+            exercise: { type: ["string", "null"] },
+          },
+          required: ["hydration", "sleep", "exercise"],
+          additionalProperties: false,
+        },
+        customer_voice_response: { type: ["string", "null"] },
         adjustment_priorities: {
           type: "array",
           items: { type: "string" },
           maxItems: 2,
         },
         tomorrow_focus: { type: "string" },
+        follow_up_for_tomorrow: { type: ["string", "null"] },
       },
-      required: ["encouragement", "today_feedback", "adjustment_priorities", "tomorrow_focus"],
+      required: [
+        "encouragement",
+        "today_feedback",
+        "daily_food_summary",
+        "meal_feedback",
+        "lifestyle_feedback",
+        "customer_voice_response",
+        "adjustment_priorities",
+        "tomorrow_focus",
+        "follow_up_for_tomorrow",
+      ],
       additionalProperties: false,
     },
     coach: {
@@ -96,6 +213,33 @@ export const coachingDailyGenerationOpenAiJsonSchema = {
           type: "array",
           items: { type: "string" },
         },
+        follow_ups: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              subject: { type: "string" },
+              question: { type: "string" },
+              status: { type: "string", enum: ["pending", "resolved", "improved"] },
+            },
+            required: ["subject", "question", "status"],
+            additionalProperties: false,
+          },
+        },
+        photo_reuse_flags: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              meal_slot: { type: "string", enum: ["breakfast", "lunch", "dinner"] },
+              suspected: { type: "boolean" },
+              matched_log_date: { type: ["string", "null"] },
+              method: { type: "string" },
+            },
+            required: ["meal_slot", "suspected", "matched_log_date", "method"],
+            additionalProperties: false,
+          },
+        },
       },
       required: [
         "daily_summary",
@@ -105,6 +249,8 @@ export const coachingDailyGenerationOpenAiJsonSchema = {
         "coach_attention_required",
         "attention_reason",
         "evidence",
+        "follow_ups",
+        "photo_reuse_flags",
       ],
       additionalProperties: false,
     },

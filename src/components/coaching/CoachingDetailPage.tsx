@@ -37,8 +37,11 @@ type DetailPayload = {
     customer: {
       encouragement: string;
       today_feedback: string;
+      daily_food_summary?: string;
+      customer_voice_response?: string | null;
       adjustment_priorities: string[];
       tomorrow_focus: string;
+      follow_up_for_tomorrow?: string | null;
     } | null;
     coach: {
       daily_summary: string;
@@ -233,22 +236,30 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
             ) : null}
             {payload.aiOutput?.status === "completed" && payload.aiOutput.customer ? (
               <div className="space-y-4 text-[0.9375rem]">
-                <div className="space-y-2">
-                  <p className="text-[0.8125rem] font-medium text-[#86868b]">給顧客</p>
-                  <p className="text-[#1d1d1f]">{payload.aiOutput.customer.encouragement}</p>
-                  <p className="text-[#636366]">{payload.aiOutput.customer.today_feedback}</p>
-                  {payload.aiOutput.customer.adjustment_priorities.length > 0 ? (
-                    <ul className="list-disc space-y-1 pl-5 text-[#636366]">
-                      {payload.aiOutput.customer.adjustment_priorities.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <p className="text-[#1d1d1f]">
-                    <span className="text-[#86868b]">明日焦點：</span>
-                    {payload.aiOutput.customer.tomorrow_focus}
-                  </p>
-                </div>
+                {payload.aiOutput.customer ? (
+                  <div className="space-y-2">
+                    <p className="text-[0.8125rem] font-medium text-[#86868b]">給顧客</p>
+                    <p className="text-[#1d1d1f]">{payload.aiOutput.customer.encouragement}</p>
+                    {payload.aiOutput.customer.customer_voice_response ? (
+                      <p className="text-[#1d1d1f]">{payload.aiOutput.customer.customer_voice_response}</p>
+                    ) : null}
+                    {payload.aiOutput.customer.daily_food_summary ? (
+                      <p className="text-[#636366]">飲食總評：{payload.aiOutput.customer.daily_food_summary}</p>
+                    ) : null}
+                    <p className="text-[#636366]">{payload.aiOutput.customer.today_feedback}</p>
+                    {payload.aiOutput.customer.adjustment_priorities.length > 0 ? (
+                      <ul className="list-disc space-y-1 pl-5 text-[#636366]">
+                        {payload.aiOutput.customer.adjustment_priorities.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <p className="text-[#1d1d1f]">
+                      <span className="text-[#86868b]">明日焦點：</span>
+                      {payload.aiOutput.customer.tomorrow_focus}
+                    </p>
+                  </div>
+                ) : null}
                 {payload.aiOutput.coach ? (
                   <div className="space-y-2 border-t border-[#eef2ea] pt-3">
                     <p className="text-[0.8125rem] font-medium text-[#86868b]">教練摘要</p>

@@ -1,7 +1,7 @@
 /** Pinned production evaluation + inference model — do not use floating alias. */
 export const COACHING_DAILY_AI_MODEL_ID = "gpt-4o-mini-2024-07-18" as const;
 
-export const COACHING_DAILY_AI_PROMPT_VERSION = "coaching_daily_v2b7" as const;
+export const COACHING_DAILY_AI_PROMPT_VERSION = "coaching_daily_v2c1f" as const;
 
 export const COACHING_DAILY_AI_TIMEOUT_MS = 30_000 as const;
 
