@@ -8,7 +8,7 @@ export interface RetailReportLineItem {
   customerPhone?: string;
   amount: number;
   unit: "NTD" | "VP";
-  /** Gamification points from Business Rules — shown for customer (NTD) types. */
+  /** User-entered retail VP for customer (NTD) transactions — shown as「VP」, not gamification 點數. */
   points?: number;
   transactionDate: ISODateString;
   note?: string;
@@ -22,7 +22,7 @@ export interface RetailReportCategory {
   weeklyItems: RetailReportLineItem[];
   /** Sum of weeklyItems — computed when report is built. */
   weeklyTotal: number;
-  /** Sum of points in period — customer types only. */
+  /** Sum of user-entered retail VP in period — customer types only. */
   periodPointsTotal: number;
   /** From Monthly Challenge / VP Engine — null if Rule Missing. */
   monthlyTotal: number | null;

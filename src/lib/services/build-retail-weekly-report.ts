@@ -2,8 +2,7 @@ import { DEFAULT_BUSINESS_RULES } from "@/lib/business-engine/rules";
 import { RETAIL_TRANSACTION_TYPE_KEYS } from "@/lib/business-engine/rules/keys";
 import type { RetailHouseDateRangePreset } from "@/lib/retail-house/retail-house-date-range";
 import {
-  isCustomerTransactionType,
-  resolveTransactionPoints,
+  resolveRetailVpFromTransaction,
 } from "@/lib/retail-house/resolve-transaction-points";
 import type { VpResult } from "@/lib/business-engine/types";
 import { isInYearMonth } from "@/lib/business-engine/utils";
@@ -57,9 +56,8 @@ function isWithinRange(
 }
 
 function toLineItem(transaction: RetailTransaction, unit: "NTD" | "VP"): RetailReportLineItem {
-  const points = isCustomerTransactionType(transaction.transactionTypeKey)
-    ? resolveTransactionPoints(transaction.transactionTypeKey)
-    : undefined;
+  /** Line `points` field stores user-entered retail VP for customer NTD rows (presentation maps to「VP」). */
+  const points = resolveRetailVpFromTransaction(transaction);
 
   return {
     transactionId: transaction.id,

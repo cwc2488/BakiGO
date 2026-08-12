@@ -53,13 +53,13 @@ describe("retail-house gregorian date", () => {
   });
 });
 
-describe("retail transaction points", () => {
-  it("reads customer points from business rules", () => {
+describe("retail transaction VP", () => {
+  it("keeps gamification reward lookup separate from retail VP", () => {
     expect(resolveTransactionPoints(RETAIL_TRANSACTION_TYPE_KEYS.NEW_CUSTOMER_NTD)).toBe(20);
     expect(resolveTransactionPoints(RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_CUSTOMER_NTD)).toBe(25);
   });
 
-  it("includes points on customer line items in report", () => {
+  it("reads user-entered retailVp from metadata, not gamification points", () => {
     const transactions: RetailTransaction[] = [
       {
         id: "tx-1",
@@ -72,6 +72,7 @@ describe("retail transaction points", () => {
         transactionDate: "2026-08-10",
         amount: 1200,
         currencyCode: "TWD",
+        metadata: { retailVp: 50 },
       },
       {
         id: "tx-2",
@@ -84,6 +85,7 @@ describe("retail transaction points", () => {
         transactionDate: "2026-08-11",
         amount: 800,
         currencyCode: "TWD",
+        // legacy row without retailVp — must not invent gamification points as VP
       },
     ];
 
@@ -118,9 +120,9 @@ describe("retail transaction points", () => {
         category.transactionTypeKey === RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_CUSTOMER_NTD,
     );
 
-    expect(newCustomer?.weeklyItems[0]?.points).toBe(20);
-    expect(returningCustomer?.weeklyItems[0]?.points).toBe(25);
-    expect(newCustomer?.periodPointsTotal).toBe(20);
-    expect(returningCustomer?.periodPointsTotal).toBe(25);
+    expect(newCustomer?.weeklyItems[0]?.points).toBe(50);
+    expect(returningCustomer?.weeklyItems[0]?.points).toBeUndefined();
+    expect(newCustomer?.periodPointsTotal).toBe(50);
+    expect(returningCustomer?.periodPointsTotal).toBe(0);
   });
 });

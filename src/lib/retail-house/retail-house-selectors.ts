@@ -21,14 +21,14 @@ const QUADRANT_CONFIG: Record<
     transactionTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.NEW_CUSTOMER_NTD,
     title: "新顧客",
     presentationTitle: "新顧客",
-    valueLabel: "金額 / 點數",
+    valueLabel: "成交金額 / VP",
     monthlyLabel: "新顧客",
   },
   returning_customer: {
     transactionTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_CUSTOMER_NTD,
     title: "舊顧客",
     presentationTitle: "舊顧客",
-    valueLabel: "金額 / 點數",
+    valueLabel: "成交金額 / VP",
     monthlyLabel: "舊顧客",
   },
   new_member: {
@@ -40,10 +40,10 @@ const QUADRANT_CONFIG: Record<
   },
   returning_member: {
     transactionTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.RETURNING_MEMBER_VP,
-    title: "舊會員",
-    presentationTitle: "舊會員",
+    title: "舊會員下點",
+    presentationTitle: "舊會員下點",
     valueLabel: "VP",
-    monthlyLabel: "舊會員",
+    monthlyLabel: "舊會員下點",
   },
 };
 

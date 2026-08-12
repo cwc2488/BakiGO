@@ -358,14 +358,14 @@ function RetailHouseView({
   return (
     <>
       <PageShell
-        backHref="/events"
-        backLabel="活動與會議紀錄"
+        backHref="/"
+        backLabel="返回我的"
         containerClassName="wide-container"
         headerExtra={
           <MemberNameWithAvatar
             avatarUrl={avatarUrl}
             name={`${displayName} 的工作現場`}
-            nameClassName="text-[1rem] font-semibold text-[var(--brand-text)]"
+            nameClassName="min-w-0 text-[1rem] font-semibold break-words text-[var(--brand-text)] [overflow-wrap:anywhere]"
             size="sm"
             subtitle={rangeLabel}
             subtitleClassName="text-[0.8125rem] text-[var(--brand-text-muted)]"

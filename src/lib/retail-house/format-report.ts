@@ -8,7 +8,12 @@ export function formatReportAmount(amount: number, unit: "NTD" | "VP"): string {
 }
 
 export function formatReportPoints(points: number): string {
-  return `${points.toLocaleString("zh-Hant")} 點`;
+  return `${points.toLocaleString("zh-Hant")} VP`;
+}
+
+/** Retail house secondary value — always shown as VP (not gamification 點數). */
+export function formatReportVp(vp: number): string {
+  return formatReportPoints(vp);
 }
 
 export function formatReportDateRange(start: string, end: string): string {

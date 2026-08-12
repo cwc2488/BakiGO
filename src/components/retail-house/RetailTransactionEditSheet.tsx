@@ -6,6 +6,7 @@ import {
   deleteRetailTransactionForCurrentMember,
   updateRetailTransactionForCurrentMember,
 } from "@/lib/retail-house/retail-transaction-service";
+import { isCustomerTransactionType } from "@/lib/retail-house/resolve-transaction-points";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import type { RetailReportLineItem } from "@/types/retail-weekly-report";
@@ -22,19 +23,23 @@ export function RetailTransactionEditSheet({
   onMetricsChange: (metrics: MemberComputedMetrics) => void;
 }) {
   const transactionTypes = useMemo(() => getTransactionEventTypes(), []);
-  const selectedType = useMemo(
-    () => transactionTypes.find((type) => type.key === item.transactionTypeKey),
-    [item.transactionTypeKey, transactionTypes],
-  );
-
   const [eventTypeKey, setEventTypeKey] = useState(item.transactionTypeKey);
   const [eventDate, setEventDate] = useState(item.transactionDate);
   const [customerName, setCustomerName] = useState(item.customerName);
   const [customerPhone, setCustomerPhone] = useState(item.customerPhone ?? "");
   const [value, setValue] = useState(String(item.amount));
+  const [retailVp, setRetailVp] = useState(
+    item.points != null && item.points > 0 ? String(item.points) : "",
+  );
   const [note, setNote] = useState(item.note ?? "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const isCustomerType = isCustomerTransactionType(eventTypeKey);
+  const selectedType = useMemo(
+    () => transactionTypes.find((type) => type.key === eventTypeKey),
+    [eventTypeKey, transactionTypes],
+  );
 
   async function handleSave(event: React.FormEvent) {
     event.preventDefault();
@@ -50,6 +55,7 @@ export function RetailTransactionEditSheet({
           customerName,
           customerPhone,
           value: Number(value),
+          retailVp: isCustomerTransactionType(eventTypeKey) ? Number(retailVp) : undefined,
           note,
         },
         storage,
@@ -109,7 +115,12 @@ export function RetailTransactionEditSheet({
             <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">類型</span>
             <select
               className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem]"
-              onChange={(event) => setEventTypeKey(event.target.value)}
+              onChange={(event) => {
+                setEventTypeKey(event.target.value);
+                if (!isCustomerTransactionType(event.target.value)) {
+                  setRetailVp("");
+                }
+              }}
               value={eventTypeKey}
             >
               {transactionTypes.map((type) => (
@@ -147,7 +158,7 @@ export function RetailTransactionEditSheet({
 
           <label className="block space-y-2">
             <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">
-              {selectedType?.valueLabel ?? "數值"}
+              {isCustomerType ? "成交金額（NT$）" : (selectedType?.valueLabel ?? "VP")}
             </span>
             <input
               className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem]"
@@ -157,6 +168,20 @@ export function RetailTransactionEditSheet({
               value={value}
             />
           </label>
+
+          {isCustomerType ? (
+            <label className="block space-y-2">
+              <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">VP</span>
+              <input
+                className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem]"
+                inputMode="decimal"
+                onChange={(event) => setRetailVp(event.target.value)}
+                placeholder="自行填寫，不依金額推算"
+                required
+                value={retailVp}
+              />
+            </label>
+          ) : null}
 
           <label className="block space-y-2">
             <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">備註</span>

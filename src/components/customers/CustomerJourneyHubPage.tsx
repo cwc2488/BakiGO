@@ -13,7 +13,11 @@ type HubItem = {
   desc: string;
   iconHref?: QuickLinkHref;
   iconName?: AppIconName;
+  /** Soft placeholder — e.g. Radar / 轉介紹中心 */
   comingSoon?: boolean;
+  /** Locked product entry — visible but not enterable */
+  locked?: boolean;
+  lockLabel?: string;
 };
 
 type HubSection = {
@@ -58,10 +62,11 @@ const SECTIONS: HubSection[] = [
         iconHref: "/retail-pipeline",
       },
       {
-        href: "/consultation/new",
         title: "導引諮詢",
-        desc: "開始或繼續諮詢流程",
+        desc: "正式諮詢流程尚未對外開放",
         iconHref: "/customers",
+        locked: true,
+        lockLabel: "即將開放",
       },
       {
         href: "/customers/list",
@@ -95,12 +100,27 @@ const SECTIONS: HubSection[] = [
       },
     ],
   },
+  {
+    title: "成果與分享",
+    subtitle: "陪跑成果 → 體驗 → 適合分享 → 轉介紹",
+    items: [
+      {
+        title: "轉介紹中心",
+        desc: "建置中：成果分享／朋友優惠／A 介紹 B（尚未開放）",
+        iconName: APP_ICON.section.growth,
+        comingSoon: true,
+      },
+    ],
+  },
 ];
 
 function HubLinkCard({ item }: { item: HubItem }) {
-  const Icon =
-    (item.iconHref ? ROUTE_ICON_COMPONENTS[item.iconHref] : null) ??
-    null;
+  const Icon = (item.iconHref ? ROUTE_ICON_COMPONENTS[item.iconHref] : null) ?? null;
+  const badge = item.locked
+    ? (item.lockLabel ?? "即將開放")
+    : item.comingSoon
+      ? "建置中"
+      : null;
   const content = (
     <>
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--brand-primary-muted)] text-[var(--brand-primary-dark)]">
@@ -111,13 +131,19 @@ function HubLinkCard({ item }: { item: HubItem }) {
         )}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="min-w-0 text-[1rem] font-semibold break-words text-[#1d1d1f] [overflow-wrap:anywhere]">
             {item.title}
           </span>
-          {item.comingSoon ? (
-            <span className="shrink-0 rounded-full bg-[#f5f5f7] px-2 py-0.5 text-[0.6875rem] font-semibold text-[#86868b]">
-              開發中
+          {badge ? (
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ${
+                item.locked
+                  ? "bg-[#fff7e6] text-[#b54708]"
+                  : "bg-[#f5f5f7] text-[#86868b]"
+              }`}
+            >
+              {item.locked ? `🔒 ${badge}` : badge}
             </span>
           ) : null}
         </span>
@@ -128,9 +154,14 @@ function HubLinkCard({ item }: { item: HubItem }) {
     </>
   );
 
-  if (item.comingSoon || !item.href) {
+  if (item.locked || item.comingSoon || !item.href) {
     return (
-      <div className="flex min-h-12 min-w-0 items-center gap-3 rounded-2xl border border-dashed border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5 opacity-80">
+      <div
+        aria-disabled="true"
+        className={`flex min-h-12 min-w-0 items-center gap-3 rounded-2xl border border-dashed border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5 ${
+          item.locked ? "opacity-90" : "opacity-80"
+        }`}
+      >
         {content}
       </div>
     );
@@ -148,7 +179,12 @@ function HubLinkCard({ item }: { item: HubItem }) {
 
 export default function CustomerJourneyHubPage() {
   return (
-    <PageShell showBack={false} title="顧客" subtitle="找人 → 接觸 → 顧客 → 陪跑" variant="plain">
+    <PageShell
+      showBack={false}
+      title="顧客"
+      subtitle="找人 → 接觸 → 顧客 → 陪跑 → 成果與分享"
+      variant="plain"
+    >
       <div className="mx-auto max-w-lg space-y-8 px-4 pb-8 pt-2">
         {SECTIONS.map((section) => (
           <section key={section.title} className="min-w-0 space-y-3">
@@ -164,7 +200,7 @@ export default function CustomerJourneyHubPage() {
           </section>
         ))}
         <p className="text-center text-[0.8125rem] text-[#86868b]">
-          成果與分享機會在顧客陪跑詳情中查看，不另開主入口。
+          成果與分享機會仍在陪跑詳情中查看；轉介紹中心為下一階段正式入口。
         </p>
       </div>
     </PageShell>

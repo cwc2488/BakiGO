@@ -7,6 +7,7 @@ import {
   validateGregorianDateParts,
   type GregorianDateParts,
 } from "@/lib/retail-house/retail-house-gregorian-date";
+import { isCustomerTransactionType } from "@/lib/retail-house/resolve-transaction-points";
 import { createEventRepository } from "@/lib/repositories/event-repository";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import {
@@ -45,7 +46,13 @@ export interface RetailTransactionMutationInput {
   dateParts: GregorianDateParts;
   customerName: string;
   customerPhone?: string;
+  /** 成交金額（NTD）或會員 VP，依類型而定。 */
   value: number;
+  /**
+   * 顧客成交的零售 VP（使用者自行輸入）。
+   * 不可從金額推算，也不是排行榜／遊戲化積分。
+   */
+  retailVp?: number;
   note?: string;
 }
 
@@ -68,10 +75,39 @@ export function validateRetailTransactionMutation(
   }
 
   if (!Number.isFinite(input.value) || input.value <= 0) {
-    return { error: "請輸入有效的數值。" };
+    return {
+      error: isCustomerTransactionType(input.eventTypeKey)
+        ? "請輸入有效的成交金額。"
+        : "請輸入有效的 VP。",
+    };
+  }
+
+  if (isCustomerTransactionType(input.eventTypeKey)) {
+    if (input.retailVp === undefined || !Number.isFinite(input.retailVp) || input.retailVp <= 0) {
+      return { error: "請輸入有效的 VP（由成交自行填寫，不可自動推算）。" };
+    }
   }
 
   return { eventDate: buildGregorianDate(input.dateParts) };
+}
+
+function buildTransactionMetadata(
+  input: RetailTransactionMutationInput,
+  priorMetadata?: Record<string, unknown>,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = {
+    ...(priorMetadata ?? {}),
+    customerName: input.customerName.trim(),
+    customerPhone: input.customerPhone?.trim() || undefined,
+    currencyCode: getTransactionCurrencyCode(input.eventTypeKey),
+    note: input.note?.trim() || undefined,
+  };
+  if (isCustomerTransactionType(input.eventTypeKey) && input.retailVp != null) {
+    next.retailVp = input.retailVp;
+  } else {
+    delete next.retailVp;
+  }
+  return next;
 }
 
 export function updateRetailTransactionForCurrentMember(
@@ -90,13 +126,10 @@ export function updateRetailTransactionForCurrentMember(
     eventTypeKey: input.eventTypeKey,
     eventDate: validated.eventDate,
     value: input.value,
-    metadata: {
-      ...event.metadata,
-      customerName: input.customerName.trim(),
-      customerPhone: input.customerPhone?.trim() || undefined,
-      currencyCode: getTransactionCurrencyCode(input.eventTypeKey),
-      note: input.note?.trim() || undefined,
-    },
+    metadata: buildTransactionMetadata(
+      input,
+      event.metadata as Record<string, unknown> | undefined,
+    ),
   });
 
   return recalculateMemberMetrics(
@@ -149,12 +182,7 @@ export function createRetailTransactionForCurrentMember(
     eventDate: validated.eventDate,
     value: input.value,
     retailHouseKey: APP_IDS.defaultRetailHouseKey,
-    metadata: {
-      customerName: input.customerName.trim(),
-      customerPhone: input.customerPhone?.trim() || undefined,
-      currencyCode: getTransactionCurrencyCode(input.eventTypeKey),
-      note: input.note?.trim() || undefined,
-    },
+    metadata: buildTransactionMetadata(input),
   });
 
   return recalculateMemberMetrics(
