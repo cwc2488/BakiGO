@@ -125,7 +125,18 @@ export default function ReferralCenterPage() {
   return (
     <PageShell title="轉介紹中心" subtitle="誰適合分享 · 誰已介紹朋友 · 誰需要你接手" variant="plain">
       <div className="mx-auto max-w-lg space-y-5 px-4 pb-10 pt-2">
-        {loading ? <p className="text-[0.875rem] text-[#86868b]">載入中…</p> : null}
+        {loading ? (
+          <div className="space-y-3" aria-busy="true" aria-label="載入轉介紹中心">
+            <div className="grid grid-cols-3 gap-2">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="h-16 animate-pulse rounded-2xl bg-[#f0f1ef]" />
+              ))}
+            </div>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-28 animate-pulse rounded-[1.25rem] bg-[#f0f1ef]" />
+            ))}
+          </div>
+        ) : null}
         {error ? <p className="text-[0.875rem] text-[#c62828]">{error}</p> : null}
         {message ? <p className="text-[0.875rem] text-[var(--brand-primary-dark)]">{message}</p> : null}
         {shareUrl ? (

@@ -2,7 +2,6 @@
 
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import { buildCustomerFollowUpHints } from "@/lib/customers/body-composition-compare";
-import { buildDailyFollowUpSnapshot } from "@/lib/customers/customer-follow-up-reminder";
 import { searchCustomers } from "@/lib/customers/customer-search";
 import { todayISODate } from "@/lib/config/app-config";
 import {
@@ -104,10 +103,16 @@ export default function CustomerListPage() {
     typeof window === "undefined" ? "default" : getNotificationPermissionState(),
   );
 
-  const dailyFollowUp = useMemo(
-    () => buildDailyFollowUpSnapshot(storage, ownerMemberId, today),
-    [storage, ownerMemberId, today, customers],
-  );
+  const dailyFollowUp = useMemo(() => {
+    const items = customers
+      .filter((customer) => customer.followUpReason)
+      .map((customer) => ({
+        customer,
+        reason: customer.followUpReason!,
+        urgency: customer.followUpUrgency ?? ("low" as const),
+      }));
+    return { count: items.length, items };
+  }, [customers]);
 
   const reload = useCallback(() => {
     const memberId = resolveAuthenticatedMemberId(storage);
@@ -117,8 +122,9 @@ export default function CustomerListPage() {
       return;
     }
 
+    const bodyByCustomer = repo.getBodyRecordsGroupedByCustomer();
     const items = repo.getCustomersByOwner(memberId).map((customer) => {
-      const records = repo.getBodyRecordsByCustomer(customer.id);
+      const records = bodyByCustomer.get(customer.id) ?? [];
       const hints = buildCustomerFollowUpHints(customer, records, today);
       const topHint = hints.sort((left, right) => {
         const rank = { high: 0, medium: 1, low: 2 };

@@ -37,30 +37,32 @@ export async function GET(request: Request) {
       asOfHourTaipei,
     });
 
-    // Event: Attention → coach_attention — best-effort Growth reconcile (Rescue > Growth)
+    const response = NextResponse.json({
+      ok: true,
+      ...result,
+      audit,
+    });
+
+    // After payload is ready: best-effort Growth reconcile must not delay Command Center TTFB.
+    // Rescue > Growth still runs, but off the critical response path.
     const attentionIds = result.sections.needsAttention
       .filter((item) => item.assessment.tier === "coach_attention")
       .slice(0, 15)
       .map((item) => item.enrollmentId);
     if (attentionIds.length > 0) {
-      const { triggerGrowthReconcileBestEffort } = await import(
-        "@/lib/coaching/growth/trigger-growth-reconcile"
-      );
-      for (const enrollmentId of attentionIds) {
-        void triggerGrowthReconcileBestEffort({
-          enrollmentId,
-          ownerMemberId: memberId,
-          logDate,
-          forceCoachAttention: true,
-        });
-      }
+      void import("@/lib/coaching/growth/trigger-growth-reconcile").then(({ triggerGrowthReconcileBestEffort }) => {
+        for (const enrollmentId of attentionIds) {
+          void triggerGrowthReconcileBestEffort({
+            enrollmentId,
+            ownerMemberId: memberId,
+            logDate,
+            forceCoachAttention: true,
+          });
+        }
+      });
     }
 
-    return NextResponse.json({
-      ok: true,
-      ...result,
-      audit,
-    });
+    return response;
   } catch (error) {
     const message = toCoachingApiErrorMessage(error, "Failed to load coaching command center.");
     const status = error instanceof CoachingServiceError ? error.status : 500;

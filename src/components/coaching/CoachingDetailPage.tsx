@@ -98,20 +98,33 @@ export default function CoachingDetailPage({
   const [showAiDetails, setShowAiDetails] = useState(false);
   const [showOutcomeDetails, setShowOutcomeDetails] = useState(false);
   const [showPhotos, setShowPhotos] = useState(false);
+  const [loadSecondaryPanels, setLoadSecondaryPanels] = useState(false);
+  const [progressPhotoCount, setProgressPhotoCount] = useState(0);
   const recentDates = useMemo(() => listCoachingRecentLogDates(), []);
 
-  const reload = async (selectedLogDate = logDate) => {
+  const reload = async (selectedLogDate = logDate, options?: { includePhotos?: boolean }) => {
     setLoading(true);
     setError(null);
     try {
+      const params = new URLSearchParams({ logDate: selectedLogDate });
+      if (options?.includePhotos) params.set("includePhotos", "1");
       const response = await fetchCoachingWithMemberAuth(
-        `/api/coaching/enrollments/${encodeURIComponent(enrollmentId)}?logDate=${encodeURIComponent(selectedLogDate)}`,
+        `/api/coaching/enrollments/${encodeURIComponent(enrollmentId)}?${params.toString()}`,
       );
-      const data = (await response.json()) as DetailPayload & { ok?: boolean; error?: string };
+      const data = (await response.json()) as DetailPayload & {
+        ok?: boolean;
+        error?: string;
+        progressPhotoCount?: number;
+      };
       if (!response.ok || !data.ok) {
         throw new Error(data.error ?? "無法載入陪跑詳情");
       }
       setPayload(data);
+      if (typeof data.progressPhotoCount === "number") {
+        setProgressPhotoCount(data.progressPhotoCount);
+      } else {
+        setProgressPhotoCount(data.progressPhotos?.length ?? 0);
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "無法載入陪跑詳情");
     } finally {
@@ -123,6 +136,13 @@ export default function CoachingDetailPage({
     void reload(logDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enrollmentId, logDate]);
+
+  useEffect(() => {
+    if (!payload || tab !== "overview") return;
+    // First paint hero first; secondary panels start after a short defer.
+    const timer = window.setTimeout(() => setLoadSecondaryPanels(true), 0);
+    return () => window.clearTimeout(timer);
+  }, [payload, tab]);
 
   const bodyRecords = payload?.bodyRecords ?? [];
   const comparison = useMemo(() => compareBodyRecords(bodyRecords), [bodyRecords]);
@@ -304,7 +324,11 @@ export default function CoachingDetailPage({
             </Link>
           </CrmCard>
 
-          <CoachingCoachActionPanel enrollmentId={enrollmentId} reasonCodes={reasonCodes} />
+          {loadSecondaryPanels ? (
+            <CoachingCoachActionPanel enrollmentId={enrollmentId} reasonCodes={reasonCodes} />
+          ) : (
+            <p className="text-[0.8125rem] text-[#86868b]">教練處理紀錄載入中…</p>
+          )}
 
           <CrmCard className="space-y-4">
             <CrmSectionTitle>{coachingRelativeDayLabel(logDate)}回報</CrmSectionTitle>
@@ -499,26 +523,40 @@ export default function CoachingDetailPage({
             ) : null}
           </CrmCard>
 
-          <CoachingGrowthPanel enrollmentId={enrollmentId} logDate={logDate} />
+          {loadSecondaryPanels ? (
+            <CoachingGrowthPanel enrollmentId={enrollmentId} logDate={logDate} />
+          ) : (
+            <p className="text-[0.8125rem] text-[#86868b]">成果與分享機會載入中…</p>
+          )}
 
-          {progressPhotos.some((photo) => photo.imageDataUrl) ? (
+          {progressPhotoCount > 0 ? (
             <CrmCard className="space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <CrmSectionTitle>體態照片</CrmSectionTitle>
                 <button
                   type="button"
                   className="text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]"
-                  onClick={() => setShowPhotos((v) => !v)}
+                  onClick={() => {
+                    const next = !showPhotos;
+                    setShowPhotos(next);
+                    if (next && !progressPhotos.some((photo) => photo.imageDataUrl)) {
+                      void reload(logDate, { includePhotos: true });
+                    }
+                  }}
                 >
                   {showPhotos ? "收合" : "查看"}
                 </button>
               </div>
               {showPhotos ? (
-                <CustomerPhotoCompareSection
-                  customerName={customerDisplayName}
-                  photos={progressPhotos.filter((photo) => photo.imageDataUrl)}
-                  readOnly
-                />
+                progressPhotos.some((photo) => photo.imageDataUrl) ? (
+                  <CustomerPhotoCompareSection
+                    customerName={customerDisplayName}
+                    photos={progressPhotos.filter((photo) => photo.imageDataUrl)}
+                    readOnly
+                  />
+                ) : (
+                  <p className="text-[0.875rem] text-[#86868b]">照片載入中…</p>
+                )
               ) : null}
             </CrmCard>
           ) : null}

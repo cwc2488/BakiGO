@@ -30,10 +30,11 @@ export function buildDailyFollowUpSnapshot(
   }
 
   const repo = createCustomerRepository(storage);
+  const bodyByCustomer = repo.getBodyRecordsGroupedByCustomer();
   const items = repo
     .getCustomersByOwner(memberId)
     .flatMap((customer) => {
-      const records = repo.getBodyRecordsByCustomer(customer.id);
+      const records = bodyByCustomer.get(customer.id) ?? [];
       const hints = buildCustomerFollowUpHints(customer, records, today);
       const topHint = hints.sort(
         (left, right) => URGENCY_RANK[left.urgency] - URGENCY_RANK[right.urgency],

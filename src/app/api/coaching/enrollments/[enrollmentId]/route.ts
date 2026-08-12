@@ -8,7 +8,6 @@ import {
   createSignedCoachingPhotoUrl,
   getCoachingDailyLogDetail,
   getCoachingEnrollmentForCoach,
-  listCoachingDailyLogsForEnrollment,
   serializeCoachingDailyLogDetail,
   serializeCoachingEnrollment,
   updateCoachingEnrollment,
@@ -34,87 +33,105 @@ export async function GET(
     const { enrollmentId } = await context.params;
     const url = new URL(request.url);
     const logDate = url.searchParams.get("logDate") ?? coachingTodayLogDate();
+    const includePhotos = url.searchParams.get("includePhotos") === "1";
 
     const enrollment = await getCoachingEnrollmentForCoach({
       enrollmentId,
       ownerMemberId: memberId,
     });
 
-    const dailyLog = await getCoachingDailyLogDetail({
-      enrollmentId,
-      logDate,
-      ownerMemberId: memberId,
-    });
-
-    const recentLogs = await listCoachingDailyLogsForEnrollment({
-      enrollmentId,
-      ownerMemberId: memberId,
-      limit: 14,
-    });
-
     const supabase = createSupabaseServiceClient();
-    const { data: bodyRecords, error: bodyError } = await supabase
-      .from("body_composition_records")
-      .select("*")
-      .eq("customer_id", enrollment.customerId)
-      .order("record_date", { ascending: false });
-
-    if (bodyError) {
-      throw new CoachingServiceError(bodyError.message, 500);
-    }
-
-    const { data: progressPhotos, error: photoError } = await supabase
-      .from("customer_progress_photos")
-      .select("id, customer_id, phase, angle, photo_date, image_data_url, note, created_at, updated_at")
-      .eq("customer_id", enrollment.customerId)
-      .order("photo_date", { ascending: false });
-
-    if (photoError) {
-      throw new CoachingServiceError(photoError.message, 500);
-    }
-
-    const { data: customer, error: customerError } = await supabase
-      .from("customers")
-      .select("display_name")
-      .eq("id", enrollment.customerId)
-      .maybeSingle();
-
-    if (customerError) {
-      throw new CoachingServiceError(customerError.message, 500);
-    }
-
-    const dailyLogWithSignedUrls = await attachSignedMealPhotoUrls(dailyLog);
-    const recentLogsWithSignedUrls = await Promise.all(recentLogs.map(attachSignedMealPhotoUrls));
 
     const { getCoachingAiOutputForDay, listCoachingAiOutputsForEnrollment } = await import(
       "@/lib/coaching/ai/coaching-ai-store"
     );
 
-    let aiOutput = null;
-    let historicalTomorrowFocus: Array<{ logDate: string; tomorrowFocus: string }> = [];
-    try {
-      aiOutput = await getCoachingAiOutputForDay({ enrollmentId, logDate });
-      const priorOutputs = await listCoachingAiOutputsForEnrollment({ enrollmentId, limit: 7 });
-      historicalTomorrowFocus = priorOutputs
-        .filter((output) => output.status === "completed" && output.outputJson && output.logDate < logDate)
-        .slice(0, 5)
-        .map((output) => ({
-          logDate: output.logDate,
-          tomorrowFocus: output.outputJson!.customer.tomorrow_focus,
-        }));
-    } catch {
-      aiOutput = null;
-      historicalTomorrowFocus = [];
+    const photoQuery = includePhotos
+      ? supabase
+          .from("customer_progress_photos")
+          .select("id, customer_id, phase, angle, photo_date, image_data_url, note, created_at, updated_at")
+          .eq("customer_id", enrollment.customerId)
+          .order("photo_date", { ascending: false })
+      : supabase
+          .from("customer_progress_photos")
+          .select("id, customer_id, phase, angle, photo_date, note, created_at, updated_at")
+          .eq("customer_id", enrollment.customerId)
+          .order("photo_date", { ascending: false });
+
+    // After enrollment: parallelize first-screen dependencies.
+    // Skip unused recentLogs + signed-URL fan-out (was blocking bootstrap).
+    const [dailyLog, bodyResult, photoResult, customerResult, aiBundle] = await Promise.all([
+      getCoachingDailyLogDetail({
+        enrollmentId,
+        logDate,
+        ownerMemberId: memberId,
+      }),
+      supabase
+        .from("body_composition_records")
+        .select("*")
+        .eq("customer_id", enrollment.customerId)
+        .order("record_date", { ascending: false }),
+      photoQuery,
+      supabase
+        .from("customers")
+        .select("display_name")
+        .eq("id", enrollment.customerId)
+        .maybeSingle(),
+      (async () => {
+        try {
+          const [aiOutput, priorOutputs] = await Promise.all([
+            getCoachingAiOutputForDay({ enrollmentId, logDate }),
+            listCoachingAiOutputsForEnrollment({ enrollmentId, limit: 7 }),
+          ]);
+          const historicalTomorrowFocus = priorOutputs
+            .filter(
+              (output) =>
+                output.status === "completed" && output.outputJson && output.logDate < logDate,
+            )
+            .slice(0, 5)
+            .map((output) => ({
+              logDate: output.logDate,
+              tomorrowFocus: output.outputJson!.customer.tomorrow_focus,
+            }));
+          return { aiOutput, historicalTomorrowFocus };
+        } catch {
+          return { aiOutput: null, historicalTomorrowFocus: [] as Array<{ logDate: string; tomorrowFocus: string }> };
+        }
+      })(),
+    ]);
+
+    if (bodyResult.error) {
+      throw new CoachingServiceError(bodyResult.error.message, 500);
     }
+    if (photoResult.error) {
+      throw new CoachingServiceError(photoResult.error.message, 500);
+    }
+    if (customerResult.error) {
+      throw new CoachingServiceError(customerResult.error.message, 500);
+    }
+
+    const dailyLogWithSignedUrls = await attachSignedMealPhotoUrls(dailyLog);
+    const { aiOutput, historicalTomorrowFocus } = aiBundle;
 
     return NextResponse.json({
       ok: true,
+      bootstrap: {
+        includesRecentLogs: false,
+        includesProgressPhotoBytes: includePhotos,
+        secondaryPanelsDeferred: true,
+      },
       enrollment: serializeCoachingEnrollment(enrollment),
-      customerDisplayName: customer?.display_name ? String(customer.display_name) : "顧客",
+      customerDisplayName: customerResult.data?.display_name
+        ? String(customerResult.data.display_name)
+        : "顧客",
       dailyLog: dailyLogWithSignedUrls,
-      recentLogs: recentLogsWithSignedUrls,
-      bodyRecords: (bodyRecords ?? []).map(mapBodyRecordRow),
-      progressPhotos: (progressPhotos ?? []).map(mapProgressPhotoRow),
+      // Kept for API compatibility; Detail overview does not use this payload.
+      recentLogs: [],
+      bodyRecords: (bodyResult.data ?? []).map(mapBodyRecordRow),
+      progressPhotos: (photoResult.data ?? []).map((row) =>
+        mapProgressPhotoRow(row as Record<string, unknown>, includePhotos),
+      ),
+      progressPhotoCount: (photoResult.data ?? []).length,
       aiOutput: aiOutput
         ? {
             status: aiOutput.status,
@@ -216,14 +233,17 @@ function mapBodyRecordRow(row: Record<string, unknown>): BodyCompositionRecord {
   };
 }
 
-function mapProgressPhotoRow(row: Record<string, unknown>): CustomerProgressPhoto {
+function mapProgressPhotoRow(
+  row: Record<string, unknown>,
+  includeBytes: boolean,
+): CustomerProgressPhoto {
   return {
     id: String(row.id),
     customerId: String(row.customer_id ?? ""),
     phase: row.phase as CustomerProgressPhoto["phase"],
     angle: row.angle as CustomerProgressPhoto["angle"],
     photoDate: String(row.photo_date),
-    imageDataUrl: row.image_data_url ? String(row.image_data_url) : null,
+    imageDataUrl: includeBytes && row.image_data_url ? String(row.image_data_url) : null,
     note: row.note ? String(row.note) : undefined,
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),

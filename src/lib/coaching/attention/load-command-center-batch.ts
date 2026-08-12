@@ -23,6 +23,7 @@ export type CommandCenterQueryAudit = {
   queries: string[];
   nPlusOne: false;
   openaiCalled: false;
+  parallelBatch: true;
 };
 
 function mapMealEntryLight(row: Record<string, unknown>): CoachingMealEntryWithPhoto {
@@ -78,11 +79,7 @@ function pickLatestCompletedAiByEnrollment(
  * Batch Command Center loader.
  * Fixed query plan (no per-customer round trips):
  * 1) active enrollments for owner
- * 2) customers identity (+ phone)
- * 3) daily logs + meals in rolling window
- * 4) AI outputs in rolling window (pick latest completed per enrollment)
- * 5) body composition records for those customers
- * 6) recent coach actions (Phase 3d ack / suppress)
+ * 2–6) customers / logs / AI / body / coach-actions in parallel
  */
 export async function loadCoachingCommandCenter(input: {
   ownerMemberId: string;
@@ -94,6 +91,7 @@ export async function loadCoachingCommandCenter(input: {
     queries: [],
     nPlusOne: false,
     openaiCalled: false,
+    parallelBatch: true,
   };
 
   const enrollments = await listActiveCoachingEnrollments(input.ownerMemberId);
@@ -119,20 +117,71 @@ export async function loadCoachingCommandCenter(input: {
     input.asOfLogDate,
     COACHING_NON_REPORTING_POLICY.rollingWindowDays,
   );
+  const sinceIso = new Date(
+    Date.parse(`${input.asOfLogDate}T12:00:00.000+08:00`) - 7 * 24 * 60 * 60 * 1000,
+  ).toISOString();
 
-  const { data: customers, error: customersError } = await supabase
-    .from("customers")
-    .select("id, display_name, phone")
-    .in("id", customerIds)
-    .eq("owner_member_id", input.ownerMemberId);
-  audit.queryCount += 1;
-  audit.queries.push("customers.by_owner_ids");
-  if (customersError) {
-    throw new CoachingServiceError(customersError.message, 500);
+  const [customersResult, logsResult, aiResult, bodyResult, actionsByEnrollment] = await Promise.all([
+    supabase
+      .from("customers")
+      .select("id, display_name, phone")
+      .in("id", customerIds)
+      .eq("owner_member_id", input.ownerMemberId),
+    supabase
+      .from("coaching_daily_logs")
+      .select(
+        `
+      *,
+      coaching_meal_entries (*)
+    `,
+      )
+      .eq("owner_member_id", input.ownerMemberId)
+      .in("enrollment_id", enrollmentIds)
+      .gte("log_date", windowStart)
+      .lte("log_date", input.asOfLogDate)
+      .order("log_date", { ascending: false }),
+    supabase
+      .from("coaching_ai_outputs")
+      .select("*")
+      .eq("owner_member_id", input.ownerMemberId)
+      .in("enrollment_id", enrollmentIds)
+      .eq("point_key", COACHING_AI_POINT_KEY)
+      .gte("log_date", windowStart)
+      .lte("log_date", input.asOfLogDate)
+      .order("log_date", { ascending: false }),
+    supabase
+      .from("body_composition_records")
+      .select("*")
+      .in("customer_id", customerIds)
+      .order("record_date", { ascending: false }),
+    listRecentCoachActionsForEnrollments({
+      ownerMemberId: input.ownerMemberId,
+      enrollmentIds,
+      sinceIso,
+    }),
+  ]);
+
+  audit.queryCount += 5;
+  audit.queries.push(
+    "customers.by_owner_ids",
+    "coaching_daily_logs.window_with_meals",
+    "coaching_ai_outputs.window",
+    "body_composition_records.by_customers",
+    "coaching_coach_actions.recent_by_enrollments",
+  );
+
+  if (customersResult.error) {
+    throw new CoachingServiceError(customersResult.error.message, 500);
+  }
+  if (logsResult.error) {
+    throw new CoachingServiceError(logsResult.error.message, 500);
+  }
+  if (bodyResult.error) {
+    throw new CoachingServiceError(bodyResult.error.message, 500);
   }
 
   const customerById = new Map(
-    (customers ?? []).map((row) => [
+    (customersResult.data ?? []).map((row) => [
       String(row.id),
       {
         displayName: String(row.display_name ?? "顧客"),
@@ -141,27 +190,8 @@ export async function loadCoachingCommandCenter(input: {
     ]),
   );
 
-  const { data: logRows, error: logsError } = await supabase
-    .from("coaching_daily_logs")
-    .select(
-      `
-      *,
-      coaching_meal_entries (*)
-    `,
-    )
-    .eq("owner_member_id", input.ownerMemberId)
-    .in("enrollment_id", enrollmentIds)
-    .gte("log_date", windowStart)
-    .lte("log_date", input.asOfLogDate)
-    .order("log_date", { ascending: false });
-  audit.queryCount += 1;
-  audit.queries.push("coaching_daily_logs.window_with_meals");
-  if (logsError) {
-    throw new CoachingServiceError(logsError.message, 500);
-  }
-
   const logsByEnrollment = new Map<string, CoachingDailyLogDetail[]>();
-  for (const row of logRows ?? []) {
+  for (const row of logsResult.data ?? []) {
     const mapped = mapDailyLogLight(row as Record<string, unknown>);
     const list = logsByEnrollment.get(mapped.enrollmentId) ?? [];
     list.push(mapped);
@@ -169,58 +199,21 @@ export async function loadCoachingCommandCenter(input: {
   }
 
   let aiRows: CoachingAiOutputRecord[] = [];
-  try {
-    const { data: aiData, error: aiError } = await supabase
-      .from("coaching_ai_outputs")
-      .select("*")
-      .eq("owner_member_id", input.ownerMemberId)
-      .in("enrollment_id", enrollmentIds)
-      .eq("point_key", COACHING_AI_POINT_KEY)
-      .gte("log_date", windowStart)
-      .lte("log_date", input.asOfLogDate)
-      .order("log_date", { ascending: false });
-    audit.queryCount += 1;
-    audit.queries.push("coaching_ai_outputs.window");
-    if (aiError) {
-      throw aiError;
-    }
-    aiRows = (aiData ?? []).map((row) => mapCoachingAiOutputRow(row as Record<string, unknown>));
-  } catch {
-    audit.queryCount += 1;
-    audit.queries.push("coaching_ai_outputs.window_failed_soft");
-    aiRows = [];
+  if (aiResult.error) {
+    audit.queries[audit.queries.indexOf("coaching_ai_outputs.window")] =
+      "coaching_ai_outputs.window_failed_soft";
+  } else {
+    aiRows = (aiResult.data ?? []).map((row) => mapCoachingAiOutputRow(row as Record<string, unknown>));
   }
   const latestAiByEnrollment = pickLatestCompletedAiByEnrollment(aiRows);
 
-  const { data: bodyRows, error: bodyError } = await supabase
-    .from("body_composition_records")
-    .select("*")
-    .in("customer_id", customerIds)
-    .order("record_date", { ascending: false });
-  audit.queryCount += 1;
-  audit.queries.push("body_composition_records.by_customers");
-  if (bodyError) {
-    throw new CoachingServiceError(bodyError.message, 500);
-  }
-
   const bodyByCustomer = new Map<string, BodyCompositionRecord[]>();
-  for (const row of bodyRows ?? []) {
+  for (const row of bodyResult.data ?? []) {
     const mapped = mapBodyRecordRow(row as Record<string, unknown>);
     const list = bodyByCustomer.get(mapped.customerId) ?? [];
     list.push(mapped);
     bodyByCustomer.set(mapped.customerId, list);
   }
-
-  const sinceIso = new Date(
-    Date.parse(`${input.asOfLogDate}T12:00:00.000+08:00`) - 7 * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  const actionsByEnrollment = await listRecentCoachActionsForEnrollments({
-    ownerMemberId: input.ownerMemberId,
-    enrollmentIds,
-    sinceIso,
-  });
-  audit.queryCount += 1;
-  audit.queries.push("coaching_coach_actions.recent_by_enrollments");
 
   const batchCustomers: CommandCenterBatchCustomer[] = enrollments.map((enrollment) => {
     const identity = customerById.get(enrollment.customerId);

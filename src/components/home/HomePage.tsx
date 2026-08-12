@@ -25,7 +25,7 @@ import { getCurrentMember, getCurrentSession } from "@/lib/auth/auth-service";
 import { buildViewerCloudOrganizationSnapshot } from "@/lib/cloud/build-cloud-organization-tree";
 import { fetchCloudOrganizationData } from "@/lib/cloud/cloud-member-service";
 import { fetchDownlineCloudData } from "@/lib/cloud/downline-cloud-data";
-import { syncCloudMembersToLocalStorage } from "@/lib/cloud/sync-cloud-members-to-local";
+import { replaceLocalMembersFromCloud } from "@/lib/cloud/sync-cloud-members-to-local";
 import { getMemberProfileIdentity, todayISODate } from "@/lib/config/app-config";
 import { collectDownlineRefsFromTree } from "@/lib/organization/collect-downline-by-depth";
 import { recalculateMemberMetrics } from "@/lib/services/recalculate-member-metrics";
@@ -256,8 +256,9 @@ export default function HomePage() {
           return;
         }
 
-        await syncCloudMembersToLocalStorage(storage);
+        // One org pull — sync members + build downline snapshot from the same payload.
         const { members: cloudMembers, relationships } = await fetchCloudOrganizationData();
+        await replaceLocalMembersFromCloud(storage, cloudMembers);
         const viewerCloud = cloudMembers.find((member) => member.id === session.memberId);
         if (!viewerCloud) {
           downlineCloudSyncedRef.current = true;

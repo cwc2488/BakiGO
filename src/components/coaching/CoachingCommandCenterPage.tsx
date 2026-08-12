@@ -278,7 +278,13 @@ export default function CoachingCommandCenterPage() {
         </div>
       </CrmCard>
 
-      {loading ? <p className="text-[0.9375rem] text-[#86868b]">載入中…</p> : null}
+      {loading ? (
+        <div className="space-y-3" aria-busy="true" aria-label="載入陪跑指揮中心">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-32 animate-pulse rounded-[1.25rem] bg-[#f0f1ef]" />
+          ))}
+        </div>
+      ) : null}
       {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
 
       {!loading && !error && counts?.total === 0 ? (

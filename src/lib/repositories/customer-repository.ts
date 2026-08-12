@@ -52,6 +52,8 @@ export interface CustomerRepository {
   deleteCustomer(customerId: EntityId): void;
   getAllBodyRecords(): BodyCompositionRecord[];
   getBodyRecordsByCustomer(customerId: EntityId): BodyCompositionRecord[];
+  /** One parse + group — use for list/follow-up to avoid O(customers) full scans. */
+  getBodyRecordsGroupedByCustomer(): Map<EntityId, BodyCompositionRecord[]>;
   createBodyRecord(input: BodyCompositionRecordCreateInput): BodyCompositionRecord;
   deleteBodyRecord(recordId: EntityId): void;
   getAllProgressPhotos(): CustomerProgressPhoto[];
@@ -193,6 +195,20 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
     return this.getAllBodyRecords()
       .filter((record) => record.customerId === customerId)
       .sort((left, right) => right.recordDate.localeCompare(left.recordDate));
+  }
+
+  getBodyRecordsGroupedByCustomer(): Map<EntityId, BodyCompositionRecord[]> {
+    const grouped = new Map<EntityId, BodyCompositionRecord[]>();
+    for (const record of this.getAllBodyRecords()) {
+      const list = grouped.get(record.customerId) ?? [];
+      list.push(record);
+      grouped.set(record.customerId, list);
+    }
+    for (const [customerId, list] of grouped) {
+      list.sort((left, right) => right.recordDate.localeCompare(left.recordDate));
+      grouped.set(customerId, list);
+    }
+    return grouped;
   }
 
   createBodyRecord(input: BodyCompositionRecordCreateInput): BodyCompositionRecord {
