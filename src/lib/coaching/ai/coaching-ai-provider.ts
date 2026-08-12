@@ -256,6 +256,7 @@ export class OpenAiCoachingAiProvider implements CoachingAiProvider {
     const output = applyCoachingDecisionContextToOutput(
       parseDailyCoachProviderJson(upstream.rawJson),
       input.decisionContext,
+      { generationInput: input.generationInput },
     );
 
     return {

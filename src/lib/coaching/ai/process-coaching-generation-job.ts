@@ -185,7 +185,9 @@ export async function processCoachingGenerationJob(
       persistTelemetry: true,
     });
 
-    const outputJson = applyCoachingDecisionContextToOutput(result.output, decisionContext);
+    const outputJson = applyCoachingDecisionContextToOutput(result.output, decisionContext, {
+      generationInput: loaded.generationInput,
+    });
 
     await markCoachingAiOutputCompleted({
       outputId: outputRow.id,

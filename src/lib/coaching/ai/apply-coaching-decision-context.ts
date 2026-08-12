@@ -2,8 +2,13 @@ import {
   dailyNutritionAssessmentCustomerLabel,
 } from "@/lib/coaching/ai/assess-daily-nutrition";
 import { applyMealFollowUpBudgetToOutput } from "@/lib/coaching/ai/meal-follow-up-budget";
-import type { CoachingDailyGenerationOutputJson } from "@/types/coaching-ai";
+import type { CoachingDailyGenerationOutputJson, CoachingGenerationInput } from "@/types/coaching-ai";
 import type { CoachingDecisionContext, CoachingPriority } from "@/types/coaching-signals";
+import type { CoachingRelevantCoachActionContext } from "@/types/coaching-coach-actions";
+import {
+  buildRelevantCoachActionContext,
+  relevantCoachActionContextAsOfIso,
+} from "@/lib/coaching/coach-actions/build-relevant-coach-action-context";
 
 function formatEvidenceValue(value: string | number | boolean | null): string {
   if (value == null) {
@@ -269,6 +274,71 @@ function buildDeterministicFollowUps(decision: CoachingDecisionContext): Array<{
   return followUps.slice(0, 4);
 }
 
+
+function flattenForKnownContext(output: CoachingDailyGenerationOutputJson): string {
+  return [
+    output.coach.daily_summary,
+    output.coach.attention_reason ?? "",
+    ...(output.coach.evidence ?? []),
+    output.customer.today_feedback,
+    output.customer.tomorrow_focus,
+    output.customer.follow_up_for_tomorrow ?? "",
+    ...output.customer.adjustment_priorities,
+    output.customer.lifestyle_feedback.sleep ?? "",
+  ].join("\n");
+}
+
+/**
+ * System-owned Known Context carry-forward.
+ * Reuses Coach Action note text (general) — never injects scenario-specific keywords.
+ */
+export function ensureRelevantCoachActionContextWording(
+  output: CoachingDailyGenerationOutputJson,
+  relevant: CoachingRelevantCoachActionContext,
+): CoachingDailyGenerationOutputJson {
+  if (relevant.knownContexts.length === 0) {
+    return output;
+  }
+
+  const blob = flattenForKnownContext(output);
+  const missing = relevant.knownContexts.filter((item) => {
+    if (item.distinctiveFragments.length === 0) return false;
+    return !item.distinctiveFragments.some((fragment) => blob.includes(fragment));
+  });
+  if (missing.length === 0) {
+    return output;
+  }
+
+  const knownSentence = missing
+    .map((item) => item.note.trim().replace(/[。．.]+$/u, ""))
+    .filter(Boolean)
+    .join("；");
+  if (!knownSentence) {
+    return output;
+  }
+
+  const coachCarry = `已知：${knownSentence}。後續以延續觀察為主，不再重新確認同一原因。`;
+  const customerCarry = `${knownSentence}，這段時間先觀察能不能把節奏稍微往前。`;
+
+  return {
+    ...output,
+    customer: {
+      ...output.customer,
+      today_feedback: `${customerCarry}${output.customer.today_feedback}`.trim(),
+      lifestyle_feedback: {
+        ...output.customer.lifestyle_feedback,
+        sleep: output.customer.lifestyle_feedback.sleep?.trim()
+          ? `${customerCarry}${output.customer.lifestyle_feedback.sleep}`
+          : customerCarry,
+      },
+    },
+    coach: {
+      ...output.coach,
+      daily_summary: `${coachCarry}${output.coach.daily_summary}`.trim(),
+    },
+  };
+}
+
 /**
  * System-owned fields are forced from CoachingDecisionContext.
  * AI wording is kept only when it stays on the deterministic subject.
@@ -276,6 +346,7 @@ function buildDeterministicFollowUps(decision: CoachingDecisionContext): Array<{
 export function applyCoachingDecisionContextToOutput(
   output: CoachingDailyGenerationOutputJson,
   decision: CoachingDecisionContext,
+  options?: { generationInput?: CoachingGenerationInput | null },
 ): CoachingDailyGenerationOutputJson {
   const priorities = decision.priorities;
   const adjustment_priorities = alignAdjustmentPriorities(
@@ -343,5 +414,15 @@ export function applyCoachingDecisionContextToOutput(
     },
   };
 
-  return applyMealFollowUpBudgetToOutput(withSystemFields, decision);
+  const withMealBudget = applyMealFollowUpBudgetToOutput(withSystemFields, decision);
+  const generationInput = options?.generationInput ?? null;
+  if (!generationInput) {
+    return withMealBudget;
+  }
+  const relevant = buildRelevantCoachActionContext({
+    memory: generationInput.recentCoachActionMemory,
+    decisionContext: decision,
+    asOfIso: relevantCoachActionContextAsOfIso(generationInput.logDate),
+  });
+  return ensureRelevantCoachActionContextWording(withMealBudget, relevant);
 }

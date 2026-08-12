@@ -6,6 +6,8 @@ import { BodyCompositionTrendCharts } from "@/components/customers/BodyCompositi
 import { CustomerPhotoCompareSection } from "@/components/customers/CustomerPhotoCompareSection";
 import { CrmButton, CrmCard, CrmField, CrmSectionTitle } from "@/components/members/ui";
 import { PageShell } from "@/components/ui/PageShell";
+import CoachingCoachActionPanel from "@/components/coaching/CoachingCoachActionPanel";
+import CoachingTimelinePanel from "@/components/coaching/CoachingTimelinePanel";
 import { compareBodyRecords } from "@/lib/customers/body-composition-compare";
 import { buildCoachingProgressView } from "@/lib/coaching/build-coaching-progress-view";
 import { formatSleepTimeRange } from "@/lib/coaching/coaching-sleep";
@@ -77,12 +79,23 @@ function formatInterventionLevel(level: string | null | undefined): string {
   return "—";
 }
 
-export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: string }) {
+export default function CoachingDetailPage({
+  enrollmentId,
+  initialTab = "overview",
+  focusDates = [],
+  reasonCodes = [],
+}: {
+  enrollmentId: string;
+  initialTab?: "overview" | "timeline";
+  focusDates?: string[];
+  reasonCodes?: string[];
+}) {
   const [payload, setPayload] = useState<DetailPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [logDate, setLogDate] = useState(coachingTodayLogDate());
+  const [tab, setTab] = useState<"overview" | "timeline">(initialTab);
   const recentDates = useMemo(() => listCoachingRecentLogDates(), []);
 
   const reload = async (selectedLogDate = logDate) => {
@@ -183,7 +196,36 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
       {loading ? <p className="text-[0.9375rem] text-[#86868b]">載入中…</p> : null}
       {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
 
-      {payload ? (
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className={`min-h-10 flex-1 rounded-full px-3 text-[0.875rem] font-medium ${
+            tab === "overview" ? "bg-[#1d1d1f] text-white" : "bg-[#f3f4f1] text-[#636366]"
+          }`}
+          onClick={() => setTab("overview")}
+        >
+          總覽
+        </button>
+        <button
+          type="button"
+          className={`min-h-10 flex-1 rounded-full px-3 text-[0.875rem] font-medium ${
+            tab === "timeline" ? "bg-[#1d1d1f] text-white" : "bg-[#f3f4f1] text-[#636366]"
+          }`}
+          onClick={() => setTab("timeline")}
+        >
+          歷史紀錄
+        </button>
+      </div>
+
+      {tab === "timeline" ? (
+        <CoachingTimelinePanel
+          enrollmentId={enrollmentId}
+          focusDates={focusDates}
+          reasonCodes={reasonCodes}
+        />
+      ) : null}
+
+      {payload && tab === "overview" ? (
         <div className="space-y-5">
           <CrmCard className="space-y-4">
             <CrmSectionTitle>{customerDisplayName}</CrmSectionTitle>
@@ -239,6 +281,8 @@ export default function CoachingDetailPage({ enrollmentId }: { enrollmentId: str
               前往顧客詳情 →
             </Link>
           </CrmCard>
+
+          <CoachingCoachActionPanel enrollmentId={enrollmentId} reasonCodes={reasonCodes} />
 
           <CrmCard className="space-y-4">
             <CrmSectionTitle>{coachingRelativeDayLabel(logDate)}回報</CrmSectionTitle>

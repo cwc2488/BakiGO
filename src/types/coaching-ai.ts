@@ -220,6 +220,8 @@ export type CoachingGenerationInput = {
   rollingMemory: CoachingRollingMemory;
   outcomeMemory: CoachingOutcomeMemory;
   coachDirectives: CoachingCoachDirectivesMemory | null;
+  /** Phase 3d — Coach Action Memory (context only; never overrides outcome/intervention). */
+  recentCoachActionMemory: import("@/types/coaching-coach-actions").CoachingRecentCoachActionMemory | null;
   todayContext: CoachingGenerationTodayContext;
   priorAiContext: CoachingPriorAiContext | null;
   interventionContext: CoachingInterventionContext;

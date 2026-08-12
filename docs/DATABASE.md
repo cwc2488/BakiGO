@@ -180,6 +180,30 @@ Member (coach)
 
 **Reuse:** `customers`, `members`, `customer_portal_tokens`, `body_composition_records`, `customer_progress_photos` (read-only in coach detail).
 
+### AI Coaching Phase 3d — Coach Action Memory
+
+**Status:** Applied migration `031_coaching_coach_actions.sql`. Coach-only internal memory.
+
+| Table | Purpose |
+|-------|---------|
+| `coaching_coach_actions` | Coach acknowledgement / note / follow_up with reason codes + evidence refs |
+
+**Distinct from** `coaching_coach_directives` (plan focus). Actions feed Timeline (`coach_action`), Attention suppression (48h same-reason), and `GenerationInput.recentCoachActionMemory`.
+
+**RLS:** authenticated SELECT/INSERT/UPDATE own `owner_member_id` only. No DELETE. Customer anon: no access.
+
+**Materiality:** `is_material=true` when note has content → affects generation fingerprint; empty acknowledgement does not.
+
+### AI Coaching Phase 3a — Attention Engine (derive-only)
+
+**Status:** Deterministic engine in code; Coach Action persistence landed in Phase 3d (`031`).
+
+| Concern | Approach |
+|---------|----------|
+| Attention tier / ranking | Derive at read time from AI outputs, signals, outcome, rolling memory |
+| Coach Action Memory | `coaching_coach_actions` (Phase 3d) |
+| Timeline events | **Derive** from daily logs / AI outputs / body records / coach actions — no duplicate event table |
+
 ## Migrations
 
 - All schema changes go through versioned migrations.

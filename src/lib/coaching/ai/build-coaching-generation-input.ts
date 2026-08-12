@@ -77,6 +77,7 @@ export function buildCoachingGenerationInput(input: {
   recentLogs: CoachingDailyLogDetail[];
   bodyRecords: BodyCompositionRecord[];
   coachDirectives?: Parameters<typeof mapCoachDirectivesRecord>[0];
+  recentCoachActionMemory?: import("@/types/coaching-coach-actions").CoachingRecentCoachActionMemory | null;
   priorCompletedOutputs?: PriorAiOutputCandidate[];
   photoCandidates?: CoachingMealPhotoCandidate[];
   builtAt?: string;
@@ -108,6 +109,7 @@ export function buildCoachingGenerationInput(input: {
     rollingMemory: snapshot.rollingMemory,
     outcomeMemory: snapshot.outcomeMemory,
     coachDirectives: snapshot.coachDirectives,
+    recentCoachActionMemory: input.recentCoachActionMemory ?? null,
     todayContext: buildGenerationTodayContext(input.todayLog, {
       photoCandidates: input.photoCandidates,
     }),

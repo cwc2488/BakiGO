@@ -1,5 +1,5 @@
-import CoachingDashboardPage from "@/components/coaching/CoachingDashboardPage";
+import CoachingCommandCenterPage from "@/components/coaching/CoachingCommandCenterPage";
 
-export default function CoachingRoutePage() {
-  return <CoachingDashboardPage />;
+export default function CoachingPage() {
+  return <CoachingCommandCenterPage />;
 }

@@ -4,6 +4,8 @@ import {
   listCoachingAiOutputsForEnrollment,
 } from "@/lib/coaching/ai/coaching-ai-store";
 import { extractCoachingMealPhotoCandidates } from "@/lib/coaching/ai/select-coaching-photos-for-generation";
+import { buildRecentCoachActionMemory } from "@/lib/coaching/coach-actions/build-recent-coach-action-memory";
+import { listCoachingCoachActionsForEnrollment } from "@/lib/coaching/coach-actions/coaching-coach-action-service";
 import {
   getCoachingDailyLogDetail,
   getCoachingEnrollmentForCoach,
@@ -100,6 +102,12 @@ export async function loadAuthoritativeCoachingGenerationInput(input: {
     enrollmentId: enrollment.id,
     limit: 14,
   });
+  const coachActions = await listCoachingCoachActionsForEnrollment({
+    enrollmentId: enrollment.id,
+    ownerMemberId: enrollment.ownerMemberId,
+    limit: 20,
+  });
+  const recentCoachActionMemory = buildRecentCoachActionMemory(coachActions);
 
   const photoCandidates = extractCoachingMealPhotoCandidates(todayLog);
   const generationInput = buildCoachingGenerationInput({
@@ -110,6 +118,7 @@ export async function loadAuthoritativeCoachingGenerationInput(input: {
     recentLogs,
     bodyRecords: (bodyRows ?? []).map((row) => mapBodyRecordRow(row as Record<string, unknown>)),
     coachDirectives: coachDirectives ?? undefined,
+    recentCoachActionMemory,
     priorCompletedOutputs: priorOutputs
       .filter((output) => output.status === "completed" && output.outputJson)
       .map((output) => ({

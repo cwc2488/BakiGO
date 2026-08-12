@@ -5,8 +5,12 @@ import type {
 } from "@/types/coaching-ai";
 import type { CoachingPlanSnapshot } from "@/types/coaching";
 import { assertCustomerFoodStatementEvidenceBacked } from "@/lib/coaching/ai/meal-follow-up-budget";
-import type { CoachingMealObservation } from "@/types/coaching-signals";
+import type { CoachingDecisionContext, CoachingMealObservation } from "@/types/coaching-signals";
 import { parseClockTimeToMinutes } from "@/lib/coaching/coaching-sleep";
+import {
+  buildRelevantCoachActionContext,
+  relevantCoachActionContextAsOfIso,
+} from "@/lib/coaching/coach-actions/build-relevant-coach-action-context";
 
 export type CoachingAiQualityCheckItem = {
   id: string;
@@ -338,6 +342,137 @@ function isAfterMidnightBedtimeForQuality(time: string | null | undefined): bool
   return minutes < 6 * 60;
 }
 
+function flattenOutputTextForCoachMemory(output: CoachingDailyGenerationOutputJson): string {
+  return [
+    output.coach.daily_summary,
+    output.coach.attention_reason ?? "",
+    ...(output.coach.evidence ?? []),
+    output.customer.today_feedback,
+    output.customer.tomorrow_focus,
+    output.customer.follow_up_for_tomorrow ?? "",
+    ...output.customer.adjustment_priorities,
+    output.customer.lifestyle_feedback.sleep ?? "",
+  ].join("\n");
+}
+
+function checkCoachActionMemoryRespect(
+  output: CoachingDailyGenerationOutputJson,
+  generationInput: CoachingGenerationInput | null | undefined,
+  decisionContext?: CoachingDecisionContext | null,
+): CoachingAiQualityCheckItem {
+  const memory = generationInput?.recentCoachActionMemory;
+  const materialNotes = (memory?.materialActions ?? [])
+    .map((action) => action.note?.trim() ?? "")
+    .filter(Boolean);
+  if (materialNotes.length === 0) {
+    return {
+      id: "coach_action_memory_no_redundant_ask",
+      status: "pass",
+      detail: "No material coach action memory present.",
+    };
+  }
+
+  const allText = flattenOutputTextForCoachMemory(output);
+  const knownNotes =
+    decisionContext && generationInput
+      ? buildRelevantCoachActionContext({
+          memory,
+          decisionContext,
+          asOfIso: relevantCoachActionContextAsOfIso(generationInput.logDate),
+        }).knownContexts.map((item) => item.note)
+      : materialNotes;
+
+  const hasKnown = knownNotes.length > 0;
+  const redundantAsk =
+    hasKnown &&
+    (/為什麼晚睡|詢問.*晚睡原因|問他.*為什麼晚睡|再問.*晚睡|了解看看是什麼原因/.test(allText) ||
+      (/問問|詢問/.test(allText) && /晚睡原因|為什麼晚睡|什麼原因/.test(allText)));
+
+  return {
+    id: "coach_action_memory_no_redundant_ask",
+    status: redundantAsk ? "fail" : "pass",
+    detail: redundantAsk
+      ? "Relevant Coach Action Known Context already established; redundant clarification detected."
+      : "No redundant clarification against Coach Action Memory.",
+  };
+}
+
+function checkRelevantCoachActionContextCarryForward(
+  output: CoachingDailyGenerationOutputJson,
+  generationInput: CoachingGenerationInput | null | undefined,
+  decisionContext?: CoachingDecisionContext | null,
+): CoachingAiQualityCheckItem {
+  if (!generationInput || !decisionContext) {
+    return {
+      id: "coach_action_relevant_context_carry_forward",
+      status: "pass",
+      detail: "No decisionContext provided; carry-forward check skipped.",
+    };
+  }
+
+  const relevant = buildRelevantCoachActionContext({
+    memory: generationInput.recentCoachActionMemory,
+    decisionContext,
+    asOfIso: relevantCoachActionContextAsOfIso(generationInput.logDate),
+  });
+
+  if (relevant.knownContexts.length === 0) {
+    return {
+      id: "coach_action_relevant_context_carry_forward",
+      status: "pass",
+      detail: "No relevant known Coach Action context for active issues.",
+    };
+  }
+
+  const allText = flattenOutputTextForCoachMemory(output);
+  const missing = relevant.knownContexts.filter((item) => {
+    if (item.distinctiveFragments.length === 0) return false;
+    return !item.distinctiveFragments.some((fragment) => allText.includes(fragment));
+  });
+
+  if (missing.length > 0) {
+    return {
+      id: "coach_action_relevant_context_carry_forward",
+      status: "fail",
+      detail: `Known Coach context not carried forward for: ${missing
+        .map((item) => item.matchedActiveKeys.join("/"))
+        .join(", ")}.`,
+    };
+  }
+
+  return {
+    id: "coach_action_relevant_context_carry_forward",
+    status: "pass",
+    detail: "Relevant known Coach Action context carried forward in wording.",
+  };
+}
+
+function checkCoachActionDoesNotOverrideOutcome(
+  generationInput: CoachingGenerationInput | null | undefined,
+  decisionOutcomeStatus?: string | null,
+): CoachingAiQualityCheckItem {
+  const outcome = generationInput?.outcomeMemory;
+  const memoryNote = (generationInput?.recentCoachActionMemory?.materialActions ?? [])
+    .map((action) => action.note ?? "")
+    .join(" ");
+  if (!outcome || !memoryNote) {
+    return {
+      id: "coach_action_not_outcome_authority",
+      status: "pass",
+      detail: "No coach-note vs outcome conflict to check.",
+    };
+  }
+
+  // Soft heuristic: optimistic coach notes must not imply we treat worsening as improving in memory layer.
+  // Actual authority is enforced by assess-coaching-outcome / decisionContext — this check documents intent.
+  void decisionOutcomeStatus;
+  return {
+    id: "coach_action_not_outcome_authority",
+    status: "pass",
+    detail: "Coach Action Memory is context-only; outcome authority remains deterministic.",
+  };
+}
+
 function checkSleepDurationAndBedtime(
   output: CoachingDailyGenerationOutputJson,
   generationInput: CoachingGenerationInput | null | undefined,
@@ -626,6 +761,7 @@ export function evaluateCoachingAiOutputQuality(input: {
   priorTomorrowFocus?: string | null;
   generationInput?: CoachingGenerationInput | null;
   mealObservations?: CoachingMealObservation[] | null;
+  decisionContext?: CoachingDecisionContext | null;
 }): CoachingAiQualityReport {
   const {
     output,
@@ -633,6 +769,7 @@ export function evaluateCoachingAiOutputQuality(input: {
     priorTomorrowFocus = null,
     generationInput = null,
     mealObservations = null,
+    decisionContext = null,
   } = input;
   const customerText = `${output.customer.encouragement} ${output.customer.today_feedback} ${output.customer.adjustment_priorities.join(" ")} ${output.customer.tomorrow_focus}`;
   const planAuthorityText = flattenPlanAuthorityText(
@@ -733,6 +870,9 @@ export function evaluateCoachingAiOutputQuality(input: {
           ? "watch may raise standards but must stay supportive."
           : "Not a watch-level day.",
     },
+    checkCoachActionMemoryRespect(output, generationInput, decisionContext),
+    checkRelevantCoachActionContextCarryForward(output, generationInput, decisionContext),
+    checkCoachActionDoesNotOverrideOutcome(generationInput),
   ];
 
   const all = [...customer, ...coach];

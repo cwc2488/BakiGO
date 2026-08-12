@@ -1,6 +1,10 @@
 import type { CoachingGenerationInput, CoachingInterventionLevel, PreparedCoachingMealImage } from "@/types/coaching-ai";
 import type { CoachingDecisionContext } from "@/types/coaching-signals";
 import { coachingDaySpeechLabel, relativeCoachingDayKey } from "@/lib/coaching/coaching-time";
+import {
+  buildRelevantCoachActionContext,
+  relevantCoachActionContextAsOfIso,
+} from "@/lib/coaching/coach-actions/build-relevant-coach-action-context";
 
 export function buildCoachingDailyCoachSystemPrompt(): string {
   return [
@@ -98,6 +102,18 @@ export function buildCoachingDailyCoachSystemPrompt(): string {
     "- 不能自行創造固定數字或標準（例如自創每日水量 ml）",
     "- observed water 不是 target",
     "",
+    "Coach Action Memory / Known Context（必用，Phase 3d）：",
+    "- generationInput.recentCoachActionMemory = 近期教練處理紀錄（可能有多筆）",
+    "- relevantCoachActionContext.knownContexts = 系統已選出、與當日 active issue 對得上的 Known Context（必用）",
+    "- Known Context = Coach 已確認、仍 relevant 的 situational／causal 資訊；Unknown = 尚未確認、可澄清的資訊",
+    "- 若 relevant knownContexts 非空：討論該 active issue 時必須自然延續這些 context（Coach output 必用；Customer output 在 note 屬 confirmed coaching context 時可自然使用）",
+    "- 不得要求把全部 recent memory 都寫進文案；只延續 relevant knownContexts",
+    "- 不得重新 discovery 已知 context（例如已知晚睡原因後再問「為什麼晚睡」）",
+    "- 不得把 known context 擴寫成 unsupported 因果／醫療推論",
+    "- 這是 context，不是 measurement／outcome／intervention authority；不得改寫 outcomeAssessment／finalInterventionLevel",
+    "- 若條件仍持續或惡化：acknowledgement-aware follow-up（延續觀察／可行策略），不得假裝問題不存在",
+    "- Coach Directive ≠ Coach Action",
+    "",
     "禁止：",
     "- 食物警察、羞辱、單餐定罪",
     "- 自行重開 priority／intervention／dailyNutritionAssessment",
@@ -105,6 +121,7 @@ export function buildCoachingDailyCoachSystemPrompt(): string {
     "- 只稱讚「有回報」卻不談吃了什麼（當有 mealObservations 時）",
     "- 「似乎沒有搭配其他食物」這類把照片缺漏寫成確定事實的句子",
     "- 對 needs_adjustment／off_track 日稱讚「飲食很好」",
+    "- 忽略 relevantCoachActionContext.knownContexts 後重複相同 clarification 或只講抽象議題標籤",
   ].join("\n");
 }
 
@@ -117,6 +134,11 @@ export function buildCoachingDailyCoachUserPrompt(input: {
   const { generationInput, finalInterventionLevel, preparedMealImages, decisionContext } = input;
   const reportDayRelation = relativeCoachingDayKey(generationInput.logDate) ?? "historical";
   const reportDaySpeechLabel = coachingDaySpeechLabel(generationInput.logDate);
+  const relevantCoachActionContext = buildRelevantCoachActionContext({
+    memory: generationInput.recentCoachActionMemory,
+    decisionContext,
+    asOfIso: relevantCoachActionContextAsOfIso(generationInput.logDate),
+  });
   const payload = {
     logDate: generationInput.logDate,
     reportDayRelation,
@@ -166,6 +188,15 @@ export function buildCoachingDailyCoachUserPrompt(input: {
     rollingMemory: generationInput.rollingMemory,
     outcomeMemory: generationInput.outcomeMemory,
     coachDirectives: generationInput.coachDirectives,
+    recentCoachActionMemory: generationInput.recentCoachActionMemory,
+    relevantCoachActionContext,
+    knownCoachContexts: relevantCoachActionContext.knownContexts.map((item) => ({
+      matchedActiveKeys: item.matchedActiveKeys,
+      note: item.note,
+      distinctiveFragments: item.distinctiveFragments,
+      status: item.status,
+      relatedReasonCodes: item.relatedReasonCodes,
+    })),
     todayContext: generationInput.todayContext,
     priorAiContext: generationInput.priorAiContext,
     attachedMealImages: preparedMealImages.map((image) => ({
@@ -183,6 +214,9 @@ export function buildCoachingDailyCoachUserPrompt(input: {
       observedFacts: "todayContext + outcomeMemory measurements",
       deterministicAggregates: "rollingMemory.aggregates + recurringPatterns",
       coachDirectives: "coachDirectives",
+      recentCoachActionMemory: "raw recent coach actions — may include unrelated notes",
+      relevantCoachActionContext: "deterministic Known Context for active issues — must carry forward when discussing those issues",
+      knownCoachContexts: "compact knownContexts list — use these, not the full recent dump",
       priorAiInference: "priorAiContext — hypothesis only, not verified fact",
       mealObservations: "decisionContext.mealObservations — visible facts + uncertainties",
       customerVoice: "decisionContext.customerVoice — must acknowledge",
@@ -205,6 +239,24 @@ export function buildCoachingDailyCoachUserPrompt(input: {
     },
   };
 
+  const knownContextBlock =
+    relevantCoachActionContext.knownContexts.length === 0
+      ? [
+          "Known Context：無（今日 active issue 沒有對得上的 material Coach Action）。",
+          "Unknown：對 active issue 尚未確認的原因可做有限度澄清。",
+        ].join("\n")
+      : [
+          "Known Context（系統已確認，討論對應 active issue 時必須自然延續；禁止重新 discovery）：",
+          ...relevantCoachActionContext.knownContexts.map((item) => {
+            const keys = item.matchedActiveKeys.join(", ");
+            const fragments = item.distinctiveFragments.join("／") || "（無）";
+            return `- active=${keys} | note=${item.note} | carry_fragments=${fragments}`;
+          }),
+          "規則：Coach daily_summary 與（若對 Customer 可見的 confirmed coaching context）today_feedback／sleep feedback 必須帶入上述 note 的 situational meaning；不可只寫議題標籤（例如只說晚睡）而忘掉已知情境。",
+          "禁止把 Known Context 擴寫成 unsupported 因果／醫療推論。",
+          "Unknown：僅限上述 Known Context 未涵蓋的部分才可澄清。",
+        ].join("\n");
+
   return [
     "請依下列 JSON context 產出 daily coach structured output。",
     `系統決定的 finalInterventionLevel = ${finalInterventionLevel}`,
@@ -217,6 +269,7 @@ export function buildCoachingDailyCoachUserPrompt(input: {
     "off_track：必須清楚說整體偏離減脂方向，禁止「稍微調整」這類淡化。",
     "Goal-aware：依 goalContext 說明今天行為是否朝目標前進；baseline_only 禁止評論身體變化。",
     "Outcome：只能複述 outcomeAssessment.customerSummary／evidence；comparison／trend 時 today_feedback 必須讓 Customer 感受到回測結果；禁止自行發明體重／體脂變化或因果。",
+    knownContextBlock,
     "奶昔本身不是錯誤；plan-approved shake 不要挑毛病。食物事實必須 evidence-backed。",
     "飢餓感受：用「有可能／可能跟…有關」連結餐食 evidence，禁止武斷。",
     "睡眠：必須同時評估時數與入睡時間（例如 8h 足夠但 00:24 偏晚）。",

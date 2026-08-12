@@ -36,6 +36,22 @@ export function buildGenerationInputFingerprintPayload(input: CoachingGeneration
     rollingMemory: input.rollingMemory,
     outcomeMemory: input.outcomeMemory,
     coachDirectives: input.coachDirectives,
+    /** Material coach actions only — empty ack does not bust fingerprint (CA-O). */
+    recentCoachActionMemory:
+      input.recentCoachActionMemory &&
+      input.recentCoachActionMemory.materialActions.length > 0
+        ? {
+            materialActions: input.recentCoachActionMemory.materialActions.map((action) => ({
+              id: action.id,
+              actionType: action.actionType,
+              status: action.status,
+              note: action.note,
+              relatedReasonCodes: action.relatedReasonCodes,
+              createdAt: action.createdAt,
+              resolvedAt: action.resolvedAt,
+            })),
+          }
+        : null,
     todayContext: input.todayContext,
     priorAiContext: priorAiContextForFingerprint(input.priorAiContext),
     interventionContext: input.interventionContext,

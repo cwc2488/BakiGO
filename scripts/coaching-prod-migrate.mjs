@@ -187,6 +187,31 @@ async function verify030(supabase) {
   };
 }
 
+async function verify031(supabase) {
+  const table = await tableExists(supabase, "coaching_coach_actions");
+  if (!table.exists) {
+    return { table, columns: {}, ok: false };
+  }
+  const columns = {};
+  for (const column of [
+    "action_type",
+    "status",
+    "note",
+    "related_reason_codes",
+    "evidence_refs",
+    "is_material",
+    "resolved_at",
+    "owner_member_id",
+  ]) {
+    columns[column] = await columnExists(supabase, "coaching_coach_actions", column);
+  }
+  return {
+    table,
+    columns,
+    ok: table.exists && Object.values(columns).every((item) => item.exists),
+  };
+}
+
 async function applyMigration({ migration, sqlPath, token, projectRef }) {
   const sql = readFileSync(sqlPath, "utf8");
   const attempt = await runSqlViaManagementApi(sql, token, projectRef);
@@ -233,6 +258,7 @@ async function main() {
   out.migrations["028"] = await verify028(supabase);
   out.migrations["029"] = await verify029(supabase);
   out.migrations["030"] = await verify030(supabase);
+  out.migrations["031"] = await verify031(supabase);
 
   if (mode === "apply") {
     if (!serviceKey && !accessToken) {
@@ -303,6 +329,24 @@ async function main() {
       }
       out.migrations["030"] = await verify030(supabase);
     }
+
+    if (
+      out.migrations["029"].allTablesExist &&
+      out.migrations["030"].ok &&
+      !out.migrations["031"].ok
+    ) {
+      for (const [label, token] of tokens) {
+        const attempt = await applyMigration({
+          migration: "031_coaching_coach_actions.sql",
+          sqlPath: "supabase/migrations/031_coaching_coach_actions.sql",
+          token,
+          projectRef: out.projectRef,
+        });
+        out.applyAttempts.push({ label, ...attempt });
+        if (attempt.ok) break;
+      }
+      out.migrations["031"] = await verify031(supabase);
+    }
   }
 
   out.ok =
@@ -311,6 +355,7 @@ async function main() {
     out.migrations["028"].ok &&
     out.migrations["029"].allTablesExist &&
     out.migrations["030"].ok &&
+    out.migrations["031"].ok &&
     (serviceKey
       ? !!out.migrations["027"].storage?.bucket && out.migrations["027"].storage.bucket.public === false
       : true);

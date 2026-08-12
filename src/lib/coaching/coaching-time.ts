@@ -13,6 +13,20 @@ export function coachingTodayLogDate(timeZone = COACHING_TIMEZONE, now: Date = n
   return new Intl.DateTimeFormat("en-CA", { timeZone }).format(now);
 }
 
+/** Current hour (0–23) in Asia/Taipei. */
+export function coachingTaipeiHour(now: Date = new Date(), timeZone = COACHING_TIMEZONE): number {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "numeric",
+      hour12: false,
+    }).format(now),
+  );
+  // Some engines emit "24" for midnight — normalize.
+  if (hour === 24) return 0;
+  return Number.isFinite(hour) ? hour : 0;
+}
+
 /**
  * Calendar date in Asia/Taipei shifted by `daysOffset` from today.
  * Negative = past (e.g. -1 = yesterday).

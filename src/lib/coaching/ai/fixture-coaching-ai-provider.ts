@@ -392,7 +392,9 @@ export class FixtureCoachingAiProvider implements CoachingAiProvider {
   async generateDailyCoach(input: GenerateDailyCoachInput): Promise<GenerateDailyCoachResult> {
     const scenario = pickScenarioFromDecision(input.decisionContext);
     const raw = fixtureOutputForScenario(scenario, input.finalInterventionLevel);
-    const output = applyCoachingDecisionContextToOutput(raw, input.decisionContext);
+    const output = applyCoachingDecisionContextToOutput(raw, input.decisionContext, {
+      generationInput: input.generationInput,
+    });
     const validation = parseCoachingDailyGenerationOutput(output);
     if (!validation.ok) {
       throw new Error(validation.error);

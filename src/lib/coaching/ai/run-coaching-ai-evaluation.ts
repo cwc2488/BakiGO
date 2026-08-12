@@ -159,6 +159,7 @@ export async function runCoachingAiControlledEvaluation(input?: {
         priorTomorrowFocus: fixture.generationInput.priorAiContext?.tomorrowFocus?.value ?? null,
         generationInput: fixture.generationInput,
         mealObservations: decisionContext.mealObservations,
+        decisionContext,
       }),
     });
   }
