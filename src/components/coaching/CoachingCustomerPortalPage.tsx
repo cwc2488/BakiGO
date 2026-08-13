@@ -21,6 +21,7 @@ import {
   coachingJourneyDayNumberInWindow,
   resolveEnrollmentPlannedEndDate,
 } from "@/lib/coaching/enrollment-window";
+import type { ImmediateDailyFeedback } from "@/lib/coaching/immediate-daily-feedback";
 import {
   COACHING_MEAL_SLOT_LABELS,
   PRIMARY_MEAL_SLOTS,
@@ -115,7 +116,7 @@ function resolveHomeTodayStatus(summary: CoachingRecentDaySummary | undefined, d
 
 const HOME_STATUS_LABELS: Record<HomeTodayStatus, string> = {
   not_reported: "尚未回報",
-  ai_analyzing: "已收到，AI 分析中",
+  ai_analyzing: "已收到，進階分析中",
   complete: "今日回報完成",
 };
 
@@ -162,6 +163,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
   const [recentDays, setRecentDays] = useState<CoachingRecentDaySummary[]>([]);
   const [progress, setProgress] = useState<CoachingProgressView | null>(null);
   const [customerReminders, setCustomerReminders] = useState<string[]>([]);
+  const [immediateFeedback, setImmediateFeedback] = useState<ImmediateDailyFeedback | null>(null);
   const [backfillActive, setBackfillActive] = useState(false);
   const [justSubmitted, setJustSubmitted] = useState(false);
 
@@ -183,6 +185,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
           recentDays?: CoachingRecentDaySummary[];
           progress?: CoachingProgressView | null;
           customerReminders?: string[];
+          immediateFeedback?: ImmediateDailyFeedback | null;
           dailyLog?: DailyLogWithSignedPhotos | null;
           error?: string;
         };
@@ -196,6 +199,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
         setRecentDays(payload.recentDays ?? []);
         setProgress(payload.progress ?? null);
         setCustomerReminders(payload.customerReminders ?? []);
+        setImmediateFeedback(payload.immediateFeedback ?? null);
 
         if (payload.dailyLog?.id) {
           setDailyLog(payload.dailyLog);
@@ -422,6 +426,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
       const payload = (await response.json()) as {
         ok?: boolean;
         dailyLog?: CoachingDailyLogDetail;
+        immediateFeedback?: ImmediateDailyFeedback | null;
         error?: string;
       };
 
@@ -431,6 +436,9 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
 
       setDailyLog(payload.dailyLog);
       setDraft((current) => mergeDailyLogIntoDraft(current, payload.dailyLog!));
+      if (payload.immediateFeedback) {
+        setImmediateFeedback(payload.immediateFeedback);
+      }
 
       // Refresh recent-day statuses without blocking submit on AI generation.
       void fetch(
@@ -443,7 +451,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
             progress?: CoachingProgressView | null;
             customerReminders?: string[];
           };
-          if (contextResponse.ok && contextPayload.ok) {
+          if (contextPayload.ok) {
             if (contextPayload.recentDays) setRecentDays(contextPayload.recentDays);
             if (contextPayload.progress !== undefined) setProgress(contextPayload.progress ?? null);
             if (contextPayload.customerReminders) setCustomerReminders(contextPayload.customerReminders);
@@ -698,6 +706,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
           onOpenHistory={() => setDailyView("history")}
           portalToken={token}
           showImmediateReceived={justSubmitted}
+          initialImmediateFeedback={immediateFeedback}
         />
       </div>
     );
@@ -735,9 +744,27 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
           {homeTodayStatus === "not_reported"
             ? "開始今日回報"
             : homeTodayStatus === "ai_analyzing"
-              ? "查看分析進度"
+              ? "查看今天回饋"
               : "查看今天結果"}
         </CrmButton>
+
+        {immediateFeedback?.lines?.length && homeTodayStatus !== "not_reported" ? (
+          <CrmCard className="space-y-3">
+            <h2 className="text-[1.0625rem] font-semibold text-[#1d1d1f]">今日即時回饋</h2>
+            <ul className="space-y-2 text-[0.9375rem] leading-relaxed text-[#1d1d1f]">
+              {immediateFeedback.lines.slice(0, 4).map((line) => (
+                <li key={line} className="rounded-[1rem] bg-[#f7faf5] px-4 py-3">
+                  {line}
+                </li>
+              ))}
+            </ul>
+            {homeTodayStatus === "ai_analyzing" ? (
+              <p className="text-[0.8125rem] text-[#86868b]">
+                進階分析進行中，你可以先離開，完成後回來就能看到。
+              </p>
+            ) : null}
+          </CrmCard>
+        ) : null}
 
         {needsOnboarding && onboardingContent ? (
           <CrmCard className="space-y-3">

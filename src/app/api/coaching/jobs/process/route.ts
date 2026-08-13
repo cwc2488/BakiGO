@@ -10,6 +10,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 async function handleWorkerRequest(request: Request) {
+  const started = Date.now();
   if (!isCoachingCronAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -51,9 +52,43 @@ async function handleWorkerRequest(request: Request) {
 
   try {
     const result = await runCoachingGenerationWorkerBatch({ limit, concurrency });
-    return NextResponse.json({ ok: true, ...result });
+    const payload = {
+      ok: true as const,
+      claimed: result.claimed,
+      completed: result.completed,
+      failed: result.failed,
+      skipped: result.skipped,
+      superseded: result.superseded,
+      retryScheduled: result.retryScheduled,
+      reclaimed: result.reclaimed,
+      jobIds: result.jobIds,
+      durationMs: result.durationMs,
+      duration: result.durationMs,
+      results: result.results,
+    };
+    console.info(
+      JSON.stringify({
+        type: "coaching_jobs_process_result",
+        method: request.method,
+        claimed: payload.claimed,
+        completed: payload.completed,
+        failed: payload.failed,
+        skipped: payload.skipped,
+        jobIds: payload.jobIds,
+        duration: payload.durationMs,
+        request_duration_ms: Date.now() - started,
+      }),
+    );
+    return NextResponse.json(payload);
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : "Coaching worker batch failed";
+    console.error(
+      JSON.stringify({
+        type: "coaching_jobs_process_error",
+        message,
+        duration: Date.now() - started,
+      }),
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

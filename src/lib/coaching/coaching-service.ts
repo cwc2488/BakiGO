@@ -550,15 +550,15 @@ export async function upsertCoachingDailyLog(input: {
   meals?: Partial<Record<CoachingMealSlot, { textNote?: string | null; eatenAt?: string | null }>>;
   markSubmitted?: boolean;
 }): Promise<CoachingDailyLogDetail> {
-  const dailyLogRow = await ensureDailyLog({
-    enrollmentId: input.portal.enrollmentId,
-    customerId: input.portal.customerId,
-    ownerMemberId: input.portal.ownerMemberId,
-    logDate: input.logDate,
-  });
+  const supabase = createSupabaseServiceClient();
+  const now = new Date().toISOString();
 
   const patch: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
+    enrollment_id: input.portal.enrollmentId,
+    customer_id: input.portal.customerId,
+    owner_member_id: input.portal.ownerMemberId,
+    log_date: input.logDate,
+    updated_at: now,
   };
 
   if (input.waterMl !== undefined) patch.water_ml = input.waterMl;
@@ -588,39 +588,47 @@ export async function upsertCoachingDailyLog(input: {
   }
 
   if (input.customerNote !== undefined) patch.customer_note = input.customerNote?.trim() || null;
-  if (input.markSubmitted) patch.submitted_at = new Date().toISOString();
+  if (input.markSubmitted) patch.submitted_at = now;
 
-  const supabase = createSupabaseServiceClient();
-  const { error: updateError } = await supabase
+  // One round-trip for daily log identity + field patch.
+  const { data: dailyLogRow, error: upsertError } = await supabase
     .from("coaching_daily_logs")
-    .update(patch)
-    .eq("id", dailyLogRow.id);
+    .upsert(patch, { onConflict: "enrollment_id,log_date" })
+    .select("id")
+    .single();
 
-  if (updateError) {
-    throw new CoachingServiceError(updateError.message, 500);
+  if (upsertError || !dailyLogRow) {
+    throw new CoachingServiceError(upsertError?.message || "Failed to save daily log.", 500);
   }
 
   if (input.meals) {
-    for (const [mealSlot, mealPatch] of Object.entries(input.meals)) {
-      if (!mealPatch) continue;
-      const mealEntry = await ensureMealEntry(dailyLogRow.id, mealSlot as CoachingMealSlot);
-      const mealUpdate: Record<string, unknown> = {
-        updated_at: new Date().toISOString(),
+    const mealWrites = Object.entries(input.meals).flatMap(([mealSlot, mealPatch]) => {
+      if (!mealPatch) return [];
+      const row: Record<string, unknown> = {
+        daily_log_id: dailyLogRow.id,
+        meal_slot: mealSlot,
+        updated_at: now,
       };
       if (mealPatch.textNote !== undefined) {
-        mealUpdate.text_note = mealPatch.textNote?.trim() || null;
+        row.text_note = mealPatch.textNote?.trim() || null;
       }
       if (mealPatch.eatenAt !== undefined) {
-        mealUpdate.eaten_at = mealPatch.eatenAt;
+        row.eaten_at = mealPatch.eatenAt;
       }
-      const { error } = await supabase
-        .from("coaching_meal_entries")
-        .update(mealUpdate)
-        .eq("id", mealEntry.id);
-      if (error) {
-        throw new CoachingServiceError(error.message, 500);
-      }
-    }
+      return [
+        supabase
+          .from("coaching_meal_entries")
+          .upsert(row, { onConflict: "daily_log_id,meal_slot" })
+          .select("id")
+          .single()
+          .then(({ error }) => {
+            if (error) {
+              throw new CoachingServiceError(error.message, 500);
+            }
+          }),
+      ];
+    });
+    await Promise.all(mealWrites);
   }
 
   return getCoachingDailyLogDetail({

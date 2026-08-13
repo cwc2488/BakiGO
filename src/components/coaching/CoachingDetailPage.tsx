@@ -407,7 +407,9 @@ export default function CoachingDetailPage({
               </p>
             ) : null}
             {payload.aiOutput?.status === "failed" ? (
-              <p className="text-[0.9375rem] text-[#86868b]">今日教練回饋暫時無法生成。</p>
+              <p className="text-[0.9375rem] text-[#86868b]">
+                今日基本紀錄已收到；進階分析稍後會自動補上。
+              </p>
             ) : null}
             {payload.aiOutput?.status === "completed" && payload.aiOutput.customer ? (
               <div className="space-y-3 text-[0.9375rem]">

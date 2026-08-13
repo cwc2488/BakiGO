@@ -18,6 +18,9 @@ export type CoachingGenerationWorkerBatchResult = {
   superseded: number;
   retryScheduled: number;
   failed: number;
+  skipped: number;
+  jobIds: string[];
+  durationMs: number;
   results: Array<{ jobId: string; outcome: string }>;
 };
 
@@ -50,6 +53,7 @@ export async function runCoachingGenerationWorkerBatch(input?: {
   concurrency?: number;
   lockedBy?: string;
 }): Promise<CoachingGenerationWorkerBatchResult> {
+  const started = Date.now();
   const staleMinutes = Math.max(1, Math.round(COACHING_GENERATION_JOB_STALE_MS / 60_000));
   const reclaimed = await reclaimStaleCoachingGenerationJobs(staleMinutes);
 
@@ -68,13 +72,18 @@ export async function runCoachingGenerationWorkerBatch(input?: {
     },
   );
 
+  const results = processed.map((item) => ({ jobId: item.jobId, outcome: item.outcome }));
+  const superseded = processed.filter((item) => item.outcome === "superseded").length;
   return {
     reclaimed,
     claimed: claimed.length,
     completed: processed.filter((item) => item.outcome === "completed").length,
-    superseded: processed.filter((item) => item.outcome === "superseded").length,
+    superseded,
     retryScheduled: processed.filter((item) => item.outcome === "retry_scheduled").length,
     failed: processed.filter((item) => item.outcome === "failed").length,
-    results: processed.map((item) => ({ jobId: item.jobId, outcome: item.outcome })),
+    skipped: superseded,
+    jobIds: results.map((item) => item.jobId),
+    durationMs: Date.now() - started,
+    results,
   };
 }

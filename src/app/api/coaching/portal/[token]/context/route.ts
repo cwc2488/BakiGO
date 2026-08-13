@@ -14,6 +14,7 @@ import { listCoachingRecentDaySummaries } from "@/lib/coaching/list-coaching-rec
 import { listCustomerSafeDirectiveReminders } from "@/lib/coaching/list-customer-safe-directive-reminders";
 import { buildCoachingProgressView } from "@/lib/coaching/build-coaching-progress-view";
 import { mapBodyRecordRow } from "@/lib/coaching/ai/load-coaching-generation-context";
+import { loadImmediateDailyFeedbackForPortal } from "@/lib/coaching/load-immediate-daily-feedback";
 import { requireAllowedCoachingLogDate } from "@/lib/coaching/require-allowed-coaching-log-date";
 import { resolveEnrollmentPlannedEndDate } from "@/lib/coaching/enrollment-window";
 
@@ -143,9 +144,19 @@ export async function GET(
         recentDays,
         progress,
         customerReminders,
+        immediateFeedback: null,
         dailyLog: null,
       });
     }
+
+    const immediateFeedback = dailyLog.submittedAt
+      ? await loadImmediateDailyFeedbackForPortal({
+          enrollmentId: portal.enrollmentId,
+          ownerMemberId: portal.ownerMemberId,
+          logDate,
+          dailyLog,
+        })
+      : null;
 
     const serialized = serializeCoachingDailyLogDetail(dailyLog);
     const meals = await Promise.all(
@@ -171,6 +182,7 @@ export async function GET(
       recentDays,
       progress,
       customerReminders,
+      immediateFeedback,
       dailyLog: {
         ...serialized,
         meals,

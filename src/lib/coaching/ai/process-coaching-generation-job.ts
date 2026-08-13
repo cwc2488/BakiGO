@@ -1,14 +1,17 @@
 import { fingerprintCoachingGenerationInput } from "@/lib/ai/input-fingerprint";
+import { isProvisionalGenerationFingerprint } from "@/lib/coaching/ai/enqueue-daily-coach-generation-fast";
 import { applyCoachingDecisionContextToOutput } from "@/lib/coaching/ai/apply-coaching-decision-context";
 import { createCoachingAiProvider } from "@/lib/coaching/ai/coaching-ai-provider";
 import {
   getCoachingAiOutputForDay,
+  insertQueuedGenerationJob,
   markCoachingAiOutputCompleted,
   markCoachingAiOutputFailed,
   markCoachingAiOutputProcessing,
   markGenerationJobCompleted,
   markGenerationJobFailedOrRetry,
   markGenerationJobSuperseded,
+  upsertPendingCoachingAiOutput,
 } from "@/lib/coaching/ai/coaching-ai-store";
 import { buildCoachingDecisionContext } from "@/lib/coaching/ai/coaching-signal-engine";
 import {
@@ -113,9 +116,49 @@ export async function processCoachingGenerationJob(
     });
     const currentFingerprint = fingerprintCoachingGenerationInput(loaded.generationInput);
 
-    if (currentFingerprint !== job.inputFingerprint) {
+    // Provisional post-submit jobs: upgrade fingerprint in-place and continue (no supersede loop).
+    if (isProvisionalGenerationFingerprint(job.inputFingerprint)) {
+      const existing = await getCoachingAiOutputForDay({
+        enrollmentId: job.enrollmentId,
+        logDate: job.logDate,
+      });
+      await upsertPendingCoachingAiOutput({
+        enrollmentId: loaded.enrollmentId,
+        customerId: loaded.customerId,
+        ownerMemberId: loaded.ownerMemberId,
+        logDate: loaded.logDate,
+        fingerprint: currentFingerprint,
+        generationInput: loaded.generationInput,
+        regenerationCount: existing?.regenerationCount ?? 0,
+      });
+      // Fall through using authoritative fingerprint / output.
+    } else if (currentFingerprint !== job.inputFingerprint) {
       await markGenerationJobSuperseded(job.id, "fingerprint_stale_superseded");
-      return { outcome: "superseded", reason: "fingerprint_stale_superseded" };
+      // Never leave pending output without a live job for the *current* fingerprint.
+      await upsertPendingCoachingAiOutput({
+        enrollmentId: loaded.enrollmentId,
+        customerId: loaded.customerId,
+        ownerMemberId: loaded.ownerMemberId,
+        logDate: loaded.logDate,
+        fingerprint: currentFingerprint,
+        generationInput: loaded.generationInput,
+        regenerationCount: 0,
+      });
+      const refreshed = await getCoachingAiOutputForDay({
+        enrollmentId: job.enrollmentId,
+        logDate: job.logDate,
+      });
+      if (refreshed) {
+        await insertQueuedGenerationJob({
+          enrollmentId: job.enrollmentId,
+          customerId: job.customerId,
+          ownerMemberId: job.ownerMemberId,
+          logDate: job.logDate,
+          outputId: refreshed.id,
+          fingerprint: currentFingerprint,
+        });
+      }
+      return { outcome: "superseded", reason: "fingerprint_stale_superseded_requeued" };
     }
 
     const outputRow = await getCoachingAiOutputForDay({
@@ -125,7 +168,17 @@ export async function processCoachingGenerationJob(
 
     if (!outputRow || outputRow.id !== job.outputId) {
       await markGenerationJobSuperseded(job.id, "output_row_mismatch");
-      return { outcome: "superseded", reason: "output_row_mismatch" };
+      if (outputRow && (outputRow.status === "pending" || outputRow.status === "processing")) {
+        await insertQueuedGenerationJob({
+          enrollmentId: job.enrollmentId,
+          customerId: job.customerId,
+          ownerMemberId: job.ownerMemberId,
+          logDate: job.logDate,
+          outputId: outputRow.id,
+          fingerprint: outputRow.inputFingerprint || currentFingerprint,
+        });
+      }
+      return { outcome: "superseded", reason: "output_row_mismatch_requeued" };
     }
 
     if (outputRow.status === "completed" && outputRow.inputFingerprint === currentFingerprint) {
@@ -135,7 +188,30 @@ export async function processCoachingGenerationJob(
 
     if (outputRow.inputFingerprint !== currentFingerprint) {
       await markGenerationJobSuperseded(job.id, "output_fingerprint_advanced");
-      return { outcome: "superseded", reason: "output_fingerprint_advanced" };
+      await upsertPendingCoachingAiOutput({
+        enrollmentId: loaded.enrollmentId,
+        customerId: loaded.customerId,
+        ownerMemberId: loaded.ownerMemberId,
+        logDate: loaded.logDate,
+        fingerprint: currentFingerprint,
+        generationInput: loaded.generationInput,
+        regenerationCount: outputRow.regenerationCount,
+      });
+      const refreshed = await getCoachingAiOutputForDay({
+        enrollmentId: job.enrollmentId,
+        logDate: job.logDate,
+      });
+      if (refreshed) {
+        await insertQueuedGenerationJob({
+          enrollmentId: job.enrollmentId,
+          customerId: job.customerId,
+          ownerMemberId: job.ownerMemberId,
+          logDate: job.logDate,
+          outputId: refreshed.id,
+          fingerprint: currentFingerprint,
+        });
+      }
+      return { outcome: "superseded", reason: "output_fingerprint_advanced_requeued" };
     }
 
     await markCoachingAiOutputProcessing(outputRow.id);
