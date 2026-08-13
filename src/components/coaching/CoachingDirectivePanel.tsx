@@ -144,7 +144,7 @@ export default function CoachingDirectivePanel({ enrollmentId }: { enrollmentId:
     <CrmCard className="space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <CrmSectionTitle>教練指示</CrmSectionTitle>
+          <CrmSectionTitle>教練安排</CrmSectionTitle>
           <p className="mt-1 text-[0.8125rem] text-[#86868b]">
             設定餐次執行指示，供核對與顧客提醒（與 Vision／AI 文案分層）。
           </p>

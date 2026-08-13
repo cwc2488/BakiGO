@@ -43,10 +43,13 @@ describe("UX-2 performance architecture", () => {
 
   it("PERF-04 — secondary Detail panels do not block bootstrap", () => {
     const detail = readSrc("src/components/coaching/CoachingDetailPage.tsx");
-    expect(detail).toContain("loadSecondaryPanels");
-    expect(detail).toContain("setLoadSecondaryPanels(true)");
-    expect(detail).toMatch(/loadSecondaryPanels \?[\s\S]*CoachingGrowthPanel/);
-    expect(detail).toMatch(/loadSecondaryPanels \?[\s\S]*CoachingCoachActionPanel/);
+    // UX-IA: Layer 4 deferred — Growth / Coach Actions / Timeline load only after expand.
+    expect(detail).toContain("loadMorePanels");
+    expect(detail).toContain("setLoadMorePanels(true)");
+    expect(detail).toContain("DETAIL_MORE_DEFAULT_OPEN");
+    expect(detail).toMatch(/loadMorePanels \?[\s\S]*CoachingGrowthPanel/);
+    expect(detail).toMatch(/loadMorePanels \?[\s\S]*CoachingCoachActionPanel/);
+    expect(detail).toMatch(/showMore \?[\s\S]*CoachingTimelinePanel/);
     const route = readSrc("src/app/api/coaching/enrollments/[enrollmentId]/route.ts");
     expect(route).toContain("secondaryPanelsDeferred: true");
     expect(route).toContain("includesRecentLogs: false");

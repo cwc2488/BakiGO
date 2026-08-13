@@ -161,4 +161,8 @@ export type CoachingCommandCenterCard = {
   evidenceSummary: string | null;
   recommendedActionLabel: string | null;
   detailHref: string;
+  /** Presentation only — today's daily log submitted_at present. */
+  todaySubmitted: boolean;
+  /** Presentation only — AI output status for asOfLogDate (may be null). */
+  todayAiStatus: string | null;
 };

@@ -18,19 +18,9 @@ const FILTERS: Array<{ id: CoachingTimelineFilter; label: string; disabled?: boo
 ];
 
 function EvidenceList({ event }: { event: CoachingTimelineEvent }) {
-  if (event.evidenceRefs.length === 0) return null;
-  return (
-    <div className="mt-3 space-y-1 rounded-[1rem] bg-[#f7f8f5] px-3 py-2">
-      <p className="text-[0.75rem] font-medium text-[#86868b]">Evidence</p>
-      {event.evidenceRefs.map((ref, index) => (
-        <p key={`${ref.kind}-${ref.logDate ?? ""}-${index}`} className="text-[0.8125rem] text-[#636366]">
-          {ref.logDate ? `${ref.logDate} · ` : ""}
-          {ref.kind}
-          {ref.displayValue != null ? ` · ${String(ref.displayValue)}` : ""}
-        </p>
-      ))}
-    </div>
-  );
+  // Internal evidence refs stay hidden on general Coach UI (Layer 4 progressive disclosure).
+  void event;
+  return null;
 }
 
 function DailyExpanded({
@@ -89,7 +79,7 @@ function DailyExpanded({
   return (
     <div className="mt-3 space-y-4">
       <section className="space-y-2">
-        <p className="text-[0.75rem] font-medium uppercase tracking-wide text-[#86868b]">Customer 回報</p>
+        <p className="text-[0.75rem] font-medium tracking-wide text-[#86868b]">顧客回報</p>
         {report?.customerNote ? (
           <p className="text-[0.9375rem] text-[#1d1d1f]">「{report.customerNote}」</p>
         ) : (
@@ -123,9 +113,9 @@ function DailyExpanded({
       </section>
 
       <section className="space-y-2 border-t border-[#eef2ea] pt-3">
-        <p className="text-[0.75rem] font-medium uppercase tracking-wide text-[#86868b]">AI Coaching</p>
+        <p className="text-[0.75rem] font-medium tracking-wide text-[#86868b]">進階分析</p>
         {event.payload.aiStatus === "failed" ? (
-          <p className="text-[0.875rem] text-[#b54708]">AI 暫時無法生成（Customer 原始回報仍保留）</p>
+          <p className="text-[0.875rem] text-[#b54708]">進階分析暫時無法生成（原始回報仍保留）</p>
         ) : null}
         {ai?.todayFeedback ? <p className="text-[0.875rem] text-[#1d1d1f]">{ai.todayFeedback}</p> : null}
         {ai?.tomorrowFocus ? (
@@ -135,17 +125,24 @@ function DailyExpanded({
           <p className="text-[0.8125rem] text-[#636366]">優先：{ai!.adjustmentPriorities.join("、")}</p>
         ) : null}
         {!ai?.todayFeedback && event.payload.aiStatus !== "failed" ? (
-          <p className="text-[0.8125rem] text-[#86868b]">尚無 AI 輸出</p>
+          <p className="text-[0.8125rem] text-[#86868b]">尚無進階分析</p>
         ) : null}
       </section>
 
       <section className="space-y-2 border-t border-[#eef2ea] pt-3">
-        <p className="text-[0.75rem] font-medium uppercase tracking-wide text-[#86868b]">Coach Brief</p>
+        <p className="text-[0.75rem] font-medium tracking-wide text-[#86868b]">教練摘要</p>
         {coach?.dailySummary ? <p className="text-[0.875rem] text-[#1d1d1f]">{coach.dailySummary}</p> : (
           <p className="text-[0.8125rem] text-[#86868b]">尚無教練摘要</p>
         )}
         {event.payload.interventionLevel ? (
-          <p className="text-[0.8125rem] text-[#636366]">介入：{event.payload.interventionLevel}</p>
+          <p className="text-[0.8125rem] text-[#636366]">
+            建議關心程度：
+            {event.payload.interventionLevel === "coach_attention"
+              ? "需要特別關心"
+              : event.payload.interventionLevel === "watch"
+                ? "先觀察"
+                : "一般"}
+          </p>
         ) : null}
       </section>
 
@@ -159,7 +156,7 @@ function MeasurementExpanded({ event }: { event: Extract<CoachingTimelineEvent, 
     <div className="mt-3 space-y-3">
       <p className="text-[0.875rem] text-[#1d1d1f]">{event.payload.summary}</p>
       {event.payload.outcomeLabel ? (
-        <p className="text-[0.8125rem] text-[#636366]">Outcome：{event.payload.outcomeLabel}</p>
+        <p className="text-[0.8125rem] text-[#636366]">身體變化：{event.payload.outcomeLabel}</p>
       ) : null}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[280px] text-left text-[0.8125rem]">
@@ -178,7 +175,11 @@ function MeasurementExpanded({ event }: { event: Extract<CoachingTimelineEvent, 
                 <td className="py-1">{metric.previous ?? "—"}</td>
                 <td className="py-1">{metric.current ?? "—"}</td>
                 <td className="py-1">
-                  {metric.delta == null ? (event.payload.kind === "baseline" ? "Baseline" : "—") : metric.delta}
+                  {metric.delta == null
+                    ? event.payload.kind === "baseline"
+                      ? "起始量測"
+                      : "—"
+                    : metric.delta}
                 </td>
               </tr>
             ))}

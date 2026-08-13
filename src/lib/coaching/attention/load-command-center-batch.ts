@@ -206,6 +206,21 @@ export async function loadCoachingCommandCenter(input: {
     aiRows = (aiResult.data ?? []).map((row) => mapCoachingAiOutputRow(row as Record<string, unknown>));
   }
   const latestAiByEnrollment = pickLatestCompletedAiByEnrollment(aiRows);
+  const todayAiByEnrollment = new Map<string, CoachingAiOutputRecord>();
+  for (const row of aiRows) {
+    if (row.logDate !== input.asOfLogDate) continue;
+    const existing = todayAiByEnrollment.get(row.enrollmentId);
+    if (!existing) {
+      todayAiByEnrollment.set(row.enrollmentId, row);
+      continue;
+    }
+    // Prefer completed > processing > pending > failed
+    const rank = (status: string) =>
+      status === "completed" ? 4 : status === "processing" ? 3 : status === "pending" ? 2 : 1;
+    if (rank(row.status) > rank(existing.status)) {
+      todayAiByEnrollment.set(row.enrollmentId, row);
+    }
+  }
 
   const bodyByCustomer = new Map<string, BodyCompositionRecord[]>();
   for (const row of bodyResult.data ?? []) {
@@ -224,6 +239,7 @@ export async function loadCoachingCommandCenter(input: {
       logs: logsByEnrollment.get(enrollment.id) ?? [],
       bodyRecords: bodyByCustomer.get(enrollment.customerId) ?? [],
       latestAiOutput: latestAiByEnrollment.get(enrollment.id) ?? null,
+      todayAiOutput: todayAiByEnrollment.get(enrollment.id) ?? null,
       recentCoachActions: (actionsByEnrollment.get(enrollment.id) ?? []).map(mapCoachActionToAttentionShape),
     };
   });

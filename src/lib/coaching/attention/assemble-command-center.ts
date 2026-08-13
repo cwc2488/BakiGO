@@ -34,6 +34,8 @@ export type CommandCenterBatchCustomer = {
   bodyRecords: BodyCompositionRecord[];
   /** Latest completed AI output for intervention authority (may be null). */
   latestAiOutput: CoachingAiOutputRecord | null;
+  /** Today's AI output (any status) — presentation for report state only. */
+  todayAiOutput?: CoachingAiOutputRecord | null;
   /** Phase 3d — recent coach actions for ack / suppress. */
   recentCoachActions?: import("@/types/coaching-attention").CoachingRecentCoachAction[];
 };
@@ -207,6 +209,8 @@ export function buildCommandCenterCard(input: {
     evidenceSummary: formatAttentionEvidenceSummary(assessment),
     recommendedActionLabel: formatRecommendedActionLabel(assessment.recommendedActionType),
     detailHref: `/coaching/${customer.enrollment.id}`,
+    todaySubmitted: Boolean(todayLog.submittedAt),
+    todayAiStatus: customer.todayAiOutput?.status ?? null,
   };
 }
 
