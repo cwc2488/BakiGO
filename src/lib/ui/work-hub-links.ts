@@ -1,19 +1,24 @@
 import { APP_ICON } from "@/lib/ui/app-icons";
+import {
+  MY_HOME_BUSINESS_ENTRIES,
+  MY_HOME_MORE_ENTRIES,
+} from "@/lib/home/my-home-presentation";
 
-/** Secondary links under「我的」— not bottom-nav concepts. */
+/**
+ * @deprecated Prefer MY_HOME_BUSINESS_ENTRIES + MY_HOME_MORE_ENTRIES on home.
+ * Kept as flat inventory of「我的」world routes (not bottom-nav concepts).
+ */
 export const MY_WORLD_SECONDARY_LINKS = [
-  { href: "/daily-action", title: "今日行動", desc: "完成度與快速記錄" },
-  { href: "/goals", title: "我的目標", desc: "設定目標與進度" },
-  { href: "/president-road", title: "晉升之路", desc: "資格與晉升進度" },
-  { href: "/organization", title: "我的組織", desc: "夥伴狀況一覽" },
-  { href: "/members", title: "夥伴", desc: "夥伴關懷與名單" },
-  { href: "/retail-house", title: "零售屋", desc: "週分享與成交" },
-  { href: "/leaderboard", title: "排行榜", desc: "本週前五 · 本月前十" },
-  { href: "/learning", title: "學習", desc: "業務教學影片" },
-  { href: "/promotions", title: "活動／促銷", desc: "獎勵與挑戰" },
-  { href: "/events", title: "活動紀錄", desc: "從顧客或行事曆發起為主" },
-  { href: "/pre-meeting-graphic", title: "會前會圖", desc: "資料合併輸出" },
-  { href: "/profile", title: "個人資料／設定", desc: "帳號與顯示設定" },
+  ...MY_HOME_BUSINESS_ENTRIES.map((entry) => ({
+    href: entry.href,
+    title: entry.title,
+    desc: "",
+  })),
+  ...MY_HOME_MORE_ENTRIES.map((entry) => ({
+    href: entry.href,
+    title: entry.title,
+    desc: "",
+  })),
 ] as const;
 
 /** @deprecated Prefer MY_WORLD_SECONDARY_LINKS / Customer Journey Hub. Kept for legacy imports. */

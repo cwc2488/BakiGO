@@ -57,13 +57,14 @@ describe("UX-2 performance architecture", () => {
     expect(route).toContain("Promise.all");
   });
 
-  it("PERF-05 — Home cloud path does not double-fetch organization", () => {
+  it("PERF-05 — Home does not block on organization cloud sync", () => {
     const home = readSrc("src/components/home/HomePage.tsx");
-    expect(home).toContain("replaceLocalMembersFromCloud");
-    // Single fetchCloudOrganizationData in the cloud enrichment effect
-    const matches = home.match(/fetchCloudOrganizationData\(/g) ?? [];
-    expect(matches.length).toBe(1);
-    expect(home).not.toContain("syncCloudMembersToLocalStorage");
+    // MY UX: first paint uses local/cache metrics; org cloud sync is not on `/`.
+    expect(home).toContain("readMissionControlMetrics");
+    expect(home).not.toContain("fetchCloudOrganizationData");
+    expect(home).not.toContain("replaceLocalMembersFromCloud");
+    expect(home).not.toContain("fetchDownlineCloudData");
+    expect(home).toContain("includeMapUniverse: false");
   });
 
   it("PERF-06 — Calendar shared sync window is explicitly bounded", () => {

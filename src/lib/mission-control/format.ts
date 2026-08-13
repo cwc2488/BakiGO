@@ -16,6 +16,7 @@ export function loadMissionControlMetrics(
   memberId?: EntityId,
   storage: StorageAdapter = createLocalStorageAdapter(),
   supplementalEvents?: BakiEvent[],
+  options?: { includeMapUniverse?: boolean },
 ): MemberComputedMetrics {
   const referenceDate = todayISODate();
   const resolvedMemberId = memberId ?? resolveAuthenticatedMemberId(storage);
@@ -25,6 +26,7 @@ export function loadMissionControlMetrics(
       memberId: resolvedMemberId,
       referenceDate,
       supplementalEvents,
+      includeMapUniverse: options?.includeMapUniverse,
     },
     storage,
   );

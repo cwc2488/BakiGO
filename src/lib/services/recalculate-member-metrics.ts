@@ -108,6 +108,12 @@ export interface RecalculateMemberMetricsInput {
   downlineCloudCache?: import("@/lib/cloud/downline-cloud-data").DownlineCloudDataCache;
   /** 組織圖下線清單 — 與雲端 relationship 一致，優先於 sponsor 鏈。 */
   downlineRefs?: import("@/lib/organization/collect-downline-by-depth").DownlineMemberRef[];
+  /**
+   * When false, skip MapUniverse presentation assembly (home lightweight path).
+   * MAP engine `calculateMapProgress` still runs; universe UI model is not built.
+   * Default true — other surfaces keep full snapshot.
+   */
+  includeMapUniverse?: boolean;
 }
 
 function saveComputedMetrics(
@@ -389,24 +395,32 @@ export function recalculateMemberMetrics(
     vp,
   });
 
-  const mapUniverse = buildMapUniverse({
-    leaderMemberId: input.memberId,
-    organizationId: APP_IDS.organizationId,
-    referenceDate: input.referenceDate,
-    yearMonth,
-    map,
-    members,
-    activities,
-    transactions: memberTransactions,
-    presidentAI,
-    retailHouseKey: retailHouseKeys[0] ?? null,
-  });
+  const includeMapUniverse = input.includeMapUniverse !== false;
+  const mapUniverse = includeMapUniverse
+    ? buildMapUniverse({
+        leaderMemberId: input.memberId,
+        organizationId: APP_IDS.organizationId,
+        referenceDate: input.referenceDate,
+        yearMonth,
+        map,
+        members,
+        activities,
+        transactions: memberTransactions,
+        presidentAI,
+        retailHouseKey: retailHouseKeys[0] ?? null,
+      })
+    : {
+        layoutSlotCount: 0,
+        lines: [],
+        isRuleMissing: false,
+        computedAt: new Date().toISOString(),
+      };
 
-  const activeSupervisorLineCount = mapUniverse.lines.filter(
-    (line) => line.monthlyActive === true,
-  ).length;
+  const activeSupervisorLineCount = includeMapUniverse
+    ? mapUniverse.lines.filter((line) => line.monthlyActive === true).length
+    : map.activeLines;
   const syncedMap =
-    map.totalLines !== null
+    includeMapUniverse && map.totalLines !== null
       ? {
           ...map,
           activeLines: activeSupervisorLineCount,
