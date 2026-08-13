@@ -11,6 +11,10 @@ import type {
 } from "@/types/coaching";
 import { cloneDefaultCoachingPlanSnapshot, parseCoachingPlanSnapshot } from "@/lib/coaching/default-instructions";
 import { computeSleepDurationLabel, normalizeClockTimeInput } from "@/lib/coaching/coaching-sleep";
+import {
+  defaultPlannedEndDate,
+  resolveEnrollmentStartDate,
+} from "@/lib/coaching/enrollment-window";
 
 export class CoachingServiceError extends Error {
   constructor(
@@ -36,6 +40,7 @@ type EnrollmentRow = {
   goal: string | null;
   status: string;
   started_at: string;
+  planned_end_at?: string | null;
   ended_at: string | null;
   onboarding_completed_at: string | null;
   plan_snapshot_json: unknown;
@@ -87,6 +92,7 @@ function mapEnrollment(row: EnrollmentRow): CoachingEnrollment {
     goal: row.goal,
     status: row.status as CoachingEnrollment["status"],
     startedAt: row.started_at,
+    plannedEndAt: row.planned_end_at != null ? String(row.planned_end_at).slice(0, 10) : null,
     endedAt: row.ended_at,
     onboardingCompletedAt: row.onboarding_completed_at,
     planSnapshot: parseCoachingPlanSnapshot(row.plan_snapshot_json),
@@ -243,6 +249,10 @@ export async function createCoachingEnrollment(input: {
   ownerMemberId: string;
   goal?: string | null;
   planSnapshot?: CoachingEnrollment["planSnapshot"];
+  /** Journey Day 1 (YYYY-MM-DD). Defaults to today Taipei when omitted. */
+  startDate?: string | null;
+  /** Inclusive planned end (YYYY-MM-DD). Defaults to start + 89 days. */
+  plannedEndAt?: string | null;
 }): Promise<CoachingEnrollment> {
   await assertCustomerOwnedByMember(input.customerId, input.ownerMemberId);
 
@@ -265,6 +275,18 @@ export async function createCoachingEnrollment(input: {
 
   const baselineBodyRecordId = await getLatestBodyRecordId(input.customerId);
 
+  const startDate =
+    input.startDate && /^\d{4}-\d{2}-\d{2}$/.test(input.startDate)
+      ? input.startDate
+      : new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+  const plannedEndAt =
+    input.plannedEndAt && /^\d{4}-\d{2}-\d{2}$/.test(input.plannedEndAt)
+      ? input.plannedEndAt
+      : defaultPlannedEndDate(startDate);
+  if (plannedEndAt < startDate) {
+    throw new CoachingServiceError("結束日不得早於開始日", 400);
+  }
+
   const { data, error } = await supabase
     .from("coaching_enrollments")
     .insert({
@@ -272,6 +294,8 @@ export async function createCoachingEnrollment(input: {
       owner_member_id: input.ownerMemberId,
       goal: input.goal?.trim() || null,
       status: "active",
+      started_at: `${startDate}T00:00:00+08:00`,
+      planned_end_at: plannedEndAt,
       plan_snapshot_json: input.planSnapshot ?? cloneDefaultCoachingPlanSnapshot(),
       baseline_body_record_id: baselineBodyRecordId,
     })
@@ -291,6 +315,8 @@ export async function updateCoachingEnrollment(input: {
   status?: CoachingEnrollment["status"];
   goal?: string | null;
   planSnapshot?: CoachingEnrollment["planSnapshot"];
+  startDate?: string | null;
+  plannedEndAt?: string | null;
 }): Promise<CoachingEnrollment> {
   const supabase = createSupabaseServiceClient();
 
@@ -312,6 +338,28 @@ export async function updateCoachingEnrollment(input: {
   }
   if (input.planSnapshot) {
     patch.plan_snapshot_json = input.planSnapshot;
+  }
+  if (input.startDate !== undefined && input.startDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startDate)) {
+      throw new CoachingServiceError("開始日格式錯誤", 400);
+    }
+    patch.started_at = `${input.startDate}T00:00:00+08:00`;
+  }
+  if (input.plannedEndAt !== undefined) {
+    if (input.plannedEndAt && !/^\d{4}-\d{2}-\d{2}$/.test(input.plannedEndAt)) {
+      throw new CoachingServiceError("結束日格式錯誤", 400);
+    }
+    patch.planned_end_at = input.plannedEndAt;
+  }
+
+  const nextStart =
+    typeof patch.started_at === "string"
+      ? resolveEnrollmentStartDate(String(patch.started_at))
+      : null;
+  const nextEnd =
+    typeof patch.planned_end_at === "string" ? String(patch.planned_end_at).slice(0, 10) : null;
+  if (nextStart && nextEnd && nextEnd < nextStart) {
+    throw new CoachingServiceError("結束日不得早於開始日", 400);
   }
 
   const { data, error } = await supabase
@@ -856,6 +904,7 @@ export function serializeCoachingEnrollment(enrollment: CoachingEnrollment) {
     goal: enrollment.goal,
     status: enrollment.status,
     startedAt: enrollment.startedAt,
+    plannedEndAt: enrollment.plannedEndAt ?? null,
     endedAt: enrollment.endedAt,
     onboardingCompletedAt: enrollment.onboardingCompletedAt,
     planSnapshot: enrollment.planSnapshot,

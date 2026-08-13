@@ -11,9 +11,11 @@ import {
   serializeCoachingDailyLogDetail,
 } from "@/lib/coaching/coaching-service";
 import { listCoachingRecentDaySummaries } from "@/lib/coaching/list-coaching-recent-day-summaries";
+import { listCustomerSafeDirectiveReminders } from "@/lib/coaching/list-customer-safe-directive-reminders";
 import { buildCoachingProgressView } from "@/lib/coaching/build-coaching-progress-view";
 import { mapBodyRecordRow } from "@/lib/coaching/ai/load-coaching-generation-context";
 import { requireAllowedCoachingLogDate } from "@/lib/coaching/require-allowed-coaching-log-date";
+import { resolveEnrollmentPlannedEndDate } from "@/lib/coaching/enrollment-window";
 
 export const runtime = "nodejs";
 
@@ -25,28 +27,49 @@ async function loadPortalProgress(input: {
   logDate: string;
 }) {
   const supabase = createSupabaseServiceClient();
-  const [{ data: enrollment }, { data: bodyRows }] = await Promise.all([
-    supabase
-      .from("coaching_enrollments")
-      .select("goal, started_at, baseline_body_record_id")
-      .eq("id", input.enrollmentId)
-      .maybeSingle(),
-    supabase
-      .from("body_composition_records")
-      .select("*")
-      .eq("customer_id", input.customerId)
-      .order("record_date", { ascending: false }),
-  ]);
+  // TODO: planned_end_at is soft until portal RPC always returns plannedEndAt on context.
+  const enrollmentQuery = await supabase
+    .from("coaching_enrollments")
+    .select("goal, started_at, baseline_body_record_id, planned_end_at")
+    .eq("id", input.enrollmentId)
+    .maybeSingle();
 
-  return buildCoachingProgressView({
+  const enrollment =
+    enrollmentQuery.error && enrollmentQuery.error.message.includes("planned_end_at")
+      ? (
+          await supabase
+            .from("coaching_enrollments")
+            .select("goal, started_at, baseline_body_record_id")
+            .eq("id", input.enrollmentId)
+            .maybeSingle()
+        ).data
+      : enrollmentQuery.data;
+
+  const { data: bodyRows } = await supabase
+    .from("body_composition_records")
+    .select("*")
+    .eq("customer_id", input.customerId)
+    .order("record_date", { ascending: false });
+
+  const startedAt = enrollment?.started_at ?? input.startedAt ?? `${input.logDate}T00:00:00.000Z`;
+  const plannedEndRaw =
+    enrollment && "planned_end_at" in enrollment ? (enrollment as { planned_end_at?: string | null }).planned_end_at : null;
+  const plannedEndAt =
+    plannedEndRaw != null
+      ? String(plannedEndRaw).slice(0, 10)
+      : resolveEnrollmentPlannedEndDate({ startedAt, plannedEndAt: null });
+
+  const progress = buildCoachingProgressView({
     enrollment: {
       goal: enrollment?.goal ?? input.goal ?? null,
-      startedAt: enrollment?.started_at ?? input.startedAt ?? `${input.logDate}T00:00:00.000Z`,
+      startedAt,
       baselineBodyRecordId: enrollment?.baseline_body_record_id ?? null,
     },
     bodyRecords: (bodyRows ?? []).map((row) => mapBodyRecordRow(row as Record<string, unknown>)),
     logDate: input.logDate,
   });
+
+  return { progress, plannedEndAt };
 }
 
 export async function GET(
@@ -76,11 +99,12 @@ export async function GET(
         logDate,
         recentDays: [],
         progress: null,
+        customerReminders: [],
       });
     }
 
     const portal = await resolveActiveCoachingPortal(token);
-    const [recentDays, progress] = await Promise.all([
+    const [recentDays, progressBundle, customerReminders] = await Promise.all([
       listCoachingRecentDaySummaries({
         enrollmentId: portal.enrollmentId,
         enrollmentStartedAt: contextPayload.startedAt ?? null,
@@ -93,7 +117,18 @@ export async function GET(
         startedAt: contextPayload.startedAt,
         logDate,
       }),
+      listCustomerSafeDirectiveReminders({
+        enrollmentId: portal.enrollmentId,
+        logDate,
+      }),
     ]);
+
+    const { progress, plannedEndAt } = progressBundle;
+    const enrichedContext = {
+      ...contextPayload,
+      // Soft fallback until RPC returns plannedEndAt.
+      plannedEndAt: contextPayload.plannedEndAt ?? plannedEndAt,
+    };
 
     const dailyLog = await getCoachingDailyLogDetail({
       enrollmentId: portal.enrollmentId,
@@ -103,10 +138,11 @@ export async function GET(
     if (!dailyLog.id) {
       return NextResponse.json({
         ok: true,
-        context: contextPayload,
+        context: enrichedContext,
         logDate,
         recentDays,
         progress,
+        customerReminders,
         dailyLog: null,
       });
     }
@@ -130,10 +166,11 @@ export async function GET(
 
     return NextResponse.json({
       ok: true,
-      context: contextPayload,
+      context: enrichedContext,
       logDate,
       recentDays,
       progress,
+      customerReminders,
       dailyLog: {
         ...serialized,
         meals,

@@ -22,7 +22,10 @@ function loadEnvFile(path) {
 }
 
 function isPlaceholderSecret(value) {
-  return !value || value === "[SENSITIVE]" || value.length < 20;
+  if (!value) return true;
+  const trimmed = String(value).trim();
+  if (trimmed === "[SENSITIVE]" || trimmed.startsWith("[SENSITIVE]")) return true;
+  return trimmed.length < 20;
 }
 
 function pickEnvValue(...candidates) {
@@ -36,26 +39,32 @@ function pickEnvValue(...candidates) {
 
 function resolveEnv() {
   const productionEnv = loadEnvFile(".env.production.local");
+  const previewEnv = loadEnvFile(".env.preview.local");
   const localEnv = loadEnvFile(".env.local");
+  // Prefer process env → preview → local → production (production may be redacted placeholders).
   const url = pickEnvValue(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
-    productionEnv.NEXT_PUBLIC_SUPABASE_URL,
+    previewEnv.NEXT_PUBLIC_SUPABASE_URL,
     localEnv.NEXT_PUBLIC_SUPABASE_URL,
+    productionEnv.NEXT_PUBLIC_SUPABASE_URL,
   );
   const serviceKey = pickEnvValue(
     process.env.SUPABASE_SERVICE_ROLE_KEY,
-    productionEnv.SUPABASE_SERVICE_ROLE_KEY,
+    previewEnv.SUPABASE_SERVICE_ROLE_KEY,
     localEnv.SUPABASE_SERVICE_ROLE_KEY,
+    productionEnv.SUPABASE_SERVICE_ROLE_KEY,
   );
   const accessToken = pickEnvValue(
     process.env.SUPABASE_ACCESS_TOKEN,
-    productionEnv.SUPABASE_ACCESS_TOKEN,
+    previewEnv.SUPABASE_ACCESS_TOKEN,
     localEnv.SUPABASE_ACCESS_TOKEN,
+    productionEnv.SUPABASE_ACCESS_TOKEN,
   );
   const anonKey = pickEnvValue(
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    productionEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    previewEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     localEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    productionEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   );
   return {
     url,
@@ -66,6 +75,9 @@ function resolveEnv() {
       cwd: process.cwd(),
       productionEnvKeys: productionEnv.__keyCount ?? null,
       productionEnvLoadError: productionEnv.__loadError ?? null,
+      previewEnvKeys: previewEnv.__keyCount ?? null,
+      previewEnvLoadError: previewEnv.__loadError ?? null,
+      previewEnvFilePresent: !previewEnv.__loadError,
       localEnvKeys: localEnv.__keyCount ?? null,
       localEnvLoadError: localEnv.__loadError ?? null,
       processEnvHasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -302,6 +314,42 @@ async function verify033(supabase) {
   };
 }
 
+async function verify034(supabase) {
+  const plannedEnd = await columnExists(supabase, "coaching_enrollments", "planned_end_at");
+  const mealSlot = await columnExists(supabase, "coaching_coach_directives", "meal_slot");
+  const effectiveUntil = await columnExists(supabase, "coaching_coach_directives", "effective_until");
+  const status = await columnExists(supabase, "coaching_coach_directives", "status");
+  const customerVisible = await columnExists(supabase, "coaching_coach_directives", "customer_visible");
+  return {
+    plannedEnd,
+    mealSlot,
+    effectiveUntil,
+    status,
+    customerVisible,
+    ok:
+      plannedEnd.exists &&
+      mealSlot.exists &&
+      effectiveUntil.exists &&
+      status.exists &&
+      customerVisible.exists,
+  };
+}
+
+function log(line) {
+  console.log(line);
+}
+
+function logStatus(migration, status, detail = "") {
+  const suffix = detail ? ` — ${detail}` : "";
+  console.log(`[${migration}] ${status}${suffix}`);
+}
+
+function writeResult(out) {
+  const path = ".tmp-coaching-prod-migrate-result.json";
+  writeFileSync(path, JSON.stringify(out, null, 2));
+  log(`Wrote result: ${path}`);
+}
+
 async function applyMigration({ migration, sqlPath, token, projectRef }) {
   const sql = readFileSync(sqlPath, "utf8");
   const attempt = await runSqlViaManagementApi(sql, token, projectRef);
@@ -310,6 +358,12 @@ async function applyMigration({ migration, sqlPath, token, projectRef }) {
 
 async function main() {
   const mode = process.argv[2] ?? "verify";
+  if (mode !== "verify" && mode !== "apply") {
+    log("Usage: node scripts/coaching-prod-migrate.mjs <verify|apply>");
+    process.exit(1);
+  }
+
+  log(`coaching-prod-migrate mode=${mode}`);
   const { url, serviceKey, accessToken, anonKey, debug } = resolveEnv();
   const out = {
     mode,
@@ -325,18 +379,29 @@ async function main() {
     migrations: {},
   };
 
+  log(
+    `env: url=${out.env.hasUrl ? "usable" : "missing/placeholder"} serviceKey=${
+      out.env.hasServiceKey ? "usable" : "missing/placeholder"
+    } anonKey=${out.env.hasAnonKey ? "usable" : "missing/placeholder"} accessToken=${
+      out.env.hasAccessToken ? "usable" : "missing/placeholder"
+    } previewEnvFile=${debug.previewEnvFilePresent ? "present" : "missing"}`,
+  );
+
   if (!url?.startsWith("http")) {
     out.error = "invalid_supabase_url";
-    writeFileSync(".tmp-coaching-prod-migrate-result.json", JSON.stringify(out, null, 2));
+    log(`FAILED: ${out.error}`);
+    writeResult(out);
     process.exit(1);
   }
   out.projectRef = new URL(url).hostname.split(".")[0];
+  log(`target projectRef=${out.projectRef}`);
 
   const { createClient } = await import("@supabase/supabase-js");
   const clientKey = serviceKey ?? anonKey;
   if (!clientKey) {
     out.error = "missing_supabase_service_or_anon_key";
-    writeFileSync(".tmp-coaching-prod-migrate-result.json", JSON.stringify(out, null, 2));
+    log(`FAILED: ${out.error}`);
+    writeResult(out);
     process.exit(1);
   }
 
@@ -344,18 +409,30 @@ async function main() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  out.migrations["027"] = await verify027(supabase);
-  out.migrations["028"] = await verify028(supabase);
-  out.migrations["029"] = await verify029(supabase);
-  out.migrations["030"] = await verify030(supabase);
-  out.migrations["031"] = await verify031(supabase);
-  out.migrations["032"] = await verify032(supabase);
-  out.migrations["033"] = await verify033(supabase);
+  const verifiers = [
+    ["027", verify027, (r) => r.allTablesExist && r.rpc?.exists],
+    ["028", verify028, (r) => r.ok],
+    ["029", verify029, (r) => r.allTablesExist],
+    ["030", verify030, (r) => r.ok],
+    ["031", verify031, (r) => r.ok],
+    ["032", verify032, (r) => r.ok],
+    ["033", verify033, (r) => r.ok],
+    ["034", verify034, (r) => r.ok],
+  ];
+
+  for (const [id, verifyFn, isOk] of verifiers) {
+    logStatus(id, "checking");
+    out.migrations[id] = await verifyFn(supabase);
+    logStatus(id, isOk(out.migrations[id]) ? "verified" : "missing");
+  }
 
   if (mode === "apply") {
     if (!serviceKey && !accessToken) {
       out.error = "apply_requires_service_role_key_or_supabase_access_token";
-      writeFileSync(".tmp-coaching-prod-migrate-result.json", JSON.stringify(out, null, 2));
+      log(`FAILED: ${out.error}`);
+      log("Hint: Management API apply needs SUPABASE_ACCESS_TOKEN (or usable service role).");
+      log("Manual SQL path: supabase/migrations/034_coaching_product_correction.sql");
+      writeResult(out);
       process.exit(1);
     }
 
@@ -366,110 +443,97 @@ async function main() {
 
     out.applyAttempts = [];
 
-    if (!out.migrations["027"].allTablesExist) {
-      for (const [label, token] of tokens) {
-        const attempt = await applyMigration({
-          migration: "027_coaching_v1.sql",
-          sqlPath: "supabase/migrations/027_coaching_v1.sql",
-          token,
-          projectRef: out.projectRef,
-        });
-        out.applyAttempts.push({ label, ...attempt });
-        if (attempt.ok) break;
+    const applyIfNeeded = async ({ id, needed, migration, sqlPath }) => {
+      if (!needed) {
+        logStatus(id, "skipped", "already verified");
+        return;
       }
-      out.migrations["027"] = await verify027(supabase);
-    }
+      logStatus(id, "applying", migration);
+      let applied = false;
+      for (const [label, token] of tokens) {
+        const attempt = await applyMigration({ migration, sqlPath, token, projectRef: out.projectRef });
+        out.applyAttempts.push({ label, ...attempt });
+        logStatus(id, attempt.ok ? "applied" : "apply_failed", `${label} status=${attempt.status}`);
+        if (attempt.ok) {
+          applied = true;
+          break;
+        }
+      }
+      if (!applied) {
+        logStatus(id, "failed", "no successful apply attempt");
+      }
+    };
 
-    if (out.migrations["027"].allTablesExist && !out.migrations["028"].ok) {
-      for (const [label, token] of tokens) {
-        const attempt = await applyMigration({
-          migration: "028_coaching_sleep_times.sql",
-          sqlPath: "supabase/migrations/028_coaching_sleep_times.sql",
-          token,
-          projectRef: out.projectRef,
-        });
-        out.applyAttempts.push({ label, ...attempt });
-        if (attempt.ok) break;
-      }
-      out.migrations["028"] = await verify028(supabase);
-    }
+    await applyIfNeeded({
+      id: "027",
+      needed: !out.migrations["027"].allTablesExist,
+      migration: "027_coaching_v1.sql",
+      sqlPath: "supabase/migrations/027_coaching_v1.sql",
+    });
+    out.migrations["027"] = await verify027(supabase);
 
-    if (out.migrations["027"].allTablesExist && out.migrations["028"].ok && !out.migrations["029"].allTablesExist) {
-      for (const [label, token] of tokens) {
-        const attempt = await applyMigration({
-          migration: "029_coaching_ai_phase2a.sql",
-          sqlPath: "supabase/migrations/029_coaching_ai_phase2a.sql",
-          token,
-          projectRef: out.projectRef,
-        });
-        out.applyAttempts.push({ label, ...attempt });
-        if (attempt.ok) break;
-      }
-      out.migrations["029"] = await verify029(supabase);
-    }
+    await applyIfNeeded({
+      id: "028",
+      needed: out.migrations["027"].allTablesExist && !out.migrations["028"].ok,
+      migration: "028_coaching_sleep_times.sql",
+      sqlPath: "supabase/migrations/028_coaching_sleep_times.sql",
+    });
+    out.migrations["028"] = await verify028(supabase);
+    logStatus("028", out.migrations["028"].ok ? "verified" : "missing", "post-apply check");
 
-    if (out.migrations["029"].allTablesExist && !out.migrations["030"].ok) {
-      for (const [label, token] of tokens) {
-        const attempt = await applyMigration({
-          migration: "030_coaching_generation_job_claim.sql",
-          sqlPath: "supabase/migrations/030_coaching_generation_job_claim.sql",
-          token,
-          projectRef: out.projectRef,
-        });
-        out.applyAttempts.push({ label, ...attempt });
-        if (attempt.ok) break;
-      }
-      out.migrations["030"] = await verify030(supabase);
-    }
+    await applyIfNeeded({
+      id: "029",
+      needed: out.migrations["027"].allTablesExist && out.migrations["028"].ok && !out.migrations["029"].allTablesExist,
+      migration: "029_coaching_ai_phase2a.sql",
+      sqlPath: "supabase/migrations/029_coaching_ai_phase2a.sql",
+    });
+    out.migrations["029"] = await verify029(supabase);
+    logStatus("029", out.migrations["029"].allTablesExist ? "verified" : "missing", "post-apply check");
 
-    if (
-      out.migrations["029"].allTablesExist &&
-      out.migrations["030"].ok &&
-      !out.migrations["031"].ok
-    ) {
-      for (const [label, token] of tokens) {
-        const attempt = await applyMigration({
-          migration: "031_coaching_coach_actions.sql",
-          sqlPath: "supabase/migrations/031_coaching_coach_actions.sql",
-          token,
-          projectRef: out.projectRef,
-        });
-        out.applyAttempts.push({ label, ...attempt });
-        if (attempt.ok) break;
-      }
-      out.migrations["031"] = await verify031(supabase);
-    }
+    await applyIfNeeded({
+      id: "030",
+      needed: out.migrations["029"].allTablesExist && !out.migrations["030"].ok,
+      migration: "030_coaching_generation_job_claim.sql",
+      sqlPath: "supabase/migrations/030_coaching_generation_job_claim.sql",
+    });
+    out.migrations["030"] = await verify030(supabase);
+    logStatus("030", out.migrations["030"].ok ? "verified" : "missing", "post-apply check");
 
-    if (
-      out.migrations["031"].ok &&
-      !out.migrations["032"].ok
-    ) {
-      for (const [label, token] of tokens) {
-        const attempt = await applyMigration({
-          migration: "032_growth_opportunities.sql",
-          sqlPath: "supabase/migrations/032_growth_opportunities.sql",
-          token,
-          projectRef: out.projectRef,
-        });
-        out.applyAttempts.push({ label, ...attempt });
-        if (attempt.ok) break;
-      }
-      out.migrations["032"] = await verify032(supabase);
-    }
+    await applyIfNeeded({
+      id: "031",
+      needed: out.migrations["029"].allTablesExist && out.migrations["030"].ok && !out.migrations["031"].ok,
+      migration: "031_coaching_coach_actions.sql",
+      sqlPath: "supabase/migrations/031_coaching_coach_actions.sql",
+    });
+    out.migrations["031"] = await verify031(supabase);
+    logStatus("031", out.migrations["031"].ok ? "verified" : "missing", "post-apply check");
 
-    if (out.migrations["032"].ok && !out.migrations["033"].ok) {
-      for (const [label, token] of tokens) {
-        const attempt = await applyMigration({
-          migration: "033_growth_shares_referrals.sql",
-          sqlPath: "supabase/migrations/033_growth_shares_referrals.sql",
-          token,
-          projectRef: out.projectRef,
-        });
-        out.applyAttempts.push({ label, ...attempt });
-        if (attempt.ok) break;
-      }
-      out.migrations["033"] = await verify033(supabase);
-    }
+    await applyIfNeeded({
+      id: "032",
+      needed: out.migrations["031"].ok && !out.migrations["032"].ok,
+      migration: "032_growth_opportunities.sql",
+      sqlPath: "supabase/migrations/032_growth_opportunities.sql",
+    });
+    out.migrations["032"] = await verify032(supabase);
+    logStatus("032", out.migrations["032"].ok ? "verified" : "missing", "post-apply check");
+
+    await applyIfNeeded({
+      id: "033",
+      needed: out.migrations["032"].ok && !out.migrations["033"].ok,
+      migration: "033_growth_shares_referrals.sql",
+      sqlPath: "supabase/migrations/033_growth_shares_referrals.sql",
+    });
+    out.migrations["033"] = await verify033(supabase);
+    logStatus("033", out.migrations["033"].ok ? "verified" : "missing", "post-apply check");
+
+    await applyIfNeeded({
+      id: "034",
+      needed: out.migrations["033"].ok && !out.migrations["034"].ok,
+      migration: "034_coaching_product_correction.sql",
+      sqlPath: "supabase/migrations/034_coaching_product_correction.sql",
+    });
+    out.migrations["034"] = await verify034(supabase);
+    logStatus("034", out.migrations["034"].ok ? "verified" : "missing", "post-apply check");
   }
 
   out.ok =
@@ -481,18 +545,26 @@ async function main() {
     out.migrations["031"].ok &&
     out.migrations["032"].ok &&
     out.migrations["033"].ok &&
+    out.migrations["034"].ok &&
     (serviceKey
       ? !!out.migrations["027"].storage?.bucket && out.migrations["027"].storage.bucket.public === false
       : true);
 
-  writeFileSync(".tmp-coaching-prod-migrate-result.json", JSON.stringify(out, null, 2));
+  log(
+    `034 columns: planned_end_at=${out.migrations["034"].plannedEnd?.exists} meal_slot=${out.migrations["034"].mealSlot?.exists} effective_until=${out.migrations["034"].effectiveUntil?.exists} status=${out.migrations["034"].status?.exists} customer_visible=${out.migrations["034"].customerVisible?.exists}`,
+  );
+  log(`RESULT: ${out.ok ? "OK" : "FAILED"} (mode=${mode}, projectRef=${out.projectRef})`);
+  writeResult(out);
   if (!out.ok) process.exit(1);
 }
 
 main().catch((error) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`FATAL: ${message}`);
   writeFileSync(
     ".tmp-coaching-prod-migrate-result.json",
-    JSON.stringify({ ok: false, error: error.message }, null, 2),
+    JSON.stringify({ ok: false, error: message }, null, 2),
   );
+  console.error("Wrote result: .tmp-coaching-prod-migrate-result.json");
   process.exit(1);
 });

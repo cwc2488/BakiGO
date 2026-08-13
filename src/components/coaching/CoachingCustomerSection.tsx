@@ -8,6 +8,7 @@ import {
   fetchCustomerPortalToken,
 } from "@/lib/cloud/customer-cloud-service";
 import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetch";
+import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 import {
   cloneDefaultCoachingPlanSnapshot,
   DEFAULT_COACHING_PLAN_SNAPSHOT,
@@ -17,11 +18,21 @@ import {
   planSnapshotToDraft,
   type CoachingPlanDraft,
 } from "@/lib/coaching/coaching-plan-draft";
+import {
+  defaultPlannedEndDate,
+  resolveEnrollmentPlannedEndDate,
+  resolveEnrollmentStartDate,
+} from "@/lib/coaching/enrollment-window";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import {
   COACHING_STATUS_LABELS,
   type CoachingEnrollment,
 } from "@/types/coaching";
+
+function defaultEnrollmentDates() {
+  const startDate = coachingTodayLogDate();
+  return { startDate, plannedEndAt: defaultPlannedEndDate(startDate) };
+}
 
 export function CoachingCustomerSection({
   customerId,
@@ -41,6 +52,9 @@ export function CoachingCustomerSection({
   const [planDraft, setPlanDraft] = useState<CoachingPlanDraft>(() =>
     planSnapshotToDraft(cloneDefaultCoachingPlanSnapshot()),
   );
+  const [{ startDate, plannedEndAt }, setEnrollmentDates] = useState(defaultEnrollmentDates);
+  const [editStartDate, setEditStartDate] = useState("");
+  const [editPlannedEndAt, setEditPlannedEndAt] = useState("");
 
   const reload = useCallback(async () => {
     if (!isSupabaseConfigured()) {
@@ -63,9 +77,20 @@ export function CoachingCustomerSection({
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error ?? "無法載入陪跑狀態");
       }
-      setEnrollment(payload.enrollment ?? null);
-      if (payload.enrollment?.goal) {
-        setGoal(payload.enrollment.goal);
+      const next = payload.enrollment ?? null;
+      setEnrollment(next);
+      if (next?.goal) {
+        setGoal(next.goal);
+      }
+      if (next) {
+        const start = resolveEnrollmentStartDate(next.startedAt) ?? coachingTodayLogDate();
+        const end =
+          resolveEnrollmentPlannedEndDate({
+            startedAt: next.startedAt,
+            plannedEndAt: next.plannedEndAt,
+          }) ?? defaultPlannedEndDate(start);
+        setEditStartDate(start);
+        setEditPlannedEndAt(end);
       }
 
       const token = await fetchCustomerPortalToken(customerId);
@@ -87,6 +112,7 @@ export function CoachingCustomerSection({
 
   const openPlanConfirm = () => {
     setPlanDraft(planSnapshotToDraft(cloneDefaultCoachingPlanSnapshot()));
+    setEnrollmentDates(defaultEnrollmentDates());
     setShowPlanConfirm(true);
     setError(null);
   };
@@ -102,6 +128,8 @@ export function CoachingCustomerSection({
           customerId,
           goal: goal.trim() || null,
           planSnapshot,
+          startDate,
+          plannedEndAt,
         }),
       });
       const payload = (await response.json()) as { ok?: boolean; error?: string };
@@ -113,6 +141,33 @@ export function CoachingCustomerSection({
       await reload();
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : "無法開始陪跑");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveEnrollmentDates = async () => {
+    if (!enrollment) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetchCoachingWithMemberAuth(
+        `/api/coaching/enrollments/${encodeURIComponent(enrollment.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            startDate: editStartDate,
+            plannedEndAt: editPlannedEndAt,
+          }),
+        },
+      );
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "更新日期失敗");
+      }
+      await reload();
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "更新日期失敗");
     } finally {
       setBusy(false);
     }
@@ -167,6 +222,32 @@ export function CoachingCustomerSection({
             label="開跑設定"
             value={enrollment.onboardingCompletedAt ? "已完成" : "尚未完成"}
           />
+          <div className="space-y-3 rounded-[1rem] border border-[#eef2ea] bg-[#fafdf8] p-3">
+            <p className="text-[0.8125rem] font-medium text-[#86868b]">陪跑區間</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block space-y-2">
+                <span className="text-[0.875rem] font-medium text-[#636366]">開始日</span>
+                <input
+                  className="w-full rounded-[1rem] border border-[#e5e5ea] bg-white px-4 py-3 text-[1rem]"
+                  onChange={(event) => setEditStartDate(event.target.value)}
+                  type="date"
+                  value={editStartDate}
+                />
+              </label>
+              <label className="block space-y-2">
+                <span className="text-[0.875rem] font-medium text-[#636366]">預計結束日</span>
+                <input
+                  className="w-full rounded-[1rem] border border-[#e5e5ea] bg-white px-4 py-3 text-[1rem]"
+                  onChange={(event) => setEditPlannedEndAt(event.target.value)}
+                  type="date"
+                  value={editPlannedEndAt}
+                />
+              </label>
+            </div>
+            <CrmButton disabled={busy} onClick={() => void saveEnrollmentDates()} type="button" variant="secondary">
+              儲存日期
+            </CrmButton>
+          </div>
           {portalLink ? (
             <div className="space-y-2">
               <p className="text-[0.8125rem] font-medium text-[#86868b]">陪跑專屬連結</p>
@@ -203,6 +284,14 @@ export function CoachingCustomerSection({
           onCancel={() => setShowPlanConfirm(false)}
           onChange={setPlanDraft}
           onConfirm={() => void confirmStartCoaching()}
+          onPlannedEndAtChange={(value) =>
+            setEnrollmentDates((prev) => ({ ...prev, plannedEndAt: value }))
+          }
+          onStartDateChange={(value) =>
+            setEnrollmentDates((prev) => ({ ...prev, startDate: value }))
+          }
+          plannedEndAt={plannedEndAt}
+          startDate={startDate}
         />
       ) : (
         <div className="space-y-3">

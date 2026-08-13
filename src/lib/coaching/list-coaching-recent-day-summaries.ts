@@ -1,3 +1,7 @@
+import {
+  coachingJourneyDayNumberInWindow,
+  coachingJourneyDayTotal,
+} from "@/lib/coaching/enrollment-window";
 import { getCoachingAiOutputForDay } from "@/lib/coaching/ai/coaching-ai-store";
 import {
   COACHING_DAY_UI_STATUS_LABELS,
@@ -19,24 +23,24 @@ export type { CoachingRecentDaySummary };
 /** Inclusive day index from enrollment start date (YYYY-MM-DD) to logDate. */
 export function coachingJourneyDayNumber(input: {
   enrollmentStartedAt: string | null | undefined;
+  enrollmentPlannedEndAt?: string | null;
   logDate: string;
 }): number | null {
-  if (!input.enrollmentStartedAt) {
-    return null;
-  }
-  const startDate = input.enrollmentStartedAt.slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(input.logDate)) {
-    return null;
-  }
-  const [sy, sm, sd] = startDate.split("-").map(Number);
-  const [ly, lm, ld] = input.logDate.split("-").map(Number);
-  const start = Date.UTC(sy, sm - 1, sd);
-  const log = Date.UTC(ly, lm - 1, ld);
-  const diff = Math.floor((log - start) / 86_400_000) + 1;
-  if (diff < 1 || diff > 90) {
-    return diff < 1 ? null : Math.min(diff, 90);
-  }
-  return diff;
+  return coachingJourneyDayNumberInWindow({
+    startedAt: input.enrollmentStartedAt,
+    plannedEndAt: input.enrollmentPlannedEndAt,
+    logDate: input.logDate,
+  });
+}
+
+export function coachingJourneyTotalDays(input: {
+  enrollmentStartedAt: string | null | undefined;
+  enrollmentPlannedEndAt?: string | null;
+}): number {
+  return coachingJourneyDayTotal({
+    startedAt: input.enrollmentStartedAt,
+    plannedEndAt: input.enrollmentPlannedEndAt,
+  });
 }
 
 function extractFocusSummary(outputJson: {

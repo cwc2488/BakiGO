@@ -57,6 +57,9 @@ export const COACHING_GENERATION_WORKER_CONCURRENCY = 3 as const;
 /** Customer complete-page polling gives up after this duration. */
 export const COACHING_AI_CUSTOMER_POLL_TIMEOUT_MS = 90_000 as const;
 
+/** Initial poll interval while AI is pending/processing. */
+export const COACHING_AI_CUSTOMER_POLL_INTERVAL_MS = 2_500 as const;
+
 export type CoachingAiLlmFeature = "coaching" | "consultation" | "radar" | "quiz";
 
 export type CoachingAiLlmCallStatus = "completed" | "failed";

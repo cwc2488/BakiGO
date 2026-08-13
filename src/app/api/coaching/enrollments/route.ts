@@ -58,6 +58,8 @@ export async function POST(request: Request) {
       customerId?: string;
       goal?: string | null;
       planSnapshot?: unknown;
+      startDate?: string | null;
+      plannedEndAt?: string | null;
     };
     if (!body.customerId?.trim()) {
       return NextResponse.json({ error: "customerId is required." }, { status: 400 });
@@ -68,6 +70,8 @@ export async function POST(request: Request) {
       ownerMemberId: memberId,
       goal: body.goal ?? null,
       planSnapshot: body.planSnapshot ? parseCoachingPlanSnapshot(body.planSnapshot) : undefined,
+      startDate: body.startDate ?? null,
+      plannedEndAt: body.plannedEndAt ?? null,
     });
 
     return NextResponse.json({

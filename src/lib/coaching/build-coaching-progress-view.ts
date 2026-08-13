@@ -27,7 +27,7 @@ export type CoachingProgressMetricRow = {
 
 export type CoachingProgressView = {
   dayNumber: number | null;
-  dayTotal: 90;
+  dayTotal: number;
   goalLabel: string;
   measurementStage: CoachingMeasurementStage;
   measurementStageLabel: string;

@@ -4,117 +4,13 @@ import Link from "next/link";
 import { PageShell } from "@/components/ui/PageShell";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { APP_ICON } from "@/lib/ui/app-icons";
-import { ROUTE_ICON_COMPONENTS, type QuickLinkHref } from "@/components/ui/BrandIcons";
-import type { AppIconName } from "@/components/ui/AppIcon";
+import { ROUTE_ICON_COMPONENTS } from "@/components/ui/BrandIcons";
+import {
+  CUSTOMER_JOURNEY_HUB_ITEMS,
+  type CustomerJourneyHubItem,
+} from "@/lib/customers/customer-journey-hub-items";
 
-type HubItem = {
-  href?: string;
-  title: string;
-  desc: string;
-  iconHref?: QuickLinkHref;
-  iconName?: AppIconName;
-  /** Soft placeholder — e.g. Radar / 轉介紹中心 */
-  comingSoon?: boolean;
-  /** Locked product entry — visible but not enterable */
-  locked?: boolean;
-  lockLabel?: string;
-};
-
-type HubSection = {
-  title: string;
-  subtitle: string;
-  items: HubItem[];
-};
-
-const SECTIONS: HubSection[] = [
-  {
-    title: "找新顧客",
-    subtitle: "開啟對話與名單來源",
-    items: [
-      {
-        title: "AI Radar",
-        desc: "智慧找人（開發中）",
-        iconName: APP_ICON.section.aiAnalysis,
-        comingSoon: true,
-      },
-      {
-        href: "/retail-pipeline",
-        title: "我的名單",
-        desc: "推進每位名單",
-        iconHref: "/retail-pipeline",
-      },
-      {
-        href: "/quiz/hub",
-        title: "心理測驗",
-        desc: "用測驗開啟話題",
-        iconHref: "/quiz/hub",
-      },
-    ],
-  },
-  {
-    title: "正在接觸",
-    subtitle: "從接觸到諮詢",
-    items: [
-      {
-        href: "/retail-pipeline",
-        title: "待聯絡／Pipeline",
-        desc: "名單推進狀態",
-        iconHref: "/retail-pipeline",
-      },
-      {
-        title: "導引諮詢",
-        desc: "正式諮詢流程尚未對外開放",
-        iconHref: "/customers",
-        locked: true,
-        lockLabel: "即將開放",
-      },
-      {
-        href: "/customers/list",
-        title: "待諮詢顧客",
-        desc: "從顧客列表跟進",
-        iconHref: "/customers",
-      },
-    ],
-  },
-  {
-    title: "我的顧客",
-    subtitle: "顧客資料與追蹤",
-    items: [
-      {
-        href: "/customers/list",
-        title: "顧客列表",
-        desc: "體組成與追蹤",
-        iconHref: "/customers",
-      },
-    ],
-  },
-  {
-    title: "陪跑",
-    subtitle: "今天誰需要我？",
-    items: [
-      {
-        href: "/coaching",
-        title: "陪跑指揮中心",
-        desc: "需要處理 · 觀察 · 回測 · 進展",
-        iconHref: "/coaching",
-      },
-    ],
-  },
-  {
-    title: "成果與分享",
-    subtitle: "陪跑成果 → 體驗 → 適合分享 → 轉介紹",
-    items: [
-      {
-        href: "/customers/referrals",
-        title: "轉介紹中心",
-        desc: "成果分享／朋友體驗／A 介紹 B",
-        iconName: APP_ICON.section.growth,
-      },
-    ],
-  },
-];
-
-function HubLinkCard({ item }: { item: HubItem }) {
+function HubLinkCard({ item }: { item: CustomerJourneyHubItem }) {
   const Icon = (item.iconHref ? ROUTE_ICON_COMPONENTS[item.iconHref] : null) ?? null;
   const badge = item.locked
     ? (item.lockLabel ?? "即將開放")
@@ -184,25 +80,15 @@ export default function CustomerJourneyHubPage() {
     <PageShell
       showBack={false}
       title="顧客"
-      subtitle="找人 → 接觸 → 顧客 → 陪跑 → 成果與分享"
+      subtitle="名單 → 顧客 → 陪跑 → 轉介紹"
       variant="plain"
     >
-      <div className="mx-auto max-w-lg space-y-8 px-4 pb-8 pt-2">
-        {SECTIONS.map((section) => (
-          <section key={section.title} className="min-w-0 space-y-3">
-            <div>
-              <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">{section.title}</h2>
-              <p className="mt-0.5 text-[0.875rem] text-[#86868b]">{section.subtitle}</p>
-            </div>
-            <div className="space-y-2.5">
-              {section.items.map((item) => (
-                <HubLinkCard key={`${section.title}-${item.title}`} item={item} />
-              ))}
-            </div>
-          </section>
+      <div className="mx-auto max-w-lg space-y-3 px-4 pb-8 pt-2">
+        {CUSTOMER_JOURNEY_HUB_ITEMS.map((item) => (
+          <HubLinkCard key={item.title} item={item} />
         ))}
-        <p className="text-center text-[0.8125rem] text-[#86868b]">
-          轉介紹中心會列出你的所有顧客；陪跑詳情仍可查看成果與分享時機。
+        <p className="pt-4 text-center text-[0.8125rem] text-[#86868b]">
+          待聯絡／正在接觸可在「我的名單」裡篩選；這裡只保留主入口。
         </p>
       </div>
     </PageShell>

@@ -46,7 +46,15 @@ import { createCustomerRepository } from "@/lib/repositories/customer-repository
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { BodyCompositionRecord, Customer, CustomerPortalToken, CustomerProgressPhoto, CustomerReceiptPhoto } from "@/types/customer";
+import type {
+  BodyCompositionRecord,
+  Customer,
+  CustomerPortalToken,
+  CustomerProgressPhoto,
+  CustomerReceiptPhoto,
+  CustomerSex,
+} from "@/types/customer";
+import { CUSTOMER_SEX_LABELS } from "@/types/customer";
 import type { Member } from "@/types/member";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -227,10 +235,19 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
     reload();
   };
 
-  const handleBirthYearChange = (value: string) => {
-    const parsed = parseCustomerBodyNumber(value);
+  const handleBirthDateChange = (value: string) => {
+    // Full date only — keep legacy birthYear-only until user fills a complete date.
+    // Do not invent 1/1 for year-only rows.
     repo.updateCustomer(customerId, {
-      birthYear: parsed ?? undefined,
+      birthDate: value || undefined,
+    });
+    reload();
+  };
+
+  const handleSexChange = (value: string) => {
+    const next = value as CustomerSex | "";
+    repo.updateCustomer(customerId, {
+      sex: next || undefined,
     });
     reload();
   };
@@ -458,7 +475,20 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
         <dl className="mt-4">
           <CrmField label="電話" value={customer.phone} />
           <CrmField label="LINE" value={customer.lineId} />
-          <CrmField label="出生年" value={customer.birthYear} />
+          <CrmField
+            label="性別"
+            value={customer.sex ? CUSTOMER_SEX_LABELS[customer.sex] : undefined}
+          />
+          <CrmField
+            label="出生日期"
+            value={
+              customer.birthDate
+                ? customer.birthDate.replace(/-/g, "/")
+                : customer.birthYear
+                  ? `${customer.birthYear}（僅年份，請補完整日期）`
+                  : undefined
+            }
+          />
           <CrmField label="身高 (cm)" value={customer.heightCm} />
           <CrmField label="備註" value={customer.note} />
         </dl>
@@ -469,14 +499,26 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
             onChange={(event) => handleHeightChange(event.target.value)}
             value={customer.heightCm?.toString() ?? ""}
           />
+          <label className="block space-y-2">
+            <span className="text-[0.9375rem] font-medium text-[#1d1d1f]">性別</span>
+            <select
+              className="w-full rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-bg)] px-4 py-3.5 text-[1rem] text-[#1d1d1f] outline-none focus:border-[var(--brand-primary)] focus:bg-[var(--brand-surface)]"
+              onChange={(event) => handleSexChange(event.target.value)}
+              value={customer.sex === "male" || customer.sex === "female" ? customer.sex : ""}
+            >
+              <option value="">未填</option>
+              <option value="male">{CUSTOMER_SEX_LABELS.male}</option>
+              <option value="female">{CUSTOMER_SEX_LABELS.female}</option>
+            </select>
+          </label>
           <CrmInput
-            label="出生年"
-            inputMode="numeric"
-            onChange={(event) => handleBirthYearChange(event.target.value)}
-            value={customer.birthYear?.toString() ?? ""}
+            label="出生日期"
+            onChange={(event) => handleBirthDateChange(event.target.value)}
+            type="date"
+            value={customer.birthDate ?? ""}
           />
           <p className="text-[0.8125rem] text-[#86868b]">
-            身高設定後固定；有出生年時，量測會自動帶入年齡。
+            身高設定後固定；填完整出生日期（YYYY/MM/DD）後，量測會自動帶入年齡。僅有出生年的舊資料不會自動補成 1/1。
           </p>
           <CrmInput
             label="下次追蹤日"

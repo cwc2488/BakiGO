@@ -6,9 +6,14 @@ import {
   interpretFatLossOutcome,
   resolveBodyAwareInterventionLevel,
 } from "@/lib/coaching/ai/assess-coaching-outcome";
+import { assessBowelMovementSignal } from "@/lib/coaching/ai/bowel-movement-signal";
 import { buildMealFollowUpBudget } from "@/lib/coaching/ai/meal-follow-up-budget";
 import { buildMealPlanContext } from "@/lib/coaching/ai/meal-plan-context";
 import { normalizeMealObservations } from "@/lib/coaching/ai/normalize-meal-observations";
+import {
+  verifyCoachDirectivesAgainstMeals,
+  type StructuredCoachDirective,
+} from "@/lib/coaching/directive-meal-verification";
 import type {
   CoachingCoachDirectivesMemory,
   CoachingGenerationInput,
@@ -403,7 +408,7 @@ function buildCoachDirectiveSignals(directives: CoachingCoachDirectivesMemory | 
   return [
     signal({
       key: "coach_directive_active",
-      category: "coach_directive",
+      category: "body_trend",
       severity: "high",
       source: "coach_directive",
       evidence: [
@@ -742,6 +747,8 @@ export function buildCoachingDecisionContext(input: {
   pendingFollowUps?: import("@/types/coaching-signals").CoachingFollowUpMemory[];
   /** Optional override when caller already resolved intervention (e.g. fixture C). */
   finalInterventionLevelOverride?: CoachingInterventionLevel;
+  /** Structured meal-slot directives for CD verification. */
+  structuredDirectives?: StructuredCoachDirective[];
 }): CoachingDecisionContext {
   const mealPlanContext = buildMealPlanContext(input.generationInput.profileMemory.planSnapshot);
   const mealObservations = normalizeMealObservations(input.mealObservations ?? []);
@@ -793,6 +800,42 @@ export function buildCoachingDecisionContext(input: {
     hungerReported: customerVoice.some((item) => item.key === "hunger_reported"),
   });
 
+  const bowel = assessBowelMovementSignal({
+    todayCount: input.generationInput.todayContext.bowelMovementCount,
+    recentCounts: input.generationInput.rollingMemory.recentDays
+      .map((day) => day.bowelMovementCount)
+      .filter((count): count is number => count != null),
+    customerNote: input.generationInput.todayContext.customerNote,
+  });
+  if (bowel.level !== "normal") {
+    signals.push(
+      signal({
+        key: bowel.level === "repeated_elevated" ? "bowel_repeated_elevated" : "bowel_elevated_today",
+        category: "body_trend",
+        severity: "moderate",
+        source: "today",
+        evidence: [
+          evidence("bowel_movement_count", bowel.todayCount),
+          evidence("bowel_level", bowel.level),
+          evidence("coach_copy", bowel.coachCopy),
+        ],
+      }),
+    );
+  }
+
+  const directiveVerifications = verifyCoachDirectivesAgainstMeals({
+    logDate: input.generationInput.todayContext.logDate,
+    directives: input.structuredDirectives ?? [],
+    mealObservations: mealObservations.map((obs) => ({
+      mealSlot: obs.mealSlot,
+      shakeObserved: obs.shakeObserved,
+      observedFoods: obs.observedFoods,
+      uncertainties: obs.uncertainties,
+      confidence: null,
+    })),
+    customerNote: input.generationInput.todayContext.customerNote,
+  });
+
   return {
     signals,
     positiveSignals: safePositive,
@@ -810,6 +853,17 @@ export function buildCoachingDecisionContext(input: {
     mealPlanContext,
     goalContext: outcomeAssessment.goalContext,
     outcomeAssessment,
+    bowelSignal:
+      bowel.level === "normal"
+        ? null
+        : {
+            level: bowel.level,
+            todayCount: bowel.todayCount,
+            coachCopy: bowel.coachCopy,
+            customerCopy: bowel.customerCopy,
+            suggestProfessionalCare: bowel.suggestProfessionalCare,
+          },
+    directiveVerifications,
   };
 }
 

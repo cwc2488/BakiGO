@@ -2,6 +2,7 @@
 
 import { CrmButton } from "@/components/members/ui";
 import type { CoachingPlanDraft } from "@/lib/coaching/coaching-plan-draft";
+import { defaultPlannedEndDate } from "@/lib/coaching/enrollment-window";
 
 function PlanTextareaField({
   label,
@@ -30,25 +31,62 @@ function PlanTextareaField({
   );
 }
 
+function DateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block space-y-2">
+      <span className="text-[0.875rem] font-medium text-[#636366]">{label}</span>
+      <input
+        className="w-full rounded-[1rem] border border-[#e5e5ea] px-4 py-3 text-[1rem]"
+        onChange={(event) => onChange(event.target.value)}
+        type="date"
+        value={value}
+      />
+    </label>
+  );
+}
+
 export function CoachingPlanConfirmForm({
   customerDisplayName,
   goal,
   draft,
+  startDate,
+  plannedEndAt,
   busy,
   onChange,
+  onStartDateChange,
+  onPlannedEndAtChange,
   onCancel,
   onConfirm,
 }: {
   customerDisplayName: string;
   goal: string;
   draft: CoachingPlanDraft;
+  startDate: string;
+  plannedEndAt: string;
   busy: boolean;
   onChange: (draft: CoachingPlanDraft) => void;
+  onStartDateChange: (startDate: string) => void;
+  onPlannedEndAtChange: (plannedEndAt: string) => void;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const update = (patch: Partial<CoachingPlanDraft>) => {
     onChange({ ...draft, ...patch });
+  };
+
+  const handleStartDateChange = (nextStart: string) => {
+    onStartDateChange(nextStart);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(nextStart)) {
+      onPlannedEndAtChange(defaultPlannedEndDate(nextStart));
+    }
   };
 
   return (
@@ -62,6 +100,12 @@ export function CoachingPlanConfirmForm({
           <p className="mt-2 text-[0.875rem] text-[#86868b]">陪跑目標：{goal.trim()}</p>
         ) : null}
       </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <DateField label="開始日" onChange={handleStartDateChange} value={startDate} />
+        <DateField label="預計結束日" onChange={onPlannedEndAtChange} value={plannedEndAt} />
+      </div>
+      <p className="text-[0.75rem] text-[#86868b]">預設為開始日起算 90 天（含第 1 天）。可依個案調整。</p>
 
       <PlanTextareaField
         hint="定位為本陪跑方案的執行原則，一行一項"

@@ -49,7 +49,7 @@ function TransactionRow({
     <li
       className={
         presentationMode
-          ? "rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3"
+          ? "rounded-xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-3 py-1.5"
           : "rounded-2xl bg-[var(--brand-bg)] px-4 py-3"
       }
     >
@@ -57,7 +57,7 @@ function TransactionRow({
         <p
           className={
             presentationMode
-              ? "text-[1.125rem] font-semibold text-[#1d1d1f]"
+              ? "text-[0.9375rem] font-semibold leading-snug text-[#1d1d1f]"
               : "text-[1rem] font-semibold text-[#1d1d1f]"
           }
         >
@@ -67,24 +67,30 @@ function TransactionRow({
           <span
             className={
               presentationMode
-                ? "block text-[1.0625rem] font-semibold text-[#1d1d1f]"
+                ? "block text-[0.875rem] font-semibold leading-snug text-[#1d1d1f]"
                 : "block text-[0.9375rem] font-semibold text-[#1d1d1f]"
             }
           >
             {formatReportAmount(item.amount, unit)}
           </span>
           {showPoints && item.points !== undefined && item.points > 0 ? (
-            <span className="mt-0.5 block text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]">
+            <span
+              className={
+                presentationMode
+                  ? "mt-0.5 block text-[0.6875rem] font-medium text-[var(--brand-primary-dark)]"
+                  : "mt-0.5 block text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]"
+              }
+            >
               {formatReportPoints(item.points)}
             </span>
           ) : null}
         </div>
       </div>
-      <div className="mt-1 flex items-center justify-between gap-2">
+      <div className={`${presentationMode ? "mt-0.5" : "mt-1"} flex items-center justify-between gap-2`}>
         <p
           className={
             presentationMode
-              ? "text-[0.875rem] text-[#86868b]"
+              ? "text-[0.75rem] text-[#86868b]"
               : "text-[0.8125rem] text-[#86868b]"
           }
         >
@@ -104,7 +110,7 @@ function TransactionRow({
         <p
           className={
             presentationMode
-              ? "mt-1.5 text-[0.8125rem] leading-relaxed text-[#636366]"
+              ? "mt-0.5 text-[0.6875rem] leading-snug text-[#636366]"
               : "mt-1 text-[0.8125rem] leading-relaxed text-[#636366]"
           }
         >
@@ -132,24 +138,30 @@ function QuadrantPanel({
   return (
     <section
       className={`flex h-full min-h-0 flex-col rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)]/95 shadow-[0_8px_32px_rgba(0,0,0,0.04)] ${
-        presentationMode ? "p-4 lg:p-5" : "p-5"
+        presentationMode ? "p-3 lg:p-3.5" : "p-5"
       }`}
     >
-      <header className="shrink-0 space-y-1">
+      <header className="shrink-0 space-y-0.5">
         <h2
           className={
             presentationMode
-              ? "flex items-center gap-2 text-[1.375rem] font-semibold text-[#1d1d1f] lg:text-[1.5rem]"
+              ? "flex items-center gap-1.5 text-[1.0625rem] font-semibold text-[#1d1d1f] lg:text-[1.125rem]"
               : "flex items-center gap-2 text-[1.125rem] font-semibold text-[#1d1d1f]"
           }
         >
-          <AppIcon name={iconName} size={presentationMode ? 22 : 20} />
+          <AppIcon name={iconName} size={presentationMode ? 18 : 20} />
           {heading}
         </h2>
-        <p className="text-[0.8125rem] text-[#86868b]">（{quadrant.valueLabel}）</p>
+        <p className={presentationMode ? "text-[0.75rem] text-[#86868b]" : "text-[0.8125rem] text-[#86868b]"}>
+          （{quadrant.valueLabel}）
+        </p>
       </header>
 
-      <ul className={`mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto ${presentationMode ? "pr-1" : ""}`}>
+      <ul
+        className={`min-h-0 flex-1 overflow-y-auto ${
+          presentationMode ? "mt-2 space-y-1 pr-0.5" : "mt-3 space-y-2"
+        }`}
+      >
         {quadrant.weeklyItems.length > 0 ? (
           quadrant.weeklyItems.map((item) => (
             <TransactionRow

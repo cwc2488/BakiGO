@@ -259,6 +259,24 @@ export type CoachingDecisionContext = {
   mealPlanContext: CoachingMealPlanContext;
   goalContext: CoachingGoalContext;
   outcomeAssessment: CoachingOutcomeAssessment;
+  /** Deterministic bowel signal (non-diagnostic). */
+  bowelSignal?: {
+    level: "normal" | "elevated_today" | "repeated_elevated";
+    todayCount: number | null;
+    coachCopy: string | null;
+    customerCopy: string | null;
+    suggestProfessionalCare: boolean;
+  } | null;
+  /** Deterministic directive × meal verification results. */
+  directiveVerifications?: Array<{
+    directiveId: string;
+    mealSlot: string;
+    instructionText: string;
+    status: "followed" | "possible_not_followed" | "unknown" | "ignored";
+    customerCopy: string | null;
+    coachCopy: string | null;
+    reason: string;
+  }>;
 };
 
 /** Continuity contract: priority[0] owns tomorrow_focus subject. */

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CrmCard } from "@/components/members/ui";
 import { PageShell } from "@/components/ui/PageShell";
 import { formatCommandCenterSectionLabel } from "@/lib/coaching/attention/command-center-copy";
@@ -9,6 +9,7 @@ import { extractFocusDatesFromAttentionEvidence } from "@/lib/coaching/timeline/
 import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetch";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 import { formatCoachingDayProgressLabel } from "@/lib/coaching/presentation/coaching-ui-copy";
+import { useSoftRefresh } from "@/lib/hooks/use-soft-refresh";
 import type {
   CoachingCommandCenterCard,
   CoachingCommandCenterFilter,
@@ -176,36 +177,38 @@ export default function CoachingCommandCenterPage() {
   const [filter, setFilter] = useState<CoachingCommandCenterFilter>("all");
   const [query, setQuery] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
+  const loadCommandCenter = useCallback(
+    async (options?: { soft?: boolean }) => {
+      if (!options?.soft) {
+        setLoading(true);
+      }
+      setError(null);
 
-    void fetchCoachingWithMemberAuth(`/api/coaching/command-center?logDate=${encodeURIComponent(logDate)}`)
-      .then(async (response) => {
+      try {
+        const response = await fetchCoachingWithMemberAuth(
+          `/api/coaching/command-center?logDate=${encodeURIComponent(logDate)}`,
+        );
         const body = (await response.json()) as CommandCenterResponse;
         if (!response.ok || !body.ok || !body.sections || !body.counts) {
           throw new Error(body.error ?? "無法載入陪跑指揮中心");
         }
-        if (!cancelled) {
-          setPayload(body);
-        }
-      })
-      .catch((loadError: Error) => {
-        if (!cancelled) {
-          setError(loadError.message);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
+        setPayload(body);
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "無法載入陪跑指揮中心");
+      } finally {
+        if (!options?.soft) {
           setLoading(false);
         }
-      });
+      }
+    },
+    [logDate],
+  );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [logDate]);
+  useEffect(() => {
+    void loadCommandCenter();
+  }, [loadCommandCenter]);
+
+  useSoftRefresh(() => loadCommandCenter({ soft: true }));
 
   const filteredAll = useMemo(() => {
     const cards = payload?.sections?.allActive ?? [];

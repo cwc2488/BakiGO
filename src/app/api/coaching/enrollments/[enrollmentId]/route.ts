@@ -168,6 +168,8 @@ export async function PATCH(
       status?: "active" | "paused" | "completed";
       goal?: string | null;
       planSnapshot?: unknown;
+      startDate?: string | null;
+      plannedEndAt?: string | null;
     };
 
     const enrollment = await updateCoachingEnrollment({
@@ -176,6 +178,8 @@ export async function PATCH(
       status: body.status,
       goal: body.goal,
       planSnapshot: body.planSnapshot ? parseCoachingPlanSnapshot(body.planSnapshot) : undefined,
+      startDate: body.startDate,
+      plannedEndAt: body.plannedEndAt,
     });
 
     return NextResponse.json({

@@ -415,14 +415,69 @@ export function applyCoachingDecisionContextToOutput(
   };
 
   const withMealBudget = applyMealFollowUpBudgetToOutput(withSystemFields, decision);
+  const withBowelAndDirectives = applyBowelAndDirectiveCopy(withMealBudget, decision);
   const generationInput = options?.generationInput ?? null;
   if (!generationInput) {
-    return withMealBudget;
+    return withBowelAndDirectives;
   }
   const relevant = buildRelevantCoachActionContext({
     memory: generationInput.recentCoachActionMemory,
     decisionContext: decision,
     asOfIso: relevantCoachActionContextAsOfIso(generationInput.logDate),
   });
-  return ensureRelevantCoachActionContextWording(withMealBudget, relevant);
+  return ensureRelevantCoachActionContextWording(withBowelAndDirectives, relevant);
+}
+
+function applyBowelAndDirectiveCopy(
+  output: CoachingDailyGenerationOutputJson,
+  decision: CoachingDecisionContext,
+): CoachingDailyGenerationOutputJson {
+  const bowelCustomer = decision.bowelSignal?.customerCopy?.trim();
+  const bowelCoach = decision.bowelSignal?.coachCopy?.trim();
+  const directiveCustomerLines = (decision.directiveVerifications ?? [])
+    .map((item) => item.customerCopy?.trim())
+    .filter((line): line is string => Boolean(line));
+  const directiveCoachLines = (decision.directiveVerifications ?? [])
+    .filter((item) => item.status !== "ignored")
+    .map((item) => item.coachCopy?.trim())
+    .filter((line): line is string => Boolean(line));
+
+  if (!bowelCustomer && !bowelCoach && directiveCustomerLines.length === 0 && directiveCoachLines.length === 0) {
+    return output;
+  }
+
+  const customerExtra = [...directiveCustomerLines, bowelCustomer].filter(Boolean).join(" ");
+  const coachExtra = [...directiveCoachLines, bowelCoach].filter(Boolean).join(" ");
+
+  return {
+    ...output,
+    customer: {
+      ...output.customer,
+      today_feedback: customerExtra
+        ? `${customerExtra}${output.customer.today_feedback}`.trim()
+        : output.customer.today_feedback,
+      lifestyle_feedback: {
+        ...output.customer.lifestyle_feedback,
+        exercise: bowelCustomer
+          ? [bowelCustomer, output.customer.lifestyle_feedback.exercise].filter(Boolean).join(" ")
+          : output.customer.lifestyle_feedback.exercise,
+      },
+    },
+    coach: {
+      ...output.coach,
+      daily_summary: coachExtra
+        ? `${coachExtra} ${output.coach.daily_summary}`.trim()
+        : output.coach.daily_summary,
+      evidence: [
+        ...output.coach.evidence,
+        ...(decision.bowelSignal
+          ? [`bowel_level=${decision.bowelSignal.level}`, `bowel_count=${decision.bowelSignal.todayCount}`]
+          : []),
+        ...(decision.directiveVerifications ?? [])
+          .filter((item) => item.status !== "ignored")
+          .slice(0, 3)
+          .map((item) => `directive_${item.mealSlot}=${item.status}`),
+      ].slice(0, 12),
+    },
+  };
 }

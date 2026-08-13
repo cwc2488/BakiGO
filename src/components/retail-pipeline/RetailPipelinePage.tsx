@@ -83,6 +83,25 @@ function LeadCard({
 }) {
   const scheduleHint = formatScheduledDateHint(lead.scheduledDate);
   const scheduleLabel = formatScheduledLabel(lead.scheduledDate, lead.scheduledTime);
+  const [pendingDate, setPendingDate] = useState<string | null>(null);
+  const [pendingTime, setPendingTime] = useState<string | null>(null);
+
+  const dateValue = pendingDate ?? lead.scheduledDate ?? "";
+  const timeValue = pendingTime ?? lead.scheduledTime ?? "";
+  const hasPendingSchedule =
+    (pendingDate != null && pendingDate !== (lead.scheduledDate ?? "")) ||
+    (pendingTime != null && pendingTime !== (lead.scheduledTime ?? ""));
+
+  const cancelPendingSchedule = () => {
+    setPendingDate(null);
+    setPendingTime(null);
+  };
+
+  const confirmPendingSchedule = () => {
+    onScheduleChange(lead.leadId, dateValue, timeValue);
+    setPendingDate(null);
+    setPendingTime(null);
+  };
 
   return (
     <article className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-primary-muted)] p-4">
@@ -118,25 +137,39 @@ function LeadCard({
           <span className="text-[0.75rem] font-medium text-[#86868b]">排定日期</span>
           <input
             className="date-input w-full"
-            onChange={(event) =>
-              onScheduleChange(lead.leadId, event.target.value, lead.scheduledTime ?? "")
-            }
+            onChange={(event) => setPendingDate(event.target.value)}
             type="date"
-            value={lead.scheduledDate ?? ""}
+            value={dateValue}
           />
         </label>
         <label className="block space-y-1.5">
           <span className="text-[0.75rem] font-medium text-[#86868b]">排定時間</span>
           <input
             className="date-input w-full"
-            onChange={(event) =>
-              onScheduleChange(lead.leadId, lead.scheduledDate ?? "", event.target.value)
-            }
+            onChange={(event) => setPendingTime(event.target.value)}
             type="time"
-            value={lead.scheduledTime ?? ""}
+            value={timeValue}
           />
         </label>
       </div>
+      {hasPendingSchedule ? (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            className="rounded-xl border border-[var(--brand-border)] bg-white px-3 py-2 text-[0.8125rem] font-semibold text-[#636366]"
+            onClick={cancelPendingSchedule}
+            type="button"
+          >
+            取消
+          </button>
+          <button
+            className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-[0.8125rem] font-semibold text-white"
+            onClick={confirmPendingSchedule}
+            type="button"
+          >
+            確定
+          </button>
+        </div>
+      ) : null}
       {scheduleHint ? (
         <span
           className={`mt-1 inline-block text-[0.75rem] font-medium ${

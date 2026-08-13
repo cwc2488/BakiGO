@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 import { toCoachingApiErrorMessage } from "@/lib/coaching/coaching-api-error";
@@ -10,6 +10,7 @@ import {
   upsertCoachingDailyLog,
 } from "@/lib/coaching/coaching-service";
 import { enqueueDailyCoachGenerationAfterSubmit } from "@/lib/coaching/ai/enqueue-daily-coach-generation";
+import { runCoachingGenerationWorkerBatch } from "@/lib/coaching/ai/run-coaching-generation-worker";
 import { requireAllowedCoachingLogDate } from "@/lib/coaching/require-allowed-coaching-log-date";
 import { COACHING_MEAL_SLOTS, type CoachingMealSlot } from "@/types/coaching";
 
@@ -54,8 +55,17 @@ export async function PUT(
     });
 
     // AI enqueue is best-effort — never fail the daily submit response.
-    let generationEnqueue: { action: string; reason?: string } | null = null;
+    let generationEnqueue: { action: string; reason?: string; submitted_at?: string } | null = null;
     if (body.markSubmitted) {
+      const submittedAt = detail.submittedAt ?? new Date().toISOString();
+      console.info(
+        JSON.stringify({
+          type: "coaching_submit_received",
+          enrollmentId: portal.enrollmentId,
+          logDate,
+          submitted_at: submittedAt,
+        }),
+      );
       try {
         const enqueueResult = await enqueueDailyCoachGenerationAfterSubmit({
           enrollmentId: portal.enrollmentId,
@@ -65,10 +75,29 @@ export async function PUT(
         generationEnqueue = {
           action: enqueueResult.action,
           reason: enqueueResult.reason,
+          submitted_at: submittedAt,
         };
+        if (enqueueResult.action === "enqueued") {
+          console.info(
+            JSON.stringify({
+              type: "coaching_job_enqueued",
+              enrollmentId: portal.enrollmentId,
+              logDate,
+              submitted_at: submittedAt,
+              job_id: enqueueResult.jobId,
+              output_id: enqueueResult.outputId,
+            }),
+          );
+          // Non-blocking: start worker after response is committed so Customer never waits on AI.
+          after(() => {
+            void runCoachingGenerationWorkerBatch({ limit: 2, concurrency: 1 }).catch((workerError) => {
+              console.error("[coaching] post-submit worker kick failed", workerError);
+            });
+          });
+        }
       } catch (enqueueError) {
         console.error("[coaching] daily coach enqueue failed", enqueueError);
-        generationEnqueue = { action: "enqueue_error" };
+        generationEnqueue = { action: "enqueue_error", submitted_at: submittedAt };
       }
     }
 

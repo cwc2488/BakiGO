@@ -17,7 +17,8 @@ import { APP_ICON } from "@/lib/ui/app-icons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Customer } from "@/types/customer";
+import type { Customer, CustomerSex } from "@/types/customer";
+import { CUSTOMER_SEX_LABELS } from "@/types/customer";
 
 interface CustomerListItem extends Customer {
   latestRecordDate?: string;
@@ -25,62 +26,27 @@ interface CustomerListItem extends Customer {
   followUpUrgency?: "high" | "medium" | "low";
 }
 
+function shortStatusLabel(customer: CustomerListItem): string {
+  if (customer.followUpReason) return customer.followUpReason;
+  if (customer.latestRecordDate) return "有量測";
+  return "尚無量測";
+}
+
 function CustomerCard({
   customer,
-  onDelete,
 }: {
   customer: CustomerListItem;
-  onDelete: (customer: CustomerListItem) => void;
 }) {
-  const urgencyStyles = {
-    high: "bg-[#fff1f0] text-[#cf1322]",
-    medium: "bg-[#fff7e6] text-[#d46b08]",
-    low: "bg-[var(--brand-primary-muted)] text-[var(--brand-primary-dark)]",
-  };
-
   return (
-    <article className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
-      <Link
-        className="block transition-transform duration-200 active:scale-[0.99]"
-        href={`/customers/${customer.id}`}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[1rem] font-semibold text-[#1d1d1f]">{customer.displayName}</p>
-            {customer.latestRecordDate ? (
-              <p className="mt-1 text-[0.8125rem] text-[#86868b]">
-                上次量測 {customer.latestRecordDate}
-              </p>
-            ) : (
-              <p className="mt-1 text-[0.8125rem] text-[#86868b]">尚無量測紀錄</p>
-            )}
-            {customer.lastContactDate ? (
-              <p className="mt-0.5 text-[0.8125rem] text-[#86868b]">
-                上次聯絡 {customer.lastContactDate}
-              </p>
-            ) : null}
-          </div>
-          {customer.followUpReason ? (
-            <span
-              className={`shrink-0 rounded-full px-2.5 py-1 text-[0.75rem] font-medium ${
-                urgencyStyles[customer.followUpUrgency ?? "low"]
-              }`}
-            >
-              {customer.followUpReason}
-            </span>
-          ) : null}
-        </div>
-      </Link>
-      <div className="mt-3">
-        <button
-          className="rounded-full bg-[#fff1f0] px-4 py-2 text-[0.8125rem] font-medium text-[#cf1322]"
-          onClick={() => onDelete(customer)}
-          type="button"
-        >
-          刪除
-        </button>
-      </div>
-    </article>
+    <Link
+      className="block rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-3 py-3 transition-transform duration-200 active:scale-[0.99]"
+      href={`/customers/${customer.id}`}
+    >
+      <p className="truncate text-[0.9375rem] font-semibold text-[#1d1d1f]">{customer.displayName}</p>
+      <p className="mt-1 line-clamp-2 text-[0.75rem] leading-snug text-[#86868b]">
+        {shortStatusLabel(customer)}
+      </p>
+    </Link>
   );
 }
 
@@ -96,9 +62,9 @@ export default function CustomerListPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [heightCm, setHeightCm] = useState("");
-  const [birthYear, setBirthYear] = useState("");
+  const [sex, setSex] = useState<CustomerSex | "">("");
+  const [birthDate, setBirthDate] = useState("");
   const [query, setQuery] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<CustomerListItem | null>(null);
   const [notificationState, setNotificationState] = useState(() =>
     typeof window === "undefined" ? "default" : getNotificationPermissionState(),
   );
@@ -182,25 +148,18 @@ export default function CustomerListPage() {
       displayName: name,
       phone: phone || undefined,
       heightCm: heightCm ? Number(heightCm) : undefined,
-      birthYear: birthYear ? Number(birthYear) : undefined,
+      sex: sex || undefined,
+      // Full date only — do not invent MM/DD for legacy birth_year-only rows.
+      birthDate: birthDate || undefined,
     });
     setName("");
     setPhone("");
     setHeightCm("");
-    setBirthYear("");
+    setSex("");
+    setBirthDate("");
     setShowForm(false);
     reload();
     router.push(`/customers/${customer.id}`);
-  };
-
-  const handleDelete = () => {
-    if (!deleteTarget || !ownerMemberId || deleteTarget.ownerMemberId !== ownerMemberId) {
-      return;
-    }
-
-    repo.deleteCustomer(deleteTarget.id);
-    setDeleteTarget(null);
-    reload();
   };
 
   return (
@@ -280,22 +239,34 @@ export default function CustomerListPage() {
               onChange={(event) => setPhone(event.target.value)}
               value={phone}
             />
+            <CrmInput
+              inputMode="decimal"
+              label="身高 cm"
+              onChange={(event) => setHeightCm(event.target.value)}
+              value={heightCm}
+            />
             <div className="grid grid-cols-2 gap-3">
+              <label className="block space-y-2">
+                <span className="text-[0.875rem] font-medium text-[#636366]">性別</span>
+                <select
+                  className="w-full rounded-[1rem] border border-[#e5e5ea] bg-white px-4 py-3 text-[1rem] text-[#1d1d1f]"
+                  onChange={(event) => setSex(event.target.value as CustomerSex | "")}
+                  value={sex}
+                >
+                  <option value="">未填</option>
+                  <option value="male">{CUSTOMER_SEX_LABELS.male}</option>
+                  <option value="female">{CUSTOMER_SEX_LABELS.female}</option>
+                </select>
+              </label>
               <CrmInput
-                inputMode="decimal"
-                label="身高 cm"
-                onChange={(event) => setHeightCm(event.target.value)}
-                value={heightCm}
-              />
-              <CrmInput
-                inputMode="numeric"
-                label="出生年"
-                onChange={(event) => setBirthYear(event.target.value)}
-                value={birthYear}
+                label="出生日期"
+                onChange={(event) => setBirthDate(event.target.value)}
+                type="date"
+                value={birthDate}
               />
             </div>
             <p className="text-[0.8125rem] text-[#86868b]">
-              身高設定後固定；有出生年時，量測會自動帶入年齡。
+              身高設定後固定；填完整出生日期後，量測會自動帶入年齡。
             </p>
 
             <CrmButton type="submit">建立並開始記錄</CrmButton>
@@ -319,37 +290,19 @@ export default function CustomerListPage() {
           ) : null}
         </div>
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {visibleCustomers.length > 0 ? (
             visibleCustomers.map((customer) => (
-              <CustomerCard customer={customer} key={customer.id} onDelete={setDeleteTarget} />
+              <CustomerCard customer={customer} key={customer.id} />
             ))
           ) : customers.length > 0 ? (
-            <p className="text-[0.9375rem] text-[#86868b]">找不到符合的顧客，試試其他關鍵字。</p>
+            <p className="col-span-full text-[0.9375rem] text-[#86868b]">找不到符合的顧客，試試其他關鍵字。</p>
           ) : (
-            <p className="text-[0.9375rem] text-[#86868b]">尚無顧客，先新增第一位開始追蹤。</p>
+            <p className="col-span-full text-[0.9375rem] text-[#86868b]">尚無顧客，先新增第一位開始追蹤。</p>
           )}
         </div>
       </section>
 
-      {deleteTarget ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-5 sm:items-center">
-          <div className="w-full max-w-sm rounded-[1.75rem] bg-[var(--brand-surface)] p-6">
-            <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">刪除顧客？</p>
-            <p className="mt-2 text-[0.9375rem] text-[#86868b]">
-              將刪除 {deleteTarget.displayName} 的所有資料，包含量測、照片、收據與顧客連結。
-            </p>
-            <div className="mt-5 space-y-2">
-              <CrmButton onClick={handleDelete} variant="danger">
-                確認刪除
-              </CrmButton>
-              <CrmButton onClick={() => setDeleteTarget(null)} variant="secondary">
-                取消
-              </CrmButton>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </PageShell>
   );
 }

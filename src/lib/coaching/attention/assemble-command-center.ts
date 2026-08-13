@@ -4,7 +4,12 @@ import {
 } from "@/lib/coaching/attention/assess-coach-attention";
 import { buildDenseSubmissionCalendar } from "@/lib/coaching/attention/build-dense-submission-calendar";
 import {
-  formatAttentionEvidenceSummary,
+  coachingJourneyDayNumberInWindow,
+  coachingJourneyDayTotal,
+  resolveEnrollmentPlannedEndDate,
+  resolveEnrollmentStartDate,
+} from "@/lib/coaching/enrollment-window";
+import { formatAttentionEvidenceSummary,
   formatOutcomeStatusLabel,
   formatRecommendedActionLabel,
 } from "@/lib/coaching/attention/command-center-copy";
@@ -13,7 +18,6 @@ import { buildCoachingGenerationInput } from "@/lib/coaching/ai/build-coaching-g
 import { extractCustomerVoiceSignals } from "@/lib/coaching/ai/extract-customer-voice";
 import { buildCoachingDecisionContext } from "@/lib/coaching/ai/coaching-signal-engine";
 import { buildCoachingProgressView } from "@/lib/coaching/build-coaching-progress-view";
-import { coachingJourneyDayNumber } from "@/lib/coaching/list-coaching-recent-day-summaries";
 import type { CoachingAiOutputRecord, CoachingInterventionLevel } from "@/types/coaching-ai";
 import type {
   CoachingCommandCenterCard,
@@ -133,6 +137,11 @@ export function buildCommandCenterCard(input: {
       logDate: log.logDate,
       submitted: Boolean(log.submittedAt),
     })),
+    enrollmentStartDate: resolveEnrollmentStartDate(customer.enrollment.startedAt),
+    enrollmentPlannedEndDate: resolveEnrollmentPlannedEndDate({
+      startedAt: customer.enrollment.startedAt,
+      plannedEndAt: customer.enrollment.plannedEndAt,
+    }),
   });
 
   const historicalNotes = sortedLogs.map((log) => ({
@@ -180,11 +189,15 @@ export function buildCommandCenterCard(input: {
     customerDisplayName: customer.displayName,
     customerPhone: customer.phone,
     goal: customer.enrollment.goal,
-    dayNumber: coachingJourneyDayNumber({
-      enrollmentStartedAt: customer.enrollment.startedAt,
+    dayNumber: coachingJourneyDayNumberInWindow({
+      startedAt: customer.enrollment.startedAt,
+      plannedEndAt: customer.enrollment.plannedEndAt,
       logDate: asOfLogDate,
     }),
-    dayTotal: 90,
+    dayTotal: coachingJourneyDayTotal({
+      startedAt: customer.enrollment.startedAt,
+      plannedEndAt: customer.enrollment.plannedEndAt,
+    }),
     outcomeStatus: progress.outcomeStatus,
     outcomeStatusLabel: formatOutcomeStatusLabel(progress.outcomeStatus),
     measurementStage: progress.measurementStage,

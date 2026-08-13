@@ -42,7 +42,14 @@ export type CoachingEnrollment = {
   ownerMemberId: EntityId;
   goal: string | null;
   status: CoachingEnrollmentStatus;
+  /** Journey Day 1 authority (timestamptz; date part in Asia/Taipei). */
   startedAt: string;
+  /**
+   * Inclusive planned journey end (YYYY-MM-DD).
+   * Null/undefined in legacy rows → derive startedAt date + 89 days.
+   */
+  plannedEndAt?: string | null;
+  /** Set when status becomes completed (actual end timestamp). */
   endedAt: string | null;
   onboardingCompletedAt: string | null;
   planSnapshot: CoachingPlanSnapshot;
@@ -136,6 +143,11 @@ export type CoachingPortalContext = {
   enrollmentId?: EntityId;
   goal?: string | null;
   startedAt?: string;
+  /**
+   * Inclusive journey end (YYYY-MM-DD). Soft until portal RPC / context always returns it.
+   * TODO: wire plannedEndAt from resolve_coaching_portal_context once RPC includes planned_end_at.
+   */
+  plannedEndAt?: string | null;
   onboardingCompletedAt?: string | null;
   planSnapshot?: CoachingPlanSnapshot;
 };

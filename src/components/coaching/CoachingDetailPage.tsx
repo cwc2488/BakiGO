@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BodyCompositionTrendCharts } from "@/components/customers/BodyCompositionTrendCharts";
 import { CustomerPhotoCompareSection } from "@/components/customers/CustomerPhotoCompareSection";
 import { CrmButton, CrmCard, CrmField, CrmSectionTitle } from "@/components/members/ui";
 import { PageShell } from "@/components/ui/PageShell";
 import CoachingCoachActionPanel from "@/components/coaching/CoachingCoachActionPanel";
+import CoachingDirectivePanel from "@/components/coaching/CoachingDirectivePanel";
 import CoachingGrowthPanel from "@/components/coaching/CoachingGrowthPanel";
 import CoachingTimelinePanel from "@/components/coaching/CoachingTimelinePanel";
 import { compareBodyRecords } from "@/lib/customers/body-composition-compare";
@@ -25,6 +26,7 @@ import {
   formatInterventionSuggestionLabel,
   sanitizeCoachFacingEvidenceLines,
 } from "@/lib/coaching/presentation/coaching-ui-copy";
+import { useSoftRefresh } from "@/lib/hooks/use-soft-refresh";
 import {
   COACHING_MEAL_SLOT_LABELS,
   COACHING_STATUS_LABELS,
@@ -102,41 +104,59 @@ export default function CoachingDetailPage({
   const [progressPhotoCount, setProgressPhotoCount] = useState(0);
   const recentDates = useMemo(() => listCoachingRecentLogDates(), []);
 
-  const reload = async (selectedLogDate = logDate, options?: { includePhotos?: boolean }) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({ logDate: selectedLogDate });
-      if (options?.includePhotos) params.set("includePhotos", "1");
-      const response = await fetchCoachingWithMemberAuth(
-        `/api/coaching/enrollments/${encodeURIComponent(enrollmentId)}?${params.toString()}`,
-      );
-      const data = (await response.json()) as DetailPayload & {
-        ok?: boolean;
-        error?: string;
-        progressPhotoCount?: number;
-      };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "無法載入陪跑詳情");
+  const reload = useCallback(
+    async (
+      selectedLogDate = logDate,
+      options?: { includePhotos?: boolean; soft?: boolean },
+    ) => {
+      if (!options?.soft) {
+        setLoading(true);
       }
-      setPayload(data);
-      if (typeof data.progressPhotoCount === "number") {
-        setProgressPhotoCount(data.progressPhotoCount);
-      } else {
-        setProgressPhotoCount(data.progressPhotos?.length ?? 0);
+      setError(null);
+      try {
+        const params = new URLSearchParams({ logDate: selectedLogDate });
+        if (options?.includePhotos) params.set("includePhotos", "1");
+        const response = await fetchCoachingWithMemberAuth(
+          `/api/coaching/enrollments/${encodeURIComponent(enrollmentId)}?${params.toString()}`,
+        );
+        const data = (await response.json()) as DetailPayload & {
+          ok?: boolean;
+          error?: string;
+          progressPhotoCount?: number;
+        };
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error ?? "無法載入陪跑詳情");
+        }
+        setPayload(data);
+        if (typeof data.progressPhotoCount === "number") {
+          setProgressPhotoCount(data.progressPhotoCount);
+        } else {
+          setProgressPhotoCount(data.progressPhotos?.length ?? 0);
+        }
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "無法載入陪跑詳情");
+      } finally {
+        if (!options?.soft) {
+          setLoading(false);
+        }
       }
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "無法載入陪跑詳情");
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [enrollmentId, logDate],
+  );
 
   useEffect(() => {
     void reload(logDate);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enrollmentId, logDate]);
+  }, [enrollmentId, logDate, reload]);
 
+  const aiStatus = payload?.aiOutput?.status;
+  const pollAiPending =
+    Boolean(payload?.dailyLog.submittedAt) &&
+    (!aiStatus || aiStatus === "pending" || aiStatus === "processing");
+
+  useSoftRefresh(() => reload(logDate, { soft: true, includePhotos: showPhotos }), {
+    pollWhile: pollAiPending,
+    pollIntervalMs: 12_000,
+  });
   useEffect(() => {
     if (!payload || tab !== "overview") return;
     // First paint hero first; secondary panels start after a short defer.
@@ -325,9 +345,12 @@ export default function CoachingDetailPage({
           </CrmCard>
 
           {loadSecondaryPanels ? (
-            <CoachingCoachActionPanel enrollmentId={enrollmentId} reasonCodes={reasonCodes} />
+            <>
+              <CoachingDirectivePanel enrollmentId={enrollmentId} />
+              <CoachingCoachActionPanel enrollmentId={enrollmentId} reasonCodes={reasonCodes} />
+            </>
           ) : (
-            <p className="text-[0.8125rem] text-[#86868b]">教練處理紀錄載入中…</p>
+            <p className="text-[0.8125rem] text-[#86868b]">教練指示與處理紀錄載入中…</p>
           )}
 
           <CrmCard className="space-y-4">

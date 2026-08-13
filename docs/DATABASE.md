@@ -148,12 +148,14 @@ Member (coach)
 
 | Table | Purpose |
 |-------|---------|
-| `coaching_enrollments` | Active/paused/completed coaching relationship; plan snapshot + onboarding state |
+| `coaching_enrollments` | Active/paused/completed coaching relationship; plan snapshot + onboarding state. `started_at` = Day 1 authority; `planned_end_at` (034) = inclusive planned end (default start+89 days); `ended_at` = actual completion timestamp |
 | `coaching_daily_logs` | One row per enrollment per `log_date` (Asia/Taipei). Sleep: `sleep_bedtime`, `sleep_wake_time`; `sleep_duration` computed on save |
 | `coaching_meal_entries` | Meal slot rows linked to daily log |
 | `coaching_meal_photos` | Storage path refs for meal photos (private bucket) |
 
 **Migration `028_coaching_sleep_times.sql`:** adds `sleep_bedtime`, `sleep_wake_time` to `coaching_daily_logs`.
+
+**Migration `034_coaching_product_correction.sql`:** additive `planned_end_at` on enrollments; expands `coaching_coach_directives` with `meal_slot`, `effective_until`, `status`, `customer_visible` and drops single-active unique (multiple slot directives allowed).
 
 ### AI Coaching Phase 2b-1 / 2c (`029_coaching_ai_phase2a.sql` + `030_coaching_generation_job_claim.sql`)
 
@@ -161,7 +163,7 @@ Member (coach)
 
 | Table | Purpose |
 |-------|---------|
-| `coaching_coach_directives` | Coach-set focus / priority / instruction for AI context |
+| `coaching_coach_directives` | Coach-set meal-slot instructions (`meal_slot`, `effective_from`/`effective_until`, `status`, `customer_visible`) for AI + Portal reminders; verified vs Meal Vision deterministically |
 | `coaching_ai_outputs` | One `daily_coach_generation` row per `(enrollment_id, log_date)` — customer + coach JSON in `output_json` |
 | `coaching_generation_jobs` | Lightweight async queue; service role worker only |
 | `ai_llm_call_log` | Cross-feature append-only LLM usage + cost telemetry |

@@ -151,7 +151,7 @@ export type CoachingCommandCenterCard = {
   customerPhone: string | null;
   goal: string | null;
   dayNumber: number | null;
-  dayTotal: 90;
+  dayTotal: number;
   outcomeStatus: string | null;
   outcomeStatusLabel: string | null;
   measurementStage: string | null;

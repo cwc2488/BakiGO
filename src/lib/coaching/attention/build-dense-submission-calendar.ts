@@ -6,13 +6,18 @@ import type { CoachingSubmissionDay } from "@/types/coaching-attention";
  * Build a dense Asia/Taipei submission calendar for non-reporting.
  * Every day in the window is present; days without a submitted log are `submitted: false`.
  *
- * This is required so consecutive missing days are countable even when no daily_log row exists.
+ * When enrollmentStartDate / enrollmentPlannedEndDate are provided, days outside
+ * the inclusive journey window are omitted (never counted as missing).
  */
 export function buildDenseSubmissionCalendar(input: {
   asOfLogDate: string;
   /** Inclusive window length ending at asOfLogDate. Default: policy rolling window. */
   windowDays?: number;
   logs: Array<{ logDate: string; submitted: boolean }>;
+  /** Inclusive Day 1 — pre-start dates are not missing. */
+  enrollmentStartDate?: string | null;
+  /** Inclusive planned end — post-end dates are not missing. */
+  enrollmentPlannedEndDate?: string | null;
 }): CoachingSubmissionDay[] {
   const windowDays = input.windowDays ?? COACHING_NON_REPORTING_POLICY.rollingWindowDays;
   const submittedByDate = new Map<string, boolean>();
@@ -21,9 +26,14 @@ export function buildDenseSubmissionCalendar(input: {
     submittedByDate.set(log.logDate, prev || log.submitted);
   }
 
+  const start = input.enrollmentStartDate?.slice(0, 10) ?? null;
+  const end = input.enrollmentPlannedEndDate?.slice(0, 10) ?? null;
+
   const days: CoachingSubmissionDay[] = [];
   for (let offset = 0; offset < windowDays; offset += 1) {
     const logDate = shiftFromAsOf(input.asOfLogDate, -offset);
+    if (start && logDate < start) continue;
+    if (end && logDate > end) continue;
     const submitted = submittedByDate.get(logDate) === true;
     days.push({
       logDate,

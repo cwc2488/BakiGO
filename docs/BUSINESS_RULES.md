@@ -357,6 +357,30 @@ Decision Tree segment after Phase 1 body measurement. All step payloads live in 
 
 **Out of scope for Phase 2:** success stories, AI, case matching, brain-change / science / services / product / pricing / Consultation Brief (Steps 9–14).
 
+## Coaching Enrollment Journey Window
+
+| Field | Authority |
+|-------|-----------|
+| `started_at` (date part, Asia/Taipei) | Day 1 of journey |
+| `planned_end_at` | Inclusive planned last day (default = start + 89 calendar days = 90-day window) |
+| `ended_at` | Actual completion timestamp when status → completed |
+
+- Day N is derived only inside `[start, planned_end]` inclusive. Before start: no Day N, no daily-log requirement, no missing / non-reporting Attention. After planned end: no new missing Attention; historical outcomes/timeline retained.
+- Paused status keeps existing pause semantics (not rewritten here).
+- Coach may edit start / planned end; Attention dense calendars must clamp to this window without changing Phase 3 precedence.
+
+### Coach Directive × Meal Vision (V1)
+
+- Directive = what customer should do (slot + text + effective window + customer_visible).
+- Meal Vision = what photo evidence shows.
+- Verification = deterministic compare → `followed` | `possible_not_followed` | `unknown` | `ignored` (expired).
+- Missing photo evidence must never assert absolute non-consumption.
+
+### Bowel movement signal
+
+- Deterministic from `bowel_movement_count` (+ recent high days / discomfort note).
+- Coach copy may note elevated frequency; Customer copy is non-diagnostic (no diarrhea/disease claims unless Customer used those words).
+
 ## Coaching Growth Intelligence (Phase 4c–4e)
 
 **Layers must never merge:**
@@ -495,3 +519,4 @@ Document any intentional exceptions to the rules above in this section.
 | 2026-08 | Coaching Phase 4d–4e — Experience Check-in + Growth Matrix + Coach Growth UI | — |
 | 2026-08 | Coaching Phase 4f — Growth share tokens + A→B attribution + Referral Center | — |
 | 2026-08 | UX-1.2 — Referral Center = all Customers; Growth = timing evidence; Coach UI humanization | — |
+| 2026-08 | Coaching Product Correction P0/P1 — enrollment window, portal Home, directives, bowel signal, Hub IA | — |

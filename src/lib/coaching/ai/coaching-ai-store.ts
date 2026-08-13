@@ -147,9 +147,11 @@ export async function getCoachDirectivesForEnrollment(enrollmentId: string): Pro
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("coaching_coach_directives")
-    .select("current_focus, current_priority, coach_instruction, effective_from")
+    .select("current_focus, current_priority, coach_instruction, effective_from, status")
     .eq("enrollment_id", enrollmentId)
-    .maybeSingle();
+    .eq("status", "active")
+    .order("effective_from", { ascending: false })
+    .limit(8);
 
   if (error) {
     // Table may not exist yet during partial rollout — treat as no directives.
@@ -158,14 +160,24 @@ export async function getCoachDirectivesForEnrollment(enrollmentId: string): Pro
     }
     throw new Error(error.message);
   }
-  if (!data) {
+  const rows = data ?? [];
+  if (rows.length === 0) {
     return null;
   }
+  const lines = rows
+    .map((row) => {
+      const text =
+        (row.coach_instruction != null ? String(row.coach_instruction).trim() : "") ||
+        (row.current_focus != null ? String(row.current_focus).trim() : "");
+      return text;
+    })
+    .filter(Boolean);
+  if (lines.length === 0) return null;
   return {
-    currentFocus: data.current_focus != null ? String(data.current_focus) : null,
-    currentPriority: data.current_priority != null ? String(data.current_priority) : null,
-    coachInstruction: data.coach_instruction != null ? String(data.coach_instruction) : null,
-    effectiveFrom: data.effective_from != null ? String(data.effective_from) : null,
+    currentFocus: lines[0] ?? null,
+    currentPriority: rows[0]?.current_priority != null ? String(rows[0].current_priority) : null,
+    coachInstruction: lines.join("；"),
+    effectiveFrom: rows[0]?.effective_from != null ? String(rows[0].effective_from) : null,
   };
 }
 

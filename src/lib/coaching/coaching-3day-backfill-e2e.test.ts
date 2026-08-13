@@ -233,7 +233,7 @@ describe("3-day backfill E2E regression", () => {
     expect(nextIncompleteBackfillDate(recent, null, now)).toBe(dayBefore);
 
     const simulateSubmitAndEnqueue = (logDate: string, note: string, mealNote: string) => {
-      requireAllowedCoachingLogDate(logDate);
+      requireAllowedCoachingLogDate(logDate, now);
 
       const photoPath = buildCoachingMealPhotoPath({
         customerId: enrollment.customerId,
@@ -387,9 +387,9 @@ describe("3-day backfill E2E regression", () => {
   });
 
   it("rejects dates older than 前天 with 400", () => {
-    expect(() => requireAllowedCoachingLogDate(tooOld)).toThrow(CoachingServiceError);
+    expect(() => requireAllowedCoachingLogDate(tooOld, now)).toThrow(CoachingServiceError);
     try {
-      requireAllowedCoachingLogDate(tooOld);
+      requireAllowedCoachingLogDate(tooOld, now);
     } catch (error) {
       expect(error).toBeInstanceOf(CoachingServiceError);
       expect((error as CoachingServiceError).status).toBe(400);

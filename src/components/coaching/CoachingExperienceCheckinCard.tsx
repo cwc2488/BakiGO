@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CrmButton, CrmCard } from "@/components/members/ui";
+import { EXPERIENCE_CHECKIN_POLICY } from "@/types/coaching-growth";
 
 type CheckinState = {
   canSubmit: boolean;
@@ -16,6 +17,22 @@ type CheckinState = {
     mostFeltChangeConsent: string;
   } | null;
 };
+
+function cooldownGapMs(reason: string | null): number {
+  if (reason === "decline_cooldown") return EXPERIENCE_CHECKIN_POLICY.afterDeclineMs;
+  if (reason === "recheck_cooldown") return EXPERIENCE_CHECKIN_POLICY.afterCompletedRecheckMs;
+  if (reason === "coach_invite") return EXPERIENCE_CHECKIN_POLICY.coachInviteSoftCapMs;
+  return EXPERIENCE_CHECKIN_POLICY.minGapMs;
+}
+
+function cooldownDaysRemaining(respondedAt: string | undefined, reason: string | null): number | null {
+  if (!respondedAt || !reason) return null;
+  const respondedMs = Date.parse(respondedAt);
+  if (Number.isNaN(respondedMs)) return null;
+  const remainingMs = cooldownGapMs(reason) - (Date.now() - respondedMs);
+  if (remainingMs <= 0) return null;
+  return Math.max(1, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
+}
 
 const PERCEPTION_LABELS = ["幾乎沒感覺", "有一點點", "還算有感", "明顯有感", "差很大"];
 const HELP_LABELS = ["不太有幫助", "稍微有幫助", "還不錯", "很有幫助", "超有幫助"];
@@ -144,7 +161,24 @@ export default function CoachingExperienceCheckinCard({ token }: { token: string
     }
   };
 
-  if (loading) return null;
+  const daysUntilNext = useMemo(
+    () =>
+      cooldownDaysRemaining(
+        state?.latestCheckin?.respondedAt,
+        state?.canSubmit ? null : state?.cooldownReason ?? null,
+      ),
+    [state?.canSubmit, state?.cooldownReason, state?.latestCheckin?.respondedAt],
+  );
+
+  // Entry is always visible — cooldown only blocks submit, never hides the card.
+  if (loading) {
+    return (
+      <CrmCard className="space-y-2">
+        <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">陪跑小回顧</p>
+        <p className="text-[0.875rem] text-[#86868b]">載入中…</p>
+      </CrmCard>
+    );
+  }
 
   return (
     <CrmCard className="space-y-4">
@@ -171,13 +205,17 @@ export default function CoachingExperienceCheckinCard({ token }: { token: string
       {error ? <p className="text-[0.875rem] text-[#c62828]">{error}</p> : null}
 
       {!open ? (
-        <CrmButton
-          type="button"
-          disabled={!state?.canSubmit}
-          onClick={() => setOpen(true)}
-        >
-          {state?.canSubmit ? "花一分鐘回顧看看" : "目前還不用回顧"}
-        </CrmButton>
+        state?.canSubmit ? (
+          <CrmButton type="button" onClick={() => setOpen(true)}>
+            花一分鐘回顧看看
+          </CrmButton>
+        ) : (
+          <p className="text-[0.9375rem] leading-relaxed text-[#636366]">
+            {daysUntilNext != null
+              ? `你已完成最近一次回顧，下次可於 ${daysUntilNext} 日後再次填寫`
+              : "你已完成最近一次回顧，稍後即可再次填寫"}
+          </p>
+        )
       ) : (
         <div className="space-y-6">
           <ScaleRow

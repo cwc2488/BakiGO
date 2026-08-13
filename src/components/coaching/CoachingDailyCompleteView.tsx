@@ -5,6 +5,9 @@ import { CrmButton, CrmCard } from "@/components/members/ui";
 import { countPrimaryMealsDone, isMealReported } from "@/lib/coaching/coaching-completion";
 import { formatSleepTimeRange } from "@/lib/coaching/coaching-sleep";
 import {
+  nextCoachingAiPollIntervalMs,
+} from "@/lib/coaching/ai/coaching-ai-latency";
+import {
   COACHING_AI_CUSTOMER_POLL_TIMEOUT_MS,
   type CoachingDailyGenerationCustomerOutput,
 } from "@/types/coaching-ai";
@@ -32,6 +35,7 @@ export function CoachingDailyCompleteView({
   continueBackfillLabel,
   onContinueBackfill,
   onOpenHistory,
+  showImmediateReceived = false,
 }: {
   dailyLog: CoachingDailyLogDetail;
   mealDrafts: Record<CoachingMealSlot, MealDraft>;
@@ -42,6 +46,8 @@ export function CoachingDailyCompleteView({
   continueBackfillLabel?: string | null;
   onContinueBackfill?: () => void;
   onOpenHistory?: () => void;
+  /** Right after submit — emphasize receipt; AI poll continues in background. */
+  showImmediateReceived?: boolean;
 }) {
   const mealsFromLog = dailyLog.meals;
   const primaryDone = countPrimaryMealsDone(mealsFromLog);
@@ -66,11 +72,21 @@ export function CoachingDailyCompleteView({
   const [customerFeedback, setCustomerFeedback] = useState<CoachingDailyGenerationCustomerOutput | null>(
     null,
   );
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  useEffect(() => {
+    if (aiState !== "analyzing") return;
+    const tick = window.setInterval(() => {
+      setElapsedSec((value) => value + 1);
+    }, 1000);
+    return () => window.clearInterval(tick);
+  }, [aiState]);
 
   useEffect(() => {
     let cancelled = false;
     const startedAt = Date.now();
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
 
     const poll = async () => {
       try {
@@ -109,9 +125,11 @@ export function CoachingDailyCompleteView({
         return;
       }
 
+      const delay = nextCoachingAiPollIntervalMs(attempt);
+      attempt += 1;
       timer = setTimeout(() => {
         void poll();
-      }, 2500);
+      }, delay);
     };
 
     void poll();
@@ -129,9 +147,26 @@ export function CoachingDailyCompleteView({
           ✓
         </div>
         <div className="space-y-1">
-          <h2 className="text-[1.375rem] font-semibold text-[#1d1d1f]">{dayLabel}回報完成</h2>
-          <p className="text-[0.9375rem] text-[#636366]">{logDate} · 謝謝你這天的紀錄</p>
+          <h2 className="text-[1.375rem] font-semibold text-[#1d1d1f]">
+            {showImmediateReceived || aiState === "analyzing"
+              ? "今天的回報收到囉 ✓"
+              : `${dayLabel}回報完成`}
+          </h2>
+          <p className="text-[0.9375rem] text-[#636366]">
+            {aiState === "analyzing"
+              ? "AI 正在幫你整理，完成後這裡會自動更新。"
+              : aiState === "ready"
+                ? `${logDate} · 教練回饋已就緒`
+                : `${logDate} · 謝謝你這天的紀錄`}
+          </p>
         </div>
+        {aiState === "analyzing" ? (
+          <ol className="mx-auto grid max-w-sm gap-2 text-left text-[0.875rem] text-[#636366]">
+            <ProgressStep done label="回報已收到" />
+            <ProgressStep active label="AI 正在整理今日內容" hint={elapsedSec > 0 ? `${elapsedSec}s` : undefined} />
+            <ProgressStep label="回饋完成後自動更新" />
+          </ol>
+        ) : null}
       </CrmCard>
 
       <CrmCard className="space-y-4">
@@ -172,12 +207,12 @@ export function CoachingDailyCompleteView({
         <h3 className="text-[1.0625rem] font-semibold text-[#1d1d1f]">教練回饋</h3>
         {aiState === "analyzing" ? (
           <p className="rounded-[1rem] bg-[#fafafa] px-4 py-5 text-[0.9375rem] leading-relaxed text-[#636366]">
-            正在分析今日回報…
+            今天的回報收到囉 ✓ AI 正在幫你整理，完成後這裡會自動更新。
           </p>
         ) : null}
         {aiState === "unavailable" ? (
           <p className="rounded-[1rem] bg-[#fafafa] px-4 py-5 text-[0.9375rem] leading-relaxed text-[#636366]">
-            今天的回報已成功送出，教練回饋暫時無法生成。
+            今天的回報已成功送出。教練回饋還在準備中或暫時無法生成；稍後回來打開這頁，完成後會自動顯示。
           </p>
         ) : null}
         {aiState === "ready" && customerFeedback ? (
@@ -269,6 +304,32 @@ export function CoachingDailyCompleteView({
         </p>
       ) : null}
     </div>
+  );
+}
+
+function ProgressStep({
+  label,
+  done = false,
+  active = false,
+  hint,
+}: {
+  label: string;
+  done?: boolean;
+  active?: boolean;
+  hint?: string;
+}) {
+  return (
+    <li
+      className={`flex items-center justify-between gap-3 rounded-[0.875rem] px-3 py-2 ${
+        active ? "bg-[#f4f7f1] text-[#1d1d1f]" : done ? "text-[#1d1d1f]" : "text-[#86868b]"
+      }`}
+    >
+      <span className="flex items-center gap-2">
+        <span aria-hidden>{done ? "✓" : active ? "…" : "○"}</span>
+        {label}
+      </span>
+      {hint ? <span className="tabular-nums text-[0.8125rem] text-[#86868b]">{hint}</span> : null}
+    </li>
   );
 }
 

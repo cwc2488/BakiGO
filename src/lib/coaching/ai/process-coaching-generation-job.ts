@@ -19,6 +19,11 @@ import { extractCustomerVoiceSignals } from "@/lib/coaching/ai/extract-customer-
 import { generateDailyCoachWithTelemetry } from "@/lib/coaching/ai/generate-daily-coach";
 import { loadAuthoritativeCoachingGenerationInput } from "@/lib/coaching/ai/load-coaching-generation-context";
 import { observeCoachingMeals } from "@/lib/coaching/ai/observe-coaching-meals";
+import { listActiveStructuredDirectivesForDay } from "@/lib/coaching/coach-directives/coach-directive-service";
+import {
+  createEmptyCoachingAiLatency,
+  logCoachingAiLatency,
+} from "@/lib/coaching/ai/coaching-ai-latency";
 import { prepareCoachingMealImagesForGeneration } from "@/lib/coaching/ai/prepare-coaching-meal-images";
 import { getCoachingDailyLogDetail, listCoachingDailyLogsForEnrollment } from "@/lib/coaching/coaching-service";
 import {
@@ -29,7 +34,11 @@ import {
 import type { CoachingFollowUpMemory } from "@/types/coaching-signals";
 
 export type ProcessCoachingGenerationJobResult =
-  | { outcome: "completed" }
+  | {
+      outcome: "completed";
+      latency?: import("@/lib/coaching/ai/coaching-ai-latency").CoachingAiLatencyTimestamps;
+      breakdown?: import("@/lib/coaching/ai/coaching-ai-latency").CoachingAiLatencyBreakdownMs;
+    }
   | { outcome: "superseded"; reason: string }
   | { outcome: "retry_scheduled"; attemptCount: number }
   | { outcome: "failed"; error: string };
@@ -93,6 +102,10 @@ export async function processCoachingGenerationJob(
   job: CoachingGenerationJobRecord,
 ): Promise<ProcessCoachingGenerationJobResult> {
   try {
+    const latency = createEmptyCoachingAiLatency({
+      job_created_at: job.createdAt ?? null,
+      worker_started_at: new Date().toISOString(),
+    });
     const loaded = await loadAuthoritativeCoachingGenerationInput({
       enrollmentId: job.enrollmentId,
       ownerMemberId: job.ownerMemberId,
@@ -132,6 +145,7 @@ export async function processCoachingGenerationJob(
       logDate: job.logDate,
       ownerMemberId: job.ownerMemberId,
     });
+    latency.submitted_at = todayLog.submittedAt ?? null;
 
     const preparedImages = await prepareCoachingMealImagesForGeneration({
       todayLog,
@@ -140,12 +154,14 @@ export async function processCoachingGenerationJob(
       logDate: job.logDate,
     });
 
+    latency.vision_started_at = new Date().toISOString();
     const { observations: mealObservations } = await observeCoachingMeals({
       generationInput: loaded.generationInput,
       preparedMealImages: preparedImages.prepared,
       ownerMemberId: job.ownerMemberId,
       persistTelemetry: true,
     });
+    latency.vision_completed_at = new Date().toISOString();
 
     const customerVoice = extractCustomerVoiceSignals(loaded.generationInput.todayContext.customerNote);
 
@@ -162,12 +178,18 @@ export async function processCoachingGenerationJob(
     const pendingFollowUps: CoachingFollowUpMemory[] =
       loaded.generationInput.priorAiContext?.pendingFollowUps ?? [];
 
+    const structuredDirectives = await listActiveStructuredDirectivesForDay({
+      enrollmentId: job.enrollmentId,
+      logDate: job.logDate,
+    });
+    latency.coach_generation_started_at = new Date().toISOString();
     const decisionContext = buildCoachingDecisionContext({
       generationInput: loaded.generationInput,
       mealObservations,
       customerVoice,
       photoReuse,
       pendingFollowUps,
+      structuredDirectives,
     });
     const finalInterventionLevel = decisionContext.finalInterventionLevel;
 
@@ -184,6 +206,7 @@ export async function processCoachingGenerationJob(
       imageUsageMetadata: preparedImages.telemetry,
       persistTelemetry: true,
     });
+    latency.coach_generation_completed_at = new Date().toISOString();
 
     const outputJson = applyCoachingDecisionContextToOutput(result.output, decisionContext, {
       generationInput: loaded.generationInput,
@@ -200,7 +223,14 @@ export async function processCoachingGenerationJob(
       aiProposedInterventionLevel: outputJson.coach.proposed_intervention_level,
     });
     await markGenerationJobCompleted(job.id);
-    return { outcome: "completed" };
+    latency.job_completed_at = new Date().toISOString();
+    const breakdown = logCoachingAiLatency({
+      enrollmentId: job.enrollmentId,
+      logDate: job.logDate,
+      jobId: job.id,
+      timestamps: latency,
+    });
+    return { outcome: "completed", latency, breakdown };
   } catch (error) {
     const message = error instanceof Error ? error.message : "generation_failed";
     const nowMs = Date.now();
