@@ -2,8 +2,10 @@ import { fingerprintCoachingGenerationInput } from "@/lib/ai/input-fingerprint";
 import { isProvisionalGenerationFingerprint } from "@/lib/coaching/ai/enqueue-daily-coach-generation-fast";
 import { applyCoachingDecisionContextToOutput } from "@/lib/coaching/ai/apply-coaching-decision-context";
 import { createCoachingAiProvider } from "@/lib/coaching/ai/coaching-ai-provider";
+import { decidePersistGenerationForActiveCycle } from "@/lib/coaching/ai/coaching-ai-output-lifecycle";
 import {
   getCoachingAiOutputForDay,
+  getCoachingGenerationJobById,
   insertQueuedGenerationJob,
   markCoachingAiOutputCompleted,
   markCoachingAiOutputFailed,
@@ -13,6 +15,7 @@ import {
   markGenerationJobSuperseded,
   upsertPendingCoachingAiOutput,
 } from "@/lib/coaching/ai/coaching-ai-store";
+import { getActiveCoachingDailyLogId } from "@/lib/coaching/coaching-service";
 import { buildCoachingDecisionContext } from "@/lib/coaching/ai/coaching-signal-engine";
 import {
   detectCoachingPhotoReuse,
@@ -317,7 +320,19 @@ export async function processCoachingGenerationJob(
       return { outcome: "superseded", reason: "output_fingerprint_advanced_requeued" };
     }
 
-    await markCoachingAiOutputProcessing(outputRow.id);
+    const claimed = await markCoachingAiOutputProcessing({
+      outputId: outputRow.id,
+      fingerprint: currentFingerprint,
+    });
+    if (!claimed) {
+      await markGenerationJobSuperseded(job.id, "output_not_claimable");
+      logCoachingAiJobLifecycle({
+        stage: "job_superseded",
+        ...lifecycleBase(job),
+        reason: "output_not_claimable",
+      });
+      return { outcome: "superseded", reason: "output_not_claimable" };
+    }
 
     const todayLog = loaded.todayLog;
     latency.submitted_at = todayLog.submittedAt ?? null;
@@ -429,7 +444,38 @@ export async function processCoachingGenerationJob(
       stage: "job_persist_started",
       ...lifecycleBase(job),
     });
-    await markCoachingAiOutputCompleted({
+    const [latestLogId, latestJob, latestOutput] = await Promise.all([
+      getActiveCoachingDailyLogId({
+        enrollmentId: job.enrollmentId,
+        ownerMemberId: job.ownerMemberId,
+        logDate: job.logDate,
+      }),
+      getCoachingGenerationJobById(job.id),
+      getCoachingAiOutputForDay({
+        enrollmentId: job.enrollmentId,
+        logDate: job.logDate,
+      }),
+    ]);
+    const persistGate = decidePersistGenerationForActiveCycle({
+      sourceDailyLogId: todayLog.id,
+      activeDailyLogId: latestLogId,
+      jobStatus: latestJob?.status ?? "missing",
+      outputId: latestOutput?.id ?? null,
+      jobOutputId: job.outputId,
+      outputFingerprint: latestOutput?.inputFingerprint ?? null,
+      persistFingerprint: currentFingerprint,
+    });
+    if (!persistGate.persist) {
+      await markGenerationJobSuperseded(job.id, persistGate.reason);
+      logCoachingAiJobLifecycle({
+        stage: "job_superseded",
+        ...lifecycleBase(job),
+        daily_log_id: latestLogId || null,
+        reason: persistGate.reason,
+      });
+      return { outcome: "superseded", reason: persistGate.reason };
+    }
+    const wrote = await markCoachingAiOutputCompleted({
       outputId: outputRow.id,
       fingerprint: currentFingerprint,
       generationInput: loaded.generationInput,
@@ -439,6 +485,16 @@ export async function processCoachingGenerationJob(
       finalInterventionLevel,
       aiProposedInterventionLevel: outputJson.coach.proposed_intervention_level,
     });
+    if (!wrote) {
+      await markGenerationJobSuperseded(job.id, "output_persist_rejected");
+      logCoachingAiJobLifecycle({
+        stage: "job_superseded",
+        ...lifecycleBase(job),
+        daily_log_id: latestLogId || null,
+        reason: "output_persist_rejected",
+      });
+      return { outcome: "superseded", reason: "output_persist_rejected" };
+    }
     await markGenerationJobCompleted(job.id);
     latency.persist_completed_at = new Date().toISOString();
     latency.job_completed_at = latency.persist_completed_at;

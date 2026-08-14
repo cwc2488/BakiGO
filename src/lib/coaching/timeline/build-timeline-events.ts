@@ -176,6 +176,7 @@ function buildDailyReportEvent(input: {
           : null,
       interventionLevel: input.ai?.finalInterventionLevel ?? null,
       aiStatus: input.ai?.status ?? null,
+      dailyLogId: input.log.id,
     },
   };
 }
@@ -220,6 +221,7 @@ function buildMissingStreakEvent(input: {
       coachBrief: null,
       interventionLevel: null,
       aiStatus: null,
+      dailyLogId: null,
     },
   };
 }

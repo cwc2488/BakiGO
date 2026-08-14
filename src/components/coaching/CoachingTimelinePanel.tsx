@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CrmButton, CrmCard } from "@/components/members/ui";
 import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetch";
+import {
+  COACHING_DELETE_COPY,
+  coachingBaselineDeletionPolicy,
+  reduceCoachingDeleteUi,
+  type CoachingDeleteUiPhase,
+} from "@/lib/coaching/coaching-record-delete";
 import type {
   CoachingTimelineEvent,
   CoachingTimelineFilter,
@@ -26,9 +32,11 @@ function EvidenceList({ event }: { event: CoachingTimelineEvent }) {
 function DailyExpanded({
   event,
   enrollmentId,
+  onDeleted,
 }: {
   event: Extract<CoachingTimelineEvent, { type: "daily_report" }>;
   enrollmentId: string;
+  onDeleted: (eventId: string) => void;
 }) {
   const [photos, setPhotos] = useState<Array<{ mealSlot: string; signedUrl: string | null }>>([]);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -147,6 +155,98 @@ function DailyExpanded({
       </section>
 
       <EvidenceList event={event} />
+
+      {event.payload.kind === "daily_report" && event.payload.dailyLogId ? (
+        <CoachingDeleteRecordControl
+          enrollmentId={enrollmentId}
+          logId={event.payload.dailyLogId}
+          eventId={event.id}
+          onDeleted={onDeleted}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function CoachingDeleteRecordControl({
+  enrollmentId,
+  logId,
+  eventId,
+  onDeleted,
+}: {
+  enrollmentId: string;
+  logId: string;
+  eventId: string;
+  onDeleted: (eventId: string) => void;
+}) {
+  const [phase, setPhase] = useState<CoachingDeleteUiPhase>("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  const requestDelete = () => {
+    setError(null);
+    setPhase((current) => reduceCoachingDeleteUi(current, { type: "request_delete" }));
+  };
+
+  const cancel = () => {
+    setError(null);
+    setPhase((current) => reduceCoachingDeleteUi(current, { type: "cancel" }));
+  };
+
+  const confirm = async () => {
+    setPhase((current) => reduceCoachingDeleteUi(current, { type: "confirm" }));
+    try {
+      const response = await fetchCoachingWithMemberAuth(
+        `/api/coaching/enrollments/${encodeURIComponent(enrollmentId)}/daily-logs/${encodeURIComponent(logId)}`,
+        { method: "DELETE" },
+      );
+      const body = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error ?? "無法刪除紀錄");
+      }
+      onDeleted(eventId);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "無法刪除紀錄");
+      setPhase("confirming");
+    }
+  };
+
+  return (
+    <div className="border-t border-[#f3f4f1] pt-3">
+      {phase === "idle" ? (
+        <button
+          type="button"
+          className="text-[0.75rem] text-[#86868b] underline-offset-2 hover:text-[#636366] hover:underline"
+          onClick={requestDelete}
+        >
+          {COACHING_DELETE_COPY.action}
+        </button>
+      ) : (
+        <div className="space-y-3 rounded-[1rem] bg-[#fafafa] px-3 py-3">
+          <p className="text-[0.875rem] font-medium text-[#1d1d1f]">{COACHING_DELETE_COPY.confirmTitle}</p>
+          <p className="text-[0.8125rem] leading-relaxed text-[#636366]">{COACHING_DELETE_COPY.confirmBody}</p>
+          {error ? <p className="text-[0.8125rem] text-[#cf1322]">{error}</p> : null}
+          <div className="flex gap-2">
+            <CrmButton
+              type="button"
+              variant="secondary"
+              className="py-2.5 text-[0.875rem]"
+              disabled={phase === "deleting"}
+              onClick={cancel}
+            >
+              {COACHING_DELETE_COPY.cancel}
+            </CrmButton>
+            <CrmButton
+              type="button"
+              variant="danger"
+              className="py-2.5 text-[0.875rem]"
+              disabled={phase === "deleting"}
+              onClick={() => void confirm()}
+            >
+              {phase === "deleting" ? "刪除中…" : COACHING_DELETE_COPY.confirm}
+            </CrmButton>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -187,6 +287,16 @@ function MeasurementExpanded({ event }: { event: Extract<CoachingTimelineEvent, 
         </table>
       </div>
       <EvidenceList event={event} />
+      {coachingBaselineDeletionPolicy({
+        eventType: "body_measurement",
+        measurementKind: event.payload.kind,
+      }).allowed ? null : (
+        <p className="text-[0.75rem] leading-relaxed text-[#86868b]">
+          {event.payload.kind === "baseline"
+            ? COACHING_DELETE_COPY.baselineBlocked
+            : COACHING_DELETE_COPY.measurementBlocked}
+        </p>
+      )}
     </div>
   );
 }
@@ -195,10 +305,12 @@ function TimelineEventCard({
   event,
   enrollmentId,
   highlighted,
+  onDeleted,
 }: {
   event: CoachingTimelineEvent;
   enrollmentId: string;
   highlighted: boolean;
+  onDeleted: (eventId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(highlighted);
 
@@ -219,7 +331,7 @@ function TimelineEventCard({
         </div>
       </button>
       {expanded && event.type === "daily_report" ? (
-        <DailyExpanded event={event} enrollmentId={enrollmentId} />
+        <DailyExpanded event={event} enrollmentId={enrollmentId} onDeleted={onDeleted} />
       ) : null}
       {expanded && event.type === "body_measurement" ? <MeasurementExpanded event={event} /> : null}
       {expanded && event.type === "intervention_change" ? (
@@ -258,6 +370,7 @@ export default function CoachingTimelinePanel({
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const focusQuery = useMemo(() => focusDates.join(","), [focusDates]);
   const reasonQuery = useMemo(() => reasonCodes.join(","), [reasonCodes]);
@@ -297,6 +410,11 @@ export default function CoachingTimelinePanel({
   useEffect(() => {
     void loadPage(null, false);
   }, [loadPage]);
+
+  const handleDeleted = (eventId: string) => {
+    setEvents((prev) => prev.filter((event) => event.id !== eventId));
+    setSuccess(COACHING_DELETE_COPY.success);
+  };
 
   useEffect(() => {
     if (focusDates.length === 0) return;
@@ -356,6 +474,9 @@ export default function CoachingTimelinePanel({
 
       {loading ? <p className="text-[0.9375rem] text-[#86868b]">載入歷史紀錄…</p> : null}
       {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
+      {success ? (
+        <p className="rounded-[1.25rem] bg-[#f4faf0] px-4 py-3 text-[0.875rem] text-[#1d1d1f]">{success}</p>
+      ) : null}
 
       {!loading && !error && events.length === 0 ? (
         <p className="rounded-[1.25rem] border border-dashed border-[#e5e7eb] px-4 py-4 text-[0.9375rem] text-[#86868b]">
@@ -370,6 +491,7 @@ export default function CoachingTimelinePanel({
             event={event}
             enrollmentId={enrollmentId}
             highlighted={event.attentionLinked}
+            onDeleted={handleDeleted}
           />
         ))}
       </div>

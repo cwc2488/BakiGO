@@ -123,6 +123,21 @@ export function buildCoachingDailyCoachSystemPrompt(): string {
     "- 「似乎沒有搭配其他食物」這類把照片缺漏寫成確定事實的句子",
     "- 對 needs_adjustment／off_track 日稱讚「飲食很好」",
     "- 忽略 relevantCoachActionContext.knownContexts 後重複相同 clarification 或只講抽象議題標籤",
+    "",
+    "Anti-repetition（同一筆陪跑紀錄內必須遵守）：",
+    "- 不要重複同一句話",
+    "- 不要用不同句子複述同一個建議",
+    "- 不要在相鄰句子重講同一個觀察",
+    "- 每一句都要帶來新資訊",
+    "",
+    "Customer today_feedback 結構（依序，不要循環複述）：",
+    "- 觀察 OBSERVATION → 解讀 INTERPRETATION → 今天可做的事 TODAY'S ACTION → 下一步 NEXT FOCUS",
+    "- tomorrow_focus 欄位負責「下一步」；today_feedback 不要再整段複述 tomorrow_focus",
+    "",
+    "Coach daily_summary 結構（依序，給教練看的操作摘要）：",
+    "- 什麼變了 WHAT CHANGED → 教練該留意 WHAT COACH SHOULD NOTICE → 下次追什麼 WHAT TO FOLLOW UP",
+    "- 禁止把 customer.today_feedback 原句或近義句貼進 daily_summary",
+    "- Customer 要清楚、支持、可執行；Coach 要短、操作、解釋意義。同一證據、不同受眾。",
   ].join("\n");
 }
 
@@ -239,7 +254,6 @@ export function buildCoachingDailyCoachUserPrompt(input: {
           : null,
       },
     },
-    interventionLevel: generationInput.interventionContext.finalInterventionLevel,
     profileMemory: {
       goal: generationInput.profileMemory.goal,
       daysSinceEnrollmentStart: generationInput.profileMemory.daysSinceEnrollmentStart,
@@ -278,8 +292,9 @@ export function buildCoachingDailyCoachUserPrompt(input: {
       customerNote: today.customerNote,
       primaryMeals: today.primaryMeals.map((meal) => ({
         mealSlot: meal.mealSlot,
-        textNote: meal.textNote,
         hasPhoto: Boolean(meal.storagePath),
+        // textNote omitted when mealObservations exist — structured observations are authoritative.
+        ...(compactMeals.length === 0 ? { textNote: meal.textNote } : {}),
       })),
       secondaryMealNotes: today.secondaryMealNotes.slice(0, 3),
     },
@@ -288,7 +303,7 @@ export function buildCoachingDailyCoachUserPrompt(input: {
           tomorrowFocus: generationInput.priorAiContext.tomorrowFocus?.value ?? null,
           recurringIssue: generationInput.priorAiContext.recurringIssue?.value ?? null,
           improvedIssue: generationInput.priorAiContext.improvedIssue?.value ?? null,
-          pendingFollowUps: generationInput.priorAiContext.pendingFollowUps.slice(0, 3),
+          // pendingFollowUps already in decisionContext — do not send the same list twice.
         }
       : null,
     mealImageSlotsAttached: preparedMealImages.map((image) => image.mealSlot),
@@ -301,15 +316,11 @@ export function buildCoachingDailyCoachUserPrompt(input: {
           "Unknown：對 active issue 尚未確認的原因可做有限度澄清。",
         ].join("\n")
       : [
-          "Known Context（系統已確認，討論對應 active issue 時必須自然延續；禁止重新 discovery）：",
-          ...relevantCoachActionContext.knownContexts.map((item) => {
-            const keys = item.matchedActiveKeys.join(", ");
-            const fragments = item.distinctiveFragments.join("／") || "（無）";
-            return `- active=${keys} | note=${item.note} | carry_fragments=${fragments}`;
-          }),
-          "規則：Coach daily_summary 與（若對 Customer 可見的 confirmed coaching context）today_feedback／sleep feedback 必須帶入上述 note 的 situational meaning；不可只寫議題標籤（例如只說晚睡）而忘掉已知情境。",
+          "Known Context 見 JSON knownCoachContexts（結構化為準；禁止把同一段 note 再展開一次）。",
+          "討論對應 active issue 時必須自然延續；禁止重新 discovery。",
+          "Coach daily_summary 與（若對 Customer 可見的 confirmed coaching context）today_feedback／sleep feedback 必須帶入 note 的 situational meaning；不可只寫議題標籤。",
           "禁止把 Known Context 擴寫成 unsupported 因果／醫療推論。",
-          "Unknown：僅限上述 Known Context 未涵蓋的部分才可澄清。",
+          "Unknown：僅限 Known Context 未涵蓋的部分才可澄清。",
         ].join("\n");
 
   return [
@@ -328,6 +339,7 @@ export function buildCoachingDailyCoachUserPrompt(input: {
     "奶昔本身不是錯誤；plan-approved shake 不要挑毛病。食物事實必須 evidence-backed。",
     "飢餓感受：用「有可能／可能跟…有關」連結餐食 evidence，禁止武斷。",
     "睡眠：必須同時評估時數與入睡時間（例如 8h 足夠但 00:24 偏晚）。",
+    "同一筆輸出內禁止重複句子或近義複述；Coach 摘要不要複製 Customer 文案。",
     `這份回報日期是 ${generationInput.logDate}（${reportDaySpeechLabel} / ${reportDayRelation}）。若不是今天，禁止用「今天你…」描述這份回報。`,
     "",
     JSON.stringify(payload),

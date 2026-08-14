@@ -1,6 +1,8 @@
 import {
   dailyNutritionAssessmentCustomerLabel,
 } from "@/lib/coaching/ai/assess-daily-nutrition";
+import { applyCoachingOutputQualityGuard } from "@/lib/coaching/ai/apply-coaching-output-quality-guard";
+import { proseAlreadyCovers } from "@/lib/coaching/ai/coaching-text-dedup";
 import { applyMealFollowUpBudgetToOutput } from "@/lib/coaching/ai/meal-follow-up-budget";
 import type { CoachingDailyGenerationOutputJson, CoachingGenerationInput } from "@/types/coaching-ai";
 import type { CoachingDecisionContext, CoachingPriority } from "@/types/coaching-signals";
@@ -222,6 +224,9 @@ function ensureCustomerOutcomeWording(
   if (!trimmed) {
     return normalized;
   }
+  if (proseAlreadyCovers(trimmed, normalized)) {
+    return trimmed;
+  }
   return `${normalized}${trimmed}`;
 }
 
@@ -319,22 +324,33 @@ export function ensureRelevantCoachActionContextWording(
 
   const coachCarry = `已知：${knownSentence}。後續以延續觀察為主，不再重新確認同一原因。`;
   const customerCarry = `${knownSentence}，這段時間先觀察能不能把節奏稍微往前。`;
+  const todayFeedback = output.customer.today_feedback;
+  const sleepText = output.customer.lifestyle_feedback.sleep?.trim() ?? "";
+  const coachSummary = output.coach.daily_summary;
 
   return {
     ...output,
     customer: {
       ...output.customer,
-      today_feedback: `${customerCarry}${output.customer.today_feedback}`.trim(),
+      today_feedback: proseAlreadyCovers(todayFeedback, customerCarry)
+        ? todayFeedback
+        : `${customerCarry}${todayFeedback}`.trim(),
       lifestyle_feedback: {
         ...output.customer.lifestyle_feedback,
-        sleep: output.customer.lifestyle_feedback.sleep?.trim()
-          ? `${customerCarry}${output.customer.lifestyle_feedback.sleep}`
-          : customerCarry,
+        sleep: sleepText
+          ? proseAlreadyCovers(`${todayFeedback} ${sleepText}`, customerCarry)
+            ? sleepText
+            : `${customerCarry}${sleepText}`
+          : proseAlreadyCovers(todayFeedback, customerCarry)
+            ? sleepText || null
+            : customerCarry,
       },
     },
     coach: {
       ...output.coach,
-      daily_summary: `${coachCarry}${output.coach.daily_summary}`.trim(),
+      daily_summary: proseAlreadyCovers(coachSummary, coachCarry)
+        ? coachSummary
+        : `${coachCarry}${coachSummary}`.trim(),
     },
   };
 }
@@ -417,15 +433,17 @@ export function applyCoachingDecisionContextToOutput(
   const withMealBudget = applyMealFollowUpBudgetToOutput(withSystemFields, decision);
   const withBowelAndDirectives = applyBowelAndDirectiveCopy(withMealBudget, decision);
   const generationInput = options?.generationInput ?? null;
-  if (!generationInput) {
-    return withBowelAndDirectives;
-  }
-  const relevant = buildRelevantCoachActionContext({
-    memory: generationInput.recentCoachActionMemory,
-    decisionContext: decision,
-    asOfIso: relevantCoachActionContextAsOfIso(generationInput.logDate),
-  });
-  return ensureRelevantCoachActionContextWording(withBowelAndDirectives, relevant);
+  const withKnownContext = generationInput
+    ? ensureRelevantCoachActionContextWording(
+        withBowelAndDirectives,
+        buildRelevantCoachActionContext({
+          memory: generationInput.recentCoachActionMemory,
+          decisionContext: decision,
+          asOfIso: relevantCoachActionContextAsOfIso(generationInput.logDate),
+        }),
+      )
+    : withBowelAndDirectives;
+  return applyCoachingOutputQualityGuard(withKnownContext);
 }
 
 function applyBowelAndDirectiveCopy(
@@ -448,26 +466,35 @@ function applyBowelAndDirectiveCopy(
 
   const customerExtra = [...directiveCustomerLines, bowelCustomer].filter(Boolean).join(" ");
   const coachExtra = [...directiveCoachLines, bowelCoach].filter(Boolean).join(" ");
+  const todayFeedback = output.customer.today_feedback;
+  const nextTodayFeedback =
+    customerExtra && !proseAlreadyCovers(todayFeedback, customerExtra)
+      ? `${customerExtra}${todayFeedback}`.trim()
+      : todayFeedback;
+  const exerciseText = output.customer.lifestyle_feedback.exercise;
+  const nextExercise =
+    bowelCustomer && !proseAlreadyCovers(`${nextTodayFeedback} ${exerciseText ?? ""}`, bowelCustomer)
+      ? [bowelCustomer, exerciseText].filter(Boolean).join(" ")
+      : exerciseText;
+  const coachSummary = output.coach.daily_summary;
+  const nextCoachSummary =
+    coachExtra && !proseAlreadyCovers(coachSummary, coachExtra)
+      ? `${coachExtra} ${coachSummary}`.trim()
+      : coachSummary;
 
   return {
     ...output,
     customer: {
       ...output.customer,
-      today_feedback: customerExtra
-        ? `${customerExtra}${output.customer.today_feedback}`.trim()
-        : output.customer.today_feedback,
+      today_feedback: nextTodayFeedback,
       lifestyle_feedback: {
         ...output.customer.lifestyle_feedback,
-        exercise: bowelCustomer
-          ? [bowelCustomer, output.customer.lifestyle_feedback.exercise].filter(Boolean).join(" ")
-          : output.customer.lifestyle_feedback.exercise,
+        exercise: nextExercise,
       },
     },
     coach: {
       ...output.coach,
-      daily_summary: coachExtra
-        ? `${coachExtra} ${output.coach.daily_summary}`.trim()
-        : output.coach.daily_summary,
+      daily_summary: nextCoachSummary,
       evidence: [
         ...output.coach.evidence,
         ...(decision.bowelSignal

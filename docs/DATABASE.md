@@ -170,7 +170,7 @@ Member (coach)
 
 **Worker RPCs (`030`):** `claim_coaching_generation_jobs`, `reclaim_stale_coaching_generation_jobs`.
 
-**`coaching_ai_outputs` key columns:** `input_fingerprint`, `input_snapshot`, `output_json`, `status` (`pending|processing|completed|failed`), `regeneration_count`, `ai_proposed_intervention_level` (audit), `final_intervention_level` (deterministic engine — authoritative), `started_at`, `completed_at`, `deleted_at` / `deleted_by` (037, aligned with daily-log soft-delete). Unique: `(enrollment_id, log_date, point_key)` where `point_key = daily_coach_generation`. Default list/get queries exclude deleted rows.
+**`coaching_ai_outputs` key columns:** `input_fingerprint`, `input_snapshot`, `output_json`, `status` (`pending|processing|completed|failed`), `regeneration_count`, `ai_proposed_intervention_level` (audit), `final_intervention_level` (deterministic engine — authoritative), `started_at`, `completed_at`, `deleted_at` / `deleted_by` (037, aligned with daily-log soft-delete). Unique: `(enrollment_id, log_date, point_key)` where `point_key = daily_coach_generation`. Default list/get queries exclude deleted rows. Same-day resubmit after delete reuses this unique row: pending reset clears `output_json` / `deleted_at`; persist requires the job to still own the active daily-log cycle.
 
 **`coaching_generation_jobs` idempotency:** partial unique index on `(output_id, input_fingerprint) WHERE status IN ('queued','processing')`.
 

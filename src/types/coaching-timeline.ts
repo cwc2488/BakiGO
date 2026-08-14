@@ -87,6 +87,7 @@ export type CoachingTimelineDailyReportPayload = {
   } | null;
   interventionLevel: CoachingInterventionLevel | null;
   aiStatus: string | null;
+  dailyLogId: string | null;
 };
 
 export type CoachingTimelineMeasurementPayload = {

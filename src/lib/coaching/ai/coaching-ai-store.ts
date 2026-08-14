@@ -304,10 +304,29 @@ export async function insertQueuedGenerationJob(input: {
   return mapCoachingGenerationJobRow(data as Record<string, unknown>);
 }
 
-export async function markCoachingAiOutputProcessing(outputId: string): Promise<void> {
+export async function getCoachingGenerationJobById(
+  jobId: string,
+): Promise<CoachingGenerationJobRecord | null> {
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("coaching_generation_jobs")
+    .select("*")
+    .eq("id", jobId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data ? mapCoachingGenerationJobRow(data as Record<string, unknown>) : null;
+}
+
+export async function markCoachingAiOutputProcessing(input: {
+  outputId: string;
+  fingerprint: string;
+}): Promise<boolean> {
   const supabase = createSupabaseServiceClient();
   const now = new Date().toISOString();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("coaching_ai_outputs")
     .update({
       status: "processing",
@@ -315,13 +334,16 @@ export async function markCoachingAiOutputProcessing(outputId: string): Promise<
       error_message: null,
       updated_at: now,
     })
-    .eq("id", outputId)
+    .eq("id", input.outputId)
+    .eq("input_fingerprint", input.fingerprint)
     .in("status", ["pending", "failed", "processing"])
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .select("id");
 
   if (error) {
     throw new Error(error.message);
   }
+  return (data ?? []).length > 0;
 }
 
 export async function markCoachingAiOutputCompleted(input: {
@@ -333,10 +355,10 @@ export async function markCoachingAiOutputCompleted(input: {
   promptVersion: string;
   finalInterventionLevel: CoachingInterventionLevel;
   aiProposedInterventionLevel: CoachingInterventionLevel | null;
-}): Promise<void> {
+}): Promise<boolean> {
   const supabase = createSupabaseServiceClient();
   const now = new Date().toISOString();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("coaching_ai_outputs")
     .update({
       input_fingerprint: input.fingerprint,
@@ -352,11 +374,15 @@ export async function markCoachingAiOutputCompleted(input: {
       updated_at: now,
     })
     .eq("id", input.outputId)
-    .is("deleted_at", null);
+    .eq("input_fingerprint", input.fingerprint)
+    .in("status", ["pending", "processing"])
+    .is("deleted_at", null)
+    .select("id");
 
   if (error) {
     throw new Error(error.message);
   }
+  return (data ?? []).length > 0;
 }
 
 export async function markCoachingAiOutputFailed(input: {

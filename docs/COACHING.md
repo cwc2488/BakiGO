@@ -179,7 +179,7 @@ Positive progress **never** overrides `coach_attention` or `watch`.
 - Selects **recent + material + reason-relevant + unresolved/currently-relevant** notes only
 - Prompt exposes `relevantCoachActionContext.knownContexts` as Known Context (not the full recent dump)
 - Schema limitation: no `confirmed_customer_context` vs `coach_internal_note` distinction yet — material notes matching active reasons are treated as coaching Known Context until a later migration
-- Prompt version: `coaching_daily_v3d2`
+- Prompt version: `coaching_daily_v3d3`
 
 
 ### Out of scope for 3a
@@ -216,6 +216,8 @@ Detail navigation reuses `/coaching/[enrollmentId]`. Timeline / Coach Actions = 
 **Intervention history:** derived only from consecutive completed `coaching_ai_outputs.final_intervention_level` changes. No fake history when outputs are missing.
 
 **Coach Action events:** emitted from `coaching_coach_actions` (Phase 3d).
+
+**Record quality + delete:** Daily Coach prompt `coaching_daily_v3d3` requires anti-repetition and distinct consumer vs coach copy. A deterministic post-generation guard removes exact/normalized duplicate sentences and adjacent near-duplicates without an extra LLM call. Coaches may soft-delete one daily report from Timeline (`刪除紀錄` → confirm). Baseline body measurements cannot be deleted from Timeline (prevents corrupting longitudinal comparison). Migration `037_coaching_record_soft_delete.sql`.
 
 ## Phase 4c–4e — Growth Intelligence
 

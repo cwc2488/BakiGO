@@ -142,7 +142,7 @@ function allQualityChecks(report: { customer: Array<{ id: string; status: string
 
 describe("Phase 3d Coach Action Persistence & Memory", () => {
   it("prompt version bumps for coach action memory", () => {
-    expect(COACHING_DAILY_AI_PROMPT_VERSION).toBe("coaching_daily_v3d2");
+    expect(COACHING_DAILY_AI_PROMPT_VERSION).toBe("coaching_daily_v3d3");
     expect(buildCoachingDailyCoachSystemPrompt()).toContain("Known Context");
   });
 

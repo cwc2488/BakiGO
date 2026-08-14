@@ -726,6 +726,31 @@ export async function getCoachingDailyLogDetail(input: {
   };
 }
 
+/** Persist-time cycle identity only — does not reload meals or generation context. */
+export async function getActiveCoachingDailyLogId(input: {
+  enrollmentId: string;
+  logDate: string;
+  ownerMemberId?: string;
+}): Promise<string> {
+  const supabase = createSupabaseServiceClient();
+  let query = supabase
+    .from("coaching_daily_logs")
+    .select("id")
+    .eq("enrollment_id", input.enrollmentId)
+    .eq("log_date", input.logDate)
+    .is("deleted_at", null);
+
+  if (input.ownerMemberId) {
+    query = query.eq("owner_member_id", input.ownerMemberId);
+  }
+
+  const { data, error } = await query.maybeSingle();
+  if (error) {
+    throw new CoachingServiceError(error.message, 500);
+  }
+  return data?.id ? String(data.id) : "";
+}
+
 export async function attachMealPhoto(input: {
   portal: ResolvedCoachingPortal;
   logDate: string;

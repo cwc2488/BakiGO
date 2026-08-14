@@ -23,7 +23,7 @@ function cloneD(): CoachingDailyGenerationOutputJson {
 
 describe("coaching AI V2c1 final calibration", () => {
   it("prompt version is v2e and keeps uncertainty + sleep + history contracts", () => {
-    expect(COACHING_DAILY_AI_PROMPT_VERSION).toBe("coaching_daily_v3d2");
+    expect(COACHING_DAILY_AI_PROMPT_VERSION).toBe("coaching_daily_v3d3");
 
     const systemPrompt = buildCoachingDailyCoachSystemPrompt();
     expect(systemPrompt).toContain("mealFollowUpBudget");

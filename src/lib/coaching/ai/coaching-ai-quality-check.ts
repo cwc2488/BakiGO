@@ -11,6 +11,10 @@ import {
   buildRelevantCoachActionContext,
   relevantCoachActionContextAsOfIso,
 } from "@/lib/coaching/coach-actions/build-relevant-coach-action-context";
+import {
+  findRepeatedSentences,
+  isCopiedConsumerText,
+} from "@/lib/coaching/ai/coaching-text-dedup";
 
 export type CoachingAiQualityCheckItem = {
   id: string;
@@ -70,6 +74,33 @@ const INVENTED_FIXED_STANDARD_PATTERNS = [
   /八杯水/,
   /2000\s*(ml|毫升)/i,
 ];
+
+function checkNoInternalRepetition(id: string, text: string): CoachingAiQualityCheckItem {
+  const repeats = findRepeatedSentences(text);
+  return {
+    id,
+    status: repeats.length === 0 ? "pass" : "fail",
+    detail:
+      repeats.length === 0
+        ? "No repeated sentences detected."
+        : `Repeated ${repeats[0]!.kind}: ${repeats[0]!.dropped.slice(0, 48)}`,
+  };
+}
+
+function checkCoachNotCopiedConsumer(output: CoachingDailyGenerationOutputJson): CoachingAiQualityCheckItem {
+  const copied = isCopiedConsumerText(output.coach.daily_summary, [
+    output.customer.today_feedback,
+    output.customer.daily_food_summary,
+    output.customer.encouragement,
+  ]);
+  return {
+    id: "coach_summary_not_copied_consumer",
+    status: copied ? "fail" : "pass",
+    detail: copied
+      ? "Coach daily_summary copies consumer analysis."
+      : "Coach summary is distinct from consumer analysis.",
+  };
+}
 
 function checkEncouragementFirst(text: string): CoachingAiQualityCheckItem {
   const encouraging = /(很好|不错|不錯|棒|加油|持續|有回報|有做到|先肯定|值得肯定|辛苦了|堅持)/.test(text);
@@ -831,6 +862,7 @@ export function evaluateCoachingAiOutputQuality(input: {
       detail: "No unauthorized product plan change detected.",
     },
     checkPriorAiAsFact(output, priorTomorrowFocus),
+    checkNoInternalRepetition("customer_no_internal_repeat", `${output.customer.today_feedback}`),
   ];
 
   const coach: CoachingAiQualityCheckItem[] = [
@@ -839,6 +871,8 @@ export function evaluateCoachingAiOutputQuality(input: {
       status: output.coach.daily_summary.length <= 280 ? "pass" : "warn",
       detail: `daily_summary length=${output.coach.daily_summary.length}`,
     },
+    checkNoInternalRepetition("coach_no_internal_repeat", output.coach.daily_summary),
+    checkCoachNotCopiedConsumer(output),
     checkRecurringRequiresEvidence(output, generationInput),
     checkImprovedRequiresEvidence(output),
     checkSingleMealNotCoachAttention(output, generationInput),
