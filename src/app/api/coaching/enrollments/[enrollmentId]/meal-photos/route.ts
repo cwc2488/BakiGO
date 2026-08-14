@@ -56,6 +56,7 @@ export async function GET(
       .eq("enrollment_id", enrollmentId)
       .eq("owner_member_id", memberId)
       .eq("log_date", logDate)
+      .is("deleted_at", null)
       .maybeSingle();
     if (logError) {
       throw new CoachingServiceError(logError.message, 500);

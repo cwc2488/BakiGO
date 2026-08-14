@@ -169,6 +169,17 @@ export async function processCoachingGenerationJob(
       daily_log_id: loaded.todayLog.id || null,
       duration_ms: Date.now() - setupStartedAt,
     });
+
+    if (!loaded.todayLog.id) {
+      await markGenerationJobSuperseded(job.id, "daily_log_missing_or_deleted");
+      logCoachingAiJobLifecycle({
+        stage: "job_superseded",
+        ...lifecycleBase(job),
+        reason: "daily_log_missing_or_deleted",
+      });
+      return { outcome: "superseded", reason: "daily_log_missing_or_deleted" };
+    }
+
     const currentFingerprint = fingerprintCoachingGenerationInput(loaded.generationInput);
 
     // Provisional post-submit jobs: upgrade fingerprint in-place and continue (no supersede loop).

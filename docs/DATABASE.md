@@ -149,7 +149,7 @@ Member (coach)
 | Table | Purpose |
 |-------|---------|
 | `coaching_enrollments` | Active/paused/completed coaching relationship; plan snapshot + onboarding state. `started_at` = Day 1 authority; `planned_end_at` (034) = inclusive planned end (default start+89 days); `ended_at` = actual completion timestamp |
-| `coaching_daily_logs` | One row per enrollment per `log_date` (Asia/Taipei). Sleep: `sleep_bedtime`, `sleep_wake_time`; `sleep_duration` computed on save |
+| `coaching_daily_logs` | One row per enrollment per `log_date` (Asia/Taipei). Sleep: `sleep_bedtime`, `sleep_wake_time`; `sleep_duration` computed on save. Soft-delete: `deleted_at` / `deleted_by` (037); default queries exclude deleted rows. Active unique is `(enrollment_id, log_date) WHERE deleted_at IS NULL`. |
 | `coaching_meal_entries` | Meal slot rows linked to daily log |
 | `coaching_meal_photos` | Storage path refs for meal photos (private bucket) |
 
@@ -170,7 +170,7 @@ Member (coach)
 
 **Worker RPCs (`030`):** `claim_coaching_generation_jobs`, `reclaim_stale_coaching_generation_jobs`.
 
-**`coaching_ai_outputs` key columns:** `input_fingerprint`, `input_snapshot`, `output_json`, `status` (`pending|processing|completed|failed`), `regeneration_count`, `ai_proposed_intervention_level` (audit), `final_intervention_level` (deterministic engine — authoritative), `started_at`, `completed_at`. Unique: `(enrollment_id, log_date, point_key)` where `point_key = daily_coach_generation`.
+**`coaching_ai_outputs` key columns:** `input_fingerprint`, `input_snapshot`, `output_json`, `status` (`pending|processing|completed|failed`), `regeneration_count`, `ai_proposed_intervention_level` (audit), `final_intervention_level` (deterministic engine — authoritative), `started_at`, `completed_at`, `deleted_at` / `deleted_by` (037, aligned with daily-log soft-delete). Unique: `(enrollment_id, log_date, point_key)` where `point_key = daily_coach_generation`. Default list/get queries exclude deleted rows.
 
 **`coaching_generation_jobs` idempotency:** partial unique index on `(output_id, input_fingerprint) WHERE status IN ('queued','processing')`.
 
