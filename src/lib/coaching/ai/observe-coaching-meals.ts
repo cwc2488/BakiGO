@@ -203,7 +203,7 @@ async function callOpenAiMealVisionObservation(input: {
   const content: ContentPart[] = [
     {
       type: "text",
-      text: `請觀察下列餐點（含備註）並輸出 JSON。\n${JSON.stringify({ mealNotes }, null, 2)}`,
+      text: `請觀察下列餐點（含備註）並輸出 JSON。\n${JSON.stringify({ mealNotes })}`,
     },
   ];
 
@@ -233,6 +233,7 @@ async function callOpenAiMealVisionObservation(input: {
       body: JSON.stringify({
         model: COACHING_DAILY_AI_MODEL_ID,
         temperature: 0,
+        max_tokens: 900,
         response_format: {
           type: "json_schema",
           json_schema: {

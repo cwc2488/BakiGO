@@ -7,11 +7,17 @@ import { extractCoachingMealPhotoCandidates } from "@/lib/coaching/ai/select-coa
 import { buildRecentCoachActionMemory } from "@/lib/coaching/coach-actions/build-recent-coach-action-memory";
 import { listCoachingCoachActionsForEnrollment } from "@/lib/coaching/coach-actions/coaching-coach-action-service";
 import {
+  listActiveStructuredDirectivesForDay,
+  type CoachDirectiveRecord,
+} from "@/lib/coaching/coach-directives/coach-directive-service";
+import type { StructuredCoachDirective } from "@/lib/coaching/directive-meal-verification";
+import {
   getCoachingDailyLogDetail,
   getCoachingEnrollmentForCoach,
   listCoachingDailyLogsForEnrollment,
 } from "@/lib/coaching/coaching-service";
 import { createSupabaseServiceClient } from "@/lib/supabase/service-client";
+import type { CoachingDailyLogDetail, CoachingEnrollment } from "@/types/coaching";
 import type { CoachingGenerationInput } from "@/types/coaching-ai";
 import type { BodyCompositionRecord, Customer } from "@/types/customer";
 
@@ -41,8 +47,18 @@ export type LoadedCoachingGenerationContext = {
   customerId: string;
   ownerMemberId: string;
   logDate: string;
+  /** Reuse in worker — do not re-fetch daily log. */
+  todayLog: CoachingDailyLogDetail;
+  /** Reuse for prior photo-hash scans — do not re-list. */
+  recentLogs: CoachingDailyLogDetail[];
+  /** Active structured directives for logDate — reuse for CD verification. */
+  activeStructuredDirectives: StructuredCoachDirective[];
 };
 
+/**
+ * Authoritative generation context.
+ * Independent Supabase reads run in Promise.all after enrollment resolve.
+ */
 export async function loadAuthoritativeCoachingGenerationInput(input: {
   enrollmentId: string;
   ownerMemberId: string;
@@ -54,19 +70,64 @@ export async function loadAuthoritativeCoachingGenerationInput(input: {
   });
 
   const supabase = createSupabaseServiceClient();
-  const { data: customerRow, error: customerError } = await supabase
-    .from("customers")
-    .select("id, display_name, height_cm, sex, region, occupation")
-    .eq("id", enrollment.customerId)
-    .maybeSingle();
 
-  if (customerError) {
-    throw new Error(customerError.message);
+  const [
+    customerResult,
+    todayLog,
+    recentLogs,
+    bodyResult,
+    coachDirectives,
+    priorOutputs,
+    coachActions,
+    activeStructuredDirectives,
+  ] = await Promise.all([
+    supabase
+      .from("customers")
+      .select("id, display_name, height_cm, sex, region, occupation")
+      .eq("id", enrollment.customerId)
+      .maybeSingle(),
+    getCoachingDailyLogDetail({
+      enrollmentId: enrollment.id,
+      logDate: input.logDate,
+      ownerMemberId: enrollment.ownerMemberId,
+    }),
+    listCoachingDailyLogsForEnrollment({
+      enrollmentId: enrollment.id,
+      ownerMemberId: enrollment.ownerMemberId,
+      limit: 14,
+    }),
+    supabase
+      .from("body_composition_records")
+      .select("*")
+      .eq("customer_id", enrollment.customerId)
+      .order("record_date", { ascending: false }),
+    getCoachDirectivesForEnrollment(enrollment.id),
+    listCoachingAiOutputsForEnrollment({
+      enrollmentId: enrollment.id,
+      limit: 14,
+    }),
+    listCoachingCoachActionsForEnrollment({
+      enrollmentId: enrollment.id,
+      ownerMemberId: enrollment.ownerMemberId,
+      limit: 20,
+    }),
+    listActiveStructuredDirectivesForDay({
+      enrollmentId: enrollment.id,
+      logDate: input.logDate,
+    }),
+  ]);
+
+  if (customerResult.error) {
+    throw new Error(customerResult.error.message);
   }
-  if (!customerRow) {
+  if (!customerResult.data) {
     throw new Error("Customer not found for coaching generation.");
   }
+  if (bodyResult.error) {
+    throw new Error(bodyResult.error.message);
+  }
 
+  const customerRow = customerResult.data;
   const customer: Pick<Customer, "displayName" | "heightCm" | "sex" | "region" | "occupation"> = {
     displayName: String(customerRow.display_name ?? "顧客"),
     heightCm: customerRow.height_cm != null ? Number(customerRow.height_cm) : undefined,
@@ -75,40 +136,7 @@ export async function loadAuthoritativeCoachingGenerationInput(input: {
     occupation: customerRow.occupation != null ? String(customerRow.occupation) : undefined,
   };
 
-  const todayLog = await getCoachingDailyLogDetail({
-    enrollmentId: enrollment.id,
-    logDate: input.logDate,
-    ownerMemberId: enrollment.ownerMemberId,
-  });
-
-  const recentLogs = await listCoachingDailyLogsForEnrollment({
-    enrollmentId: enrollment.id,
-    ownerMemberId: enrollment.ownerMemberId,
-    limit: 14,
-  });
-
-  const { data: bodyRows, error: bodyError } = await supabase
-    .from("body_composition_records")
-    .select("*")
-    .eq("customer_id", enrollment.customerId)
-    .order("record_date", { ascending: false });
-
-  if (bodyError) {
-    throw new Error(bodyError.message);
-  }
-
-  const coachDirectives = await getCoachDirectivesForEnrollment(enrollment.id);
-  const priorOutputs = await listCoachingAiOutputsForEnrollment({
-    enrollmentId: enrollment.id,
-    limit: 14,
-  });
-  const coachActions = await listCoachingCoachActionsForEnrollment({
-    enrollmentId: enrollment.id,
-    ownerMemberId: enrollment.ownerMemberId,
-    limit: 20,
-  });
   const recentCoachActionMemory = buildRecentCoachActionMemory(coachActions);
-
   const photoCandidates = extractCoachingMealPhotoCandidates(todayLog);
   const generationInput = buildCoachingGenerationInput({
     enrollment,
@@ -116,7 +144,9 @@ export async function loadAuthoritativeCoachingGenerationInput(input: {
     logDate: input.logDate,
     todayLog,
     recentLogs,
-    bodyRecords: (bodyRows ?? []).map((row) => mapBodyRecordRow(row as Record<string, unknown>)),
+    bodyRecords: (bodyResult.data ?? []).map((row) =>
+      mapBodyRecordRow(row as Record<string, unknown>),
+    ),
     coachDirectives: coachDirectives ?? undefined,
     recentCoachActionMemory,
     priorCompletedOutputs: priorOutputs
@@ -136,5 +166,11 @@ export async function loadAuthoritativeCoachingGenerationInput(input: {
     customerId: enrollment.customerId,
     ownerMemberId: enrollment.ownerMemberId,
     logDate: input.logDate,
+    todayLog,
+    recentLogs,
+    activeStructuredDirectives,
   };
 }
+
+/** @internal test helper — enrollment type re-export unused outside. */
+export type { CoachingEnrollment, CoachDirectiveRecord };

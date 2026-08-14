@@ -61,10 +61,20 @@ async function handleWorkerRequest(request: Request) {
       superseded: result.superseded,
       retryScheduled: result.retryScheduled,
       reclaimed: result.reclaimed,
+      recovered: result.recovered,
+      claimableQueued: result.claimableQueued,
+      processingCount: result.processingCount,
       jobIds: result.jobIds,
       durationMs: result.durationMs,
       duration: result.durationMs,
       results: result.results,
+      /** Explicit: HTTP 200 ≠ successful drain when queue had work. */
+      drainNote:
+        result.claimed === 0 && result.claimableQueued > 0
+          ? "claimed_0_with_claimable_queued"
+          : result.claimed === 0
+            ? "claimed_0"
+            : "claimed_gt_0",
     };
     console.info(
       JSON.stringify({
@@ -74,6 +84,11 @@ async function handleWorkerRequest(request: Request) {
         completed: payload.completed,
         failed: payload.failed,
         skipped: payload.skipped,
+        superseded: payload.superseded,
+        recovered: payload.recovered,
+        claimableQueued: payload.claimableQueued,
+        processingCount: payload.processingCount,
+        drainNote: payload.drainNote,
         jobIds: payload.jobIds,
         duration: payload.durationMs,
         request_duration_ms: Date.now() - started,

@@ -138,6 +138,34 @@ export async function listActiveGenerationJobsForOutput(outputId: string): Promi
   return (data ?? []).map((row) => mapCoachingGenerationJobRow(row as Record<string, unknown>));
 }
 
+/** Count jobs that are claimable now (queued + available_at <= now). For claimed=0 observability. */
+export async function countClaimableGenerationJobs(): Promise<number> {
+  const supabase = createSupabaseServiceClient();
+  const nowIso = new Date().toISOString();
+  const { count, error } = await supabase
+    .from("coaching_generation_jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "queued")
+    .lte("available_at", nowIso);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return count ?? 0;
+}
+
+/** Count jobs currently processing (may explain claimed=0 with work in flight). */
+export async function countProcessingGenerationJobs(): Promise<number> {
+  const supabase = createSupabaseServiceClient();
+  const { count, error } = await supabase
+    .from("coaching_generation_jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "processing");
+  if (error) {
+    throw new Error(error.message);
+  }
+  return count ?? 0;
+}
+
 export async function getCoachDirectivesForEnrollment(enrollmentId: string): Promise<{
   currentFocus: string | null;
   currentPriority: string | null;

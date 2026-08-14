@@ -32,7 +32,7 @@ describe("coaching 3-day backfill access", () => {
       decisionContext: packed.decisionContext,
     });
 
-    expect(userPrompt).toContain(`"reportDayRelation": "yesterday"`);
+    expect(userPrompt).toContain(`"reportDayRelation":"yesterday"`);
     expect(userPrompt).toContain("禁止用「今天你…」描述這份回報");
     expect(userPrompt).toContain(yesterday);
   });

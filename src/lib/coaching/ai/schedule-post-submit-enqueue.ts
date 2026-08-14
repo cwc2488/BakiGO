@@ -49,6 +49,16 @@ export function schedulePostSubmitEnqueueAndDrain(input: {
         });
       }
     } catch (error) {
+      console.error(
+        JSON.stringify({
+          type: "coaching_ai_job_lifecycle",
+          stage: "job_failed",
+          enrollment_id: input.enrollmentId,
+          log_date: input.logDate,
+          error_class: "post_submit_enqueue_drain",
+          reason: "after_handler_threw",
+        }),
+      );
       console.error("[coaching] post-submit enqueue/drain failed", error);
     }
   };

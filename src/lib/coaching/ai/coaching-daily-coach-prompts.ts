@@ -72,6 +72,7 @@ export function buildCoachingDailyCoachSystemPrompt(): string {
     "",
     "Meal observations（必用）：",
     "- 必須根據 decisionContext.mealObservations 寫 daily_food_summary 與 meal_feedback",
+    "- mealObservations 已由先前 vision／heuristic 產生；本輪不會再附照片，禁止要求看圖或臆測未列的食物",
     "- 有炒飯就要提到炒飯；有奶昔就要提到奶昔",
     "- 不確定就說不確定；禁止把推測寫成確定事實",
     "- noOtherFoodVisible=true 只代表「照片裡目前沒看到其他食物」，絕不等於「實際沒吃其他東西」",
@@ -139,104 +140,158 @@ export function buildCoachingDailyCoachUserPrompt(input: {
     decisionContext,
     asOfIso: relevantCoachActionContextAsOfIso(generationInput.logDate),
   });
+  // P0.2/P0.4 compact payload: decision facts only; truncate evidence/plan/sequence;
+  // no raw photos, no full recentCoachActionMemory, no memoryLegend / styleExamples.
+  const today = generationInput.todayContext;
+  const plan = generationInput.profileMemory.planSnapshot;
+  const compactPlan = {
+    hydration: plan.dailyInstructions?.hydration?.slice(0, 2) ?? [],
+    sleep: plan.dailyInstructions?.sleep?.slice(0, 2) ?? [],
+    breakfast: plan.dailyInstructions?.breakfast?.slice(0, 2) ?? [],
+    lunch: plan.dailyInstructions?.lunch?.slice(0, 2) ?? [],
+    dinner: plan.dailyInstructions?.dinner?.slice(0, 2) ?? [],
+    dietaryGuidelines: (plan.dietaryGuidelines ?? []).slice(0, 8),
+  };
+  const compactMeals = decisionContext.mealObservations.map((obs) => ({
+    mealSlot: obs.mealSlot,
+    observedFoods: obs.observedFoods.slice(0, 6),
+    signals: obs.signals.slice(0, 6),
+    evidenceText: (obs.evidenceText ?? []).slice(0, 3),
+    shakeObserved: obs.shakeObserved ?? null,
+    solidFoodObserved: obs.solidFoodObserved ?? null,
+    noOtherFoodVisible: obs.noOtherFoodVisible ?? null,
+    friedOrHighOilCookingObserved: obs.friedOrHighOilCookingObserved ?? null,
+    uncertainties: (obs.uncertainties ?? []).slice(0, 3),
+    followUpQuestion: obs.followUpQuestion ?? null,
+  }));
+  const measurements = generationInput.outcomeMemory.measurementSequence ?? [];
+  const compactSequence =
+    measurements.length <= 2 ? measurements : measurements.slice(Math.max(0, measurements.length - 2));
+
   const payload = {
     logDate: generationInput.logDate,
     reportDayRelation,
     reportDaySpeechLabel,
-    isBackfillOrHistorical: reportDayRelation !== "today",
     finalInterventionLevel,
     decisionContext: {
-      finalInterventionLevel: decisionContext.finalInterventionLevel,
       priorities: decisionContext.priorities.map((item) => ({
         rank: item.rank,
         signalKey: item.signalKey,
         reason: item.reason,
         tomorrowFocusSubject: item.tomorrowFocusSubject,
-        evidence: item.evidence,
+        evidence: item.evidence.slice(0, 4),
       })),
       positiveSignals: decisionContext.positiveSignals.map((item) => ({
         key: item.key,
-        evidence: item.evidence,
+        evidence: item.evidence.slice(0, 3),
       })),
-      recurringIssue: decisionContext.recurringIssue,
-      improvedIssue: decisionContext.improvedIssue,
-      coachAttention: decisionContext.coachAttention,
-      customerVoice: decisionContext.customerVoice,
-      mealObservations: decisionContext.mealObservations,
+      recurringIssue: decisionContext.recurringIssue
+        ? {
+            key: decisionContext.recurringIssue.key,
+            label: decisionContext.recurringIssue.label,
+            evidence: decisionContext.recurringIssue.evidence.slice(0, 3),
+          }
+        : null,
+      improvedIssue: decisionContext.improvedIssue
+        ? {
+            key: decisionContext.improvedIssue.key,
+            label: decisionContext.improvedIssue.label,
+            evidence: decisionContext.improvedIssue.evidence.slice(0, 3),
+          }
+        : null,
+      coachAttention: {
+        required: decisionContext.coachAttention.required,
+        reason: decisionContext.coachAttention.reason,
+      },
+      customerVoice: decisionContext.customerVoice.map((item) => ({
+        key: item.key,
+        rawExcerpt: item.rawExcerpt,
+      })),
+      mealObservations: compactMeals,
       photoReuse: decisionContext.photoReuse,
       pendingFollowUps: decisionContext.pendingFollowUps,
-      dailyNutritionAssessment: decisionContext.dailyNutritionAssessment,
-      mealFollowUpBudget: decisionContext.mealFollowUpBudget,
-      goalContext: decisionContext.goalContext,
+      dailyNutritionAssessment: {
+        level: decisionContext.dailyNutritionAssessment.level,
+        reasons: decisionContext.dailyNutritionAssessment.reasons.slice(0, 4),
+        adjustmentSubjects: decisionContext.dailyNutritionAssessment.adjustmentSubjects.slice(0, 4),
+        confidence: decisionContext.dailyNutritionAssessment.confidence,
+      },
+      mealFollowUpBudget: {
+        allowCustomerMealClarification: decisionContext.mealFollowUpBudget.allowCustomerMealClarification,
+        selectedMealSlot: decisionContext.mealFollowUpBudget.selectedMealSlot,
+        consolidatedQuestion: decisionContext.mealFollowUpBudget.consolidatedQuestion,
+      },
+      goalContext: {
+        goalType: decisionContext.goalContext.goalType,
+        goalLabel: decisionContext.goalContext.goalLabel,
+        measurementStage: decisionContext.goalContext.measurementStage,
+      },
       outcomeAssessment: {
         outcomeStatus: decisionContext.outcomeAssessment.outcomeStatus,
         trendStatus: decisionContext.outcomeAssessment.trendStatus,
         customerSummary: decisionContext.outcomeAssessment.customerSummary,
-        reasons: decisionContext.outcomeAssessment.reasons,
-        evidence: decisionContext.outcomeAssessment.evidence,
+        reasons: decisionContext.outcomeAssessment.reasons.slice(0, 4),
         comparison: decisionContext.outcomeAssessment.comparison
           ? {
               interpretation: decisionContext.outcomeAssessment.comparison.interpretation,
               deltas: decisionContext.outcomeAssessment.comparison.deltas,
-              reasons: decisionContext.outcomeAssessment.comparison.reasons,
             }
           : null,
       },
     },
-    interventionContext: generationInput.interventionContext,
-    profileMemory: generationInput.profileMemory,
-    rollingMemory: generationInput.rollingMemory,
-    outcomeMemory: generationInput.outcomeMemory,
+    interventionLevel: generationInput.interventionContext.finalInterventionLevel,
+    profileMemory: {
+      goal: generationInput.profileMemory.goal,
+      daysSinceEnrollmentStart: generationInput.profileMemory.daysSinceEnrollmentStart,
+      plan: compactPlan,
+    },
+    rollingMemory: {
+      aggregates: {
+        windowDays: generationInput.rollingMemory.aggregates.windowDays,
+        daysSubmitted: generationInput.rollingMemory.aggregates.daysSubmitted,
+        mealReportRate: generationInput.rollingMemory.aggregates.mealReportRate,
+        averageWaterMl: generationInput.rollingMemory.aggregates.averageWaterMl,
+        averageSleepDurationMinutes: generationInput.rollingMemory.aggregates.averageSleepDurationMinutes,
+        lateSleepDays: generationInput.rollingMemory.aggregates.lateSleepDays,
+        exerciseDays: generationInput.rollingMemory.aggregates.exerciseDays,
+      },
+      recurringPatterns: generationInput.rollingMemory.recurringPatterns.slice(0, 4),
+    },
+    outcomeMemory: {
+      baselineMeasurement: generationInput.outcomeMemory.baselineMeasurement,
+      latestMeasurement: generationInput.outcomeMemory.latestMeasurement,
+      measurementSequence: compactSequence,
+    },
     coachDirectives: generationInput.coachDirectives,
-    recentCoachActionMemory: generationInput.recentCoachActionMemory,
-    relevantCoachActionContext,
     knownCoachContexts: relevantCoachActionContext.knownContexts.map((item) => ({
       matchedActiveKeys: item.matchedActiveKeys,
       note: item.note,
-      distinctiveFragments: item.distinctiveFragments,
-      status: item.status,
-      relatedReasonCodes: item.relatedReasonCodes,
+      distinctiveFragments: item.distinctiveFragments.slice(0, 4),
     })),
-    todayContext: generationInput.todayContext,
-    priorAiContext: generationInput.priorAiContext,
-    attachedMealImages: preparedMealImages.map((image) => ({
-      mealSlot: image.mealSlot,
-      sourceStoragePath: image.sourceStoragePath,
-      width: image.width,
-      height: image.height,
-    })),
-    memoryLegend: {
-      decisionContext: "deterministic system judgment — AI must follow, not reopen",
-      dailyNutritionAssessment: "whole-day fat-loss diet direction — own daily_food_summary tone",
-      mealFollowUpBudget: "max 1 customer meal clarification per log_date",
-      goalContext: "typed goal + measurement stage — baseline_only cannot claim body change",
-      outcomeAssessment: "deterministic outcome/trend — wording only",
-      observedFacts: "todayContext + outcomeMemory measurements",
-      deterministicAggregates: "rollingMemory.aggregates + recurringPatterns",
-      coachDirectives: "coachDirectives",
-      recentCoachActionMemory: "raw recent coach actions — may include unrelated notes",
-      relevantCoachActionContext: "deterministic Known Context for active issues — must carry forward when discussing those issues",
-      knownCoachContexts: "compact knownContexts list — use these, not the full recent dump",
-      priorAiInference: "priorAiContext — hypothesis only, not verified fact",
-      mealObservations: "decisionContext.mealObservations — visible facts + uncertainties",
-      customerVoice: "decisionContext.customerVoice — must acknowledge",
+    todayFacts: {
+      waterMl: today.waterMl,
+      sleepBedtime: today.sleepBedtime,
+      sleepWakeTime: today.sleepWakeTime,
+      sleepDurationMinutes: today.sleepDurationMinutes,
+      exerciseNote: today.exerciseNote,
+      bowelMovementCount: today.bowelMovementCount,
+      customerNote: today.customerNote,
+      primaryMeals: today.primaryMeals.map((meal) => ({
+        mealSlot: meal.mealSlot,
+        textNote: meal.textNote,
+        hasPhoto: Boolean(meal.storagePath),
+      })),
+      secondaryMealNotes: today.secondaryMealNotes.slice(0, 3),
     },
-    styleExamples: {
-      good: [
-        "三餐都有認真回報，這點很好。不過如果以減脂來看，今天油脂和精製澱粉比較集中，需要調整。",
-        "你說還是很餓，我有注意到。從今天回報看起來，有幾餐比較偏液體或澱粉，有可能比較快餓。",
-        "明天不用全部重來，先挑一餐改成蛋白質＋蔬菜比較完整的組合。",
-        "睡眠時數足夠，但入睡時間偏晚。",
-      ],
-      bad: [
-        "你今天做得不錯，吃得開心，我很開心看到！",
-        "建議增加優質蛋白質與膳食纖維攝取，以提升飽足感。",
-        "今日整體營養攝取尚可。",
-        "似乎沒有搭配其他食物。",
-        "早餐還有沒有搭配其他東西？午餐還有沒有搭配其他東西？晚餐還有沒有搭配其他東西？",
-        "你怎麼可以這樣吃，這樣一定瘦不下來。",
-      ],
-    },
+    priorAiContext: generationInput.priorAiContext
+      ? {
+          tomorrowFocus: generationInput.priorAiContext.tomorrowFocus?.value ?? null,
+          recurringIssue: generationInput.priorAiContext.recurringIssue?.value ?? null,
+          improvedIssue: generationInput.priorAiContext.improvedIssue?.value ?? null,
+          pendingFollowUps: generationInput.priorAiContext.pendingFollowUps.slice(0, 3),
+        }
+      : null,
+    mealImageSlotsAttached: preparedMealImages.map((image) => image.mealSlot),
   };
 
   const knownContextBlock =
@@ -275,7 +330,7 @@ export function buildCoachingDailyCoachUserPrompt(input: {
     "睡眠：必須同時評估時數與入睡時間（例如 8h 足夠但 00:24 偏晚）。",
     `這份回報日期是 ${generationInput.logDate}（${reportDaySpeechLabel} / ${reportDayRelation}）。若不是今天，禁止用「今天你…」描述這份回報。`,
     "",
-    JSON.stringify(payload, null, 2),
+    JSON.stringify(payload),
   ].join("\n");
 }
 

@@ -14,10 +14,19 @@ import {
 import { loadAuthoritativeCoachingGenerationInput } from "@/lib/coaching/ai/load-coaching-generation-context";
 import { fingerprintCoachingGenerationInput } from "@/lib/ai/input-fingerprint";
 import {
+  getRecoveryAttemptCount,
+  incrementRecoveryAttempt,
+  isRecoveryAttemptExhausted,
+  logCoachingAiJobLifecycle,
+  resetRecoveryAttemptCountsForTests,
+} from "@/lib/coaching/ai/coaching-ai-job-lifecycle";
+import {
   COACHING_GENERATION_JOB_STALE_MS,
   type CoachingAiOutputRecord,
   type CoachingGenerationJobRecord,
 } from "@/types/coaching-ai";
+
+export { resetRecoveryAttemptCountsForTests };
 
 /** Pending/processing without progress longer than this is eligible for recovery kick. */
 export const COACHING_AI_STALE_PENDING_MS = 90_000 as const;
@@ -147,10 +156,45 @@ export async function recoverStalePendingCoachingAiOutput(input: {
     return { planned };
   }
 
+  const recoveryKey = `${input.enrollmentId}:${input.logDate}`;
+  if (isRecoveryAttemptExhausted(recoveryKey)) {
+    logCoachingAiJobLifecycle({
+      stage: "job_failed",
+      enrollment_id: input.enrollmentId,
+      log_date: input.logDate,
+      output_id: output?.id ?? null,
+      error_class: "recovery_attempt_limit",
+      reason: "recovery_exhausted",
+      meta: { attempt_count: getRecoveryAttemptCount(recoveryKey) },
+    });
+    if (output && (output.status === "pending" || output.status === "processing")) {
+      await markCoachingAiOutputFailed({
+        outputId: output.id,
+        errorMessage: "recovery_attempt_limit_exhausted",
+      });
+    }
+    return {
+      planned: {
+        action: "mark_failed",
+        reason: "recovery_attempt_limit",
+        errorMessage: "recovery_attempt_limit_exhausted",
+      },
+    };
+  }
+
   if (planned.action === "reclaim_only") {
     const reclaimed = await reclaimStaleCoachingGenerationJobs(
       Math.max(1, Math.round(COACHING_GENERATION_JOB_STALE_MS / 60_000)),
     );
+    incrementRecoveryAttempt(recoveryKey);
+    logCoachingAiJobLifecycle({
+      stage: "job_recovered",
+      enrollment_id: input.enrollmentId,
+      log_date: input.logDate,
+      output_id: output?.id ?? null,
+      reason: planned.reason,
+      meta: { action: "reclaim_only", reclaimed, attempt_count: getRecoveryAttemptCount(recoveryKey) },
+    });
     return { planned, reclaimed };
   }
 
@@ -165,6 +209,15 @@ export async function recoverStalePendingCoachingAiOutput(input: {
         errorMessage: planned.errorMessage,
       });
     }
+    incrementRecoveryAttempt(recoveryKey);
+    logCoachingAiJobLifecycle({
+      stage: "job_failed",
+      enrollment_id: input.enrollmentId,
+      log_date: input.logDate,
+      output_id: output?.id ?? null,
+      error_class: planned.errorMessage,
+      reason: planned.reason,
+    });
     return { planned };
   }
 
@@ -183,6 +236,22 @@ export async function recoverStalePendingCoachingAiOutput(input: {
     fingerprint = fingerprintCoachingGenerationInput(loaded.generationInput);
   }
 
+  // Idempotency: if another active job appeared between plan and insert, do not double-enqueue.
+  const activeAgain = await listActiveGenerationJobsForOutput(output.id);
+  const matching = activeAgain.filter((job) => job.inputFingerprint === fingerprint);
+  if (matching.length > 0) {
+    logCoachingAiJobLifecycle({
+      stage: "job_recovered",
+      enrollment_id: input.enrollmentId,
+      log_date: input.logDate,
+      output_id: output.id,
+      job_id: matching[0]?.id ?? null,
+      reason: "idempotent_active_job_exists",
+      meta: { action: "noop_after_race" },
+    });
+    return { planned: { action: "reclaim_only", reason: "idempotent_active_job_exists" } };
+  }
+
   const job = await insertQueuedGenerationJob({
     enrollmentId: input.enrollmentId,
     customerId: input.customerId,
@@ -190,6 +259,20 @@ export async function recoverStalePendingCoachingAiOutput(input: {
     logDate: input.logDate,
     outputId: output.id,
     fingerprint,
+  });
+
+  incrementRecoveryAttempt(recoveryKey);
+  logCoachingAiJobLifecycle({
+    stage: "job_recovered",
+    enrollment_id: input.enrollmentId,
+    log_date: input.logDate,
+    output_id: output.id,
+    job_id: job.id,
+    reason: planned.reason,
+    meta: {
+      action: "requeue",
+      attempt_count: getRecoveryAttemptCount(recoveryKey),
+    },
   });
 
   return { planned: { action: "requeue", reason: planned.reason }, requeuedJobId: job.id };

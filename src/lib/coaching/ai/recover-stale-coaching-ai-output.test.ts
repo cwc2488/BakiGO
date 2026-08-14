@@ -4,12 +4,14 @@ import {
   shouldRateLimitRecoveryKick,
   markRecoveryKick,
   resetRecoveryKickRateLimitForTests,
+  resetRecoveryAttemptCountsForTests,
   COACHING_AI_STALE_PENDING_MS,
 } from "@/lib/coaching/ai/recover-stale-coaching-ai-output";
 
 describe("recover-stale-coaching-ai-output", () => {
   beforeEach(() => {
     resetRecoveryKickRateLimitForTests();
+    resetRecoveryAttemptCountsForTests();
   });
 
   it("P0-12 plans requeue for orphan stale pending", () => {

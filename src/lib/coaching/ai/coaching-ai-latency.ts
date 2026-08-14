@@ -7,18 +7,27 @@ export type CoachingAiLatencyTimestamps = {
   submitted_at: string | null;
   job_created_at: string | null;
   worker_started_at: string | null;
+  context_load_started_at: string | null;
+  context_load_completed_at: string | null;
+  photo_prepare_started_at: string | null;
+  photo_prepare_completed_at: string | null;
   vision_started_at: string | null;
   vision_completed_at: string | null;
   coach_generation_started_at: string | null;
   coach_generation_completed_at: string | null;
+  persist_started_at: string | null;
+  persist_completed_at: string | null;
   job_completed_at: string | null;
 };
 
 export type CoachingAiLatencyBreakdownMs = {
   submit_to_job_ms: number | null;
   queue_wait_ms: number | null;
+  context_load_ms: number | null;
+  photo_prepare_ms: number | null;
   vision_ms: number | null;
   coach_ms: number | null;
+  persist_ms: number | null;
   worker_total_ms: number | null;
   submit_to_complete_ms: number | null;
 };
@@ -30,10 +39,16 @@ export function createEmptyCoachingAiLatency(
     submitted_at: null,
     job_created_at: null,
     worker_started_at: null,
+    context_load_started_at: null,
+    context_load_completed_at: null,
+    photo_prepare_started_at: null,
+    photo_prepare_completed_at: null,
     vision_started_at: null,
     vision_completed_at: null,
     coach_generation_started_at: null,
     coach_generation_completed_at: null,
+    persist_started_at: null,
+    persist_completed_at: null,
     job_completed_at: null,
     ...partial,
   };
@@ -53,11 +68,17 @@ export function computeCoachingAiLatencyBreakdown(
   return {
     submit_to_job_ms: deltaMs(timestamps.submitted_at, timestamps.job_created_at),
     queue_wait_ms: deltaMs(timestamps.job_created_at, timestamps.worker_started_at),
+    context_load_ms: deltaMs(timestamps.context_load_started_at, timestamps.context_load_completed_at),
+    photo_prepare_ms: deltaMs(
+      timestamps.photo_prepare_started_at,
+      timestamps.photo_prepare_completed_at,
+    ),
     vision_ms: deltaMs(timestamps.vision_started_at, timestamps.vision_completed_at),
     coach_ms: deltaMs(
       timestamps.coach_generation_started_at,
       timestamps.coach_generation_completed_at,
     ),
+    persist_ms: deltaMs(timestamps.persist_started_at, timestamps.persist_completed_at),
     worker_total_ms: deltaMs(timestamps.worker_started_at, timestamps.job_completed_at),
     submit_to_complete_ms: deltaMs(timestamps.submitted_at, timestamps.job_completed_at),
   };

@@ -24,13 +24,19 @@ type MealDraft = {
 
 type AiPollState = "analyzing" | "ready" | "deferred";
 
-type ProgressStepKey = "received" | "organizing_meals" | "analyzing_day" | "personalized_ready";
+type ProgressStepKey =
+  | "received"
+  | "organizing_meals"
+  | "analyzing_day"
+  | "preparing_advice"
+  | "personalized_ready";
 
 const PROGRESS_LABELS: Record<ProgressStepKey, string> = {
-  received: "今日紀錄已收到",
-  organizing_meals: "正在整理三餐",
-  analyzing_day: "正在分析今天的狀況",
-  personalized_ready: "個人化建議完成",
+  received: "今天回報已收到",
+  organizing_meals: "正在看看今天的飲食",
+  analyzing_day: "正在整理今天的狀況",
+  preparing_advice: "正在產生給你的建議",
+  personalized_ready: "完成",
 };
 
 export function CoachingDailyCompleteView({
@@ -78,6 +84,14 @@ export function CoachingDailyCompleteView({
       ? formatSleepTimeRange(dailyLog.sleepBedtime, dailyLog.sleepWakeTime)
       : null;
 
+  const hasMealPhotos = PRIMARY_MEAL_SLOTS.some((slot) => {
+    const meal = mealsFromLog.find((entry) => entry.mealSlot === slot);
+    return Boolean(meal?.photo?.storagePath);
+  });
+  const defaultProgressOrder: ProgressStepKey[] = hasMealPhotos
+    ? ["received", "organizing_meals", "analyzing_day", "preparing_advice", "personalized_ready"]
+    : ["received", "analyzing_day", "preparing_advice", "personalized_ready"];
+
   const [aiState, setAiState] = useState<AiPollState>("analyzing");
   const [customerFeedback, setCustomerFeedback] = useState<CoachingDailyGenerationCustomerOutput | null>(
     null,
@@ -85,7 +99,10 @@ export function CoachingDailyCompleteView({
   const [immediateFeedback, setImmediateFeedback] = useState<ImmediateDailyFeedback | null>(
     initialImmediateFeedback,
   );
-  const [activeStep, setActiveStep] = useState<ProgressStepKey>("organizing_meals");
+  const [activeStep, setActiveStep] = useState<ProgressStepKey>(
+    hasMealPhotos ? "organizing_meals" : "analyzing_day",
+  );
+  const [progressOrder, setProgressOrder] = useState<ProgressStepKey[]>(defaultProgressOrder);
   const [elapsedSec, setElapsedSec] = useState(0);
 
   useEffect(() => {
@@ -118,6 +135,7 @@ export function CoachingDailyCompleteView({
             status: string;
             customer: CoachingDailyGenerationCustomerOutput | null;
             activeStep?: ProgressStepKey;
+            progressSteps?: ProgressStepKey[];
           };
         };
 
@@ -126,6 +144,9 @@ export function CoachingDailyCompleteView({
         if (response.ok && payload.ok) {
           if (payload.immediateFeedback?.lines?.length) {
             setImmediateFeedback(payload.immediateFeedback);
+          }
+          if (payload.aiOutput?.progressSteps?.length) {
+            setProgressOrder(payload.aiOutput.progressSteps);
           }
           if (payload.aiOutput?.activeStep) {
             setActiveStep(payload.aiOutput.activeStep);
@@ -139,11 +160,6 @@ export function CoachingDailyCompleteView({
           if (payload.aiOutput?.status === "failed") {
             setAiState("deferred");
             return;
-          }
-          if (payload.aiOutput?.status === "processing") {
-            setActiveStep("analyzing_day");
-          } else if (payload.aiOutput?.status === "pending") {
-            setActiveStep("organizing_meals");
           }
         }
       } catch {
@@ -172,12 +188,6 @@ export function CoachingDailyCompleteView({
     };
   }, [portalToken, logDate]);
 
-  const progressOrder: ProgressStepKey[] = [
-    "received",
-    "organizing_meals",
-    "analyzing_day",
-    "personalized_ready",
-  ];
   const activeIndex = progressOrder.indexOf(activeStep);
 
   return (

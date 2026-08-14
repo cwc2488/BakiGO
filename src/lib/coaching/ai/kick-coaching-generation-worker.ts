@@ -83,6 +83,8 @@ export async function drainCoachingGenerationQueueWithRetry(input?: {
             attempt: attempt + 1,
             preferJobId: input.preferJobId,
             reason: "claimed_0_retrying",
+            claimableQueued: result.claimableQueued ?? null,
+            processingCount: result.processingCount ?? null,
           }),
         );
       }

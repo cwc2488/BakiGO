@@ -20,7 +20,7 @@ describe("coaching eval fixture images", () => {
       expect(getCoachingEvalFixtureImageSpecs(scenario)).toHaveLength(3);
       const prepared = await loadPreparedCoachingEvalMealImages(scenario);
       expect(prepared).toHaveLength(3);
-      expect(Math.max(...prepared.map((item) => Math.max(item.width, item.height)))).toBeLessThanOrEqual(1024);
+      expect(Math.max(...prepared.map((item) => Math.max(item.width, item.height)))).toBeLessThanOrEqual(768);
     }
   });
 });

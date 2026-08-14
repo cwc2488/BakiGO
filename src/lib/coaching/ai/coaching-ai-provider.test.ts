@@ -115,13 +115,18 @@ describe("prompt architecture", () => {
     expect(systemPrompt).toContain("finalInterventionLevel");
     expect(userPrompt).toContain("finalInterventionLevel = watch");
     expect(userPrompt).toContain("decisionContext");
-    expect(userPrompt).toContain("priorAiInference");
+    expect(userPrompt).toContain("todayFacts");
+    expect(userPrompt).toContain("priorAiContext");
+    expect(userPrompt).not.toContain("memoryLegend");
+    expect(userPrompt).not.toContain("recentCoachActionMemory");
+    expect(userPrompt).not.toContain("\"planSnapshot\"");
+    expect(userPrompt).toContain("\"plan\":");
     expect(userPrompt).toContain("鼓勵的是人，不是錯誤行為");
   });
 });
 
 describe("OpenAiCoachingAiProvider", () => {
-  it("maps mealSlot labels into multimodal request content", async () => {
+  it("P0.2 default: daily coach content does not re-attach meal images", () => {
     const packed = buildScenarioDecisionContext("A_normal");
     const images = [preparedImage("breakfast"), preparedImage("lunch")];
     const content = buildOpenAiDailyCoachUserMessageContent({
@@ -131,8 +136,27 @@ describe("OpenAiCoachingAiProvider", () => {
       decisionContext: packed.decisionContext,
     });
 
-    expect(content.some((part) => part.type === "text" && part.text.includes("breakfast"))).toBe(true);
-    expect(content.filter((part) => part.type === "image_url")).toHaveLength(2);
+    expect(content.some((part) => part.type === "text")).toBe(true);
+    expect(content.filter((part) => part.type === "image_url")).toHaveLength(0);
+  });
+
+  it("opt-in COACHING_DAILY_COACH_ATTACH_MEAL_IMAGES=1 re-attaches images", () => {
+    const prev = process.env.COACHING_DAILY_COACH_ATTACH_MEAL_IMAGES;
+    process.env.COACHING_DAILY_COACH_ATTACH_MEAL_IMAGES = "1";
+    try {
+      const packed = buildScenarioDecisionContext("A_normal");
+      const images = [preparedImage("breakfast"), preparedImage("lunch")];
+      const content = buildOpenAiDailyCoachUserMessageContent({
+        generationInput: packed.generationInput,
+        finalInterventionLevel: packed.finalInterventionLevel,
+        preparedMealImages: images,
+        decisionContext: packed.decisionContext,
+      });
+      expect(content.filter((part) => part.type === "image_url")).toHaveLength(2);
+    } finally {
+      if (prev === undefined) delete process.env.COACHING_DAILY_COACH_ATTACH_MEAL_IMAGES;
+      else process.env.COACHING_DAILY_COACH_ATTACH_MEAL_IMAGES = prev;
+    }
   });
 
   it("uses structured outputs json_schema aligned with Zod", async () => {
@@ -308,7 +332,7 @@ describe("parseDailyCoachProviderJson", () => {
 });
 
 describe("callOpenAiDailyCoachStructuredOutput", () => {
-  it("includes image count in usage", async () => {
+  it("includes image count in usage only when meal images attached", async () => {
     const payload = getFixtureScenarioOutput("A_normal");
     vi.stubGlobal(
       "fetch",
@@ -322,15 +346,30 @@ describe("callOpenAiDailyCoachStructuredOutput", () => {
     );
 
     const packed = buildScenarioDecisionContext("A_normal");
-    const upstream = await callOpenAiDailyCoachStructuredOutput({
+    const upstreamDefault = await callOpenAiDailyCoachStructuredOutput({
       apiKey: "test-key",
       generationInput: packed.generationInput,
       finalInterventionLevel: packed.finalInterventionLevel,
       decisionContext: packed.decisionContext,
       preparedMealImages: [preparedImage("breakfast"), preparedImage("dinner")],
     });
+    expect(upstreamDefault.usage.imageCount).toBe(0);
 
-    expect(upstream.usage.imageCount).toBe(2);
+    const prev = process.env.COACHING_DAILY_COACH_ATTACH_MEAL_IMAGES;
+    process.env.COACHING_DAILY_COACH_ATTACH_MEAL_IMAGES = "1";
+    try {
+      const upstreamAttached = await callOpenAiDailyCoachStructuredOutput({
+        apiKey: "test-key",
+        generationInput: packed.generationInput,
+        finalInterventionLevel: packed.finalInterventionLevel,
+        decisionContext: packed.decisionContext,
+        preparedMealImages: [preparedImage("breakfast"), preparedImage("dinner")],
+      });
+      expect(upstreamAttached.usage.imageCount).toBe(2);
+    } finally {
+      if (prev === undefined) delete process.env.COACHING_DAILY_COACH_ATTACH_MEAL_IMAGES;
+      else process.env.COACHING_DAILY_COACH_ATTACH_MEAL_IMAGES = prev;
+    }
     vi.unstubAllGlobals();
   });
 });

@@ -4,6 +4,7 @@ import {
   listActiveGenerationJobsForOutput,
   upsertPendingCoachingAiOutput,
 } from "@/lib/coaching/ai/coaching-ai-store";
+import { logCoachingAiJobLifecycle } from "@/lib/coaching/ai/coaching-ai-job-lifecycle";
 import { COACHING_AI_MAX_REGENERATIONS_PER_DAY } from "@/types/coaching-ai";
 import type { CoachingGenerationInput } from "@/types/coaching-ai";
 
@@ -51,6 +52,14 @@ export async function enqueueDailyCoachGenerationFast(input: {
     : [];
 
   if (activeJobs.length > 0) {
+    logCoachingAiJobLifecycle({
+      stage: "job_enqueue_skipped",
+      enrollment_id: input.enrollmentId,
+      log_date: input.logDate,
+      output_id: existingOutput?.id ?? null,
+      reason: "active_job_exists",
+      meta: { active_job_count: activeJobs.length },
+    });
     return { action: "skip", reason: "active_job_exists" };
   }
 
@@ -59,9 +68,13 @@ export async function enqueueDailyCoachGenerationFast(input: {
     existingOutput.regenerationCount >= COACHING_AI_MAX_REGENERATIONS_PER_DAY &&
     existingOutput.status === "completed"
   ) {
-    // Allow re-run after completed only via fingerprint change path in full enqueue.
-    // Fast path still enqueues so customer resubmit gets a new attempt under regen budget
-    // when not completed; if completed + max regen, skip.
+    logCoachingAiJobLifecycle({
+      stage: "job_enqueue_skipped",
+      enrollment_id: input.enrollmentId,
+      log_date: input.logDate,
+      output_id: existingOutput.id,
+      reason: "max_regenerations_reached",
+    });
     return { action: "skip", reason: "max_regenerations_reached" };
   }
 
@@ -70,6 +83,13 @@ export async function enqueueDailyCoachGenerationFast(input: {
     existingOutput.regenerationCount >= COACHING_AI_MAX_REGENERATIONS_PER_DAY &&
     !isProvisionalGenerationFingerprint(existingOutput.inputFingerprint)
   ) {
+    logCoachingAiJobLifecycle({
+      stage: "job_enqueue_skipped",
+      enrollment_id: input.enrollmentId,
+      log_date: input.logDate,
+      output_id: existingOutput.id,
+      reason: "max_regenerations_reached",
+    });
     return { action: "skip", reason: "max_regenerations_reached" };
   }
 
@@ -79,6 +99,13 @@ export async function enqueueDailyCoachGenerationFast(input: {
       : existingOutput?.regenerationCount ?? 0;
 
   if (regenerationCount > COACHING_AI_MAX_REGENERATIONS_PER_DAY) {
+    logCoachingAiJobLifecycle({
+      stage: "job_enqueue_skipped",
+      enrollment_id: input.enrollmentId,
+      log_date: input.logDate,
+      output_id: existingOutput?.id ?? null,
+      reason: "max_regenerations_reached",
+    });
     return { action: "skip", reason: "max_regenerations_reached" };
   }
 
@@ -108,6 +135,15 @@ export async function enqueueDailyCoachGenerationFast(input: {
     logDate: input.logDate,
     outputId: output.id,
     fingerprint,
+  });
+
+  logCoachingAiJobLifecycle({
+    stage: "job_enqueued",
+    job_id: job.id,
+    output_id: output.id,
+    enrollment_id: input.enrollmentId,
+    log_date: input.logDate,
+    reason: "provisional_fast_enqueue",
   });
 
   return {

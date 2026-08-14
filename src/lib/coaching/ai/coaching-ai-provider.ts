@@ -19,6 +19,7 @@ import {
   COACHING_DAILY_AI_PROMPT_VERSION,
   COACHING_DAILY_AI_TIMEOUT_MS,
   COACHING_DAILY_AI_UNAVAILABLE_MESSAGE,
+  shouldAttachMealImagesToDailyCoach,
 } from "@/lib/coaching/ai/model-config";
 import { parseOpenAiChatCompletionUsage } from "@/lib/coaching/ai/parse-openai-usage";
 import { encodePreparedCoachingMealImageAsBase64 } from "@/lib/coaching/ai/coaching-meal-image-processor";
@@ -86,6 +87,11 @@ export function buildOpenAiDailyCoachUserMessageContent(input: {
     },
   ];
 
+  // P0.2 default: do not re-send photos (vision already produced mealObservations).
+  if (!shouldAttachMealImagesToDailyCoach()) {
+    return content;
+  }
+
   for (const image of input.preparedMealImages) {
     content.push({
       type: "text",
@@ -123,6 +129,7 @@ export async function callOpenAiDailyCoachStructuredOutput(input: {
       },
       body: JSON.stringify({
         model: COACHING_DAILY_AI_MODEL_ID,
+        max_tokens: 1400,
         response_format: {
           type: "json_schema",
           json_schema: {
@@ -163,7 +170,7 @@ export async function callOpenAiDailyCoachStructuredOutput(input: {
         inputTokens: parsedUsage?.inputTokens ?? 0,
         cachedInputTokens: parsedUsage?.cachedInputTokens ?? 0,
         outputTokens: parsedUsage?.outputTokens ?? 0,
-        imageCount: input.preparedMealImages.length,
+        imageCount: shouldAttachMealImagesToDailyCoach() ? input.preparedMealImages.length : 0,
       },
     };
   } finally {

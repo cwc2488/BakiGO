@@ -69,6 +69,12 @@ export async function GET(
       logDate,
     });
 
+    const hasMealPhotos = dailyLog.meals.some(
+      (meal) =>
+        (meal.mealSlot === "breakfast" || meal.mealSlot === "lunch" || meal.mealSlot === "dinner") &&
+        Boolean(meal.photo?.storagePath),
+    );
+
     // Rate-limited stale pending recovery — never awaits full AI generation.
     if (
       dailyLog.submittedAt &&
@@ -111,7 +117,7 @@ export async function GET(
     }
 
     if (!output) {
-      const progress = resolveCustomerFacingAiProgress("missing");
+      const progress = resolveCustomerFacingAiProgress({ status: "missing", hasMealPhotos });
       const payload: CustomerFacingAiOutputPayload = {
         status: "missing",
         customer: null,
@@ -121,7 +127,7 @@ export async function GET(
       return NextResponse.json({ ok: true, logDate, aiOutput: payload, immediateFeedback });
     }
 
-    const progress = resolveCustomerFacingAiProgress(output.status);
+    const progress = resolveCustomerFacingAiProgress({ status: output.status, hasMealPhotos });
     const payload: CustomerFacingAiOutputPayload = {
       status: output.status,
       customer:

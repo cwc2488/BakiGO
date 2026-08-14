@@ -44,10 +44,12 @@ describe("coaching AI V2c1 final calibration", () => {
       preparedMealImages: [],
       decisionContext: packed.decisionContext,
     });
-    expect(userPrompt).toContain("似乎沒有搭配其他食物");
     expect(userPrompt).toContain("必須同時評估時數與入睡時間");
     expect(userPrompt).toContain("dailyNutritionAssessment");
     expect(userPrompt).toContain("mealFollowUpBudget");
+    expect(userPrompt).toContain("todayFacts");
+    // Style anti-patterns live in system prompt (P0.2 compact user JSON).
+    expect(systemPrompt).toContain("似乎沒有搭配其他食物");
   });
 
   it("regression: forbids「似乎沒有搭配其他食物」certainty wording", () => {
