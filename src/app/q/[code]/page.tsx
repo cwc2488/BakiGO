@@ -10,11 +10,13 @@ export default async function QuizShareRedirectRoute({ params, searchParams }: P
   const { code } = await params;
   const query = await searchParams;
 
+  const dest = "/quiz/fat-loss";
+
   if (code === FAT_LOSS_QUIZ_SLUG) {
     const ref = query.ref ?? query.share;
     const suffix = ref ? `?ref=${encodeURIComponent(ref)}` : "";
-    redirect(`/quiz/fat-loss/start${suffix}`);
+    redirect(`${dest}${suffix}`);
   }
 
-  redirect(`/quiz/fat-loss/start?share=${encodeURIComponent(code.toUpperCase())}`);
+  redirect(`${dest}?share=${encodeURIComponent(code.toUpperCase())}`);
 }
