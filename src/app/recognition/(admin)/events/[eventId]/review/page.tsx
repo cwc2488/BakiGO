@@ -1,4 +1,3 @@
-import { RecognitionAdminGuard } from "@/components/recognition/RecognitionAdminGuard";
 import { RecognitionReviewPage } from "@/components/recognition/RecognitionReviewPage";
 
 type PageProps = {
@@ -7,9 +6,5 @@ type PageProps = {
 
 export default async function RecognitionReviewRoute({ params }: PageProps) {
   const { eventId } = await params;
-  return (
-    <RecognitionAdminGuard>
-      <RecognitionReviewPage eventId={eventId} />
-    </RecognitionAdminGuard>
-  );
+  return <RecognitionReviewPage eventId={eventId} />;
 }

@@ -233,3 +233,38 @@ describe("Recognition presentation export migration security", () => {
     expect(migration).not.toContain("storage.objects");
   });
 });
+
+describe("Recognition admin-only table grants", () => {
+  const migration = readMigration("043_recognition_admin_only_grants.sql");
+
+  it("forces RLS and revokes client roles from Recognition tables", () => {
+    const tables = [
+      "recognition_award_definitions",
+      "recognition_ppt_themes",
+      "recognition_admin_members",
+      "recognition_events",
+      "recognition_event_awards",
+      "recognition_submissions",
+      "recognition_submission_entries",
+      "recognition_candidates",
+      "recognition_candidate_sources",
+      "recognition_candidate_photo_reviews",
+      "recognition_presentation_exports",
+    ];
+    for (const table of tables) {
+      expect(migration).toContain(`alter table public.${table} force row level security;`);
+      expect(migration).toContain(`revoke all on table public.${table} from public, anon, authenticated;`);
+      expect(migration).toContain(`grant all on table public.${table} to service_role;`);
+    }
+  });
+
+  it("does not add client storage policies for recognition photos", () => {
+    expect(migration.toLowerCase()).not.toContain("create policy");
+    expect(migration).toContain("Do not add storage.objects policies for bucket recognition-photos");
+  });
+
+  it("keeps recognition_admin_members as the canonical admin authority", () => {
+    expect(migration).toContain("Canonical admin authority remains public.recognition_admin_members");
+    expect(migration).toContain("President rank does not grant access");
+  });
+});

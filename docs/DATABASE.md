@@ -52,6 +52,7 @@ Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `oc
 
 - `supabase/migrations/035_recognition_foundation.sql`
 - `supabase/migrations/036_recognition_event_rpcs.sql`
+- `supabase/migrations/043_recognition_admin_only_grants.sql` (admin-only grants / FORCE RLS)
 
 No migration has been applied to production; apply in the controlled Supabase environment before opening to admins.
 
@@ -544,11 +545,14 @@ The RPC never writes `recognition_submissions`, `recognition_submission_entries`
 
 Recognition tables should follow the same broad access model as Quiz/Growth Share, not `members`:
 
-- RLS enabled
+- RLS enabled and **FORCE ROW LEVEL SECURITY** on every Recognition table (`043_recognition_admin_only_grants.sql`)
 - no anon table policies
 - no broad authenticated read/write policies
+- `REVOKE ALL` from `public`, `anon`, and `authenticated`; table grants are `service_role` only
+- Recognition RPCs remain execute-only for `service_role` (migrations 036–040)
+- private bucket `recognition-photos` has no client `storage.objects` policies; uploads/downloads stay server-mediated
 - public submission goes through service-role API after token verification
-- admin actions go through authenticated API + `recognition_admin_members` allowlist
+- admin actions go through authenticated API + `recognition_admin_members` allowlist (`is_active = true`)
 
 ### Recognition transactional RPCs
 

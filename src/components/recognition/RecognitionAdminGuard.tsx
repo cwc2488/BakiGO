@@ -1,6 +1,7 @@
 "use client";
 
 import { useRecognitionAdmin } from "@/lib/recognition/use-recognition-admin";
+import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 export function RecognitionAdminGuard({ children }: { children: ReactNode }) {
@@ -15,14 +16,7 @@ export function RecognitionAdminGuard({ children }: { children: ReactNode }) {
   }
 
   if (!isAdmin) {
-    return (
-      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-center">
-        <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">權限不足</p>
-        <p className="max-w-xs text-[0.9375rem] text-[#86868b]">
-          表揚中心需要 Recognition Admin 授權。請聯絡管理員。
-        </p>
-      </div>
-    );
+    notFound();
   }
 
   return <>{children}</>;

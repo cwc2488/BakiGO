@@ -118,6 +118,11 @@ Rules:
 - President rank does **not** automatically grant Recognition Admin access.
 - A member must be explicitly added to the Recognition Admin allowlist.
 - This allowlist is independent of member-management, promotions, partner-care, or leaderboard permissions.
+- Canonical `isAdmin === true` is a server-side lookup: authenticated `members.id` exists in `recognition_admin_members` with `is_active = true`.
+- Client role claims are never trusted.
+- Admin UI routes live under `src/app/recognition/(admin)/`. Direct URLs are denied server-side (`notFound`) when the signed-in member is not on the allowlist. Unauthenticated visitors are denied by AuthGate (`/recognition` is not a public path).
+- The home「更多」entry for 表揚中心 is shown only after that same server check succeeds. Partners do not see a disabled or “admin only” link.
+- Public collection `/recognition/p/[token]` remains open without Recognition Admin.
 
 If implementation discovers architectural friction with current app permission helpers, that friction must be documented; it must **not** be resolved by changing this product rule.
 
@@ -532,7 +537,7 @@ The browser cannot execute these RPCs directly; only the Next.js server, through
 /recognition/events/[id] Event management
 ```
 
-Navigation: `/recognition` added to **More** entries in home navigation.
+Navigation: `/recognition` is an admin-only More entry. It is omitted from the partner home list. Direct URL access is still blocked server-side.
 
 ### Authorization
 
