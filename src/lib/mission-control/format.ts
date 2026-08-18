@@ -36,8 +36,9 @@ export function loadMemberMetrics(
   memberId: EntityId,
   storage: StorageAdapter = createLocalStorageAdapter(),
   supplementalEvents?: BakiEvent[],
+  options?: { includeMapUniverse?: boolean },
 ): MemberComputedMetrics {
-  return loadMissionControlMetrics(memberId, storage, supplementalEvents);
+  return loadMissionControlMetrics(memberId, storage, supplementalEvents, options);
 }
 
 export function readMissionControlMetrics(
