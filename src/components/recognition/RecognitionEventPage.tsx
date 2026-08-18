@@ -6,6 +6,7 @@ import {
   fetchRecognitionEvent,
   fetchRecognitionEventToken,
   fetchRecognitionRawSubmissions,
+  fetchRecognitionTextRoster,
   reorderEventAwards,
   rotateRecognitionEventToken,
   updateEventAward,
@@ -19,6 +20,7 @@ import type {
 } from "@/types/recognition";
 import { PageShell } from "@/components/ui/PageShell";
 import { BrandCard } from "@/components/ui/brand-ui";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 const STATUS_LABELS: Record<RecognitionEventStatus, string> = {
@@ -363,15 +365,8 @@ export function RecognitionEventPage({ eventId }: { eventId: string }) {
       <EventInfoSection event={event} onUpdated={setEvent} />
       <PublicCollectionSection eventId={event.id} />
       <AwardSection eventId={event.id} />
+      <ReviewAndRosterSection eventId={event.id} eventName={event.name} />
       <RawSubmissionsSection eventId={event.id} />
-
-      {/* Phase 4+ placeholders — clearly labelled as not yet available */}
-      <div className="flex flex-col gap-3">
-        <BrandCard variant="bordered" className="opacity-50">
-          <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">Phase 5+ — 尚未開放</p>
-          <p className="mt-1 text-[0.9375rem] text-[#1d1d1f]">審核名單 / PPT 預覽</p>
-        </BrandCard>
-      </div>
     </PageShell>
   );
 }
@@ -486,7 +481,7 @@ function RawSubmissionsSection({ eventId }: { eventId: string }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">原始 submissions</p>
-          <p className="mt-1 text-[0.875rem] text-[#86868b]">只讀 evidence 檢視；Phase 4 不做合併、不做審核。</p>
+          <p className="mt-1 text-[0.875rem] text-[#86868b]">只讀 evidence。審核與正式名單請使用審核中心。</p>
         </div>
         {data && (
           <p className="text-[0.8125rem] text-[#86868b]">
@@ -522,6 +517,69 @@ function RawSubmissionsSection({ eventId }: { eventId: string }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+    </BrandCard>
+  );
+}
+
+function ReviewAndRosterSection({ eventId, eventName }: { eventId: string; eventName: string }) {
+  const [text, setText] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchRecognitionTextRoster(eventId)
+      .then((result) => setText(result.text))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "無法載入文字版名單"))
+      .finally(() => setLoading(false));
+  }, [eventId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleCopy() {
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <BrandCard variant="bordered">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">審核與歷史名單</p>
+          <p className="mt-1 text-[0.875rem] text-[#86868b]">
+            正式名單只含已核准候選人。PPT 尚未開放。
+          </p>
+        </div>
+        <Link
+          href={`/recognition/events/${eventId}/review`}
+          className="rounded-xl bg-[#1d1d1f] px-3 py-2 text-[0.875rem] font-semibold text-white"
+        >
+          打開審核中心
+        </Link>
+      </div>
+      {loading && <p className="mt-3 text-[0.875rem] text-[#86868b]">載入文字版…</p>}
+      {error && <p className="mt-3 text-[0.875rem] text-[#ff375f]">{error}</p>}
+      {!loading && !error && (
+        <div className="mt-3">
+          <pre className="whitespace-pre-wrap rounded-2xl bg-[#f5f5f7] p-4 text-[0.875rem] text-[#1d1d1f]">
+            {text.trim() ? text : `${eventName}\n\n尚無已核准名單`}
+          </pre>
+          <button
+            type="button"
+            onClick={() => void handleCopy()}
+            disabled={!text.trim()}
+            className="mt-3 rounded-xl border border-[var(--brand-border)] px-3 py-2 text-[0.875rem] font-medium text-[#1d1d1f] disabled:opacity-40"
+          >
+            {copied ? "已複製" : "複製文字版"}
+          </button>
         </div>
       )}
     </BrandCard>

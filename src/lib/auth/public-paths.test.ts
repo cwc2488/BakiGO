@@ -44,5 +44,8 @@ describe("public-paths", () => {
     expect(isPublicPath("/quiz/manage")).toBe(false);
     expect(isPublicPath("/quiz/leads")).toBe(false);
     expect(isPublicPath("/quiz/hub")).toBe(false);
+    expect(isPublicPath("/recognition")).toBe(false);
+    expect(isPublicPath("/recognition/events/evt-1")).toBe(false);
+    expect(isPublicPath("/recognition/events/evt-1/review")).toBe(false);
   });
 });

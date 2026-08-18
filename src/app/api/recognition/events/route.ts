@@ -4,7 +4,7 @@ import { isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 import {
   assertRecognitionAdmin,
   createRecognitionEvent,
-  listRecognitionEvents,
+  listRecognitionEventSummaries,
   RecognitionServiceError,
 } from "@/lib/recognition/recognition-service";
 
@@ -21,7 +21,18 @@ export async function GET(request: Request) {
 
   try {
     await assertRecognitionAdmin(memberId);
-    const events = await listRecognitionEvents();
+    const url = new URL(request.url);
+    const yearValue = url.searchParams.get("year");
+    const monthValue = url.searchParams.get("month");
+    const year = yearValue ? Number(yearValue) : undefined;
+    const month = monthValue ? Number(monthValue) : undefined;
+    if (yearValue && !Number.isInteger(year)) {
+      return NextResponse.json({ error: "year must be an integer." }, { status: 400 });
+    }
+    if (monthValue && !Number.isInteger(month)) {
+      return NextResponse.json({ error: "month must be an integer." }, { status: 400 });
+    }
+    const events = await listRecognitionEventSummaries({ year, month });
     return NextResponse.json({ ok: true, events });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load events.";

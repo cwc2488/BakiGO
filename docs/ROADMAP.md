@@ -88,7 +88,7 @@ _Focus: secure evidence intake._
 
 ### Phase RC-4 — Consolidation / Review / History
 
-_Focus: admin working source._
+_Focus: admin working source._ **Implemented in Phase 5.**
 
 - Consolidated candidates
 - Exact normalized-name consolidation within same event + same award

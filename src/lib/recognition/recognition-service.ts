@@ -25,6 +25,7 @@ import type {
   RecognitionAwardDefinition,
   RecognitionEvent,
   RecognitionEventAward,
+  RecognitionEventSummary,
   RecognitionPublicEvent,
   RecognitionRawSubmissionView,
   RecognitionSubmission,
@@ -271,6 +272,54 @@ export async function listRecognitionEvents(): Promise<RecognitionEvent[]> {
     throw new RecognitionServiceError(error.message, 500);
   }
   return (data ?? []).map((r) => mapEvent(r as EventRow));
+}
+
+export async function listRecognitionEventSummaries(filter?: {
+  year?: number;
+  month?: number;
+}): Promise<RecognitionEventSummary[]> {
+  const events = (await listRecognitionEvents()).filter((event) => {
+    if (filter?.year !== undefined && event.year !== filter.year) return false;
+    if (filter?.month !== undefined && event.month !== filter.month) return false;
+    return true;
+  });
+  if (events.length === 0) return [];
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("recognition_candidates")
+    .select("event_id, review_status")
+    .in("event_id", events.map((event) => event.id));
+
+  if (error) {
+    throw new RecognitionServiceError(error.message, 500);
+  }
+
+  const counts = new Map<string, { approved: number; pending: number; needsFix: number; rejected: number }>();
+  for (const event of events) {
+    counts.set(event.id, { approved: 0, pending: 0, needsFix: 0, rejected: 0 });
+  }
+  for (const row of data ?? []) {
+    const typed = row as { event_id: string; review_status: string };
+    const bucket = counts.get(typed.event_id);
+    if (!bucket) continue;
+    if (typed.review_status === "approved") bucket.approved += 1;
+    else if (typed.review_status === "pending") bucket.pending += 1;
+    else if (typed.review_status === "needs_fix") bucket.needsFix += 1;
+    else if (typed.review_status === "rejected") bucket.rejected += 1;
+  }
+
+  return events.map((event) => {
+    const bucket = counts.get(event.id) ?? { approved: 0, pending: 0, needsFix: 0, rejected: 0 };
+    return {
+      ...event,
+      approvedCount: bucket.approved,
+      pendingCount: bucket.pending,
+      needsFixCount: bucket.needsFix,
+      rejectedCount: bucket.rejected,
+      problemCount: bucket.pending + bucket.needsFix,
+    };
+  });
 }
 
 export async function getRecognitionEvent(eventId: string): Promise<RecognitionEvent | null> {

@@ -574,7 +574,7 @@ This is a manual bootstrap step by design — there is no self-service admin gra
 - Copy Previous Event UI (route entry point deferred; atomic event-create RPC already supports `copiedFromEventId`)
 - Recognition Event Template UI (architecture is compatible; no feature code)
 - Public path for `/recognition/p/[token]` (Phase 4)
-- Photo Storage bucket (Phase 5)
+- Photo Storage bucket (Phase 4)
 - Candidate consolidation (Phase 5)
 - History export (Phase 5)
 - PPT preview (Phase 6+)
@@ -718,6 +718,151 @@ Phase 4 adds read-only raw submission visibility:
 - whether original photo exists
 
 No candidate approval / dedupe / review actions are implemented in Phase 4.
+
+## Phase 5 implementation notes
+
+Phase 5 consolidation, review, and historical roster has been implemented.
+
+### Migration
+
+`supabase/migrations/039_recognition_candidates.sql`
+
+Adds:
+
+- `recognition_candidates`
+- `recognition_candidate_sources`
+- atomic RPC `consolidate_recognition_event_candidates(...)`
+- atomic RPC `reorder_recognition_event_candidates(...)`
+
+Raw `recognition_submissions` / `recognition_submission_entries` are not altered.
+
+### Consolidation algorithm
+
+Exact match only:
+
+same Recognition Event
++ same `event_award_id`
++ same `normalized_name`
+
+→ one Recognition Candidate.
+
+All raw source entries remain linked through `recognition_candidate_sources`.
+
+`normalized_name` is the immutable consolidation key. Existing Phase 4 normalization still applies (NFKC, trim, collapse spacing). Honorifics such as `老師` / `督導` / `先生` / `組` are **not** stripped and therefore do **not** auto-merge.
+
+### Idempotency
+
+- unique `(event_id, event_award_id, normalized_name)`
+- unique `submission_entry_id` on source links
+- `ON CONFLICT DO NOTHING`
+- event-level advisory lock plus `FOR UPDATE` to serialize concurrent syncs
+
+Re-running with no new submissions does not create duplicate candidates or source links.
+
+A new matching raw entry attaches to the existing candidate.
+
+### Review decision preservation
+
+Reconsolidation does **not** overwrite:
+
+- `review_status`
+- `display_name`
+- `preferred_source_entry_id`
+- administrator `sort_order`
+
+`approved`, `needs_fix`, and `rejected` survive later syncs.
+
+### Warnings
+
+Computed at read time, never as auto-merge/auto-reject:
+
+- **Cross-award:** same event + same `normalized_name` + different awards → 「此姓名同時出現在其他表揚項目」
+- **Suspected duplicate:** conservative trailing-honorific / remaining-space comparison → 「疑似重複」
+
+Suspected-duplicate limitation: trailing `組` can create false positives (for example `林小組` vs `林小`). The UI never claims they are the same person.
+
+### Canonical-name editing
+
+Admin may edit `display_name` for presentation.
+
+This does **not**:
+
+- change raw `submitted_name`
+- change the consolidation `normalized_name`
+- silently merge another candidate
+
+If the new display name collides with another candidate in the same award, the API returns 409 and asks the admin to review.
+
+### Preferred photo
+
+Admin may select one original photo from the candidate's own source entries.
+
+- no crop
+- no AI
+- no face identification
+- private authorized viewing through the admin photo API
+- photo-required candidates without a usable original are marked 「缺少照片」
+
+### Approved roster
+
+Server-side contract:
+
+enabled event awards in award order
+→ `review_status = approved` only
+→ candidate `sort_order`
+
+Pending / needs_fix / rejected are excluded.
+
+This is the future PPT input. PPT generation is **not** implemented in Phase 5.
+
+### Historical text roster
+
+Recognition Admin can copy:
+
+```text
+2026 年 9 月 月會表揚名單
+
+MAP 第一個月
+王小明
+陳小華
+```
+
+Rules: approved only, event award order, omit empty awards, display names only, no internal IDs.
+
+### APIs
+
+Admin (Bearer + `assertRecognitionAdmin`):
+
+```text
+GET    /api/recognition/events?year&month
+POST   /api/recognition/events/[eventId]/candidates/sync
+GET    /api/recognition/events/[eventId]/candidates
+GET    /api/recognition/events/[eventId]/candidates/[candidateId]
+PATCH  /api/recognition/events/[eventId]/candidates/[candidateId]
+POST   /api/recognition/events/[eventId]/candidates/reorder
+GET    /api/recognition/events/[eventId]/candidates/[candidateId]/photo?sourceEntryId=
+GET    /api/recognition/events/[eventId]/roster
+GET    /api/recognition/events/[eventId]/roster/text
+```
+
+Public users cannot list candidates, read the approved roster, or fetch private photos.
+
+### UI
+
+- Recognition Center home: year/month filter, approved count, pending/problem count
+- Event page: Review Center entry + 複製文字版
+- `/recognition/events/[eventId]/review`: sync, filters, review actions, source evidence, preferred photo, reorder
+
+Opening Review Center syncs candidates. Admins can also press 「更新／同步投稿名單」.
+
+### Deferred to Phase 6+
+
+- PPTX generation
+- presentation crops / processed images
+- AI photo scoring or honoree selection
+- birthday slides / President encouragement slides
+- persisted `recognition_duplicate_signals` table
+- candidate → member matching
 
 ## Implementation guardrails
 

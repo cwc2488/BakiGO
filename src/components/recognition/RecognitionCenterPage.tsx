@@ -2,11 +2,11 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import { fetchRecognitionEvents } from "@/lib/recognition/recognition-fetch";
-import type { RecognitionEvent, RecognitionEventStatus } from "@/types/recognition";
+import type { RecognitionEventStatus, RecognitionEventSummary } from "@/types/recognition";
 import { PageShell } from "@/components/ui/PageShell";
 import { BrandCard } from "@/components/ui/brand-ui";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const STATUS_LABELS: Record<RecognitionEventStatus, string> = {
   draft:      "草稿",
@@ -24,6 +24,9 @@ const STATUS_COLORS: Record<RecognitionEventStatus, string> = {
 
 const MONTH_LABELS = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"] as const;
 
+const SELECT_CLASS =
+  "appearance-none rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-3 py-2 text-[0.875rem] outline-none focus:border-[var(--brand-primary)]";
+
 function StatusPill({ status }: { status: RecognitionEventStatus }) {
   return (
     <span
@@ -35,7 +38,7 @@ function StatusPill({ status }: { status: RecognitionEventStatus }) {
   );
 }
 
-function EventCard({ event }: { event: RecognitionEvent }) {
+function EventCard({ event }: { event: RecognitionEventSummary }) {
   const monthLabel = MONTH_LABELS[(event.month - 1)] ?? `${event.month}月`;
 
   return (
@@ -50,26 +53,25 @@ function EventCard({ event }: { event: RecognitionEvent }) {
           </div>
           <StatusPill status={event.status} />
         </div>
-        {(event.collectStartsAt || event.collectEndsAt) && (
-          <p className="mt-2 text-[0.8125rem] text-[#86868b]">
-            {event.collectStartsAt
-              ? `收件開始 ${new Date(event.collectStartsAt).toLocaleDateString("zh-TW")}`
-              : ""}
-            {event.collectStartsAt && event.collectEndsAt ? " — " : ""}
-            {event.collectEndsAt
-              ? `截止 ${new Date(event.collectEndsAt).toLocaleDateString("zh-TW")}`
-              : ""}
-          </p>
-        )}
+        <div className="mt-3 flex flex-wrap gap-2 text-[0.75rem]">
+          <span className="rounded-full bg-[#e8f8ed] px-2.5 py-1 font-medium text-[#248a3d]">
+            已核准 {event.approvedCount}
+          </span>
+          <span className="rounded-full bg-[#f5f5f7] px-2.5 py-1 font-medium text-[#1d1d1f]">
+            待處理 {event.problemCount}
+          </span>
+        </div>
       </BrandCard>
     </Link>
   );
 }
 
 export function RecognitionCenterPage() {
-  const [events, setEvents] = useState<RecognitionEvent[]>([]);
+  const [events, setEvents] = useState<RecognitionEventSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [year, setYear] = useState<string>("all");
+  const [month, setMonth] = useState<string>("all");
 
   const loadEvents = useCallback(() => {
     setLoading(true);
@@ -80,10 +82,20 @@ export function RecognitionCenterPage() {
       .finally(() => { setLoading(false); });
   }, []);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch starts here; state updates happen in promise callbacks
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
+
+  const years = useMemo(
+    () => [...new Set(events.map((event) => event.year))].sort((a, b) => b - a),
+    [events],
+  );
+
+  const visibleEvents = events.filter((event) => {
+    if (year !== "all" && event.year !== Number(year)) return false;
+    if (month !== "all" && event.month !== Number(month)) return false;
+    return true;
+  });
 
   return (
     <PageShell title="表揚中心" subtitle="管理表揚活動、審核名單、準備簡報">
@@ -95,6 +107,23 @@ export function RecognitionCenterPage() {
           + 建立活動
         </Link>
       </div>
+
+      {!loading && events.length > 0 && (
+        <div className="flex gap-2">
+          <select className={SELECT_CLASS} value={year} onChange={(e) => setYear(e.target.value)}>
+            <option value="all">全部年份</option>
+            {years.map((value) => (
+              <option key={value} value={value}>{value} 年</option>
+            ))}
+          </select>
+          <select className={SELECT_CLASS} value={month} onChange={(e) => setMonth(e.target.value)}>
+            <option value="all">全部月份</option>
+            {MONTH_LABELS.map((label, index) => (
+              <option key={label} value={index + 1}>{label}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {loading && (
         <p className="text-center text-[0.9375rem] text-[#86868b]">載入中…</p>
@@ -113,26 +142,20 @@ export function RecognitionCenterPage() {
         </BrandCard>
       )}
 
-      {!loading && !error && events.length === 0 && (
+      {!loading && !error && visibleEvents.length === 0 && (
         <BrandCard variant="bordered">
           <p className="text-center text-[0.9375rem] text-[#86868b]">尚無表揚活動</p>
-          <p className="mt-1 text-center text-[0.875rem] text-[#86868b]">點右上角「+ 建立活動」開始</p>
+          <p className="mt-1 text-center text-[0.875rem] text-[#86868b]">同一個月份可以有多個活動。</p>
         </BrandCard>
       )}
 
-      {!loading && !error && events.length > 0 && (
+      {!loading && !error && visibleEvents.length > 0 && (
         <div className="flex flex-col gap-3">
-          {events.map((event) => (
+          {visibleEvents.map((event) => (
             <EventCard key={event.id} event={event} />
           ))}
         </div>
       )}
-
-      <div className="rounded-2xl border border-dashed border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
-        <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">目前可用</p>
-        <p className="mt-1 text-[0.9375rem] font-semibold text-[#1d1d1f]">活動設定與公開收件</p>
-        <p className="mt-1 text-[0.875rem] text-[#86868b]">Phase 5 之後才會加入名單整併、審核與 PPT 預覽。</p>
-      </div>
     </PageShell>
   );
 }

@@ -84,3 +84,41 @@ describe("Recognition public submission RPC defense-in-depth", () => {
     expect(insertIndex).toBeGreaterThan(eventLookupIndex);
   });
 });
+
+describe("Recognition candidate consolidation RPC security", () => {
+  const migration = readMigration("039_recognition_candidates.sql");
+
+  it("revokes consolidation and reorder RPC execute from public/anon/authenticated", () => {
+    expect(migration).toContain("revoke all on function public.consolidate_recognition_event_candidates(uuid) from public;");
+    expect(migration).toContain("revoke all on function public.consolidate_recognition_event_candidates(uuid) from anon;");
+    expect(migration).toContain("revoke all on function public.consolidate_recognition_event_candidates(uuid) from authenticated;");
+    expect(migration).toContain("revoke all on function public.reorder_recognition_event_candidates(uuid, uuid, uuid[]) from public;");
+    expect(migration).toContain("revoke all on function public.reorder_recognition_event_candidates(uuid, uuid, uuid[]) from anon;");
+    expect(migration).toContain("revoke all on function public.reorder_recognition_event_candidates(uuid, uuid, uuid[]) from authenticated;");
+  });
+
+  it("grants candidate RPCs only to service_role", () => {
+    expect(migration).toContain("grant execute on function public.consolidate_recognition_event_candidates(uuid) to service_role;");
+    expect(migration).toContain("grant execute on function public.reorder_recognition_event_candidates(uuid, uuid, uuid[]) to service_role;");
+    expect(migration).not.toContain(") to authenticated;");
+    expect(migration).not.toContain(") to anon;");
+  });
+
+  it("uses uniqueness plus ON CONFLICT to keep consolidation idempotent", () => {
+    expect(migration).toContain("unique (event_id, event_award_id, normalized_name)");
+    expect(migration).toContain("unique (submission_entry_id)");
+    expect(migration).toContain("on conflict (event_id, event_award_id, normalized_name) do nothing");
+    expect(migration).toContain("on conflict (submission_entry_id) do nothing");
+  });
+
+  it("does not overwrite review_status on reconsolidation", () => {
+    expect(migration).toContain("on conflict (event_id, event_award_id, normalized_name) do nothing");
+    expect(migration).not.toContain("do update set review_status");
+    expect(migration).not.toContain("set review_status = 'pending'");
+  });
+
+  it("does not mutate raw submitted_name from candidate operations", () => {
+    expect(migration).not.toMatch(/update public\.recognition_submission_entries/i);
+    expect(migration).not.toMatch(/update public\.recognition_submissions/i);
+  });
+});

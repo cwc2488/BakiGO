@@ -166,3 +166,104 @@ export interface RecognitionRawSubmissionView {
     hasOriginalPhoto: boolean;
   }>;
 }
+
+// ---------------------------------------------------------------------------
+// Candidates / review (Phase 5)
+// ---------------------------------------------------------------------------
+
+export type RecognitionReviewStatus = "pending" | "approved" | "needs_fix" | "rejected";
+
+export interface RecognitionEventSummary extends RecognitionEvent {
+  approvedCount: number;
+  pendingCount: number;
+  needsFixCount: number;
+  rejectedCount: number;
+  problemCount: number;
+}
+
+export interface RecognitionCandidateSource {
+  id: string;
+  candidateId: string;
+  submissionEntryId: string;
+  submittedName: string;
+  normalizedName: string;
+  eventAwardId: string;
+  awardName: string;
+  submitterName: string;
+  submitterOrganization: string;
+  submittedAt: string;
+  originalPhotoStoragePath: string | null;
+  originalPhotoMimeType: string | null;
+  hasOriginalPhoto: boolean;
+  createdAt: string;
+}
+
+export interface RecognitionCandidateWarningRef {
+  candidateId: string;
+  eventAwardId: string;
+  awardName: string;
+  displayName: string;
+  normalizedName: string;
+}
+
+export interface RecognitionCandidate {
+  id: string;
+  eventId: string;
+  eventAwardId: string;
+  awardName: string;
+  requiresPhoto: boolean;
+  displayName: string;
+  normalizedName: string;
+  reviewStatus: RecognitionReviewStatus;
+  memberId: string | null;
+  preferredSourceEntryId: string | null;
+  sortOrder: number;
+  reviewedAt: string | null;
+  reviewedByMemberId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  sourceCount: number;
+  submitterOrganizations: string[];
+  hasOriginalPhoto: boolean;
+  missingRequiredPhoto: boolean;
+  crossAwardWarning: boolean;
+  suspectedDuplicateWarning: boolean;
+  crossAwardMatches: RecognitionCandidateWarningRef[];
+  suspectedDuplicates: RecognitionCandidateWarningRef[];
+  sources: RecognitionCandidateSource[];
+}
+
+export interface RecognitionCandidateUpdateInput {
+  reviewStatus?: RecognitionReviewStatus;
+  displayName?: string;
+  preferredSourceEntryId?: string | null;
+}
+
+export interface RecognitionConsolidationResult {
+  eventId: string;
+  candidateCount: number;
+  sourceLinkCount: number;
+  createdCandidateCount: number;
+  createdSourceLinkCount: number;
+}
+
+export interface RecognitionApprovedRosterAward {
+  eventAwardId: string;
+  awardName: string;
+  sortOrder: number;
+  candidates: Array<{
+    id: string;
+    displayName: string;
+    sortOrder: number;
+    preferredSourceEntryId: string | null;
+    hasOriginalPhoto: boolean;
+  }>;
+}
+
+export interface RecognitionApprovedRoster {
+  eventId: string;
+  eventName: string;
+  year: number;
+  month: number;
+  awards: RecognitionApprovedRosterAward[];
+}

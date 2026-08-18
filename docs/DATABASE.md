@@ -249,20 +249,21 @@ Crop rows do not replace originals.
 
 Consolidated admin review objects and formal PPT working source.
 
-Suggested columns:
+Implemented in `039_recognition_candidates.sql`:
 
 - `id` uuid PK
 - `event_id`
-- `award_definition_id`
-- `display_name`
-- `normalized_name`
+- `event_award_id` (event-specific award row; not a career rank key)
+- `display_name` (canonical/presentation name; admin-editable)
+- `normalized_name` (immutable exact-match consolidation key from raw entries)
 - `review_status` (`pending | approved | needs_fix | rejected`)
-- `current_photo_asset_id` nullable
-- `current_crop_id` nullable
-- `reviewer_member_id` nullable
-- `review_note` nullable
 - `member_id` nullable for future person-history/timeline support
+- `preferred_source_entry_id` nullable original photo source for future Phase 6 processing
+- `sort_order`
+- `reviewed_at`, `reviewed_by_member_id`
 - timestamps
+
+Uniqueness: `(event_id, event_award_id, normalized_name)`.
 
 Business rules:
 
@@ -270,10 +271,19 @@ Business rules:
 - all sources must still be preserved
 - same normalized name across **different** awards is a warning only
 - cross-award duplicate names must **not** auto-merge, reject, delete, or block PPT generation
+- admin `display_name` edits do **not** change `normalized_name` and do **not** silently merge candidates
+- presentation crop fields remain a Phase 6 concern; Phase 5 only selects a preferred original source
 
 #### `recognition_candidate_sources`
 
 Join table linking a candidate to all raw submission entries that fed it.
+
+Implemented columns:
+
+- `id` uuid PK
+- `candidate_id`
+- `submission_entry_id` (unique; one entry belongs to one candidate)
+- `created_at`
 
 This is required so the system can preserve:
 
@@ -281,15 +291,13 @@ This is required so the system can preserve:
 - all raw sources
 - auditability after consolidation
 
+Re-running consolidation uses `ON CONFLICT DO NOTHING` so source links are not duplicated.
+
 #### `recognition_duplicate_signals`
 
-Stores suspected duplicate warnings, including:
+V1 computes cross-award and conservative suspected-duplicate warnings at read time.
 
-- same-award same-name
-- cross-award same-name
-- future photo-hash / fuzzy-name signals
-
-Cross-award same-name is a warning only by product decision.
+A persisted `recognition_duplicate_signals` table remains a future extension for photo-hash / additional fuzzy signals. Cross-award same-name is a warning only by product decision.
 
 #### `recognition_admin_members`
 
@@ -448,6 +456,36 @@ Upload handling remains outside the DB transaction:
 
 This minimizes orphaned uploads and avoids valid-looking partial DB submissions. File-signature validation remains in the application layer, not in SQL.
 
+### Recognition candidates / review (`039_recognition_candidates.sql`)
+
+**Status:** Phase 5 consolidation, review, and historical roster implemented.
+
+Adds:
+
+- `recognition_candidates`
+- `recognition_candidate_sources`
+- atomic RPC `consolidate_recognition_event_candidates(event_id)`
+- atomic RPC `reorder_recognition_event_candidates(event_id, event_award_id, candidate_ids)`
+
+RLS is enabled on both tables with zero anon/authenticated policies. Both RPCs revoke PUBLIC/anon/authenticated and grant EXECUTE only to `service_role`.
+
+Consolidation is idempotent:
+
+- unique `(event_id, event_award_id, normalized_name)`
+- unique `submission_entry_id` on source links
+- `ON CONFLICT DO NOTHING`
+- existing `review_status`, `display_name`, `preferred_source_entry_id`, and admin `sort_order` are preserved
+
+Review mutations update only `recognition_candidates`. They must not write `recognition_submissions` or `recognition_submission_entries`.
+
+Approved roster:
+
+- enabled event awards in `sort_order`
+- `review_status = approved` only
+- candidates in `sort_order`, then `created_at`, then `display_name`
+
+Duplicate warnings are computed at read time. They never auto-merge, auto-reject, or block future PPT generation.
+
 ### Recognition RLS / API pattern
 
 Recognition tables should follow the same broad access model as Quiz/Growth Share, not `members`:
@@ -474,9 +512,21 @@ Phase 3 foundation uses PostgreSQL RPCs for operations that must be atomic:
   - rejects foreign IDs
   - updates all `sort_order` values atomically
 
+Phase 5 candidate RPCs:
+
+- `consolidate_recognition_event_candidates(...)`
+  - derives candidates from raw entries for one event
+  - locks the event to serialize concurrent runs
+  - inserts missing candidates / source links only
+  - never overwrites review decisions
+
+- `reorder_recognition_event_candidates(...)`
+  - requires the complete candidate set for one event award
+  - updates `sort_order` atomically
+
 Security rule:
 
-- both RPCs are `SECURITY DEFINER`
+- these RPCs are `SECURITY DEFINER`
 - `EXECUTE` is revoked from `PUBLIC`, `anon`, and `authenticated`
 - `EXECUTE` is granted only to `service_role`
 - browser clients must go through authenticated Next.js API → `assertRecognitionAdmin(memberId)` → service-role client → RPC
