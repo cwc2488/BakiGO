@@ -156,6 +156,7 @@ Photo awards 必須遵守：
 
 - 原始圖片必須保留
 - presentation crop / processed image 與原圖分離
+- 簡報卡片人像裁切比例 V1 使用 `3:4`（寬:高），與 PPT 投影片 `4:3` 不同
 - public submitter 在 V1 不需做手動 crop 確認
 - 照片異常 / 團體照 / 多人照交由 admin review
 - AI **不得**從多人照片中自動選定受表揚者

@@ -872,13 +872,176 @@ Public users cannot list candidates, read the approved roster, or fetch private 
 
 Opening Review Center syncs candidates. Admins can also press 「更新／同步投稿名單」.
 
-### Deferred to Phase 6+
+## Phase 6 implementation notes
+
+Phase 6 presentation-photo preparation has been implemented. PPTX generation is **not** included.
+
+### Architecture
+
+Original evidence and presentation output stay separate.
+
+- Original photos remain on `recognition_submission_entries.original_photo_storage_path` in the private `recognition-photos` bucket.
+- Presentation crop is **normalized metadata** on `recognition_candidate_photo_reviews`, bound to the current preferred source.
+- Phase 6 does **not** generate a derived cropped bitmap. Future Phase 7 renderer reads the private original and applies crop metadata.
+- Original files are never overwritten, cropped in place, or replaced.
+
+### Crop coordinate format
+
+Normalized relative to the original image:
+
+- `x`, `y`, `width`, `height`
+- `0 <= x,y <= 1`
+- `width,height > 0`
+- `x + width <= 1`
+- `y + height <= 1`
+
+This avoids locking crop data to one rendered pixel size.
+
+### Portrait aspect ratio
+
+PPT **slide** ratio remains **4:3**.
+
+The individual recognition-card portrait slot uses **3:4** (width:height = 0.75), stored as `crop_aspect_ratio = '3:4'`.
+
+3:4 is a conservative reusable portrait for future 4:3 card layouts (name under photo, padded 12-person grid, hero layouts). Future theme changes can keep the same original + crop box, or create a new crop, without destroying original evidence.
+
+### Derived readiness states
+
+Not stored as a second source of truth. Derived at read time:
+
+| State | Meaning |
+|---|---|
+| `not_required` | Name-only award |
+| `no_original_photo` | Photo-required, no original |
+| `preferred_source_not_selected` | Original exists, admin has not chosen preferred source |
+| `needs_photo_review` | Preferred source selected, crop missing/invalid/mismatched, not blocked |
+| `crop_ready` | Valid crop bound to current preferred source, not blocked |
+| `photo_blocked` | Admin marked the source photo unsafe for presentation |
+
+### Blocking vs warning
+
+Blocking (cannot bypass):
+
+- required original missing
+- preferred source missing or not in candidate evidence
+- no crop / invalid crop / crop bound to a different source
+- `photo_blocked`
+
+Warnings (admin may accept by finalizing crop):
+
+- low resolution (`min(width,height) < 600`)
+- extreme aspect ratio
+- landscape original
+- manual flags such as `text_heavy`, `group_photo`, `poor_composition`
+
+Warning flags never auto-reject. Structural blockers cannot be waived.
+
+### Review flags
+
+Manual only in Phase 6:
+
+`group_photo`, `person_too_small`, `text_heavy`, `low_resolution`, `blurry_or_unclear`, `poor_composition`, `wrong_orientation`, `suspected_wrong_photo`, `other`
+
+Group-photo copy is only:
+
+「可能為多人合照，需要人工確認」
+
+The system must **not** identify which person is the honoree, auto-crop around a guessed identity, run face recognition, or do biometric matching.
+
+### Preferred-source change
+
+If `preferred_source_entry_id` changes:
+
+- existing crop / flags / blocked state reset
+- candidate returns to `needs_photo_review`
+- stale crop save with the old `sourceEntryId` is rejected (409)
+
+Display-name changes do **not** reset crop.
+
+### Private image access
+
+Recognition Admin UI loads originals through:
+
+`GET /api/recognition/events/[eventId]/candidates/[candidateId]/photo?sourceEntryId=`
+
+- `assertRecognitionAdmin`
+- `Cache-Control: private, no-store`
+- browser blob URL, not a permanent public storage URL
+- bucket stays private; no `storage.objects` policies added in Phase 6
+
+### Event-level PPT readiness
+
+Internal admin report only. Example fields:
+
+- 已核准
+- 需要照片
+- 照片已完成
+- 缺少原圖
+- 尚未選照片
+- 尚未裁切
+- 照片有問題
+- 尚有 N 個問題需要處理
+
+Name-only approved candidates do not create photo blockers.
+
+Approved roster still includes approved candidates whose photos are incomplete. Presentation validation reports those as PPT blockers. Incomplete photos are not silently dropped from the roster.
+
+### PPT-photo-ready validator
+
+A photo-required candidate is presentation-photo-ready only when:
+
+- `review_status = approved`
+- preferred source exists, belongs to the candidate, and has an original photo
+- valid presentation crop exists for that same source
+- candidate is not `photo_blocked`
+
+Name-only awards are presentation-photo-ready without a crop.
+
+This validator is the Phase 7 PPT renderer contract. Phase 6 does not generate PPTX.
+
+### Optional automated checks
+
+Implemented:
+
+- original dimensions when the browser can read them
+- conservative low-resolution warning
+- extreme aspect / landscape hints
+
+Deferred:
+
+- AI group-photo / text-heavy detection
+- any honoree / face / identity inference
+- derived cropped bitmap generation
+- PPTX / 4:3 slide renderer (Phase 7+)
+
+Manual admin review is sufficient for Phase 6.
+
+### APIs
+
+Admin only (Bearer + `assertRecognitionAdmin`):
+
+```text
+GET    /api/recognition/events/[eventId]/photo-review?filter=
+GET    /api/recognition/events/[eventId]/photo-review/[candidateId]
+PATCH  /api/recognition/events/[eventId]/photo-review/[candidateId]
+GET    /api/recognition/events/[eventId]/ppt-readiness
+```
+
+Public users cannot read photo-review metadata, signed original bytes, crops, flags, or PPT readiness.
+
+### UI
+
+- Event management: 「照片審查」 + 待處理 count, 「PPT 準備狀態」, disabled 「產生 PPT（未來階段）」
+- `/recognition/events/[eventId]/photos`: filters, original + 3:4 crop editor, flags, block, 「下一位需要處理」
+
+### Deferred to Phase 7+
 
 - PPTX generation
-- presentation crops / processed images
-- AI photo scoring or honoree selection
+- 4:3 HTML preview / theme engine
 - birthday slides / President encouragement slides
-- persisted `recognition_duplicate_signals` table
+- monthly-meeting back-half slides
+- AI photo analysis
+- persisted `recognition_duplicate_signals`
 - candidate → member matching
 
 ## Implementation guardrails

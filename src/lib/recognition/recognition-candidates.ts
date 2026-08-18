@@ -1,8 +1,16 @@
 import { normalizeRecognitionSubmittedName } from "@/lib/recognition/recognition-domain";
+import {
+  cropMatchesPreferredSource,
+  isRecognitionPresentationPhotoReady,
+  recognitionPresentationPhotoReadinessState,
+  type RecognitionPresentationPhotoInput,
+} from "@/lib/recognition/recognition-photo-review";
 import type {
   RecognitionApprovedRoster,
   RecognitionApprovedRosterAward,
   RecognitionCandidate,
+  RecognitionNormalizedCrop,
+  RecognitionPhotoReviewFlag,
   RecognitionReviewStatus,
 } from "@/types/recognition";
 
@@ -220,6 +228,15 @@ export function buildRecognitionApprovedRoster(input: {
     createdAt: string;
     preferredSourceEntryId: string | null;
     hasOriginalPhoto: boolean;
+    preferredSourceBelongsToCandidate?: boolean;
+    preferredSourceHasOriginalPhoto?: boolean;
+    photoReview?: {
+      sourceEntryId: string | null;
+      crop: RecognitionNormalizedCrop | null;
+      isBlocked: boolean;
+      blockedReason?: string | null;
+      flags?: RecognitionPhotoReviewFlag[];
+    } | null;
   }>;
 }): RecognitionApprovedRoster {
   const awards: RecognitionApprovedRosterAward[] = [...input.awards]
@@ -236,15 +253,37 @@ export function buildRecognitionApprovedRoster(input: {
           && candidate.reviewStatus === "approved"
         ))
         .sort(compareRecognitionCandidateOrder)
-        .map((candidate) => ({
-          id: candidate.id,
-          displayName: candidate.displayName,
-          sortOrder: candidate.sortOrder,
-          preferredSourceEntryId: candidate.preferredSourceEntryId,
-          hasOriginalPhoto: candidate.hasOriginalPhoto,
-          hasPreferredPhoto: Boolean(candidate.preferredSourceEntryId),
-          requiresPhoto: award.requiresPhoto,
-        })),
+        .map((candidate) => {
+          const photoInput: RecognitionPresentationPhotoInput = {
+            requiresPhoto: award.requiresPhoto,
+            reviewStatus: candidate.reviewStatus,
+            hasOriginalPhoto: candidate.hasOriginalPhoto,
+            preferredSourceEntryId: candidate.preferredSourceEntryId,
+            preferredSourceBelongsToCandidate: candidate.preferredSourceBelongsToCandidate,
+            preferredSourceHasOriginalPhoto: candidate.preferredSourceHasOriginalPhoto,
+            photoReview: candidate.photoReview ?? null,
+          };
+          return {
+            id: candidate.id,
+            displayName: candidate.displayName,
+            sortOrder: candidate.sortOrder,
+            preferredSourceEntryId: candidate.preferredSourceEntryId,
+            hasOriginalPhoto: candidate.hasOriginalPhoto,
+            hasPreferredPhoto: Boolean(candidate.preferredSourceEntryId),
+            hasPresentationCrop: cropMatchesPreferredSource({
+              crop: candidate.photoReview?.crop,
+              cropSourceEntryId: candidate.photoReview?.sourceEntryId,
+              preferredSourceEntryId: candidate.preferredSourceEntryId,
+            }),
+            photoReady: isRecognitionPresentationPhotoReady(photoInput),
+            requiresPhoto: award.requiresPhoto,
+            photoReadinessState: recognitionPresentationPhotoReadinessState(photoInput),
+            photoFlags: candidate.photoReview?.flags ?? [],
+            photoBlockReason: candidate.photoReview?.isBlocked
+              ? (candidate.photoReview.blockedReason ?? "此照片已標記為不可用於簡報")
+              : null,
+          };
+        }),
     }));
 
   return {

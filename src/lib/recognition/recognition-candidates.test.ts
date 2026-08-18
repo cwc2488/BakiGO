@@ -303,5 +303,7 @@ describe("Recognition approved roster and text export", () => {
     expect(inconsistent.awards[0]?.requiresPhoto).toBe(true);
     expect(inconsistent.awards[0]?.candidates[0]?.hasPreferredPhoto).toBe(false);
     expect(inconsistent.awards[0]?.candidates[0]?.preferredSourceEntryId).toBeNull();
+    expect(inconsistent.awards[0]?.candidates[0]?.photoReady).toBe(false);
+    expect(inconsistent.awards[0]?.candidates[0]?.hasPresentationCrop).toBe(false);
   });
 });

@@ -4,6 +4,7 @@
 import {
   fetchEventAwards,
   fetchRecognitionEvent,
+  fetchRecognitionEventPptReadiness,
   fetchRecognitionEventToken,
   fetchRecognitionRawSubmissions,
   fetchRecognitionTextRoster,
@@ -15,6 +16,7 @@ import {
 import type {
   RecognitionEvent,
   RecognitionEventAward,
+  RecognitionEventPptReadiness,
   RecognitionEventStatus,
   RecognitionRawSubmissionView,
 } from "@/types/recognition";
@@ -366,6 +368,7 @@ export function RecognitionEventPage({ eventId }: { eventId: string }) {
       <PublicCollectionSection eventId={event.id} />
       <AwardSection eventId={event.id} />
       <ReviewAndRosterSection eventId={event.id} eventName={event.name} />
+      <PhotoReviewAndPptSection eventId={event.id} />
       <RawSubmissionsSection eventId={event.id} />
     </PageShell>
   );
@@ -582,6 +585,76 @@ function ReviewAndRosterSection({ eventId, eventName }: { eventId: string; event
           </button>
         </div>
       )}
+    </BrandCard>
+  );
+}
+
+function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
+  const [readiness, setReadiness] = useState<RecognitionEventPptReadiness | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchRecognitionEventPptReadiness(eventId)
+      .then(setReadiness)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "無法載入 PPT 準備狀態"))
+      .finally(() => setLoading(false));
+  }, [eventId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const pending = readiness?.totalBlockingIssues ?? 0;
+
+  return (
+    <BrandCard variant="bordered">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">照片審查</p>
+          <p className="mt-1 text-[0.875rem] text-[#86868b]">
+            審查正式照片並建立簡報裁切。原圖不會被覆蓋。
+          </p>
+        </div>
+        <Link
+          href={`/recognition/events/${eventId}/photos`}
+          className="rounded-xl bg-[#1d1d1f] px-3 py-2 text-[0.875rem] font-semibold text-white"
+        >
+          照片審查{pending > 0 ? ` ${pending} 待處理` : ""}
+        </Link>
+      </div>
+
+      <div className="mt-4 rounded-2xl bg-[#f5f5f7] p-4">
+        <p className="text-[0.8125rem] font-semibold text-[#1d1d1f]">PPT 準備狀態</p>
+        {loading && <p className="mt-2 text-[0.875rem] text-[#86868b]">載入中…</p>}
+        {error && <p className="mt-2 text-[0.875rem] text-[#ff375f]">{error}</p>}
+        {readiness && (
+          <div className="mt-2 space-y-1 text-[0.875rem] text-[#1d1d1f]">
+            <p>已核准：{readiness.totalApproved}</p>
+            <p>需要照片：{readiness.photoRequiredApproved}</p>
+            <p>照片已完成：{readiness.readyPhotos}</p>
+            <p>缺少原圖：{readiness.missingOriginalPhotos}</p>
+            <p>尚未選照片：{readiness.missingPreferredPhoto}</p>
+            <p>尚未裁切：{readiness.missingCrop}</p>
+            <p>照片有問題：{readiness.blockedPhotos}</p>
+            <p className="pt-1 font-medium">
+              {readiness.totalBlockingIssues > 0
+                ? `尚有 ${readiness.totalBlockingIssues} 個問題需要處理`
+                : "照片準備完成"}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <button
+        type="button"
+        disabled
+        className="mt-3 rounded-xl border border-[var(--brand-border)] px-3 py-2 text-[0.875rem] font-medium text-[#86868b]"
+      >
+        產生 PPT（未來階段）
+      </button>
     </BrandCard>
   );
 }

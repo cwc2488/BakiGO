@@ -47,5 +47,6 @@ describe("public-paths", () => {
     expect(isPublicPath("/recognition")).toBe(false);
     expect(isPublicPath("/recognition/events/evt-1")).toBe(false);
     expect(isPublicPath("/recognition/events/evt-1/review")).toBe(false);
+    expect(isPublicPath("/recognition/events/evt-1/photos")).toBe(false);
   });
 });

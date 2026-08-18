@@ -10,6 +10,7 @@ import {
   validateRecognitionPreferredPhotoSource,
   validateRecognitionReviewStatus,
 } from "@/lib/recognition/recognition-candidates";
+import { parseRecognitionNormalizedCrop } from "@/lib/recognition/recognition-photo-review";
 import {
   getRecognitionEvent,
   listEventAwards,
@@ -21,6 +22,8 @@ import type {
   RecognitionCandidateSource,
   RecognitionCandidateUpdateInput,
   RecognitionConsolidationResult,
+  RecognitionNormalizedCrop,
+  RecognitionPhotoReviewFlag,
   RecognitionReviewStatus,
 } from "@/types/recognition";
 
@@ -224,6 +227,17 @@ export async function updateRecognitionCandidate(
     throw new RecognitionServiceError(error?.message ?? "Failed to update candidate.", 500);
   }
 
+  const preferredSourceChanged = input.preferredSourceEntryId !== undefined
+    && input.preferredSourceEntryId !== current.preferredSourceEntryId;
+  if (preferredSourceChanged) {
+    const reset = await supabase.rpc("reset_recognition_candidate_photo_review", {
+      p_candidate_id: candidateId,
+    });
+    if (reset.error) {
+      throw new RecognitionServiceError(reset.error.message, 500);
+    }
+  }
+
   return getRecognitionCandidate(eventId, candidateId);
 }
 
@@ -258,6 +272,7 @@ export async function getRecognitionApprovedRoster(eventId: string): Promise<Rec
   const event = await requireEvent(eventId);
   const awards = await listEventAwards(eventId);
   const candidates = await loadRecognitionCandidates(eventId);
+  const photoReviews = await loadPhotoReviewsForRoster(candidates.map((candidate) => candidate.id));
   return buildRecognitionApprovedRoster({
     eventId: event.id,
     eventName: event.name,
@@ -270,17 +285,88 @@ export async function getRecognitionApprovedRoster(eventId: string): Promise<Rec
       isEnabled: award.isEnabled,
       requiresPhoto: award.requiresPhoto ?? false,
     })),
-    candidates: candidates.map((candidate) => ({
-      id: candidate.id,
-      eventAwardId: candidate.eventAwardId,
-      reviewStatus: candidate.reviewStatus,
-      displayName: candidate.displayName,
-      sortOrder: candidate.sortOrder,
-      createdAt: candidate.createdAt,
-      preferredSourceEntryId: candidate.preferredSourceEntryId,
-      hasOriginalPhoto: candidate.hasOriginalPhoto,
-    })),
+    candidates: candidates.map((candidate) => {
+      const photoReview = photoReviews.get(candidate.id);
+      const preferred = candidate.preferredSourceEntryId
+        ? candidate.sources.find((source) => source.submissionEntryId === candidate.preferredSourceEntryId)
+        : undefined;
+      return {
+        id: candidate.id,
+        eventAwardId: candidate.eventAwardId,
+        reviewStatus: candidate.reviewStatus,
+        displayName: candidate.displayName,
+        sortOrder: candidate.sortOrder,
+        createdAt: candidate.createdAt,
+        preferredSourceEntryId: candidate.preferredSourceEntryId,
+        hasOriginalPhoto: candidate.hasOriginalPhoto,
+        preferredSourceBelongsToCandidate: candidate.preferredSourceEntryId
+          ? Boolean(preferred)
+          : undefined,
+        preferredSourceHasOriginalPhoto: preferred ? preferred.hasOriginalPhoto : undefined,
+        photoReview: photoReview ?? null,
+      };
+    }),
   });
+}
+
+async function loadPhotoReviewsForRoster(candidateIds: string[]): Promise<Map<string, {
+  sourceEntryId: string | null;
+  crop: RecognitionNormalizedCrop | null;
+  isBlocked: boolean;
+  blockedReason?: string | null;
+  flags?: RecognitionPhotoReviewFlag[];
+}>> {
+  const result = new Map<string, {
+    sourceEntryId: string | null;
+    crop: RecognitionNormalizedCrop | null;
+    isBlocked: boolean;
+    blockedReason?: string | null;
+    flags?: RecognitionPhotoReviewFlag[];
+  }>();
+  if (candidateIds.length === 0) return result;
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("recognition_candidate_photo_reviews")
+    .select("candidate_id, source_entry_id, crop_x, crop_y, crop_width, crop_height, flags, is_blocked, blocked_reason")
+    .in("candidate_id", candidateIds);
+  if (error) {
+    throw new RecognitionServiceError(error.message, 500);
+  }
+  for (const row of (data ?? []) as Array<{
+    candidate_id: string;
+    source_entry_id: string | null;
+    crop_x: number | string | null;
+    crop_y: number | string | null;
+    crop_width: number | string | null;
+    crop_height: number | string | null;
+    flags: string[] | null;
+    is_blocked: boolean;
+    blocked_reason: string | null;
+  }>) {
+    result.set(row.candidate_id, {
+      sourceEntryId: row.source_entry_id,
+      crop: parseRecognitionNormalizedCrop({
+        x: row.crop_x,
+        y: row.crop_y,
+        width: row.crop_width,
+        height: row.crop_height,
+      }),
+      isBlocked: Boolean(row.is_blocked),
+      blockedReason: row.blocked_reason,
+      flags: (row.flags ?? []).filter((flag): flag is RecognitionPhotoReviewFlag => (
+        flag === "group_photo"
+        || flag === "person_too_small"
+        || flag === "text_heavy"
+        || flag === "low_resolution"
+        || flag === "blurry_or_unclear"
+        || flag === "poor_composition"
+        || flag === "wrong_orientation"
+        || flag === "suspected_wrong_photo"
+        || flag === "other"
+      )),
+    });
+  }
+  return result;
 }
 
 export async function getRecognitionTextRoster(eventId: string): Promise<{ text: string; roster: RecognitionApprovedRoster }> {
@@ -313,6 +399,10 @@ export async function getRecognitionCandidatePhotoObject(input: {
     mimeType: source.originalPhotoMimeType || "application/octet-stream",
     body: await data.arrayBuffer(),
   };
+}
+
+export async function loadRecognitionCandidatesForEvent(eventId: string) {
+  return loadRecognitionCandidates(eventId);
 }
 
 async function loadRecognitionCandidates(eventId: string): Promise<RecognitionCandidate[]> {

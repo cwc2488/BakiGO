@@ -99,7 +99,7 @@ _Focus: admin working source._ **Implemented in Phase 5.**
 
 ### Phase RC-5 — Photo Review
 
-_Focus: presentation safety without AI selection._
+_Focus: presentation safety without AI selection._ **Implemented in Phase 6.**
 
 - Original vs presentation crop separation
 - Admin exception queue for group photos / anomalies

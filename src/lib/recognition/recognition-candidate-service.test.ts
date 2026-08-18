@@ -112,6 +112,7 @@ function mockTables(input: {
     if (table === "recognition_candidate_sources") return chain(input.sources ?? []);
     if (table === "recognition_submission_entries") return chain(input.entries ?? []);
     if (table === "recognition_submissions") return chain(input.submissions ?? []);
+    if (table === "recognition_candidate_photo_reviews") return chain([]);
     return chain([]);
   });
 }
@@ -123,6 +124,7 @@ describe("Recognition candidate service", () => {
     getRecognitionEventMock.mockReset();
     listEventAwardsMock.mockReset();
     updateCalls.length = 0;
+    mockRpc.mockResolvedValue({ data: { ok: true }, error: null });
     getRecognitionEventMock.mockResolvedValue({
       id: "evt-1",
       name: "月會",
@@ -284,5 +286,64 @@ describe("Recognition candidate service", () => {
       status: 400,
     });
     expect(updateCalls).toHaveLength(0);
+  });
+
+  it("resets presentation crop when preferred source changes", async () => {
+    listEventAwardsMock.mockResolvedValue([
+      { id: "award-1", awardName: "新科世界組", sortOrder: 1, isEnabled: true, requiresPhoto: true },
+    ]);
+    mockTables({
+      candidate: baseCandidate({ preferred_source_entry_id: "entry-1" }),
+      sources: [
+        { id: "src-1", candidate_id: "cand-1", submission_entry_id: "entry-1", created_at: "2026-09-01T00:00:00Z" },
+        { id: "src-2", candidate_id: "cand-1", submission_entry_id: "entry-2", created_at: "2026-09-01T00:00:00Z" },
+      ],
+      entries: [
+        {
+          id: "entry-1",
+          submission_id: "sub-1",
+          event_id: "evt-1",
+          event_award_id: "award-1",
+          submitted_name: "王小明老師",
+          normalized_name: "王小明老師",
+          original_photo_storage_path: "recognition/sub-1/entries/entry-1/original.jpg",
+          original_photo_mime_type: "image/jpeg",
+          original_photo_size_bytes: 1000,
+          created_at: "2026-09-01T00:00:00Z",
+        },
+        {
+          id: "entry-2",
+          submission_id: "sub-1",
+          event_id: "evt-1",
+          event_award_id: "award-1",
+          submitted_name: "王小明老師",
+          normalized_name: "王小明老師",
+          original_photo_storage_path: "recognition/sub-1/entries/entry-2/original.jpg",
+          original_photo_mime_type: "image/jpeg",
+          original_photo_size_bytes: 1000,
+          created_at: "2026-09-01T00:00:00Z",
+        },
+      ],
+      submissions: [{
+        id: "sub-1",
+        submitter_name: "填報者",
+        submitter_organization: "A組",
+        submitted_at: "2026-09-01T00:00:00Z",
+      }],
+    });
+    const { updateRecognitionCandidate } = await import("./recognition-candidate-service");
+    await updateRecognitionCandidate("evt-1", "cand-1", { preferredSourceEntryId: "entry-2" }, "admin-1");
+    expect(mockRpc).toHaveBeenCalledWith("reset_recognition_candidate_photo_review", {
+      p_candidate_id: "cand-1",
+    });
+    expect(updateCalls[0]?.patch).not.toHaveProperty("original_photo_storage_path");
+  });
+
+  it("does not reset presentation crop when only the display name changes", async () => {
+    mockTables({ candidate: baseCandidate({ display_name: "王小明老師" }) });
+    const { updateRecognitionCandidate } = await import("./recognition-candidate-service");
+    await updateRecognitionCandidate("evt-1", "cand-1", { displayName: "王小明" }, "admin-1");
+    expect(updateCalls[0]?.patch.display_name).toBe("王小明");
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 });

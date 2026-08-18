@@ -248,6 +248,94 @@ export interface RecognitionConsolidationResult {
   createdSourceLinkCount: number;
 }
 
+export type RecognitionPhotoReviewFlag =
+  | "group_photo"
+  | "person_too_small"
+  | "text_heavy"
+  | "low_resolution"
+  | "blurry_or_unclear"
+  | "poor_composition"
+  | "wrong_orientation"
+  | "suspected_wrong_photo"
+  | "other";
+
+export type RecognitionPresentationPhotoReadinessState =
+  | "not_required"
+  | "no_original_photo"
+  | "preferred_source_not_selected"
+  | "needs_photo_review"
+  | "crop_ready"
+  | "photo_blocked";
+
+export type RecognitionPhotoReviewQueueFilter =
+  | "all-photo-required"
+  | "needs-review"
+  | "crop-ready"
+  | "blocked"
+  | "missing-photo"
+  | "no-preferred-photo";
+
+export interface RecognitionNormalizedCrop {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface RecognitionPhotoReview {
+  id: string;
+  candidateId: string;
+  sourceEntryId: string | null;
+  originalWidth: number | null;
+  originalHeight: number | null;
+  crop: RecognitionNormalizedCrop | null;
+  cropAspectRatio: string;
+  flags: RecognitionPhotoReviewFlag[];
+  isBlocked: boolean;
+  blockedReason: string | null;
+  cropFinalizedAt: string | null;
+  cropFinalizedByMemberId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RecognitionPhotoReviewUpdateInput {
+  sourceEntryId: string;
+  crop?: RecognitionNormalizedCrop | null;
+  originalWidth?: number | null;
+  originalHeight?: number | null;
+  flags?: RecognitionPhotoReviewFlag[];
+  isBlocked?: boolean;
+  blockedReason?: string | null;
+  finalize?: boolean;
+}
+
+export interface RecognitionPresentationValidation {
+  photoReady: boolean;
+  readinessState: RecognitionPresentationPhotoReadinessState;
+  hasPresentationCrop: boolean;
+  blockers: string[];
+  warnings: string[];
+}
+
+export interface RecognitionEventPptReadiness {
+  totalApproved: number;
+  photoRequiredApproved: number;
+  readyPhotos: number;
+  missingOriginalPhotos: number;
+  missingPreferredPhoto: number;
+  missingCrop: number;
+  blockedPhotos: number;
+  totalBlockingIssues: number;
+}
+
+export interface RecognitionPhotoReviewQueueItem {
+  candidate: RecognitionCandidate;
+  photoReview: RecognitionPhotoReview | null;
+  preferredSource: RecognitionCandidateSource | null;
+  validation: RecognitionPresentationValidation;
+}
+
 export interface RecognitionApprovedRosterAward {
   eventAwardId: string;
   awardName: string;
@@ -260,7 +348,12 @@ export interface RecognitionApprovedRosterAward {
     preferredSourceEntryId: string | null;
     hasOriginalPhoto: boolean;
     hasPreferredPhoto: boolean;
+    hasPresentationCrop: boolean;
+    photoReady: boolean;
     requiresPhoto: boolean;
+    photoReadinessState: RecognitionPresentationPhotoReadinessState;
+    photoFlags: RecognitionPhotoReviewFlag[];
+    photoBlockReason: string | null;
   }>;
 }
 

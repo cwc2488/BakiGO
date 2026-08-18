@@ -17,6 +17,10 @@ import type {
   RecognitionApprovedRoster,
   RecognitionEventCreateInput,
   RecognitionEventUpdateInput,
+  RecognitionEventPptReadiness,
+  RecognitionPhotoReviewQueueFilter,
+  RecognitionPhotoReviewQueueItem,
+  RecognitionPhotoReviewUpdateInput,
 } from "@/types/recognition";
 
 async function handleResponse<T>(res: Response, fallback: string): Promise<T> {
@@ -250,4 +254,37 @@ export async function fetchRecognitionCandidatePhotoObjectUrl(
   }
   const blob = await res.blob();
   return URL.createObjectURL(blob);
+}
+
+export async function fetchRecognitionPhotoReviewQueue(
+  eventId: string,
+  filter?: RecognitionPhotoReviewQueueFilter,
+): Promise<{ items: RecognitionPhotoReviewQueueItem[]; pptReadiness: RecognitionEventPptReadiness }> {
+  const params = new URLSearchParams();
+  if (filter) params.set("filter", filter);
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}/photo-review${suffix}`);
+  return handleResponse<{ items: RecognitionPhotoReviewQueueItem[]; pptReadiness: RecognitionEventPptReadiness }>(
+    res,
+    "Failed to load photo review queue.",
+  );
+}
+
+export async function fetchRecognitionEventPptReadiness(eventId: string): Promise<RecognitionEventPptReadiness> {
+  const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}/ppt-readiness`);
+  const body = await handleResponse<{ pptReadiness: RecognitionEventPptReadiness }>(res, "Failed to load PPT readiness.");
+  return body.pptReadiness;
+}
+
+export async function updateRecognitionCandidatePhotoReview(
+  eventId: string,
+  candidateId: string,
+  input: RecognitionPhotoReviewUpdateInput,
+): Promise<RecognitionPhotoReviewQueueItem> {
+  const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}/photo-review/${candidateId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  const body = await handleResponse<{ item: RecognitionPhotoReviewQueueItem }>(res, "Failed to update photo review.");
+  return body.item;
 }

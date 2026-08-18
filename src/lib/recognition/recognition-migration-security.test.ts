@@ -133,3 +133,50 @@ describe("Recognition candidate consolidation RPC security", () => {
     expect(functionBody).toContain("preferred_source_entry_id is omitted on insert so new candidates stay null");
   });
 });
+
+describe("Recognition photo review migration security", () => {
+  const migration = readMigration("040_recognition_photo_review.sql");
+
+  it("revokes photo-review RPC execute from public/anon/authenticated", () => {
+    expect(migration).toContain("revoke all on function public.upsert_recognition_candidate_photo_review(");
+    expect(migration).toContain("from public;");
+    expect(migration).toContain("from anon;");
+    expect(migration).toContain("from authenticated;");
+    expect(migration).toContain("revoke all on function public.reset_recognition_candidate_photo_review(uuid) from public;");
+    expect(migration).toContain("revoke all on function public.reset_recognition_candidate_photo_review(uuid) from anon;");
+    expect(migration).toContain("revoke all on function public.reset_recognition_candidate_photo_review(uuid) from authenticated;");
+  });
+
+  it("grants photo-review RPCs only to service_role", () => {
+    expect(migration).toContain("grant execute on function public.upsert_recognition_candidate_photo_review(");
+    expect(migration).toContain("grant execute on function public.reset_recognition_candidate_photo_review(uuid) to service_role;");
+    expect(migration).not.toContain(") to authenticated;");
+    expect(migration).not.toContain(") to anon;");
+  });
+
+  it("does not mutate original submission evidence or photos", () => {
+    expect(migration).not.toMatch(/update public\.recognition_submission_entries/i);
+    expect(migration).not.toMatch(/update public\.recognition_submissions/i);
+    expect(migration).not.toMatch(/storage\.objects/i);
+    expect(migration).not.toContain("original_photo_storage_path =");
+  });
+
+  it("rejects stale crop saves when preferred source changes", () => {
+    expect(migration).toContain("preferred source changed; crop save rejected");
+    expect(migration).toContain("v_candidate.preferred_source_entry_id is distinct from p_source_entry_id");
+  });
+
+  it("resets crop metadata when preferred source changes", () => {
+    expect(migration).toContain("after update of preferred_source_entry_id on public.recognition_candidates");
+    expect(migration).toContain("perform public.reset_recognition_candidate_photo_review(new.id)");
+    expect(migration).toContain("Clears derived presentation crop/flags when preferred original changes");
+  });
+
+  it("keeps original photos immutable and crop metadata separate", () => {
+    expect(migration).toContain("create table if not exists public.recognition_candidate_photo_reviews");
+    expect(migration).toContain("crop_x numeric");
+    expect(migration).toContain("Original evidence stays immutable");
+    expect(migration.toLowerCase()).not.toContain("face-recognition");
+    expect(migration.toLowerCase()).not.toContain("face_recognition");
+  });
+});

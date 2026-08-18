@@ -231,19 +231,34 @@ Original photos must always be preserved.
 
 #### `recognition_photo_crops`
 
-Presentation-ready crop / processed image rows.
+Earlier conceptual table. Phase 6 implemented `recognition_candidate_photo_reviews` instead, because originals live on submission entries rather than a separate `recognition_photo_assets` table. Crop rows still must not replace originals.
 
-Suggested columns:
+#### `recognition_candidate_photo_reviews`
 
-- `id` uuid PK
-- `photo_asset_id`
-- `crop_box_json`
-- `processed_storage_path`
-- `confirmed_by`
-- `confirmed_at`
-- `is_current`
+Implemented in `040_recognition_photo_review.sql`.
 
-Crop rows do not replace originals.
+One active presentation-photo review row per candidate:
+
+- `candidate_id` unique
+- `source_entry_id` — preferred original the crop is bound to
+- `original_width` / `original_height` nullable
+- `crop_x` / `crop_y` / `crop_width` / `crop_height` nullable normalized 0–1, all-or-none, bounds-checked
+- `crop_aspect_ratio` default `'3:4'` (portrait card slot; not the 4:3 PPT slide)
+- `flags text[]` manual review flags
+- `is_blocked` / `blocked_reason`
+- `crop_finalized_at` / `crop_finalized_by_member_id`
+- timestamps
+
+No derived cropped bitmap is stored in Phase 6. Future renderer uses original + crop metadata.
+
+Changing `recognition_candidates.preferred_source_entry_id` resets this row.
+
+RLS enabled, forced, with zero anon/authenticated policies. RPCs:
+
+- `upsert_recognition_candidate_photo_review(...)` — rejects stale `source_entry_id` vs current preferred
+- `reset_recognition_candidate_photo_review(...)`
+
+Both revoke PUBLIC/anon/authenticated and grant EXECUTE only to `service_role`.
 
 #### `recognition_candidates`
 
@@ -258,7 +273,7 @@ Implemented in `039_recognition_candidates.sql`:
 - `normalized_name` (immutable exact-match consolidation key from raw entries)
 - `review_status` (`pending | approved | needs_fix | rejected`)
 - `member_id` nullable for future person-history/timeline support
-- `preferred_source_entry_id` nullable original photo source for future Phase 6 processing. Consolidation never infers this value; Recognition Admin must choose it. Reconsolidation preserves an existing admin selection.
+- `preferred_source_entry_id` nullable original photo source for Phase 6 presentation crop. Consolidation never infers this value; Recognition Admin must choose it. Reconsolidation preserves an existing admin selection. Changing this value resets any presentation crop bound to the previous source.
 - `sort_order`
 - `reviewed_at`, `reviewed_by_member_id`
 - timestamps
@@ -271,8 +286,9 @@ Business rules:
 - all sources must still be preserved
 - same normalized name across **different** awards is a warning only
 - cross-award duplicate names must **not** auto-merge, reject, delete, or block PPT generation
-- admin `display_name` edits do **not** change `normalized_name` and do **not** silently merge candidates
-- presentation crop fields remain a Phase 6 concern; Phase 5 only lets Recognition Admin choose a preferred original source
+- presentation crop lives on `recognition_candidate_photo_reviews` and must not replace originals
+- changing `preferred_source_entry_id` invalidates the existing presentation crop
+- admin `display_name` edits do **not** change `normalized_name`, do **not** silently merge candidates, and do **not** destroy presentation crop
 
 #### `recognition_candidate_sources`
 
@@ -336,9 +352,9 @@ Recognition photos should use a **private Supabase Storage bucket** (planned), s
 Rules:
 
 - original uploads stored privately
-- presentation crops stored separately
+- presentation crop metadata stored separately; no public derived bitmap in Phase 6
 - no public bucket access
-- reads via signed URLs / service-role APIs
+- reads via authenticated admin photo API (`Cache-Control: private, no-store`) / service-role
 - public submitters do not receive direct table access
 
 ### Recognition public collection (`037_recognition_public_collection.sql`)
@@ -484,8 +500,26 @@ Approved roster:
 - enabled event awards in `sort_order`
 - `review_status = approved` only
 - candidates in `sort_order`, then `created_at`, then `display_name`
+- incomplete photos stay on the roster; Phase 6 adds `hasPresentationCrop`, `photoReady`, `photoReadinessState`, flags, and block reason for presentation validation
 
 Duplicate warnings are computed at read time. They never auto-merge, auto-reject, or block future PPT generation.
+
+### Recognition photo review (`040_recognition_photo_review.sql`)
+
+**Status:** Phase 6 presentation crop + PPT-photo-ready validation implemented. No PPTX.
+
+Adds:
+
+- `recognition_candidate_photo_reviews` (one row per candidate)
+- `upsert_recognition_candidate_photo_review(...)`
+- `reset_recognition_candidate_photo_review(...)`
+- trigger that resets crop metadata when `preferred_source_entry_id` changes
+
+RLS is enabled and forced, with zero anon/authenticated policies. Table privileges are revoked from PUBLIC/anon/authenticated. Both RPCs revoke PUBLIC/anon/authenticated and grant EXECUTE only to `service_role`.
+
+Crop coordinates are normalized 0–1 against the original image. Intended portrait slot ratio is `3:4`, distinct from the 4:3 PPT slide.
+
+The RPC never writes `recognition_submissions`, `recognition_submission_entries`, or storage objects.
 
 ### Recognition RLS / API pattern
 
@@ -525,6 +559,17 @@ Phase 5 candidate RPCs:
 - `reorder_recognition_event_candidates(...)`
   - requires the complete candidate set for one event award
   - updates `sort_order` atomically
+
+Phase 6 photo-review RPCs:
+
+- `upsert_recognition_candidate_photo_review(...)`
+  - locks the candidate
+  - requires `p_source_entry_id` to match current `preferred_source_entry_id`
+  - validates crop bounds
+  - writes derived crop/flags only
+- `reset_recognition_candidate_photo_review(...)`
+  - clears derived crop/flags/blocked state
+  - used when preferred original changes
 
 Security rule:
 
