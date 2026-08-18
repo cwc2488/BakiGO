@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 
 type PublicEntry = {
   id: string;
+  serverEntryId?: string;
   eventAwardId: string;
   submittedName: string;
   photo: File | null;
@@ -54,6 +55,7 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
   const [submitterName, setSubmitterName] = useState("");
   const [entries, setEntries] = useState<PublicEntry[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [editToken, setEditToken] = useState<string | null>(null);
   const [completion, setCompletion] = useState<CompletionView | null>(null);
 
   useEffect(() => {
@@ -122,6 +124,102 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
     setCompletion(null);
 
     try {
+      if (editToken && entries.every((entry) => entry.serverEntryId)) {
+        for (const entry of entries) {
+          const entryId = entry.serverEntryId!;
+          if (entry.photo) {
+            const formData = new FormData();
+            formData.set("editToken", editToken);
+            formData.set("entryId", entryId);
+            formData.set("photo", entry.photo);
+            if (entry.crop) formData.set("crop", JSON.stringify(entry.crop));
+            formData.set("confirmedWarnings", entry.keepMultiPerson ? "multi_person" : "");
+            const res = await fetch(`/api/recognition/public/${encodeURIComponent(token)}/submissions/current`, {
+              method: "PATCH",
+              body: formData,
+            });
+            const json = await res.json() as { error?: string };
+            if (!res.ok) throw new Error(json.error ?? "修正失敗");
+          }
+          const res = await fetch(`/api/recognition/public/${encodeURIComponent(token)}/submissions/current`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              editToken,
+              entryId,
+              submittedName: entry.submittedName,
+              eventAwardId: entry.eventAwardId,
+              crop: entry.crop,
+              originalWidth: entry.originalWidth,
+              originalHeight: entry.originalHeight,
+              confirmedWarnings: entry.keepMultiPerson ? ["multi_person"] : [],
+            }),
+          });
+          const json = await res.json() as { error?: string; status?: string; issues?: Array<{ message: string }> };
+          if (!res.ok) throw new Error(json.error ?? "修正失敗");
+        }
+        const issueRows: CompletionView["issues"] = [];
+        let blockedCount = 0;
+        let readyCount = 0;
+        for (const entry of entries) {
+          const entryId = entry.serverEntryId!;
+          if (entry.photo) {
+            const formData = new FormData();
+            formData.set("editToken", editToken);
+            formData.set("entryId", entryId);
+            formData.set("photo", entry.photo);
+            if (entry.crop) formData.set("crop", JSON.stringify(entry.crop));
+            formData.set("confirmedWarnings", entry.keepMultiPerson ? "multi_person" : "");
+            const res = await fetch(`/api/recognition/public/${encodeURIComponent(token)}/submissions/current`, {
+              method: "PATCH",
+              body: formData,
+            });
+            const json = await res.json() as { error?: string };
+            if (!res.ok) throw new Error(json.error ?? "修正失敗");
+          }
+          const res = await fetch(`/api/recognition/public/${encodeURIComponent(token)}/submissions/current`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              editToken,
+              entryId,
+              submittedName: entry.submittedName,
+              eventAwardId: entry.eventAwardId,
+              crop: entry.crop,
+              originalWidth: entry.originalWidth,
+              originalHeight: entry.originalHeight,
+              confirmedWarnings: entry.keepMultiPerson ? ["multi_person"] : [],
+            }),
+          });
+          const json = await res.json() as {
+            error?: string;
+            status?: string;
+            issues?: Array<{ message: string }>;
+            pptReady?: boolean;
+          };
+          if (!res.ok) throw new Error(json.error ?? "修正失敗");
+          if (json.status === "BLOCKED") {
+            blockedCount += 1;
+            issueRows.push({
+              name: entry.submittedName,
+              awardName: awardMap.get(entry.eventAwardId)?.name ?? "",
+              messages: (json.issues ?? []).map((issue) => issue.message),
+            });
+          } else if (json.status !== "EXCLUDED") {
+            readyCount += 1;
+          }
+        }
+        setCompletion({
+          complete: blockedCount === 0,
+          readyCount,
+          blockedCount,
+          total: entries.length,
+          message: blockedCount === 0 ? "✅ 投稿完成" : `⚠️ 投稿尚未完成 ${readyCount} / ${entries.length} 完成，${blockedCount} 筆需要修正`,
+          issues: issueRows,
+        });
+        return;
+      }
+
       const formData = new FormData();
       formData.set("submitterName", submitterName);
       formData.set("submitterOrganization", "");
@@ -143,10 +241,17 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
 
       const result = await submitRecognitionPublicForm(token, formData);
       if (result.editToken) {
+        setEditToken(result.editToken);
         window.localStorage.setItem(EDIT_KEY(token), JSON.stringify({
           submissionId: result.submissionId,
           editToken: result.editToken,
         }));
+      }
+      if (result.entries?.length) {
+        setEntries((prev) => prev.map((entry, index) => ({
+          ...entry,
+          serverEntryId: result.entries?.[index]?.entryId ?? entry.serverEntryId,
+        })));
       }
       setCompletion({
         complete: Boolean(result.completion?.complete),
@@ -351,7 +456,7 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
             disabled={submitting}
             className="rounded-2xl bg-[#1d1d1f] px-4 py-4 text-[1rem] font-semibold text-white disabled:opacity-60"
           >
-            {submitting ? "檢查並送出中…" : "送出表揚名單"}
+            {submitting ? "檢查並送出中…" : editToken ? "再次檢查並更新" : "送出表揚名單"}
           </button>
         </form>
       </div>
