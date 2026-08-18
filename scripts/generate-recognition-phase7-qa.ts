@@ -109,7 +109,7 @@ async function main() {
   const awards = [
     { eventAwardId: "few", awardSlug: "map_month_1", awardName: "MAP 第一個月", sortOrder: 1, isEnabled: true, requiresPhoto: false },
     { eventAwardId: "many", awardSlug: "map_month_2", awardName: "MAP 第二個月", sortOrder: 2, isEnabled: true, requiresPhoto: false },
-    { eventAwardId: "h1", awardSlug: "map_month_3_pass", awardName: "MAP 第三個月（MAP 第三個月過關）", sortOrder: 3, isEnabled: true, requiresPhoto: true },
+    { eventAwardId: "h1", awardSlug: "map_month_3_pass", awardName: "MAP 第三個月", sortOrder: 3, isEnabled: true, requiresPhoto: true },
     { eventAwardId: "h2", awardSlug: "new_supervisor", awardName: "新科督導", sortOrder: 4, isEnabled: true, requiresPhoto: true },
     { eventAwardId: "h3", awardSlug: "world_team_1pct", awardName: "1%世界組", sortOrder: 5, isEnabled: true, requiresPhoto: true },
     { eventAwardId: "g6", awardSlug: "club_5k", awardName: "5K俱樂部", sortOrder: 6, isEnabled: true, requiresPhoto: true },
@@ -196,6 +196,16 @@ async function main() {
   if (paginated.length !== 2 || paginated[0]?.candidateIds.length !== 12 || paginated[1]?.candidateIds.length !== 5) {
     throw new Error("13+ case did not paginate as 12 + 5");
   }
+  const page1Ids = paginated[0]!.candidateIds;
+  const page2Ids = paginated[1]!.candidateIds;
+  const combinedIds = [...page1Ids, ...page2Ids];
+  if (new Set(combinedIds).size !== 17 || combinedIds.length !== 17) {
+    throw new Error("17-person pagination duplicated or omitted a recipient");
+  }
+  const g17Names = groups.find((group) => group.awardId === "g17")?.names ?? [];
+  if (g17Names.length !== 17) {
+    throw new Error("17-person QA fixture is not 17 names");
+  }
 
   const life1 = plan.find((item) => item.awardId === "life1");
   const life2 = plan.find((item) => item.awardId === "life2");
@@ -248,6 +258,19 @@ async function main() {
   if (portraitSlotsForMaster("wall-4-12", 12).length !== 12) {
     throw new Error("12-person geometry does not define exactly 12 portrait slots");
   }
+  if (life1.candidateIds.length !== 1 || portraitSlotsForMaster("million-lifetime", 1).length !== 1) {
+    throw new Error("million lifetime 1-person QA is not a single centered portrait");
+  }
+  if (life2.candidateIds.length !== 2 || portraitSlotsForMaster("million-lifetime", 2).length !== 2) {
+    throw new Error("million lifetime multiple QA is not a 2-person composition");
+  }
+  if (plan.some((item) => item.awardName.includes("第三個月過關"))) {
+    throw new Error("QA plan still contains 第三個月過關 display copy");
+  }
+  const hero1Plan = plan.find((item) => item.awardId === "h1");
+  if (hero1Plan?.awardName !== "MAP 第三個月") {
+    throw new Error(`1-person hero title must be MAP 第三個月, got ${hero1Plan?.awardName}`);
+  }
 
   const buffer = await renderRecognitionPresentationPptx({
     data,
@@ -265,6 +288,21 @@ async function main() {
   const presentationXml = unzipText(pptxPath, "ppt/presentation.xml");
   if (!presentationXml.includes(`cx="${RECOGNITION_PPTX_SLIDE.widthEmu}"`) || !presentationXml.includes(`cy="${RECOGNITION_PPTX_SLIDE.heightEmu}"`)) {
     throw new Error("generated PPTX is not 4:3");
+  }
+  const slideXml = execFileSync("python3", ["-c", `
+import zipfile, sys
+with zipfile.ZipFile(sys.argv[1]) as z:
+    texts = []
+    for name in z.namelist():
+        if name.startswith("ppt/slides/slide") and name.endswith(".xml"):
+            texts.append(z.read(name).decode("utf-8"))
+    sys.stdout.write("\\n".join(texts))
+`, pptxPath], { encoding: "utf8" });
+  if (slideXml.includes("第三個月過關")) {
+    throw new Error("generated PPTX still contains 第三個月過關 display copy");
+  }
+  if (!slideXml.includes("MAP 第三個月")) {
+    throw new Error("generated PPTX is missing official MAP 第三個月 title");
   }
 
   const convertDir = join(OUT_DIR, "_convert");

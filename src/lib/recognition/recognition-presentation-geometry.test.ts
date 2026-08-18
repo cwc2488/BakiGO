@@ -36,7 +36,7 @@ describe("Recognition presentation geometry lock", () => {
     const fitted = fitRecognitionTitleInBox("萬點高手", wall);
     expect(fitted.fontSizePt).toBeLessThanOrEqual(wall.maxFontPt);
     expect(fitted.fontSizePt).toBeGreaterThanOrEqual(wall.minFontPt);
-    const long = fitRecognitionTitleInBox("MAP 第三個月（MAP 第三個月過關）", titleGeometryForMaster("hero-1"));
+    const long = fitRecognitionTitleInBox("新科世界組（第四個月過關）", titleGeometryForMaster("hero-1"));
     expect(long.fontSizePt).toBeLessThan(titleGeometryForMaster("hero-1").maxFontPt);
   });
 

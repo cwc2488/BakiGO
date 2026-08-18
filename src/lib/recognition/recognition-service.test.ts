@@ -39,6 +39,15 @@ describe("Recognition Center — seeded award catalog", () => {
     expect(DEFAULT_RECOGNITION_AWARDS).toHaveLength(27);
   });
 
+  it("uses official MAP display names without 第三個月過關", () => {
+    expect(DEFAULT_RECOGNITION_AWARDS.find((award) => award.slug === "map_month_1")?.name).toBe("MAP 第一個月");
+    expect(DEFAULT_RECOGNITION_AWARDS.find((award) => award.slug === "map_month_2")?.name).toBe("MAP 第二個月");
+    expect(DEFAULT_RECOGNITION_AWARDS.find((award) => award.slug === "map_month_3_pass")?.name).toBe("MAP 第三個月");
+    for (const award of DEFAULT_RECOGNITION_AWARDS) {
+      expect(award.name).not.toContain("第三個月過關");
+    }
+  });
+
   it("has exactly 12 photo-required awards", () => {
     const photoAwards = DEFAULT_RECOGNITION_AWARDS.filter((a) => a.requiresPhoto);
     expect(photoAwards).toHaveLength(12);

@@ -223,7 +223,7 @@ describe("Recognition PPTX visual QA artifact", () => {
     const awards = [
       { eventAwardId: "few", awardSlug: "map_month_1", awardName: "MAP 第一個月", sortOrder: 1, isEnabled: true, requiresPhoto: false },
       { eventAwardId: "many", awardSlug: "map_month_2", awardName: "MAP 第二個月", sortOrder: 2, isEnabled: true, requiresPhoto: false },
-      { eventAwardId: "h1", awardSlug: "map_month_3_pass", awardName: "MAP 第三個月（MAP 第三個月過關）", sortOrder: 3, isEnabled: true, requiresPhoto: true },
+      { eventAwardId: "h1", awardSlug: "map_month_3_pass", awardName: "MAP 第三個月", sortOrder: 3, isEnabled: true, requiresPhoto: true },
       { eventAwardId: "h2", awardSlug: "new_supervisor", awardName: "新科督導", sortOrder: 4, isEnabled: true, requiresPhoto: true },
       { eventAwardId: "h3", awardSlug: "world_team_1pct", awardName: "1%世界組", sortOrder: 5, isEnabled: true, requiresPhoto: true },
       { eventAwardId: "g6", awardSlug: "club_5k", awardName: "5K俱樂部", sortOrder: 6, isEnabled: true, requiresPhoto: true },
