@@ -515,6 +515,8 @@ Adds:
 - `reset_recognition_candidate_photo_review(...)`
 - trigger that resets crop metadata when `preferred_source_entry_id` changes
 
+The trigger is the sole automatic reset owner. It is an `AFTER UPDATE OF preferred_source_entry_id` row trigger, not a deferred constraint trigger, so the preferred-source UPDATE and photo-review reset share one transaction. If reset raises, the preferred-source change rolls back. Application services must not call `reset_recognition_candidate_photo_review` after updating preferred source.
+
 RLS is enabled and forced, with zero anon/authenticated policies. Table privileges are revoked from PUBLIC/anon/authenticated. Both RPCs revoke PUBLIC/anon/authenticated and grant EXECUTE only to `service_role`.
 
 Crop coordinates are normalized 0–1 against the original image. Intended portrait slot ratio is `3:4`, distinct from the 4:3 PPT slide.
@@ -569,7 +571,8 @@ Phase 6 photo-review RPCs:
   - writes derived crop/flags only
 - `reset_recognition_candidate_photo_review(...)`
   - clears derived crop/flags/blocked state
-  - used when preferred original changes
+  - called by `recognition_candidates_preferred_source_change` in the same transaction as the preferred-source UPDATE
+  - not called by application code after a preferred-source mutation
 
 Security rule:
 

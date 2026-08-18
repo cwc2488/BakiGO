@@ -295,13 +295,3 @@ export async function updateRecognitionCandidatePhotoReview(
 
   return getRecognitionCandidatePhotoReview(eventId, candidateId);
 }
-
-export async function resetRecognitionCandidatePhotoReview(candidateId: string): Promise<void> {
-  const supabase = createSupabaseServiceClient();
-  const { error } = await supabase.rpc("reset_recognition_candidate_photo_review", {
-    p_candidate_id: candidateId,
-  });
-  if (error) {
-    throw new RecognitionServiceError(error.message, 500);
-  }
-}

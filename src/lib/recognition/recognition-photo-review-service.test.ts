@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { RECOGNITION_PREFERRED_SOURCE_CHANGED_ERROR } from "@/lib/recognition/recognition-photo-review";
 
 const mockRpc = vi.fn();
@@ -213,5 +215,15 @@ describe("Recognition photo review service", () => {
     }));
     const rpcArgs = mockRpc.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(rpcArgs).not.toHaveProperty("original_photo_storage_path");
+    expect(mockRpc.mock.calls.map((call) => call[0])).not.toContain("reset_recognition_candidate_photo_review");
+  });
+
+  it("does not own preferred-source photo-review reset in application code", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/lib/recognition/recognition-photo-review-service.ts"),
+      "utf8",
+    );
+    expect(source).not.toMatch(/\.rpc\(\s*["']reset_recognition_candidate_photo_review["']/);
+    expect(source).not.toContain("export async function resetRecognitionCandidatePhotoReview");
   });
 });

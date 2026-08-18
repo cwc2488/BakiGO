@@ -169,7 +169,31 @@ describe("Recognition photo review migration security", () => {
   it("resets crop metadata when preferred source changes", () => {
     expect(migration).toContain("after update of preferred_source_entry_id on public.recognition_candidates");
     expect(migration).toContain("perform public.reset_recognition_candidate_photo_review(new.id)");
-    expect(migration).toContain("Clears derived presentation crop/flags when preferred original changes");
+    expect(migration).toContain("this trigger runs in the SAME transaction as the");
+    expect(migration).toContain("If reset raises,");
+    expect(migration).toContain("rolls back the preferred-source change");
+    expect(migration).toContain("This trigger is the sole automatic reset owner");
+    expect(migration).not.toMatch(/constraint trigger/i);
+    expect(migration).not.toMatch(/deferrable/i);
+  });
+
+  it("keeps preferred-source update and photo-review reset in one database transaction", () => {
+    const triggerFn = migration.slice(
+      migration.indexOf("create or replace function public.recognition_reset_photo_review_on_preferred_source_change"),
+      migration.indexOf("drop trigger if exists recognition_candidates_preferred_source_change"),
+    );
+    const trigger = migration.slice(
+      migration.indexOf("create trigger recognition_candidates_preferred_source_change"),
+      migration.indexOf("revoke all on function public.upsert_recognition_candidate_photo_review"),
+    );
+    expect(trigger).toContain("after update of preferred_source_entry_id");
+    expect(trigger).toContain("for each row");
+    expect(trigger).toContain("execute function public.recognition_reset_photo_review_on_preferred_source_change()");
+    expect(triggerFn).toContain("new.preferred_source_entry_id is distinct from old.preferred_source_entry_id");
+    expect(triggerFn).toContain("perform public.reset_recognition_candidate_photo_review(new.id)");
+    expect(triggerFn).toContain("SAME transaction");
+    expect(triggerFn).toContain("Application code must not");
+    expect(triggerFn).toContain("call reset_recognition_candidate_photo_review after updating preferred source");
   });
 
   it("keeps original photos immutable and crop metadata separate", () => {

@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { RECOGNITION_PHOTO_REQUIRED_APPROVAL_ERROR } from "@/lib/recognition/recognition-candidates";
 
 const mockRpc = vi.fn();
@@ -288,7 +290,7 @@ describe("Recognition candidate service", () => {
     expect(updateCalls).toHaveLength(0);
   });
 
-  it("resets presentation crop when preferred source changes", async () => {
+  it("resets presentation crop through the database trigger, not a second service RPC", async () => {
     listEventAwardsMock.mockResolvedValue([
       { id: "award-1", awardName: "新科世界組", sortOrder: 1, isEnabled: true, requiresPhoto: true },
     ]);
@@ -333,10 +335,9 @@ describe("Recognition candidate service", () => {
     });
     const { updateRecognitionCandidate } = await import("./recognition-candidate-service");
     await updateRecognitionCandidate("evt-1", "cand-1", { preferredSourceEntryId: "entry-2" }, "admin-1");
-    expect(mockRpc).toHaveBeenCalledWith("reset_recognition_candidate_photo_review", {
-      p_candidate_id: "cand-1",
-    });
+    expect(updateCalls[0]?.patch.preferred_source_entry_id).toBe("entry-2");
     expect(updateCalls[0]?.patch).not.toHaveProperty("original_photo_storage_path");
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 
   it("does not reset presentation crop when only the display name changes", async () => {
@@ -344,6 +345,38 @@ describe("Recognition candidate service", () => {
     const { updateRecognitionCandidate } = await import("./recognition-candidate-service");
     await updateRecognitionCandidate("evt-1", "cand-1", { displayName: "王小明" }, "admin-1");
     expect(updateCalls[0]?.patch.display_name).toBe("王小明");
+    expect(updateCalls[0]?.patch).not.toHaveProperty("preferred_source_entry_id");
     expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("does not reset presentation crop when only review status changes", async () => {
+    mockTables({ candidate: baseCandidate({ preferred_source_entry_id: "entry-1" }) });
+    const { updateRecognitionCandidate, recognitionCandidatePatchTouchesRawEvidence } = await import("./recognition-candidate-service");
+    await updateRecognitionCandidate("evt-1", "cand-1", { reviewStatus: "approved" }, "admin-1");
+    expect(updateCalls[0]?.patch.review_status).toBe("approved");
+    expect(updateCalls[0]?.patch).not.toHaveProperty("preferred_source_entry_id");
+    expect(recognitionCandidatePatchTouchesRawEvidence(Object.keys(updateCalls[0]?.patch ?? {}))).toBe(false);
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("Recognition candidate service photo-review ownership", () => {
+  it("does not issue a second photo-review reset RPC after preferred-source updates", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/lib/recognition/recognition-candidate-service.ts"), "utf8");
+    expect(source).not.toMatch(/\.rpc\(\s*["']reset_recognition_candidate_photo_review["']/);
+    expect(source).toContain("recognition_candidates_preferred_source_change");
+    expect(source).toContain("Do not call reset_recognition_candidate_photo_review from this service");
+  });
+
+  it("loads private originals only after candidate/source evidence validation", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/lib/recognition/recognition-candidate-service.ts"), "utf8");
+    const fn = source.slice(source.indexOf("export async function getRecognitionCandidatePhotoObject"));
+    expect(fn).toContain("getRecognitionCandidate");
+    expect(fn).toContain("submissionEntryId === input.sourceEntryId");
+    expect(fn).toContain("originalPhotoStoragePath");
+    expect(fn).toContain(".from(\"recognition-photos\")");
+    expect(fn).toContain(".download(");
+    expect(fn).not.toContain("getPublicUrl");
+    expect(fn).not.toContain("createSignedUrl");
   });
 });

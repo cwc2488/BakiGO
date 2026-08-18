@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const getMemberIdFromRequestMock = vi.fn();
 const isSupabaseServiceConfiguredMock = vi.fn();
@@ -73,5 +75,19 @@ describe("GET candidate photo", () => {
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
     expect(res.headers.get("Content-Type")).toBe("image/jpeg");
     expect(res.headers.get("Location")).toBeNull();
+  });
+
+  it("keeps the admin-only private storage download chain", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/app/api/recognition/events/[eventId]/candidates/[candidateId]/photo/route.ts"),
+      "utf8",
+    );
+    expect(source).toContain("getMemberIdFromRequest");
+    expect(source).toContain("assertRecognitionAdmin");
+    expect(source).toContain("getRecognitionCandidatePhotoObject");
+    expect(source).toContain("Cache-Control");
+    expect(source).toContain("private, no-store");
+    expect(source).not.toContain("createSignedUrl");
+    expect(source).not.toContain("getPublicUrl");
   });
 });

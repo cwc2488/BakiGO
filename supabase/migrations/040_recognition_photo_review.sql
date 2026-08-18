@@ -351,6 +351,11 @@ security definer
 set search_path = public
 as $$
 begin
+  -- ATOMICITY INVARIANT: this trigger runs in the SAME transaction as the
+  -- recognition_candidates.preferred_source_entry_id UPDATE. If reset raises,
+  -- PostgreSQL aborts the statement and rolls back the preferred-source change.
+  -- This trigger is the sole automatic reset owner. Application code must not
+  -- call reset_recognition_candidate_photo_review after updating preferred source.
   if new.preferred_source_entry_id is distinct from old.preferred_source_entry_id then
     perform public.reset_recognition_candidate_photo_review(new.id);
   end if;
@@ -393,4 +398,7 @@ comment on function public.upsert_recognition_candidate_photo_review(
   'Saves presentation crop metadata for the current preferred original. Rejects stale source-entry saves. Execute only via service_role.';
 
 comment on function public.reset_recognition_candidate_photo_review(uuid) is
-  'Clears derived presentation crop/flags when preferred original changes. Never mutates original evidence. Execute only via service_role.';
+  'Clears derived presentation crop/flags. Used by the preferred-source-change trigger in the same transaction as the candidate UPDATE. Never mutates original evidence. Execute only via service_role.';
+
+comment on function public.recognition_reset_photo_review_on_preferred_source_change() is
+  'Sole automatic owner of photo-review reset on preferred_source_entry_id change. Runs in the same transaction as the candidate UPDATE; trigger failure rolls back the preferred-source change.';

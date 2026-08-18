@@ -952,11 +952,16 @@ The system must **not** identify which person is the honoree, auto-crop around a
 
 If `preferred_source_entry_id` changes:
 
+- the database trigger `recognition_candidates_preferred_source_change` is the **sole automatic reset owner**
+- preferred-source UPDATE and photo-review reset occur in the **same transaction**
+- if the trigger/reset fails, the preferred-source change rolls back
 - existing crop / flags / blocked state reset
 - candidate returns to `needs_photo_review`
 - stale crop save with the old `sourceEntryId` is rejected (409)
 
-Display-name changes do **not** reset crop.
+Application code updates `recognition_candidates.preferred_source_entry_id` only. It must **not** call `reset_recognition_candidate_photo_review` after that update.
+
+Display-name and review-status changes do **not** reset crop.
 
 ### Private image access
 

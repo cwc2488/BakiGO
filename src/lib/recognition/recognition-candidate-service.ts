@@ -227,16 +227,9 @@ export async function updateRecognitionCandidate(
     throw new RecognitionServiceError(error?.message ?? "Failed to update candidate.", 500);
   }
 
-  const preferredSourceChanged = input.preferredSourceEntryId !== undefined
-    && input.preferredSourceEntryId !== current.preferredSourceEntryId;
-  if (preferredSourceChanged) {
-    const reset = await supabase.rpc("reset_recognition_candidate_photo_review", {
-      p_candidate_id: candidateId,
-    });
-    if (reset.error) {
-      throw new RecognitionServiceError(reset.error.message, 500);
-    }
-  }
+  // Preferred-source change resets derived photo-review state in the same
+  // database transaction via recognition_candidates_preferred_source_change.
+  // Do not call reset_recognition_candidate_photo_review from this service.
 
   return getRecognitionCandidate(eventId, candidateId);
 }
