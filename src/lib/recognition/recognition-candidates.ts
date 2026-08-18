@@ -132,6 +132,9 @@ export function findRecognitionDisplayNameCollision(input: {
   return null;
 }
 
+export const RECOGNITION_PHOTO_REQUIRED_APPROVAL_ERROR =
+  "此表揚項目需要照片，請先選擇正式使用的照片。";
+
 export function validateRecognitionPreferredPhotoSource(input: {
   preferredSourceEntryId: string;
   sourceEntryIds: string[];
@@ -144,6 +147,45 @@ export function validateRecognitionPreferredPhotoSource(input: {
     return "preferred photo source has no original photo.";
   }
   return null;
+}
+
+export function validateRecognitionPhotoRequiredApproval(input: {
+  requiresPhoto: boolean;
+  preferredSourceEntryId: string | null | undefined;
+  sourceEntryIds: string[];
+  photoSourceEntryIds: string[];
+}): string | null {
+  if (!input.requiresPhoto) return null;
+  if (input.photoSourceEntryIds.length === 0) {
+    return RECOGNITION_PHOTO_REQUIRED_APPROVAL_ERROR;
+  }
+  if (!input.preferredSourceEntryId) {
+    return RECOGNITION_PHOTO_REQUIRED_APPROVAL_ERROR;
+  }
+  const preferredError = validateRecognitionPreferredPhotoSource({
+    preferredSourceEntryId: input.preferredSourceEntryId,
+    sourceEntryIds: input.sourceEntryIds,
+    photoSourceEntryIds: input.photoSourceEntryIds,
+  });
+  if (preferredError) return RECOGNITION_PHOTO_REQUIRED_APPROVAL_ERROR;
+  return null;
+}
+
+export type RecognitionCandidatePhotoReadiness =
+  | "not_required"
+  | "missing_photo"
+  | "needs_preferred_selection"
+  | "preferred_selected";
+
+export function recognitionCandidatePhotoReadiness(input: {
+  requiresPhoto: boolean;
+  hasOriginalPhoto: boolean;
+  preferredSourceEntryId: string | null;
+}): RecognitionCandidatePhotoReadiness {
+  if (!input.requiresPhoto) return "not_required";
+  if (!input.hasOriginalPhoto) return "missing_photo";
+  if (!input.preferredSourceEntryId) return "needs_preferred_selection";
+  return "preferred_selected";
 }
 
 export function compareRecognitionCandidateOrder<T extends {
@@ -167,6 +209,7 @@ export function buildRecognitionApprovedRoster(input: {
     awardName: string;
     sortOrder: number;
     isEnabled: boolean;
+    requiresPhoto: boolean;
   }>;
   candidates: Array<{
     id: string;
@@ -186,6 +229,7 @@ export function buildRecognitionApprovedRoster(input: {
       eventAwardId: award.eventAwardId,
       awardName: award.awardName,
       sortOrder: award.sortOrder,
+      requiresPhoto: award.requiresPhoto,
       candidates: input.candidates
         .filter((candidate) => (
           candidate.eventAwardId === award.eventAwardId
@@ -198,6 +242,8 @@ export function buildRecognitionApprovedRoster(input: {
           sortOrder: candidate.sortOrder,
           preferredSourceEntryId: candidate.preferredSourceEntryId,
           hasOriginalPhoto: candidate.hasOriginalPhoto,
+          hasPreferredPhoto: Boolean(candidate.preferredSourceEntryId),
+          requiresPhoto: award.requiresPhoto,
         })),
     }));
 
@@ -228,6 +274,7 @@ export function candidateMatchesRecognitionFilters(input: {
     | "reviewStatus"
     | "requiresPhoto"
     | "missingRequiredPhoto"
+    | "needsPreferredPhotoSelection"
     | "crossAwardWarning"
     | "suspectedDuplicateWarning"
     | "eventAwardId"
@@ -249,6 +296,7 @@ export function candidateMatchesRecognitionFilters(input: {
         input.candidate.crossAwardWarning
         || input.candidate.suspectedDuplicateWarning
         || input.candidate.missingRequiredPhoto
+        || input.candidate.needsPreferredPhotoSelection
       );
       if (!hasWarning) return false;
     }

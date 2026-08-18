@@ -795,13 +795,28 @@ If the new display name collides with another candidate in the same award, the A
 
 ### Preferred photo
 
-Admin may select one original photo from the candidate's own source entries.
+Consolidation may discover that source photos exist and must preserve every source photo. It must **not** decide which photo is preferred.
+
+`preferred_source_entry_id` stays `null` until Recognition Admin explicitly chooses one original from that candidate's evidence. Reconsolidation preserves an existing admin selection.
+
+Approval mutation for photo-required awards:
+
+- at least one original photo source must exist
+- `preferred_source_entry_id` must be non-null
+- the preferred source must belong to this candidate and actually contain an original photo
+
+Otherwise approval is rejected with:
+
+「此表揚項目需要照片，請先選擇正式使用的照片。」
+
+Name-only awards may be approved without a photo. Do not auto-change status to `needs_fix`.
 
 - no crop
 - no AI
 - no face identification
 - private authorized viewing through the admin photo API
-- photo-required candidates without a usable original are marked 「缺少照片」
+- 「缺少照片」 = no original photo exists
+- 「尚未選擇正式照片」 = original photo(s) exist but admin has not selected one
 
 ### Approved roster
 
@@ -812,6 +827,8 @@ enabled event awards in award order
 → candidate `sort_order`
 
 Pending / needs_fix / rejected are excluded.
+
+Roster metadata includes `requiresPhoto`, `preferredSourceEntryId`, `hasOriginalPhoto`, and `hasPreferredPhoto` so Phase 6 can distinguish approved + preferred selected from an inconsistent approved row without a preferred source. Phase 5 does **not** silently drop approved candidates for that inconsistency; the primary prevention is the approval mutation.
 
 This is the future PPT input. PPT generation is **not** implemented in Phase 5.
 

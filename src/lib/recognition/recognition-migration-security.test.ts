@@ -121,4 +121,15 @@ describe("Recognition candidate consolidation RPC security", () => {
     expect(migration).not.toMatch(/update public\.recognition_submission_entries/i);
     expect(migration).not.toMatch(/update public\.recognition_submissions/i);
   });
+
+  it("does not auto-select preferred_source_entry_id during consolidation", () => {
+    const functionBody = migration.slice(
+      migration.indexOf("create or replace function public.consolidate_recognition_event_candidates"),
+      migration.indexOf("revoke all on function public.consolidate_recognition_event_candidates"),
+    );
+    expect(functionBody).toContain("Do not auto-select preferred_source_entry_id");
+    expect(functionBody).not.toMatch(/set\s+preferred_source_entry_id/i);
+    expect(functionBody).not.toContain("preferred_source_entry_id = picked");
+    expect(functionBody).toContain("preferred_source_entry_id is omitted on insert so new candidates stay null");
+  });
 });

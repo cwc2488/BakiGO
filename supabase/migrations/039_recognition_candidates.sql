@@ -54,7 +54,7 @@ comment on column public.recognition_candidates.display_name is
   'Canonical/presentation name. Editable by Recognition Admin without mutating raw submitted_name.';
 
 comment on column public.recognition_candidates.preferred_source_entry_id is
-  'Selected original photo source for future Phase 6 processing. Must belong to this candidate''s evidence. No crop in Phase 5.';
+  'Admin-selected original photo source for future Phase 6 processing. Consolidation never infers this; null remains null until Recognition Admin chooses. Must belong to this candidate''s evidence. No crop in Phase 5.';
 
 -- ---------------------------------------------------------------------------
 -- recognition_candidate_sources
@@ -99,6 +99,7 @@ alter table public.recognition_candidate_sources enable row level security;
 -- Deterministic, idempotent derivation from raw entries.
 -- Does NOT overwrite review_status, display_name, preferred photo, or sort_order
 -- of existing candidates.
+-- Does NOT auto-select preferred_source_entry_id. Recognition Admin must choose.
 -- ---------------------------------------------------------------------------
 
 create or replace function public.consolidate_recognition_event_candidates(
@@ -138,6 +139,8 @@ begin
   where id = p_event_id
   for update;
 
+  -- preferred_source_entry_id is omitted on insert so new candidates stay null.
+  -- Do not auto-select preferred_source_entry_id. Recognition Admin must choose.
   insert into public.recognition_candidates (
     event_id,
     event_award_id,
@@ -213,27 +216,9 @@ begin
 
   get diagnostics v_created_sources = row_count;
 
-  -- Auto-pick earliest original photo only when preferred is still null.
-  -- Never overwrite an administrator's preferred-photo choice.
-  update public.recognition_candidates c
-  set preferred_source_entry_id = picked.entry_id,
-      updated_at = now()
-  from (
-    select distinct on (s.candidate_id)
-      s.candidate_id,
-      e.id as entry_id
-    from public.recognition_candidate_sources s
-    join public.recognition_submission_entries e
-      on e.id = s.submission_entry_id
-    join public.recognition_candidates c2
-      on c2.id = s.candidate_id
-    where c2.event_id = p_event_id
-      and e.original_photo_storage_path is not null
-      and btrim(e.original_photo_storage_path) <> ''
-    order by s.candidate_id, e.created_at, e.id
-  ) as picked
-  where c.id = picked.candidate_id
-    and c.preferred_source_entry_id is null;
+  -- Source photos remain linked via recognition_candidate_sources.
+  -- preferred_source_entry_id is never assigned here. Existing admin
+  -- selections are preserved because this function does not update that column.
 
   select count(*) into v_candidate_count
   from public.recognition_candidates
@@ -260,7 +245,7 @@ revoke all on function public.consolidate_recognition_event_candidates(uuid) fro
 grant execute on function public.consolidate_recognition_event_candidates(uuid) to service_role;
 
 comment on function public.consolidate_recognition_event_candidates(uuid) is
-  'Idempotently derive Recognition Candidates from raw submission entries for one event. Preserves review_status/display_name/preferred photo. Execute only via service_role.';
+  'Idempotently derive Recognition Candidates from raw submission entries for one event. Preserves review_status/display_name/preferred photo. Never auto-selects preferred_source_entry_id. Execute only via service_role.';
 
 -- ---------------------------------------------------------------------------
 -- reorder_recognition_event_candidates

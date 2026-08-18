@@ -6,6 +6,7 @@ import {
   findRecognitionDisplayNameCollision,
   formatRecognitionTextRoster,
   validateRecognitionCandidateReorderInput,
+  validateRecognitionPhotoRequiredApproval,
   validateRecognitionPreferredPhotoSource,
   validateRecognitionReviewStatus,
 } from "@/lib/recognition/recognition-candidates";
@@ -193,6 +194,23 @@ export async function updateRecognitionCandidate(
     }
   }
 
+  const nextPreferredSourceEntryId = input.preferredSourceEntryId !== undefined
+    ? input.preferredSourceEntryId
+    : current.preferredSourceEntryId;
+  if (input.reviewStatus === "approved") {
+    const approvalError = validateRecognitionPhotoRequiredApproval({
+      requiresPhoto: current.requiresPhoto,
+      preferredSourceEntryId: nextPreferredSourceEntryId,
+      sourceEntryIds: current.sources.map((source) => source.submissionEntryId),
+      photoSourceEntryIds: current.sources
+        .filter((source) => source.hasOriginalPhoto)
+        .map((source) => source.submissionEntryId),
+    });
+    if (approvalError) {
+      throw new RecognitionServiceError(approvalError, 400);
+    }
+  }
+
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase
     .from("recognition_candidates")
@@ -250,6 +268,7 @@ export async function getRecognitionApprovedRoster(eventId: string): Promise<Rec
       awardName: award.awardName ?? "",
       sortOrder: award.sortOrder,
       isEnabled: award.isEnabled,
+      requiresPhoto: award.requiresPhoto ?? false,
     })),
     candidates: candidates.map((candidate) => ({
       id: candidate.id,
@@ -429,6 +448,7 @@ async function loadRecognitionCandidates(eventId: string): Promise<RecognitionCa
         submitterOrganizations: [...new Set(sources.map((source) => source.submitterOrganization).filter(Boolean))],
         hasOriginalPhoto,
         missingRequiredPhoto: requiresPhoto && !hasOriginalPhoto,
+        needsPreferredPhotoSelection: requiresPhoto && hasOriginalPhoto && !row.preferred_source_entry_id,
         crossAwardWarning: (warning?.crossAwardMatches.length ?? 0) > 0,
         suspectedDuplicateWarning: (warning?.suspectedDuplicates.length ?? 0) > 0,
         crossAwardMatches: (warning?.crossAwardMatches ?? []).map((match) => ({

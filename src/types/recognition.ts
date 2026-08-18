@@ -226,6 +226,7 @@ export interface RecognitionCandidate {
   submitterOrganizations: string[];
   hasOriginalPhoto: boolean;
   missingRequiredPhoto: boolean;
+  needsPreferredPhotoSelection: boolean;
   crossAwardWarning: boolean;
   suspectedDuplicateWarning: boolean;
   crossAwardMatches: RecognitionCandidateWarningRef[];
@@ -251,12 +252,15 @@ export interface RecognitionApprovedRosterAward {
   eventAwardId: string;
   awardName: string;
   sortOrder: number;
+  requiresPhoto: boolean;
   candidates: Array<{
     id: string;
     displayName: string;
     sortOrder: number;
     preferredSourceEntryId: string | null;
     hasOriginalPhoto: boolean;
+    hasPreferredPhoto: boolean;
+    requiresPhoto: boolean;
   }>;
 }
 

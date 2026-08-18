@@ -7,9 +7,12 @@ import {
   findRecognitionDisplayNameCollision,
   formatRecognitionTextRoster,
   groupEntriesForRecognitionConsolidation,
+  recognitionCandidatePhotoReadiness,
   recognitionConsolidationKey,
   recognitionSuspectedDuplicateKey,
+  RECOGNITION_PHOTO_REQUIRED_APPROVAL_ERROR,
   textRosterContainsInternalId,
+  validateRecognitionPhotoRequiredApproval,
   validateRecognitionPreferredPhotoSource,
   validateRecognitionReviewStatus,
 } from "@/lib/recognition/recognition-candidates";
@@ -143,6 +146,60 @@ describe("Recognition candidate rename and photo selection", () => {
   });
 });
 
+describe("Recognition photo-required approval", () => {
+  const photoEvidence = {
+    sourceEntryIds: ["entry-1"],
+    photoSourceEntryIds: ["entry-1"],
+  };
+
+  it("photo-required candidate with no original photo cannot be approved", () => {
+    expect(validateRecognitionPhotoRequiredApproval({
+      requiresPhoto: true,
+      preferredSourceEntryId: null,
+      sourceEntryIds: ["entry-1"],
+      photoSourceEntryIds: [],
+    })).toBe(RECOGNITION_PHOTO_REQUIRED_APPROVAL_ERROR);
+  });
+
+  it("photo-required candidate with original photo but no preferred source cannot be approved", () => {
+    expect(validateRecognitionPhotoRequiredApproval({
+      requiresPhoto: true,
+      preferredSourceEntryId: null,
+      ...photoEvidence,
+    })).toBe(RECOGNITION_PHOTO_REQUIRED_APPROVAL_ERROR);
+  });
+
+  it("photo-required candidate with valid preferred photo can be approved", () => {
+    expect(validateRecognitionPhotoRequiredApproval({
+      requiresPhoto: true,
+      preferredSourceEntryId: "entry-1",
+      ...photoEvidence,
+    })).toBeNull();
+  });
+
+  it("name-only candidate can be approved without photo", () => {
+    expect(validateRecognitionPhotoRequiredApproval({
+      requiresPhoto: false,
+      preferredSourceEntryId: null,
+      sourceEntryIds: [],
+      photoSourceEntryIds: [],
+    })).toBeNull();
+  });
+
+  it("does not treat hasOriginalPhoto as photo-ready without a preferred source", () => {
+    expect(recognitionCandidatePhotoReadiness({
+      requiresPhoto: true,
+      hasOriginalPhoto: true,
+      preferredSourceEntryId: null,
+    })).toBe("needs_preferred_selection");
+    expect(recognitionCandidatePhotoReadiness({
+      requiresPhoto: true,
+      hasOriginalPhoto: false,
+      preferredSourceEntryId: null,
+    })).toBe("missing_photo");
+  });
+});
+
 describe("Recognition review states", () => {
   it("accepts approve / needs_fix / reject / pending", () => {
     expect(validateRecognitionReviewStatus("approved")).toBeNull();
@@ -159,9 +216,9 @@ describe("Recognition approved roster and text export", () => {
     year: 2026,
     month: 9,
     awards: [
-      { eventAwardId: "a1", awardName: "MAP 第一個月", sortOrder: 1, isEnabled: true },
-      { eventAwardId: "a2", awardName: "MAP 第二個月", sortOrder: 2, isEnabled: true },
-      { eventAwardId: "a3", awardName: "新科世界組", sortOrder: 3, isEnabled: true },
+      { eventAwardId: "a1", awardName: "MAP 第一個月", sortOrder: 1, isEnabled: true, requiresPhoto: false },
+      { eventAwardId: "a2", awardName: "MAP 第二個月", sortOrder: 2, isEnabled: true, requiresPhoto: false },
+      { eventAwardId: "a3", awardName: "新科世界組", sortOrder: 3, isEnabled: true, requiresPhoto: true },
     ],
     candidates: [
       { id: "c-pending", eventAwardId: "a1", reviewStatus: "pending", displayName: "不該出現", sortOrder: 1, createdAt: "2026-09-01T00:00:00Z", preferredSourceEntryId: null, hasOriginalPhoto: false },
@@ -218,5 +275,33 @@ describe("Recognition approved roster and text export", () => {
     expect(other.eventId).not.toBe(roster.eventId);
     expect(formatRecognitionTextRoster(other)).toContain("STS");
     expect(formatRecognitionTextRoster(other)).not.toContain("王小明");
+  });
+
+  it("keeps approved photo-required rows on the roster even without a preferred source", () => {
+    const inconsistent = buildRecognitionApprovedRoster({
+      eventId: "evt-1",
+      eventName: "月會",
+      year: 2026,
+      month: 9,
+      awards: [
+        { eventAwardId: "a3", awardName: "新科世界組", sortOrder: 1, isEnabled: true, requiresPhoto: true },
+      ],
+      candidates: [
+        {
+          id: "legacy",
+          eventAwardId: "a3",
+          reviewStatus: "approved",
+          displayName: "王小明",
+          sortOrder: 1,
+          createdAt: "2026-09-01T00:00:00Z",
+          preferredSourceEntryId: null,
+          hasOriginalPhoto: true,
+        },
+      ],
+    });
+    expect(inconsistent.awards[0]?.candidates).toHaveLength(1);
+    expect(inconsistent.awards[0]?.requiresPhoto).toBe(true);
+    expect(inconsistent.awards[0]?.candidates[0]?.hasPreferredPhoto).toBe(false);
+    expect(inconsistent.awards[0]?.candidates[0]?.preferredSourceEntryId).toBeNull();
   });
 });

@@ -9,7 +9,7 @@ import {
   syncRecognitionCandidates,
   updateRecognitionCandidate,
 } from "@/lib/recognition/recognition-fetch";
-import { candidateMatchesRecognitionFilters } from "@/lib/recognition/recognition-candidates";
+import { candidateMatchesRecognitionFilters, recognitionCandidatePhotoReadiness } from "@/lib/recognition/recognition-candidates";
 import type {
   RecognitionCandidate,
   RecognitionEventAward,
@@ -115,6 +115,8 @@ function CandidateCard({
     }
   }
 
+  const photoReadiness = recognitionCandidatePhotoReadiness(candidate);
+
   return (
     <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] p-4">
       <div className="flex items-start gap-3">
@@ -127,7 +129,15 @@ function CandidateCard({
           <p className="text-[1rem] font-semibold text-[#1d1d1f]">{candidate.displayName}</p>
           <p className="mt-1 text-[0.75rem] text-[#86868b]">
             {STATUS_LABELS[candidate.reviewStatus]} · {candidate.sourceCount} 筆來源
-            {candidate.hasOriginalPhoto ? " · 有照片" : " · 無照片"}
+            {photoReadiness === "missing_photo"
+              ? " · 無照片"
+              : photoReadiness === "needs_preferred_selection"
+                ? " · 尚未選擇正式照片"
+                : photoReadiness === "preferred_selected"
+                  ? " · 已選正式照片"
+                  : candidate.hasOriginalPhoto
+                    ? " · 有來源照片"
+                    : " · 無照片"}
           </p>
           {candidate.submitterOrganizations.length > 0 && (
             <p className="mt-1 text-[0.75rem] text-[#86868b]">
@@ -153,6 +163,11 @@ function CandidateCard({
             缺少照片
           </span>
         )}
+        {candidate.needsPreferredPhotoSelection && (
+          <span className="rounded-full bg-[#fff4d6] px-2.5 py-1 text-[0.75rem] font-medium text-[#9a6700]">
+            尚未選擇正式照片
+          </span>
+        )}
       </div>
 
       {(candidate.crossAwardMatches.length > 0 || candidate.suspectedDuplicates.length > 0) && (
@@ -165,6 +180,8 @@ function CandidateCard({
           ))}
         </div>
       )}
+
+      {error && <p className="mt-3 text-[0.875rem] text-[#ff375f]">{error}</p>}
 
       <div className="mt-3 grid grid-cols-2 gap-2">
         {(["approved", "needs_fix", "rejected", "pending"] as const).map((status) => (
@@ -231,7 +248,6 @@ function CandidateCard({
               )}
             </div>
           ))}
-          {error && <p className="text-[0.875rem] text-[#ff375f]">{error}</p>}
           {awardCandidates.length > 1 && (
             <p className="text-[0.75rem] text-[#86868b]">上下箭頭只調整此表揚項目內的順序，供未來簡報使用。</p>
           )}

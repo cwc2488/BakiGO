@@ -258,7 +258,7 @@ Implemented in `039_recognition_candidates.sql`:
 - `normalized_name` (immutable exact-match consolidation key from raw entries)
 - `review_status` (`pending | approved | needs_fix | rejected`)
 - `member_id` nullable for future person-history/timeline support
-- `preferred_source_entry_id` nullable original photo source for future Phase 6 processing
+- `preferred_source_entry_id` nullable original photo source for future Phase 6 processing. Consolidation never infers this value; Recognition Admin must choose it. Reconsolidation preserves an existing admin selection.
 - `sort_order`
 - `reviewed_at`, `reviewed_by_member_id`
 - timestamps
@@ -272,7 +272,7 @@ Business rules:
 - same normalized name across **different** awards is a warning only
 - cross-award duplicate names must **not** auto-merge, reject, delete, or block PPT generation
 - admin `display_name` edits do **not** change `normalized_name` and do **not** silently merge candidates
-- presentation crop fields remain a Phase 6 concern; Phase 5 only selects a preferred original source
+- presentation crop fields remain a Phase 6 concern; Phase 5 only lets Recognition Admin choose a preferred original source
 
 #### `recognition_candidate_sources`
 
@@ -475,6 +475,7 @@ Consolidation is idempotent:
 - unique `submission_entry_id` on source links
 - `ON CONFLICT DO NOTHING`
 - existing `review_status`, `display_name`, `preferred_source_entry_id`, and admin `sort_order` are preserved
+- consolidation never auto-selects `preferred_source_entry_id`; new candidates stay `null` until an admin chooses
 
 Review mutations update only `recognition_candidates`. They must not write `recognition_submissions` or `recognition_submission_entries`.
 
@@ -519,6 +520,7 @@ Phase 5 candidate RPCs:
   - locks the event to serialize concurrent runs
   - inserts missing candidates / source links only
   - never overwrites review decisions
+  - never auto-selects `preferred_source_entry_id`
 
 - `reorder_recognition_event_candidates(...)`
   - requires the complete candidate set for one event award
