@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import {
+  ADMIN_CENTER_HOME_ENTRY,
   decideRecognitionAdminAccess,
   homeMoreEntriesForViewer,
   isRecognitionAdminApiPath,
@@ -9,7 +10,6 @@ import {
   isRecognitionPublicApiPath,
   isRecognitionPublicCollectionPath,
   RECOGNITION_ADMIN_AUTHORITY,
-  RECOGNITION_CENTER_HOME_ENTRY,
 } from "@/lib/recognition/recognition-access";
 import { MY_HOME_MORE_ENTRIES } from "@/lib/home/my-home-presentation";
 import { isPublicPath } from "@/lib/auth/public-paths";
@@ -80,18 +80,22 @@ describe("Recognition Center authorization decisions", () => {
 });
 
 describe("Recognition Center navigation visibility", () => {
-  it("hides 表揚中心 from partners and does not show an admin-only label", () => {
+  it("hides 管理中心 and 表揚中心 from partners", () => {
     const partner = homeMoreEntriesForViewer(MY_HOME_MORE_ENTRIES, false);
+    expect(partner.some((entry) => entry.href === "/admin")).toBe(false);
     expect(partner.some((entry) => entry.href === "/recognition")).toBe(false);
     expect(partner.some((entry) => entry.title === "表揚中心")).toBe(false);
+    expect(partner.some((entry) => entry.title === "管理中心")).toBe(false);
     expect(partner.some((entry) => /admin only|管理員/i.test(entry.title))).toBe(false);
     expect(MY_HOME_MORE_ENTRIES.some((entry) => entry.href === "/recognition")).toBe(false);
+    expect(MY_HOME_MORE_ENTRIES.some((entry) => entry.href === "/admin")).toBe(false);
   });
 
-  it("shows 表揚中心 only for Recognition Admin", () => {
+  it("shows 管理中心 only for Super Admin, with Recognition nested inside it", () => {
     const admin = homeMoreEntriesForViewer(MY_HOME_MORE_ENTRIES, true);
-    expect(admin).toContainEqual(RECOGNITION_CENTER_HOME_ENTRY);
-    expect(admin.filter((entry) => entry.href === "/recognition")).toHaveLength(1);
+    expect(admin).toContainEqual(ADMIN_CENTER_HOME_ENTRY);
+    expect(admin.filter((entry) => entry.href === "/admin")).toHaveLength(1);
+    expect(admin.some((entry) => entry.href === "/recognition")).toBe(false);
   });
 });
 
@@ -108,7 +112,7 @@ describe("Recognition Center server/API enforcement", () => {
       }
       expect(source, rel).toContain("getMemberIdFromRequest");
       if (rel.endsWith("admin/me/route.ts")) {
-        expect(source, rel).toContain("isRecognitionAdmin");
+        expect(source, rel).toContain("resolveIsSuperAdmin");
         continue;
       }
       expect(source, rel).toContain("assertRecognitionAdmin");
@@ -147,9 +151,12 @@ describe("Recognition Center server/API enforcement", () => {
 
   it("does not reveal Recognition Admin copy in the client guard", () => {
     const guard = readFileSync(resolve(ROOT, "src/components/recognition/RecognitionAdminGuard.tsx"), "utf8");
-    expect(guard).toContain("notFound");
+    const shared = readFileSync(resolve(ROOT, "src/components/admin/SuperAdminGuard.tsx"), "utf8");
+    expect(guard).toContain("SuperAdminGuard");
+    expect(shared).toContain("notFound");
     expect(guard).not.toContain("權限不足");
     expect(guard).not.toContain("Recognition Admin 授權");
     expect(guard).not.toContain("admin only");
+    expect(shared).not.toContain("20699471");
   });
 });

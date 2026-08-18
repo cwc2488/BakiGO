@@ -53,8 +53,9 @@ Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `oc
 - `supabase/migrations/035_recognition_foundation.sql`
 - `supabase/migrations/036_recognition_event_rpcs.sql`
 - `supabase/migrations/043_recognition_admin_only_grants.sql` (admin-only grants / FORCE RLS)
+- `supabase/migrations/044_recognition_delete_event.sql` (`delete_recognition_event`)
 
-No migration has been applied to production; apply in the controlled Supabase environment before opening to admins.
+**Production schema is not applied by Vercel.** Recognition migrations 035–044 must be executed in the Supabase SQL Editor (see `docs/SUPABASE_SETUP.md`). As of the Production Recovery Audit, Production was missing `recognition_events` and `create_recognition_event_with_awards` because these files had never been pasted into Production. Applying them does **not** drop `members`, `customers`, coaching, quiz, radar, or leaderboard data.
 
 Recognition Center is an **organization operations module**, not member-local workspace data. It must use dedicated SQL tables + service-role APIs, not `member_app_data`.
 
@@ -551,7 +552,19 @@ Recognition tables should follow the same broad access model as Quiz/Growth Shar
 - no anon table policies
 - no broad authenticated read/write policies
 - `REVOKE ALL` from `public`, `anon`, and `authenticated`; table grants are `service_role` only
-- Recognition RPCs remain execute-only for `service_role` (migrations 036–040)
+- Recognition RPCs remain execute-only for `service_role` (migrations 036–040, 044)
+
+### Recognition event delete (`044_recognition_delete_event.sql`)
+
+Adds `delete_recognition_event(uuid)` (SECURITY DEFINER, `service_role` execute only).
+
+The function:
+
+1. Locks the event row
+2. Deletes matching `storage.objects` in bucket `recognition-photos`
+3. Deletes `recognition_events`; child rows cascade via existing FKs
+
+It does not write `members`, `customers`, coaching, quiz, radar, or leaderboard tables.
 - private bucket `recognition-photos` has no client `storage.objects` policies; uploads/downloads stay server-mediated
 - public submission goes through service-role API after token verification
 - admin actions go through authenticated API + Super Admin (`src/lib/auth/super-admin.ts`)

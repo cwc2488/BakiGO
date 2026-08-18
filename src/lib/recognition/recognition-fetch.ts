@@ -88,6 +88,13 @@ export async function updateRecognitionEvent(
   return body.event;
 }
 
+export async function deleteRecognitionEvent(eventId: string): Promise<void> {
+  const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}`, {
+    method: "DELETE",
+  });
+  await handleResponse<{ ok: boolean }>(res, "Failed to delete event.");
+}
+
 // ---------------------------------------------------------------------------
 // Event awards
 // ---------------------------------------------------------------------------

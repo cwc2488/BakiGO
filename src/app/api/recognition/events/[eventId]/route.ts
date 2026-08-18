@@ -5,6 +5,7 @@ import {
   assertRecognitionAdmin,
   getRecognitionEvent,
   updateRecognitionEvent,
+  deleteRecognitionEvent,
   RecognitionServiceError,
 } from "@/lib/recognition/recognition-service";
 import type { RecognitionEventStatus } from "@/types/recognition";
@@ -80,6 +81,30 @@ export async function PATCH(
     return NextResponse.json({ ok: true, event });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update event.";
+    const status = error instanceof RecognitionServiceError ? error.status : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ eventId: string }> },
+) {
+  const memberId = await getMemberIdFromRequest(request);
+  if (!memberId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!isSupabaseServiceConfigured()) {
+    return NextResponse.json({ error: "Recognition service unavailable." }, { status: 503 });
+  }
+
+  try {
+    await assertRecognitionAdmin(memberId);
+    const { eventId } = await context.params;
+    const result = await deleteRecognitionEvent(eventId);
+    return NextResponse.json({ ok: true, eventId: result.eventId });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to delete event.";
     const status = error instanceof RecognitionServiceError ? error.status : 500;
     return NextResponse.json({ error: message }, { status });
   }

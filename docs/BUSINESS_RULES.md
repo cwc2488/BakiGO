@@ -80,12 +80,22 @@ Canonical source: `src/lib/auth/super-admin.ts` (`SUPER_ADMIN_MEMBER_NUMBERS` / 
 
 Frozen rules:
 
-- Recognition Center / 管理中心 僅 Super Admin 可進入
+- 管理中心（`/admin`）僅 Super Admin 可進入
+- 表揚中心（Recognition Center）是管理中心的一個功能，不是管理中心的替代品
+- Recognition Center 僅 Super Admin 可進入、建立、更新、刪除表揚活動
 - 權限**不得**由 rank 推論
-- President rank **不會**自動擁有 Recognition Admin 權限
+- President rank **不會**自動擁有 Super Admin / Recognition Admin 權限
 - 不得把 Super Admin 會員編號散落 hard-code 在 component / route
-- 一般會員既有功能（含 `/leaderboard`、夥伴關懷）不因此改變
+- 一般會員既有功能（含 `/leaderboard`、夥伴關懷、組織圖）不因此改變
 - `recognition_admin_members` 表不得單獨授權；server/API 必須走同一 Super Admin 判斷
+
+### Recognition Event delete rules
+
+- 只有 Super Admin 可以刪除表揚活動
+- UI 必須二次確認，並清楚顯示活動名稱
+- 不允許單擊直接永久刪除
+- 刪除必須在同一交易內處理 dependent records（活動獎項、收件、名單、審核、簡報稽核）與該活動的 `recognition-photos` 物件
+- 失敗時不得留下半刪除狀態；成功後列表立即不再顯示該活動
 
 ### Recognition Event Template compatibility
 

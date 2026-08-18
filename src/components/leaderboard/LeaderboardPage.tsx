@@ -2,18 +2,17 @@
 
 import { todayISODate, toYearMonthFromDate } from "@/lib/config/app-config";
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
-import { fetchDownlineCloudData, getDownlineEvents } from "@/lib/cloud/downline-cloud-data";
+import { fetchDownlineCloudData } from "@/lib/cloud/downline-cloud-data";
 import type { DownlineCloudDataCache } from "@/lib/cloud/downline-cloud-data";
 import { loadAllMembers } from "@/lib/members/member-service";
-import { loadMemberMetrics } from "@/lib/mission-control/format";
-import { buildPointsLeaderboard } from "@/lib/points/build-points-leaderboard";
+import { loadLeaderboardBoards } from "@/lib/points/load-leaderboard-points";
 import { formatPointsValue } from "@/lib/points/streak-multiplier";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
-import { AppIcon, IconLabel } from "@/components/ui/AppIcon";
+import { IconLabel } from "@/components/ui/AppIcon";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import type { PointsLeaderboardResult } from "@/types/points";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LeaderboardRankList } from "./LeaderboardRankList";
 import { PageShell } from "@/components/ui/PageShell";
 
@@ -76,65 +75,106 @@ function GroupCompetitionPlaceholder() {
 
 export default function LeaderboardPage() {
   const storage = useMemo(() => createLocalStorageAdapter(), []);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [downlineCache, setDownlineCache] = useState<DownlineCloudDataCache>(() => new Map());
+  const [weekly, setWeekly] = useState<PointsLeaderboardResult | null>(null);
+  const [monthly, setMonthly] = useState<PointsLeaderboardResult | null>(null);
+  const [viewerStreak, setViewerStreak] = useState(0);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [cloudWarning, setCloudWarning] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const downlineCacheRef = useRef(downlineCache);
+  downlineCacheRef.current = downlineCache;
+
+  const scoreBoard = useCallback(
+    (cache: DownlineCloudDataCache) => {
+      const referenceDate = todayISODate();
+      const yearMonth = toYearMonthFromDate(referenceDate);
+      const viewerId = resolveAuthenticatedMemberId(storage);
+      return loadLeaderboardBoards(storage, cache, referenceDate, yearMonth, viewerId);
+    },
+    [storage],
+  );
 
   useEffect(() => {
+    let cancelled = false;
+
     void (async () => {
+      setLoadState((current) => (current === "ready" ? "ready" : "loading"));
+      setErrorMessage(null);
       const viewerId = resolveAuthenticatedMemberId(storage);
       const members = loadAllMembers(storage).filter((member) => member.status === "active");
+      let cache: DownlineCloudDataCache = new Map();
       try {
-        const cache = await fetchDownlineCloudData(
+        cache = await fetchDownlineCloudData(
           members.map((member) => member.id),
           viewerId,
         );
+        if (cancelled) return;
         setDownlineCache(cache);
-        setRefreshKey((current) => current + 1);
+        setCloudWarning(null);
       } catch (error) {
-        console.error("Leaderboard downline cloud data failed:", error);
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "雲端積分資料載入失敗";
+        setCloudWarning(`雲端積分資料載入失敗：${message}`);
+        cache = downlineCacheRef.current;
+      }
+
+      try {
+        const boards = scoreBoard(cache);
+        if (cancelled) return;
+        setWeekly(boards.weekly);
+        setMonthly(boards.monthly);
+        setViewerStreak(boards.viewerStreak);
+        setLoadState("ready");
+        setErrorMessage(null);
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "排行榜計算失敗";
+        setLoadState("error");
+        setErrorMessage(message);
       }
     })();
-  }, [storage]);
 
-  const { weekly, monthly, viewerMetrics } = useMemo(() => {
-    void refreshKey;
-    const referenceDate = todayISODate();
-    const yearMonth = toYearMonthFromDate(referenceDate);
-    const viewerId = resolveAuthenticatedMemberId(storage);
-    const members = loadAllMembers(storage).filter((member) => member.status === "active");
-    const metricsByMemberId = new Map(
-      members.map((member) => [
-        member.id,
-        loadMemberMetrics(member.id, storage, getDownlineEvents(member.id, downlineCache), {
-          includeMapUniverse: false,
-        }),
-      ]),
-    );
-
-    const baseInput = {
-      members,
-      metricsByMemberId,
-      yearMonth,
-      referenceDate,
-      viewerMemberId: viewerId,
+    return () => {
+      cancelled = true;
     };
-
-    return {
-      weekly: buildPointsLeaderboard({ ...baseInput, period: "weekly" }),
-      monthly: buildPointsLeaderboard({ ...baseInput, period: "monthly" }),
-      viewerMetrics: loadMemberMetrics(viewerId, storage, undefined, {
-        includeMapUniverse: false,
-      }),
-    };
-  }, [downlineCache, refreshKey, storage]);
+    // downlineCache is only a fallback after cloud fetch failure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshKey retriggers a full load
+  }, [scoreBoard, storage, refreshKey]);
 
   const reload = useCallback(() => {
     setRefreshKey((current) => current + 1);
   }, []);
 
-  useEffect(() => {
-    queueMicrotask(reload);
-  }, [reload]);
+  if (loadState !== "ready" || !weekly || !monthly) {
+    const isError = loadState === "error";
+    return (
+      <PageShell
+        subtitle="本週前五 · 本月前十 · 歷史總積分永久保留"
+        title="排行榜"
+        titleIcon={APP_ICON.mood.trophy}
+      >
+        <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6">
+          <p className="text-[1.0625rem] font-semibold text-[#1d1d1f]">
+            {isError ? "無法載入排行榜" : "載入排行榜"}
+          </p>
+          <p className={`mt-2 text-[0.9375rem] leading-relaxed ${isError ? "text-[#ff375f]" : "text-[#86868b]"}`}>
+            {isError ? (errorMessage ?? "排行榜計算失敗") : "正在計算本週與本月積分…"}
+          </p>
+          {isError ? (
+            <button
+              className="mt-5 w-full rounded-2xl bg-[#1d1d1f] px-4 py-3.5 text-[1rem] font-semibold text-white"
+              onClick={reload}
+              type="button"
+            >
+              重新載入
+            </button>
+          ) : null}
+        </section>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell
@@ -142,10 +182,24 @@ export default function LeaderboardPage() {
       title="排行榜"
       titleIcon={APP_ICON.mood.trophy}
     >
+        {cloudWarning ? (
+          <section className="rounded-[1.75rem] border border-[#ff9f0a]/40 bg-[#fff8ee] p-4">
+            <p className="text-[0.9375rem] font-medium text-[#9a5b00]">{cloudWarning}</p>
+            <p className="mt-1 text-[0.8125rem] text-[#9a5b00]">目前顯示本機已同步的積分。點重新載入再試雲端資料。</p>
+            <button
+              className="mt-3 text-[0.875rem] font-semibold text-[var(--brand-primary-dark)]"
+              onClick={reload}
+              type="button"
+            >
+              重新載入
+            </button>
+          </section>
+        ) : null}
+
         {monthly.viewerEntry ? (
           <PointsHeroBanner
             points={monthly.viewerEntry}
-            streak={viewerMetrics.gamification?.streak?.currentStreak ?? 0}
+            streak={viewerStreak}
             yearMonth={monthly.yearMonth}
           />
         ) : null}

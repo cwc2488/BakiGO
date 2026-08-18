@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPointsLeaderboard } from "@/lib/points/build-points-leaderboard";
-import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
+import type { LeaderboardPointsSnapshot } from "@/lib/points/build-points-leaderboard";
 import type { Member } from "@/types/member";
 
 function member(overrides: Partial<Member> & Pick<Member, "id">): Member {
@@ -23,28 +23,22 @@ function metrics(
   memberId: string,
   monthlyPoints: number,
   weeklyPoints: number,
-): MemberComputedMetrics {
+): LeaderboardPointsSnapshot {
+  void memberId;
   return {
     gamification: {
       points: {
-        memberId,
-        lifetimePoints: monthlyPoints,
         monthlyPoints,
         weeklyPoints,
-        todayPoints: 0,
-        redeemedPoints: 0,
+        lifetimePoints: monthlyPoints,
         availablePoints: monthlyPoints,
         streakMultiplier: 1,
       },
       streak: {
-        memberId,
         currentStreak: 2,
-        longestStreak: 2,
-        lastActiveDate: "2026-08-18",
-        isActiveToday: true,
       },
     },
-  } as MemberComputedMetrics;
+  };
 }
 
 describe("buildPointsLeaderboard", () => {

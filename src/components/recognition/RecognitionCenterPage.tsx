@@ -98,7 +98,7 @@ export function RecognitionCenterPage() {
   });
 
   return (
-    <PageShell title="表揚中心" subtitle="管理表揚活動、審核名單、準備簡報">
+    <PageShell title="表揚中心" subtitle="管理表揚活動、審核名單、準備簡報" backHref="/admin" backLabel="返回管理中心">
       <div className="flex justify-end">
         <Link
           href="/recognition/events/new"
