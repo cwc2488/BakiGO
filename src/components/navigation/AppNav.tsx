@@ -33,7 +33,8 @@ function isActive(pathname: string, href: string): boolean {
       pathname.startsWith("/learning") ||
       pathname.startsWith("/promotions") ||
       pathname.startsWith("/events") ||
-      pathname.startsWith("/pre-meeting-graphic")
+      pathname.startsWith("/pre-meeting-graphic") ||
+      pathname.startsWith("/recognition")
     );
   }
   if (href === "/customers") {

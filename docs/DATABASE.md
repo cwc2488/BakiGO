@@ -46,6 +46,585 @@ Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `oc
 | `quiz_results` | Scored outcomes |
 | `quiz_ai_followups` | Rule-based follow-up messages |
 
+### Recognition Center (`035_recognition_foundation.sql` + `036_recognition_event_rpcs.sql`)
+
+**Status:** Phase 3 foundation implemented. Migration files:
+
+- `supabase/migrations/035_recognition_foundation.sql`
+- `supabase/migrations/036_recognition_event_rpcs.sql`
+- `supabase/migrations/043_recognition_admin_only_grants.sql` (admin-only grants / FORCE RLS)
+
+No migration has been applied to production; apply in the controlled Supabase environment before opening to admins.
+
+Recognition Center is an **organization operations module**, not member-local workspace data. It must use dedicated SQL tables + service-role APIs, not `member_app_data`.
+
+| Table | Purpose |
+|-------|---------|
+| `recognition_award_definitions` | Recognition award catalog; default 27 items plus future custom items |
+| `recognition_ppt_themes` | Theme/config layer separated from roster data |
+| `recognition_event_templates` | Future reusable defaults for event creation; not required in first implementation phase, but the architecture must stay compatible |
+| `recognition_events` | Primary business entity for one recognition collection/review/export cycle |
+| `recognition_event_awards` | Event-specific enabled awards + ordering |
+| `recognition_submissions` | Raw public submission envelopes (`submitted_by`, org text, metadata) |
+| `recognition_submission_entries` | One row per submitted honoree item |
+| `recognition_photo_assets` | Original uploaded photos + metadata/flags |
+| `recognition_photo_crops` | Presentation crop / processed image references |
+| `recognition_candidates` | Consolidated admin review objects; PPT source uses approved candidates only |
+| `recognition_candidate_sources` | Mapping from candidate back to raw submission entries |
+| `recognition_duplicate_signals` | Warning/blocking duplicate hints across candidates |
+| `recognition_admin_members` | Dedicated Recognition Admin allowlist |
+| `recognition_ppt_exports` | Conceptual name; Phase 7 implemented `recognition_presentation_exports` |
+| `recognition_presentation_exports` | PPTX generation audit rows (no file storage) |
+
+#### Recognition design rules
+
+- `Recognition Event` is the primary entity; `year` / `month` are attributes only.
+- **Multiple events in the same year/month are allowed.**
+- Do **not** define `(year, month)` as unique.
+- Public submissions are **evidence**, not approved recognition.
+- Raw submissions and raw entries are retained.
+- Consolidated `recognition_candidates` are the admin/PPT working source.
+- Only `approved` candidates may enter formal presentation output.
+- Public collection requires **both**:
+  - `event.status = collecting`
+  - current time inside `collect_starts_at` / `collect_ends_at`
+- `closed` events may be reopened back to `collecting` by Recognition Admin, but the same time-window rules still apply.
+- Public token rotation invalidates the previous token immediately.
+
+#### `recognition_award_definitions`
+
+Catalog table for default + future custom awards.
+
+Suggested columns:
+
+- `id` uuid PK
+- `slug` text unique
+- `name` text
+- `requires_photo` boolean
+- `layout_hint` text (`name_list | photo_grid | photo_hero | premium`)
+- `sort_order` integer
+- `is_active` boolean
+- timestamps
+
+The default 27 awards are catalog entries only. They are **not** career rank keys and must not be merged into promotion / qualification tables.
+
+#### `recognition_ppt_themes`
+
+Theme/config table separated from recognition data.
+
+Suggested columns:
+
+- `id` uuid PK
+- `slug` text unique
+- `name` text
+- `aspect_ratio` text (default `4:3`)
+- `config_json` jsonb
+- `is_active`
+- timestamps
+
+#### `recognition_event_templates`
+
+Future reusable configuration layer.
+
+Suggested scope:
+
+- default award set
+- default award ordering
+- default PPT theme
+- create event from template, then allow event-specific customization
+
+This table is **future-compatible architecture**, not a requirement to implement first. If omitted from the first migration sequence, event schema must still make later template introduction straightforward.
+
+#### `recognition_events`
+
+Primary lifecycle entity.
+
+Suggested columns:
+
+- `id` uuid PK
+- `name`
+- `year`
+- `month`
+- `collect_starts_at`
+- `collect_ends_at`
+- `status` (`draft | collecting | closed | archived`)
+- `public_token_hash`
+- `public_token_prefix`
+- `ppt_theme_id`
+- `event_template_id` nullable for future template lineage
+- `copied_from_event_id` nullable
+- `created_by_member_id`
+- `closed_at` nullable
+- timestamps
+
+Important:
+
+- do **not** add unique `(year, month)`
+- `event_template_id` is optional but keeps the model template-compatible
+- copy-previous-month remains supported independently of templates
+
+#### `recognition_event_awards`
+
+Event-specific projection of the catalog.
+
+Suggested columns:
+
+- `id` uuid PK
+- `event_id`
+- `award_definition_id`
+- `sort_order`
+- `is_enabled`
+
+Use this table to preserve event-specific ordering and enable/disable behavior.
+
+#### `recognition_submissions`
+
+Raw public submission envelopes.
+
+Suggested columns:
+
+- `id` uuid PK
+- `event_id`
+- `submitted_by_name`
+- `submitted_by_org` (free text in V1)
+- `ip_hash` nullable
+- `user_agent` nullable
+- `created_at`
+
+These rows are append-only evidence and must not be treated as official roster data.
+
+#### `recognition_submission_entries`
+
+One row per submitted item.
+
+Suggested columns:
+
+- `id` uuid PK
+- `submission_id`
+- `event_id`
+- `award_definition_id`
+- `raw_name`
+- `normalized_name`
+- `photo_asset_id` nullable
+- `created_at`
+
+Raw entries are retained even when candidates consolidate.
+
+#### `recognition_photo_assets`
+
+Original photo storage metadata.
+
+Suggested columns:
+
+- `id` uuid PK
+- `event_id`
+- `original_storage_path`
+- `sha256`
+- `mime_type`
+- `width`
+- `height`
+- `byte_size`
+- `source` (`public | admin`)
+- `flags_json`
+- `review_status` (`pending_process | auto_ok | needs_review | rejected`)
+- `created_at`
+
+Original photos must always be preserved.
+
+#### `recognition_photo_crops`
+
+Earlier conceptual table. Phase 6 implemented `recognition_candidate_photo_reviews` instead, because originals live on submission entries rather than a separate `recognition_photo_assets` table. Crop rows still must not replace originals.
+
+#### `recognition_candidate_photo_reviews`
+
+Implemented in `040_recognition_photo_review.sql`.
+
+One active presentation-photo review row per candidate:
+
+- `candidate_id` unique
+- `source_entry_id` — preferred original the crop is bound to
+- `original_width` / `original_height` nullable
+- `crop_x` / `crop_y` / `crop_width` / `crop_height` nullable normalized 0–1, all-or-none, bounds-checked
+- `crop_aspect_ratio` default `'3:4'` (portrait card slot; not the 4:3 PPT slide)
+- `flags text[]` manual review flags
+- `is_blocked` / `blocked_reason`
+- `crop_finalized_at` / `crop_finalized_by_member_id`
+- timestamps
+
+No derived cropped bitmap is stored. Phase 7 reads the private original through service-role download and applies crop metadata in memory while generating PPTX. Originals remain unchanged.
+
+Changing `recognition_candidates.preferred_source_entry_id` resets this row.
+
+RLS enabled, forced, with zero anon/authenticated policies. RPCs:
+
+- `upsert_recognition_candidate_photo_review(...)` — rejects stale `source_entry_id` vs current preferred
+- `reset_recognition_candidate_photo_review(...)`
+
+Both revoke PUBLIC/anon/authenticated and grant EXECUTE only to `service_role`.
+
+#### `recognition_candidates`
+
+Consolidated admin review objects and formal PPT working source.
+
+Implemented in `039_recognition_candidates.sql`:
+
+- `id` uuid PK
+- `event_id`
+- `event_award_id` (event-specific award row; not a career rank key)
+- `display_name` (canonical/presentation name; admin-editable)
+- `normalized_name` (immutable exact-match consolidation key from raw entries)
+- `review_status` (`pending | approved | needs_fix | rejected`)
+- `member_id` nullable for future person-history/timeline support
+- `preferred_source_entry_id` nullable original photo source for Phase 6 presentation crop. Consolidation never infers this value; Recognition Admin must choose it. Reconsolidation preserves an existing admin selection. Changing this value resets any presentation crop bound to the previous source.
+- `sort_order`
+- `reviewed_at`, `reviewed_by_member_id`
+- timestamps
+
+Uniqueness: `(event_id, event_award_id, normalized_name)`.
+
+Business rules:
+
+- same event + same award + same normalized name may consolidate
+- all sources must still be preserved
+- same normalized name across **different** awards is a warning only
+- cross-award duplicate names must **not** auto-merge, reject, delete, or block PPT generation
+- presentation crop lives on `recognition_candidate_photo_reviews` and must not replace originals
+- changing `preferred_source_entry_id` invalidates the existing presentation crop
+- admin `display_name` edits do **not** change `normalized_name`, do **not** silently merge candidates, and do **not** destroy presentation crop
+
+#### `recognition_candidate_sources`
+
+Join table linking a candidate to all raw submission entries that fed it.
+
+Implemented columns:
+
+- `id` uuid PK
+- `candidate_id`
+- `submission_entry_id` (unique; one entry belongs to one candidate)
+- `created_at`
+
+This is required so the system can preserve:
+
+- all `submitted_by`
+- all raw sources
+- auditability after consolidation
+
+Re-running consolidation uses `ON CONFLICT DO NOTHING` so source links are not duplicated.
+
+#### `recognition_duplicate_signals`
+
+V1 computes cross-award and conservative suspected-duplicate warnings at read time.
+
+A persisted `recognition_duplicate_signals` table remains a future extension for photo-hash / additional fuzzy signals. Cross-award same-name is a warning only by product decision.
+
+#### `recognition_admin_members`
+
+Dedicated allowlist for Recognition Admin.
+
+Do **not** infer from rank.
+President does **not** automatically qualify.
+
+#### `recognition_ppt_exports` / `recognition_presentation_exports`
+
+Implemented in Phase 7 as `recognition_presentation_exports` (`041_recognition_presentation_exports.sql`).
+
+The formal roster source remains approved candidates. Generated PPTX files are outputs, not the truth source, and are **not** stored in the database.
+
+Audit columns:
+
+- `event_id`
+- `generated_by_member_id`
+- `generated_at`
+- `approved_candidate_count`
+- `slide_count`
+- `theme_id` / `theme_version`
+- `status` (`success` only in V1)
+
+Rows are inserted only after a successful render. Failed generations do not create a row.
+
+RLS enabled, forced, with zero anon/authenticated policies. Table privileges revoked from PUBLIC/anon/authenticated and granted to `service_role`.
+
+### Recognition conceptual relationships
+
+```
+Recognition Event
+  ├── event awards (enabled catalog + order)
+  ├── submissions
+  │     └── submission entries
+  │           └── optional original photo asset
+  ├── candidates
+  │     ├── candidate sources → submission entries
+  │     ├── duplicate signals
+  │     └── optional current crop → original photo asset
+  └── optional ppt exports
+```
+
+### Recognition storage
+
+Recognition photos should use a **private Supabase Storage bucket** (planned), separate from:
+
+- `member-avatars`
+- `coaching-meal-photos`
+- customer photo/data-URL patterns
+
+Rules:
+
+- original uploads stored privately
+- presentation crop metadata stored separately; no public derived bitmap in Phase 6
+- no public bucket access
+- reads via authenticated admin photo API (`Cache-Control: private, no-store`) / service-role
+- public submitters do not receive direct table access
+
+### Recognition public collection (`037_recognition_public_collection.sql`)
+
+**Status:** Phase 4 public collection implemented.
+
+Adds:
+
+- `recognition_events.public_collection_token`
+- `recognition_events.public_collection_token_hash`
+- `recognition_events.public_collection_token_rotated_at`
+- `recognition_submissions`
+- `recognition_submission_entries`
+- private bucket `recognition-photos`
+- atomic RPC `create_public_recognition_submission(...)`
+
+Additive `038_recognition_public_submission_rpc_guards.sql` replaces that RPC so final DB execution rechecks event collection state and enabled awards before any insert.
+
+#### Token storage strategy
+
+Phase 4 stores both:
+
+- raw high-entropy token
+- token hash
+
+Reason:
+
+- Recognition Admin must be able to repeatedly view/copy the active public URL
+- browser clients still do **not** read the DB directly
+- all access remains through Next.js server handlers + service_role
+
+Public resolution uses `public_collection_token_hash`.
+
+#### `recognition_submissions`
+
+Raw public submission envelope.
+
+Key fields:
+
+- `event_id`
+- `submitter_name`
+- `submitter_organization`
+- `submitted_at`
+- `source_context_json`
+
+Rules:
+
+- immutable evidence
+- no BakiGO member mapping required
+- free-text organization in V1
+
+#### `recognition_submission_entries`
+
+Raw entry rows inside one submission.
+
+Key fields:
+
+- `submission_id`
+- `event_id`
+- `event_award_id`
+- `submitted_name`
+- `normalized_name`
+- `original_photo_storage_path`
+- `original_photo_mime_type`
+- `original_photo_size_bytes`
+
+Rules:
+
+- preserve raw submitted name
+- normalized name is for future exact duplicate detection only
+- no automatic consolidation in Phase 4
+
+#### Public original-photo storage
+
+Bucket: `recognition-photos`
+
+Rules:
+
+- private bucket only
+- no public bucket read/write
+- server-mediated uploads
+- no generic list/delete/read for public submitters
+- originals only in Phase 4
+- future crop/processed image remains a later phase concern
+
+Current conceptual path:
+
+```text
+recognition/<submission-id>/entries/<entry-id>/original.<ext>
+```
+
+#### Atomic public submission RPC
+
+`create_public_recognition_submission(...)`
+
+Behavior:
+
+- at execution time, before inserting anything, rechecks:
+  - the target `recognition_events` row still exists
+  - `event.status = collecting`
+  - current DB time is inside `collect_starts_at` when non-null
+  - current DB time is inside `collect_ends_at` when non-null
+  - each entry award belongs to `p_event_id` and `recognition_event_awards.is_enabled = true`
+- inserts one `recognition_submissions` row
+- inserts all `recognition_submission_entries`
+- runs in one DB transaction
+- if any recheck fails, raises and inserts zero submission/entry rows
+- execute allowed only to `service_role`
+
+Upload handling remains outside the DB transaction:
+
+1. server uploads originals first
+2. server finalizes DB rows atomically via RPC
+3. if DB finalization fails, the server performs best-effort delete of uploaded paths
+
+This minimizes orphaned uploads and avoids valid-looking partial DB submissions. File-signature validation remains in the application layer, not in SQL.
+
+### Recognition candidates / review (`039_recognition_candidates.sql`)
+
+**Status:** Phase 5 consolidation, review, and historical roster implemented.
+
+Adds:
+
+- `recognition_candidates`
+- `recognition_candidate_sources`
+- atomic RPC `consolidate_recognition_event_candidates(event_id)`
+- atomic RPC `reorder_recognition_event_candidates(event_id, event_award_id, candidate_ids)`
+
+RLS is enabled on both tables with zero anon/authenticated policies. Both RPCs revoke PUBLIC/anon/authenticated and grant EXECUTE only to `service_role`.
+
+Consolidation is idempotent:
+
+- unique `(event_id, event_award_id, normalized_name)`
+- unique `submission_entry_id` on source links
+- `ON CONFLICT DO NOTHING`
+- existing `review_status`, `display_name`, `preferred_source_entry_id`, and admin `sort_order` are preserved
+- consolidation never auto-selects `preferred_source_entry_id`; new candidates stay `null` until an admin chooses
+
+Review mutations update only `recognition_candidates`. They must not write `recognition_submissions` or `recognition_submission_entries`.
+
+Approved roster:
+
+- enabled event awards in `sort_order`
+- `review_status = approved` only
+- candidates in `sort_order`, then `created_at`, then `display_name`
+- incomplete photos stay on the roster; Phase 6 adds `hasPresentationCrop`, `photoReady`, `photoReadinessState`, flags, and block reason for presentation validation
+
+Duplicate warnings are computed at read time. They never auto-merge, auto-reject, or block future PPT generation.
+
+### Recognition photo review (`040_recognition_photo_review.sql`)
+
+**Status:** Phase 6 presentation crop + PPT-photo-ready validation implemented. Phase 7 generates PPTX from approved roster + crop metadata.
+
+Adds:
+
+- `recognition_candidate_photo_reviews` (one row per candidate)
+- `upsert_recognition_candidate_photo_review(...)`
+- `reset_recognition_candidate_photo_review(...)`
+- trigger that resets crop metadata when `preferred_source_entry_id` changes
+
+The trigger is the sole automatic reset owner. It is an `AFTER UPDATE OF preferred_source_entry_id` row trigger, not a deferred constraint trigger, so the preferred-source UPDATE and photo-review reset share one transaction. If reset raises, the preferred-source change rolls back. Application services must not call `reset_recognition_candidate_photo_review` after updating preferred source.
+
+RLS is enabled and forced, with zero anon/authenticated policies. Table privileges are revoked from PUBLIC/anon/authenticated. Both RPCs revoke PUBLIC/anon/authenticated and grant EXECUTE only to `service_role`.
+
+Crop coordinates are normalized 0–1 against the original image. Intended portrait slot ratio is `3:4`, distinct from the 4:3 PPT slide.
+
+The RPC never writes `recognition_submissions`, `recognition_submission_entries`, or storage objects.
+
+### Recognition RLS / API pattern
+
+Recognition tables should follow the same broad access model as Quiz/Growth Share, not `members`:
+
+- RLS enabled and **FORCE ROW LEVEL SECURITY** on every Recognition table (`043_recognition_admin_only_grants.sql`)
+- no anon table policies
+- no broad authenticated read/write policies
+- `REVOKE ALL` from `public`, `anon`, and `authenticated`; table grants are `service_role` only
+- Recognition RPCs remain execute-only for `service_role` (migrations 036–040)
+- private bucket `recognition-photos` has no client `storage.objects` policies; uploads/downloads stay server-mediated
+- public submission goes through service-role API after token verification
+- admin actions go through authenticated API + `recognition_admin_members` allowlist (`is_active = true`)
+
+### Recognition transactional RPCs
+
+Phase 3 foundation uses PostgreSQL RPCs for operations that must be atomic:
+
+- `create_recognition_event_with_awards(...)`
+  - inserts one `recognition_events` row
+  - populates `recognition_event_awards`
+  - supports `copied_from_event_id`
+  - rolls back everything if any step fails
+
+- `reorder_recognition_event_awards(...)`
+  - requires the complete current event-award set
+  - rejects duplicate IDs
+  - rejects foreign IDs
+  - updates all `sort_order` values atomically
+
+Phase 5 candidate RPCs:
+
+- `consolidate_recognition_event_candidates(...)`
+  - derives candidates from raw entries for one event
+  - locks the event to serialize concurrent runs
+  - inserts missing candidates / source links only
+  - never overwrites review decisions
+  - never auto-selects `preferred_source_entry_id`
+
+- `reorder_recognition_event_candidates(...)`
+  - requires the complete candidate set for one event award
+  - updates `sort_order` atomically
+
+Phase 6 photo-review RPCs:
+
+- `upsert_recognition_candidate_photo_review(...)`
+  - locks the candidate
+  - requires `p_source_entry_id` to match current `preferred_source_entry_id`
+  - validates crop bounds
+  - writes derived crop/flags only
+- `reset_recognition_candidate_photo_review(...)`
+  - clears derived crop/flags/blocked state
+  - called by `recognition_candidates_preferred_source_change` in the same transaction as the preferred-source UPDATE
+  - not called by application code after a preferred-source mutation
+
+### Recognition presentation exports (`041_recognition_presentation_exports.sql`)
+
+**Status:** Phase 7 PPTX generation audit implemented. PPTX bytes are not stored.
+
+Adds `recognition_presentation_exports` only. Additive. Does not alter candidates, photo reviews, submissions, or storage objects.
+
+Generation pipeline uses existing service-role reads. The generator loads originals via the private `recognition-photos` download path. No public URLs, no signed permanent URLs, no `storage.objects` policy changes.
+
+Concurrent data changes: generation builds one presentation DTO snapshot, then plans and renders from that snapshot. Later candidate/crop edits do not affect an in-flight generation.
+
+Security rule:
+
+- these RPCs are `SECURITY DEFINER`
+- `EXECUTE` is revoked from `PUBLIC`, `anon`, and `authenticated`
+- `EXECUTE` is granted only to `service_role`
+- browser clients must go through authenticated Next.js API → `assertRecognitionAdmin(memberId)` → service-role client → RPC
+
+### Recognition Event Template compatibility
+
+The schema must stay compatible with a future reusable template concept.
+
+Minimum compatibility requirements:
+
+- event-specific award ordering must not be hardwired to “copy previous month”
+- event-specific theme selection must not assume a one-off event model
+- event creation should later support:
+  - create from template
+  - copy previous month settings
+  - create from scratch
+
 ### Consultation Engine V1 (`023_consultation_engine_v1.sql`)
 
 **Status:** `experimental_hidden`
@@ -252,3 +831,4 @@ Member (coach)
 - [PRODUCT.md](./PRODUCT.md)
 - [BUSINESS_RULES.md](./BUSINESS_RULES.md)
 - [COACHING.md](./COACHING.md)
+- [RECOGNITION.md](./RECOGNITION.md)

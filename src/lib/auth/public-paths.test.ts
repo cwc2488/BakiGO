@@ -40,8 +40,13 @@ describe("public-paths", () => {
     expect(isOpenPublicPath("/q/ABC123")).toBe(true);
     expect(isOpenPublicPath("/q/fat-loss")).toBe(true);
     expect(isOpenPublicPath("/r/abcdefghijklmnopqrstuvwxyz0123456789ABC")).toBe(true);
+    expect(isOpenPublicPath("/recognition/p/token-abc")).toBe(true);
     expect(isPublicPath("/quiz/manage")).toBe(false);
     expect(isPublicPath("/quiz/leads")).toBe(false);
     expect(isPublicPath("/quiz/hub")).toBe(false);
+    expect(isPublicPath("/recognition")).toBe(false);
+    expect(isPublicPath("/recognition/events/evt-1")).toBe(false);
+    expect(isPublicPath("/recognition/events/evt-1/review")).toBe(false);
+    expect(isPublicPath("/recognition/events/evt-1/photos")).toBe(false);
   });
 });
