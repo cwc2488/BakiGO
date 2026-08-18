@@ -72,7 +72,8 @@ Recognition Center is an **organization operations module**, not member-local wo
 | `recognition_candidate_sources` | Mapping from candidate back to raw submission entries |
 | `recognition_duplicate_signals` | Warning/blocking duplicate hints across candidates |
 | `recognition_admin_members` | Dedicated Recognition Admin allowlist |
-| `recognition_ppt_exports` | Future export audit rows for generated PPTX output |
+| `recognition_ppt_exports` | Conceptual name; Phase 7 implemented `recognition_presentation_exports` |
+| `recognition_presentation_exports` | PPTX generation audit rows (no file storage) |
 
 #### Recognition design rules
 
@@ -249,7 +250,7 @@ One active presentation-photo review row per candidate:
 - `crop_finalized_at` / `crop_finalized_by_member_id`
 - timestamps
 
-No derived cropped bitmap is stored in Phase 6. Future renderer uses original + crop metadata.
+No derived cropped bitmap is stored. Phase 7 reads the private original through service-role download and applies crop metadata in memory while generating PPTX. Originals remain unchanged.
 
 Changing `recognition_candidates.preferred_source_entry_id` resets this row.
 
@@ -322,9 +323,25 @@ Dedicated allowlist for Recognition Admin.
 Do **not** infer from rank.
 President does **not** automatically qualify.
 
-#### `recognition_ppt_exports`
+#### `recognition_ppt_exports` / `recognition_presentation_exports`
 
-Future export/audit table for generated outputs. The formal roster source remains approved candidates; generated PPTX files are outputs, not the truth source.
+Implemented in Phase 7 as `recognition_presentation_exports` (`041_recognition_presentation_exports.sql`).
+
+The formal roster source remains approved candidates. Generated PPTX files are outputs, not the truth source, and are **not** stored in the database.
+
+Audit columns:
+
+- `event_id`
+- `generated_by_member_id`
+- `generated_at`
+- `approved_candidate_count`
+- `slide_count`
+- `theme_id` / `theme_version`
+- `status` (`success` only in V1)
+
+Rows are inserted only after a successful render. Failed generations do not create a row.
+
+RLS enabled, forced, with zero anon/authenticated policies. Table privileges revoked from PUBLIC/anon/authenticated and granted to `service_role`.
 
 ### Recognition conceptual relationships
 
@@ -506,7 +523,7 @@ Duplicate warnings are computed at read time. They never auto-merge, auto-reject
 
 ### Recognition photo review (`040_recognition_photo_review.sql`)
 
-**Status:** Phase 6 presentation crop + PPT-photo-ready validation implemented. No PPTX.
+**Status:** Phase 6 presentation crop + PPT-photo-ready validation implemented. Phase 7 generates PPTX from approved roster + crop metadata.
 
 Adds:
 
@@ -573,6 +590,16 @@ Phase 6 photo-review RPCs:
   - clears derived crop/flags/blocked state
   - called by `recognition_candidates_preferred_source_change` in the same transaction as the preferred-source UPDATE
   - not called by application code after a preferred-source mutation
+
+### Recognition presentation exports (`041_recognition_presentation_exports.sql`)
+
+**Status:** Phase 7 PPTX generation audit implemented. PPTX bytes are not stored.
+
+Adds `recognition_presentation_exports` only. Additive. Does not alter candidates, photo reviews, submissions, or storage objects.
+
+Generation pipeline uses existing service-role reads. The generator loads originals via the private `recognition-photos` download path. No public URLs, no signed permanent URLs, no `storage.objects` policy changes.
+
+Concurrent data changes: generation builds one presentation DTO snapshot, then plans and renders from that snapshot. Later candidate/crop edits do not affect an in-flight generation.
 
 Security rule:
 

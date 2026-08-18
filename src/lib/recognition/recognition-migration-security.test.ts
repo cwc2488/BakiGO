@@ -204,3 +204,32 @@ describe("Recognition photo review migration security", () => {
     expect(migration.toLowerCase()).not.toContain("face_recognition");
   });
 });
+
+describe("Recognition presentation export migration security", () => {
+  const migration = readMigration("041_recognition_presentation_exports.sql");
+
+  it("adds an additive audit table without mutating evidence", () => {
+    expect(migration).toContain("create table if not exists public.recognition_presentation_exports");
+    expect(migration).not.toMatch(/update public\.recognition_submission_entries/i);
+    expect(migration).not.toMatch(/update public\.recognition_submissions/i);
+    expect(migration).not.toMatch(/update public\.recognition_candidates/i);
+    expect(migration).not.toMatch(/update public\.recognition_candidate_photo_reviews/i);
+    expect(migration).not.toMatch(/drop table/i);
+    expect(migration.toLowerCase()).not.toContain("face-recognition");
+  });
+
+  it("keeps export audit internal to service_role", () => {
+    expect(migration).toContain("enable row level security");
+    expect(migration).toContain("force row level security");
+    expect(migration).toContain("revoke all on table public.recognition_presentation_exports from public;");
+    expect(migration).toContain("revoke all on table public.recognition_presentation_exports from anon;");
+    expect(migration).toContain("revoke all on table public.recognition_presentation_exports from authenticated;");
+    expect(migration).toContain("grant all on table public.recognition_presentation_exports to service_role;");
+  });
+
+  it("does not store PPTX bytes", () => {
+    expect(migration).toContain("The PPTX file is not stored");
+    expect(migration).not.toContain("bytea");
+    expect(migration).not.toContain("storage.objects");
+  });
+});

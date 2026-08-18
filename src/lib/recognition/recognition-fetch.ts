@@ -21,6 +21,7 @@ import type {
   RecognitionPhotoReviewQueueFilter,
   RecognitionPhotoReviewQueueItem,
   RecognitionPhotoReviewUpdateInput,
+  RecognitionPresentationSummary,
 } from "@/types/recognition";
 
 async function handleResponse<T>(res: Response, fallback: string): Promise<T> {
@@ -274,6 +275,51 @@ export async function fetchRecognitionEventPptReadiness(eventId: string): Promis
   const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}/ppt-readiness`);
   const body = await handleResponse<{ pptReadiness: RecognitionEventPptReadiness }>(res, "Failed to load PPT readiness.");
   return body.pptReadiness;
+}
+
+export async function fetchRecognitionPresentationSummary(
+  eventId: string,
+): Promise<RecognitionPresentationSummary> {
+  const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}/presentation`);
+  const body = await handleResponse<{ summary: RecognitionPresentationSummary }>(
+    res,
+    "Failed to load presentation summary.",
+  );
+  return body.summary;
+}
+
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const utf8 = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8?.[1]) {
+    try {
+      return decodeURIComponent(utf8[1]);
+    } catch {
+      return utf8[1];
+    }
+  }
+  const ascii = header.match(/filename="([^"]+)"/i);
+  return ascii?.[1] ?? null;
+}
+
+export async function downloadRecognitionEventPresentation(eventId: string): Promise<void> {
+  const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}/presentation`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(json.error ?? "無法產生簡報");
+  }
+  const blob = await res.blob();
+  const filename = filenameFromContentDisposition(res.headers.get("Content-Disposition")) ?? "表揚名單.pptx";
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
 }
 
 export async function updateRecognitionCandidatePhotoReview(

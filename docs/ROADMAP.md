@@ -109,21 +109,22 @@ _Focus: presentation safety without AI selection._ **Implemented in Phase 6.**
 
 ### Phase RC-6 — 4:3 Preview / Validation
 
-_Focus: pre-export confidence._
+_Focus: pre-export confidence._ **Lightweight summary shipped with Phase 7.** Full HTML 4:3 preview remains deferred so the PPT renderer is not duplicated in React.
 
-- Real 4:3 presentation preview
-- Empty-award omission
 - Validation summary
-- Counts, missing photos, unresolved review states, warnings
-- Name-only page sizing remains configurable
+- Expected slide count from the layout planner
+- Empty-award omission
+- Missing photos / unresolved photo review
+- Name-only page sizing remains layout-configurable
 
 ### Phase RC-7 — PPTX Generation
 
-_Focus: binary export after validation._
+_Focus: binary export after validation._ **Implemented in Phase 7.**
 
 - Formal presentation plan → PPTX renderer
 - Theme application separated from roster data
-- Export audit row / artifact retention
+- Export audit row without storing the PPTX file
+- Recognition section only (no monthly-meeting Deck Composer)
 
 ### Optional Phase RC-8 — Photo AI Flags
 

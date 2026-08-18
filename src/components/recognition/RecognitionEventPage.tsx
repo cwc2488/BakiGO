@@ -4,7 +4,9 @@
 import {
   fetchEventAwards,
   fetchRecognitionEvent,
+  downloadRecognitionEventPresentation,
   fetchRecognitionEventPptReadiness,
+  fetchRecognitionPresentationSummary,
   fetchRecognitionEventToken,
   fetchRecognitionRawSubmissions,
   fetchRecognitionTextRoster,
@@ -18,6 +20,7 @@ import type {
   RecognitionEventAward,
   RecognitionEventPptReadiness,
   RecognitionEventStatus,
+  RecognitionPresentationSummary,
   RecognitionRawSubmissionView,
 } from "@/types/recognition";
 import { PageShell } from "@/components/ui/PageShell";
@@ -558,7 +561,7 @@ function ReviewAndRosterSection({ eventId, eventName }: { eventId: string; event
         <div>
           <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">審核與歷史名單</p>
           <p className="mt-1 text-[0.875rem] text-[#86868b]">
-            正式名單只含已核准候選人。PPT 尚未開放。
+            正式名單只含已核准候選人。
           </p>
         </div>
         <Link
@@ -591,14 +594,23 @@ function ReviewAndRosterSection({ eventId, eventName }: { eventId: string; event
 
 function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
   const [readiness, setReadiness] = useState<RecognitionEventPptReadiness | null>(null);
+  const [summary, setSummary] = useState<RecognitionPresentationSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    fetchRecognitionEventPptReadiness(eventId)
-      .then(setReadiness)
+    Promise.all([
+      fetchRecognitionEventPptReadiness(eventId),
+      fetchRecognitionPresentationSummary(eventId),
+    ])
+      .then(([nextReadiness, nextSummary]) => {
+        setReadiness(nextReadiness);
+        setSummary(nextSummary);
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "無法載入 PPT 準備狀態"))
       .finally(() => setLoading(false));
   }, [eventId]);
@@ -607,13 +619,27 @@ function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
     load();
   }, [load]);
 
-  const pending = readiness?.totalBlockingIssues ?? 0;
+  const pending = readiness?.totalBlockingIssues ?? summary?.blockers.length ?? 0;
+  const canGenerate = Boolean(summary?.ready) && pending === 0 && !generating;
+
+  async function handleGenerate() {
+    if (!canGenerate) return;
+    setGenerating(true);
+    setGenerateError(null);
+    try {
+      await downloadRecognitionEventPresentation(eventId);
+    } catch (err: unknown) {
+      setGenerateError(err instanceof Error ? err.message : "無法產生簡報");
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   return (
     <BrandCard variant="bordered">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">照片審查</p>
+          <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">照片審查與表揚 PPT</p>
           <p className="mt-1 text-[0.875rem] text-[#86868b]">
             審查正式照片並建立簡報裁切。原圖不會被覆蓋。
           </p>
@@ -639,21 +665,40 @@ function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
             <p>尚未選照片：{readiness.missingPreferredPhoto}</p>
             <p>尚未裁切：{readiness.missingCrop}</p>
             <p>照片有問題：{readiness.blockedPhotos}</p>
+            {summary && (
+              <>
+                <p>表揚獎項頁：{summary.awardSectionCount}</p>
+                <p>已核准受獎人：{summary.approvedRecipientCount}</p>
+                <p>預估投影片：{summary.expectedSlideCount}</p>
+              </>
+            )}
             <p className="pt-1 font-medium">
-              {readiness.totalBlockingIssues > 0
-                ? `尚有 ${readiness.totalBlockingIssues} 個問題需要處理`
-                : "照片準備完成"}
+              {pending > 0
+                ? `尚有 ${pending} 個問題需要處理`
+                : summary && summary.expectedSlideCount === 0
+                  ? "尚無已核准名單"
+                  : "照片準備完成"}
             </p>
           </div>
         )}
       </div>
 
+      {pending > 0 && (
+        <p className="mt-3 text-[0.875rem] text-[#ff375f]">
+          仍有照片問題，請先到照片審查處理後再產生簡報。
+        </p>
+      )}
+      {generateError && (
+        <p className="mt-3 whitespace-pre-wrap text-[0.875rem] text-[#ff375f]">{generateError}</p>
+      )}
+
       <button
         type="button"
-        disabled
-        className="mt-3 rounded-xl border border-[var(--brand-border)] px-3 py-2 text-[0.875rem] font-medium text-[#86868b]"
+        disabled={!canGenerate}
+        onClick={() => void handleGenerate()}
+        className="mt-3 rounded-xl bg-[#1d1d1f] px-3 py-2 text-[0.875rem] font-semibold text-white disabled:bg-transparent disabled:border disabled:border-[var(--brand-border)] disabled:font-medium disabled:text-[#86868b]"
       >
-        產生 PPT（未來階段）
+        {generating ? "產生中…" : pending > 0 ? "尚有照片問題，無法產生 PPT" : "產生表揚 PPT"}
       </button>
     </BrandCard>
   );

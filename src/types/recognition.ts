@@ -364,3 +364,23 @@ export interface RecognitionApprovedRoster {
   month: number;
   awards: RecognitionApprovedRosterAward[];
 }
+
+export interface RecognitionPresentationPhotoBlocker {
+  candidateId: string;
+  displayName: string;
+  reason: string;
+}
+
+export interface RecognitionPresentationSummary {
+  eventId: string;
+  eventName: string;
+  year: number;
+  month: number;
+  themeId: string;
+  themeVersion: string;
+  awardSectionCount: number;
+  approvedRecipientCount: number;
+  expectedSlideCount: number;
+  ready: boolean;
+  blockers: RecognitionPresentationPhotoBlocker[];
+}

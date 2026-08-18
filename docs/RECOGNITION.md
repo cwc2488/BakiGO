@@ -431,9 +431,9 @@ Rules:
 
 ### Name-only pagination
 
-The exact number of names per 4:3 slide remains **configurable / unresolved** in Phase 2.
+The exact number of names per 4:3 slide remains **configurable / unresolved** as a product business rule.
 
-Do not hard-code a permanent product rule yet.
+Phase 7 ships a **layout default** of 18 names per page (adaptive 1/2/3 columns). That number lives in renderer configuration, not in `BUSINESS_RULES.md`, and may change with future themes.
 
 ## PPT validation rules
 
@@ -874,7 +874,7 @@ Opening Review Center syncs candidates. Admins can also press 「更新／同步
 
 ## Phase 6 implementation notes
 
-Phase 6 presentation-photo preparation has been implemented. PPTX generation is **not** included.
+Phase 6 presentation-photo preparation has been implemented. PPTX generation is in Phase 7.
 
 ### Architecture
 
@@ -882,7 +882,7 @@ Original evidence and presentation output stay separate.
 
 - Original photos remain on `recognition_submission_entries.original_photo_storage_path` in the private `recognition-photos` bucket.
 - Presentation crop is **normalized metadata** on `recognition_candidate_photo_reviews`, bound to the current preferred source.
-- Phase 6 does **not** generate a derived cropped bitmap. Future Phase 7 renderer reads the private original and applies crop metadata.
+- Phase 6 does **not** generate a derived cropped bitmap. Phase 7 reads the private original and applies crop metadata in memory.
 - Original files are never overwritten, cropped in place, or replaced.
 
 ### Crop coordinate format
@@ -1002,7 +1002,7 @@ A photo-required candidate is presentation-photo-ready only when:
 
 Name-only awards are presentation-photo-ready without a crop.
 
-This validator is the Phase 7 PPT renderer contract. Phase 6 does not generate PPTX.
+This validator is the Phase 7 PPT renderer contract.
 
 ### Optional automated checks
 
@@ -1016,8 +1016,7 @@ Deferred:
 
 - AI group-photo / text-heavy detection
 - any honoree / face / identity inference
-- derived cropped bitmap generation
-- PPTX / 4:3 slide renderer (Phase 7+)
+- persisted derived cropped bitmap (Phase 7 crops in memory only)
 
 Manual admin review is sufficient for Phase 6.
 
@@ -1030,24 +1029,166 @@ GET    /api/recognition/events/[eventId]/photo-review?filter=
 GET    /api/recognition/events/[eventId]/photo-review/[candidateId]
 PATCH  /api/recognition/events/[eventId]/photo-review/[candidateId]
 GET    /api/recognition/events/[eventId]/ppt-readiness
+GET    /api/recognition/events/[eventId]/presentation
+POST   /api/recognition/events/[eventId]/presentation
 ```
 
 Public users cannot read photo-review metadata, signed original bytes, crops, flags, or PPT readiness.
 
 ### UI
 
-- Event management: 「照片審查」 + 待處理 count, 「PPT 準備狀態」, disabled 「產生 PPT（未來階段）」
-- `/recognition/events/[eventId]/photos`: filters, original + 3:4 crop editor, flags, block, 「下一位需要處理」
+- Event management: 「照片審查」 + 待處理 count, 「PPT 準備狀態」, 「產生表揚 PPT」
 
-### Deferred to Phase 7+
+### Deferred after Phase 7
 
-- PPTX generation
-- 4:3 HTML preview / theme engine
+- Full HTML 4:3 preview / theme marketplace
 - birthday slides / President encouragement slides
-- monthly-meeting back-half slides
+- monthly-meeting Deck Composer (opening, closing, training, posters, arbitrary slides)
 - AI photo analysis
 - persisted `recognition_duplicate_signals`
 - candidate → member matching
+- storing generated PPTX files
+
+## Phase 7 implementation notes
+
+Phase 7 generates the **recognition section** as a real editable `.pptx`. It does **not** compose a full monthly-meeting deck.
+
+### Architecture
+
+```text
+database/services
+  → presentation readiness validation
+  → RecognitionPresentationData snapshot
+  → SlidePlan[] (pure planner)
+  → private original download + in-memory crop/convert
+  → PPTX renderer
+  → download
+```
+
+Data, theme, and layout stay separate. The renderer does not query Supabase while drawing slides.
+
+If candidate or crop data changes after the snapshot is built, the in-flight generation finishes from that snapshot.
+
+Failed generation does not mutate candidates, photo-review rows, or raw evidence. Failed generation does not insert an export audit row.
+
+### Presentation DTO
+
+`RecognitionPresentationData` contains:
+
+- event `{ id, name, year, month }`
+- theme id/version
+- award sections in `recognition_event_awards.sort_order`
+  - event-specific award display name (never slug on slides)
+  - award slug (layout key only, e.g. `million_lifetime`)
+  - approved candidates in Phase 5 order
+  - presentation photo + normalized crop when photo-required and crop-ready
+
+Only **approved** candidates on **enabled** awards with **at least one** approved recipient are included. Disabled awards and zero-recipient awards are omitted completely.
+
+Never generate from raw submissions.
+
+### Slide planner
+
+`planRecognitionPresentation(dto) → SlidePlan[]`
+
+Each plan row has award, page index/count, layout type, and candidate IDs.
+
+Layout types:
+
+- `name_list`
+- `photo_hero_1`
+- `photo_hero_2`
+- `photo_hero_3`
+- `photo_grid`
+- `lifetime_achievement`
+
+### 4:3 dimensions
+
+PptxGenJS custom layout `RECOGNITION_4x3`:
+
+- **10 in × 7.5 in**
+- EMUs: `cx=9144000`, `cy=6858000`
+- One master size for the whole recognition deck
+- Not 16:9
+
+### Name-only pagination
+
+Layout configuration (not a frozen business rule):
+
+- max 18 names per page
+- 1 column if ≤4 names on the page
+- 2 columns if ≤10
+- 3 columns otherwise
+
+Paginate rather than shrinking names to fit everyone on one slide.
+
+### Photo layouts
+
+- 1 / 2 / 3 approved photo recipients → hero layouts
+- 4–12 → adaptive photo grid; 12 uses frozen 4×3
+- more than 12 → page of 12, then remainder (17 → 12 + 5). Remainder of 1–3 uses hero layouts so one person is never a tiny grid cell
+- each card uses the Phase 6 3:4 crop; no automatic recrop or face detection
+
+### 百萬終生成就獎
+
+Keyed by slug `million_lifetime`, not by comparing Chinese text.
+
+Uses layout type `lifetime_achievement` with a premium gold treatment of the same theme tokens. One or many recipients are both valid.
+
+### Crop rendering
+
+Admin crop is authoritative.
+
+`normalizedCropToPixelRect(originalWidth, originalHeight, crop)` converts 0–1 coordinates to an integer pixel rectangle. Sharp extracts that rectangle in memory. The generator does not center-crop the original again.
+
+### Image compatibility
+
+Private originals are downloaded with the existing admin/service-role path.
+
+| Format | Strategy |
+|---|---|
+| JPEG / PNG / WEBP | Sharp decode + crop + JPEG for PPT embed |
+| HEIC / HEIF | `heic-convert` to JPEG, then Sharp crop |
+
+Conversion is derived/temporary. Original evidence is never overwritten. HEIC is not silently skipped; conversion failure returns a useful error that names the candidate.
+
+No permanent public image URL is created. No temporary files are left on public storage.
+
+### Fonts
+
+Requested family: **Microsoft JhengHei**.
+
+Fallbacks (not packaged): Microsoft YaHei, PingFang TC, Calibri.
+
+Proprietary font files are not committed. If a viewing machine lacks JhengHei, PowerPoint/Keynote/Google Slides use their CJK fallbacks. Long names modestly reduce font size and wrap; official names are not truncated or ellipsized.
+
+### Export endpoint
+
+```text
+GET  /api/recognition/events/[eventId]/presentation
+POST /api/recognition/events/[eventId]/presentation
+```
+
+- Recognition Admin only (`assertRecognitionAdmin`)
+- GET returns a lightweight summary: award sections, approved count, expected slides, readiness, blockers
+- POST returns `application/vnd.openxmlformats-officedocument.presentationml.presentation`
+- `Cache-Control: private, no-store`
+- filename example: `2026-09-月會-表揚名單.pptx` (sanitized; event name distinguishes same-month events)
+
+Server-side validation remains authoritative even if the UI disables the button.
+
+### Default theme
+
+`recognition_ceremony_navy_gold` v1 — projector-first navy/gold tokens. Architecture allows additional themes later. Phase 7 does not ship a theme marketplace. If `ppt_theme_id` is null, the default is used.
+
+### Tests
+
+Cover DTO inclusion/order, empty/disabled awards, name-only pagination, photo hero/grid/pagination, lifetime layout, readiness blockers, crop geometry, filename sanitization, 4:3 size, non-admin 401/403, private image loading, HEIC conversion path, PPTX smoke (ZIP signature, slide count, presentation.xml size, names), and additive audit migration.
+
+### UI
+
+- Event management: 「照片審查」 + 待處理 count, 「PPT 準備狀態」, award/recipient/slide summary, 「產生表揚 PPT」
+- `/recognition/events/[eventId]/photos`: filters, original + 3:4 crop editor, flags, block, 「下一位需要處理」
 
 ## Implementation guardrails
 
