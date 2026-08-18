@@ -78,3 +78,40 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 
 - Email + Password（Supabase Auth）
 - 登入後自動從 Supabase 同步會員至本機，供既有引擎讀取
+
+## Recognition Center Production schema（必須手動套用）
+
+Vercel 只部署 Next.js，**不會**執行 `supabase/migrations/`。
+
+Production 若出現：
+
+- `Could not find the table 'public.recognition_events' in the schema cache`
+- `Could not find the function public.create_recognition_event_with_awards(...) in the schema cache`
+
+代表 035–044 尚未套用到 **同一個** Production Supabase 專案。
+
+### 步驟
+
+1. 打開 Supabase Dashboard → 該 Production 專案 → **SQL Editor**
+2. 先執行唯讀檢查：`supabase/recovery/preflight-recognition-center.sql`
+3. **依序**執行（可重跑，不要略過中間檔）：
+   - `supabase/migrations/035_recognition_foundation.sql`
+   - `supabase/migrations/036_recognition_event_rpcs.sql`
+   - `supabase/migrations/037_recognition_public_collection.sql`
+   - `supabase/migrations/038_recognition_public_submission_rpc_guards.sql`
+   - `supabase/migrations/039_recognition_candidates.sql`
+   - `supabase/migrations/040_recognition_photo_review.sql`
+   - `supabase/migrations/041_recognition_presentation_exports.sql`
+   - `supabase/migrations/042_recognition_award_display_names.sql`
+   - `supabase/migrations/043_recognition_admin_only_grants.sql`
+   - `supabase/migrations/044_recognition_delete_event.sql`
+4. 或一次貼上串接檔：`node scripts/print-recognition-production-sql.mjs > /tmp/recognition-center-035-044.sql`
+5. 再跑一次 preflight，確認 `recognition_events` 與 `create_recognition_event_with_awards` / `delete_recognition_event` 存在
+
+### 安全邊界
+
+- **不要**執行 `002_reset_and_seed_virtual_member.sql`（會清空 members / auth.users）
+- 035–044 **不會** DROP / TRUNCATE `members`、`customers`、coaching、quiz、radar、leaderboard 資料
+- 本 repo 沒有 Supabase CLI link，也沒有 Production `SUPABASE_ACCESS_TOKEN`，因此 **無法由 Cloud Agent 自動套用**
+
+套用完成前，不要把「程式已部署」當成「表揚中心 Production 已修復」。

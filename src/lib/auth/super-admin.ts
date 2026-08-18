@@ -7,8 +7,9 @@ import { normalizeMemberNumber } from "@/types/auth";
  * These are Herbalife 會員編號 (`members.member_number` /
  * `herbalifeMemberId`), not career rank and not a client-provided role.
  *
- * Recognition Center and the administration-center entry must use this
- * module. Do not copy the member number into components or API routes.
+ * Admin Center, Recognition Center, Recognition mutations, and event
+ * delete must use this module. Do not copy the member number into
+ * components or API routes.
  */
 export const SUPER_ADMIN_MEMBER_NUMBERS = ["20699471"] as const;
 

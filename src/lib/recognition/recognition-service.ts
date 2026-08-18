@@ -47,6 +47,28 @@ export class RecognitionServiceError extends Error {
   }
 }
 
+export function humanizeRecognitionDatabaseError(message: string): string {
+  const text = message.trim();
+  const missingSchema = /schema cache|does not exist|PGRST205|PGRST202/i.test(text);
+  if (missingSchema && /recognition_events/i.test(text)) {
+    return "表揚中心資料表尚未套用到資料庫。請在 Supabase SQL Editor 依序執行 supabase/migrations/035_recognition_foundation.sql 到 044_recognition_delete_event.sql。";
+  }
+  if (missingSchema && /create_recognition_event_with_awards/i.test(text)) {
+    return "表揚中心建立活動函式尚未套用到資料庫。請在 Supabase SQL Editor 執行 supabase/migrations/036_recognition_event_rpcs.sql（需先完成 035）。";
+  }
+  if (missingSchema && /delete_recognition_event/i.test(text)) {
+    return "表揚中心刪除活動函式尚未套用到資料庫。請在 Supabase SQL Editor 執行 supabase/migrations/044_recognition_delete_event.sql。";
+  }
+  if (missingSchema && /recognition_/i.test(text)) {
+    return "表揚中心資料庫尚未完整套用。請在 Supabase SQL Editor 依序執行 supabase/migrations/035 到 044，不要略過中間檔案。";
+  }
+  return text;
+}
+
+function throwRecognitionDatabaseError(message: string, fallback: string, status = 500): never {
+  throw new RecognitionServiceError(humanizeRecognitionDatabaseError(message || fallback), status);
+}
+
 // ---------------------------------------------------------------------------
 // Row mappers
 // ---------------------------------------------------------------------------
@@ -266,7 +288,7 @@ export async function listRecognitionEvents(): Promise<RecognitionEvent[]> {
     .order("created_at", { ascending: false });
 
   if (error) {
-    throw new RecognitionServiceError(error.message, 500);
+    throwRecognitionDatabaseError(error.message, "Failed to load events.");
   }
   return (data ?? []).map((r) => mapEvent(r as EventRow));
 }
@@ -328,7 +350,7 @@ export async function getRecognitionEvent(eventId: string): Promise<RecognitionE
     .maybeSingle();
 
   if (error) {
-    throw new RecognitionServiceError(error.message, 500);
+    throwRecognitionDatabaseError(error.message, "Failed to load event.");
   }
   if (!data) return null;
   return mapEvent(data as EventRow);
@@ -354,10 +376,33 @@ export async function createRecognitionEvent(
   );
 
   if (rpcError || !eventData) {
-    throw new RecognitionServiceError(rpcError?.message ?? "Failed to create event.", 500);
+    throwRecognitionDatabaseError(rpcError?.message ?? "Failed to create event.", "Failed to create event.");
   }
 
   return mapEvent(eventData as EventRow);
+}
+
+export async function deleteRecognitionEvent(eventId: string): Promise<{ eventId: string }> {
+  const existing = await getRecognitionEvent(eventId);
+  if (!existing) {
+    throw new RecognitionServiceError("找不到這個表揚活動。", 404);
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase.rpc("delete_recognition_event", {
+    p_event_id: eventId,
+  });
+
+  if (error) {
+    throwRecognitionDatabaseError(error.message, "Failed to delete event.");
+  }
+
+  const payload = data as { ok?: boolean; eventId?: string } | null;
+  if (!payload?.ok) {
+    throw new RecognitionServiceError("刪除表揚活動失敗，請稍後再試。", 500);
+  }
+
+  return { eventId: payload.eventId ?? eventId };
 }
 
 export async function updateRecognitionEvent(

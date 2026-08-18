@@ -120,14 +120,16 @@ Canonical source: `src/lib/auth/super-admin.ts`
 
 Rules:
 
+- Super Admin sees **管理中心** (`/admin`). Recognition Center is nested under it.
 - Recognition Admin permission is **not** derived from career rank.
 - President rank does **not** automatically grant Recognition Admin access.
 - Partner-care / member-management / leaderboard permissions are unchanged.
 - Client role claims are never trusted.
-- Admin UI routes live under `src/app/recognition/(admin)/`. Direct URLs are denied server-side (`notFound`) when the signed-in member is not Super Admin. Unauthenticated visitors are denied by AuthGate (`/recognition` is not a public path).
-- The home「更多」entry for 表揚中心 is shown only after that same server check succeeds. Partners do not see a disabled or “admin only” link.
+- Admin Center routes live under `src/app/admin/`. Recognition admin UI routes live under `src/app/recognition/(admin)/`. Direct URLs are denied server-side (`notFound`) when the signed-in member is not Super Admin.
+- The home「更多」entry is **管理中心**, shown only after the same server check succeeds. Partners do not see 表揚中心 or 管理中心.
 - Public collection `/recognition/p/[token]` remains open without Recognition Admin.
 - `recognition_admin_members` remains a storage table with RLS; it does **not** grant access.
+- Super Admin may delete a Recognition Event after a named confirmation. Delete uses `delete_recognition_event` so dependent rows and private photos are removed together.
 
 If implementation discovers architectural friction with current app permission helpers, that friction must be documented; it must **not** be resolved by changing this product rule.
 
@@ -513,7 +515,7 @@ Both RPCs are `SECURITY DEFINER`, with `EXECUTE` revoked from `PUBLIC`, `anon`, 
 
 RLS enabled on all tables. Zero anon policies. Zero broad authenticated policies.
 
-**This migration has not been applied to production.** Apply via Supabase SQL Editor or CLI before opening Recognition Center to admins.
+**These migrations are not applied by Vercel deploys.** Apply 035–044 in order via Supabase SQL Editor (`docs/SUPABASE_SETUP.md`) before opening Recognition Center.
 
 ### API routes
 
@@ -524,12 +526,13 @@ GET  /api/recognition/events
 POST /api/recognition/events
 GET  /api/recognition/events/[eventId]
 PATCH /api/recognition/events/[eventId]
+DELETE /api/recognition/events/[eventId]
 GET  /api/recognition/events/[eventId]/awards
 PATCH /api/recognition/events/[eventId]/awards/[awardId]
 POST /api/recognition/events/[eventId]/awards/reorder
 ```
 
-All admin routes: Bearer → member id → `recognition_admin_members` check.
+All admin routes: Bearer → member id → Super Admin (`src/lib/auth/super-admin.ts`).
 
 Create event and award reorder now go through PostgreSQL RPCs so the DB applies them transactionally.
 The browser cannot execute these RPCs directly; only the Next.js server, through the service-role Supabase client, may call them.

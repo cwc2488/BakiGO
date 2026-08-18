@@ -4,6 +4,7 @@
 import {
   fetchEventAwards,
   fetchRecognitionEvent,
+  deleteRecognitionEvent,
   downloadRecognitionEventPresentation,
   fetchRecognitionEventPptReadiness,
   fetchRecognitionPresentationSummary,
@@ -26,6 +27,7 @@ import type {
 import { PageShell } from "@/components/ui/PageShell";
 import { BrandCard } from "@/components/ui/brand-ui";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 const STATUS_LABELS: Record<RecognitionEventStatus, string> = {
@@ -330,6 +332,75 @@ function AwardSection({
   );
 }
 
+function DeleteEventSection({ event }: { event: RecognitionEvent }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteRecognitionEvent(event.id);
+      router.replace("/recognition");
+    } catch (err) {
+      setDeleting(false);
+      setError(err instanceof Error ? err.message : "刪除失敗，請稍後再試");
+    }
+  }
+
+  return (
+    <BrandCard variant="bordered">
+      <h2 className="text-[1rem] font-semibold text-[#1d1d1f]">刪除活動</h2>
+      <p className="mt-1 text-[0.875rem] leading-relaxed text-[#86868b]">
+        刪除後無法復原。此活動的收件、名單、審核與照片都會一併移除。
+      </p>
+      {error ? <p className="mt-3 text-[0.875rem] text-[#ff375f]">{error}</p> : null}
+      <button
+        type="button"
+        className="mt-4 w-full rounded-2xl border border-[#ff375f]/30 bg-[#fff5f6] px-4 py-3 text-[0.9375rem] font-semibold text-[#ff375f] disabled:opacity-60"
+        disabled={deleting}
+        onClick={() => {
+          setError(null);
+          setConfirming(true);
+        }}
+      >
+        刪除活動
+      </button>
+
+      {confirming ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+          <div className="w-full max-w-md rounded-[1.75rem] bg-[var(--brand-surface)] p-6 shadow-[0_16px_48px_rgba(0,0,0,0.18)]">
+            <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">確定刪除這個表揚活動？</p>
+            <p className="mt-2 text-[0.9375rem] leading-relaxed text-[#636366]">
+              即將刪除「<strong className="text-[#1d1d1f]">{event.name}</strong>」。此操作無法復原。
+            </p>
+            <div className="mt-5 flex flex-col gap-2.5">
+              <button
+                type="button"
+                className="w-full rounded-2xl bg-[#ff375f] px-4 py-3.5 text-[1rem] font-semibold text-white disabled:opacity-60"
+                disabled={deleting}
+                onClick={() => void handleDelete()}
+              >
+                {deleting ? "刪除中…" : `確認刪除「${event.name}」`}
+              </button>
+              <button
+                type="button"
+                className="w-full rounded-2xl border border-[var(--brand-border)] px-4 py-3 text-[0.9375rem] font-medium text-[#1d1d1f] disabled:opacity-60"
+                disabled={deleting}
+                onClick={() => setConfirming(false)}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </BrandCard>
+  );
+}
+
 export function RecognitionEventPage({ eventId }: { eventId: string }) {
   const [event, setEvent] = useState<RecognitionEvent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -368,6 +439,7 @@ export function RecognitionEventPage({ eventId }: { eventId: string }) {
       backLabel="返回表揚中心"
     >
       <EventInfoSection event={event} onUpdated={setEvent} />
+      <DeleteEventSection event={event} />
       <PublicCollectionSection eventId={event.id} />
       <AwardSection eventId={event.id} />
       <ReviewAndRosterSection eventId={event.id} eventName={event.name} />

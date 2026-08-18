@@ -10,12 +10,11 @@ import {
   isRecognitionAdminApiPath,
   isRecognitionAdminPagePath,
 } from "@/lib/recognition/recognition-access";
-import { buildPointsLeaderboard } from "@/lib/points/build-points-leaderboard";
+import { buildPointsLeaderboard, type LeaderboardPointsSnapshot } from "@/lib/points/build-points-leaderboard";
 import { loadMemberMetrics } from "@/lib/mission-control/format";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { Member } from "@/types/member";
-import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
@@ -85,8 +84,11 @@ describe("BakiGO Super Admin authorization", () => {
       "src/app/recognition/(admin)/layout.tsx",
       "src/app/api/recognition/admin/me/route.ts",
       "src/app/api/recognition/events/route.ts",
+      "src/app/admin/layout.tsx",
+      "src/app/api/admin/me/route.ts",
       "src/components/home/HomePage.tsx",
       "src/components/recognition/RecognitionAdminGuard.tsx",
+      "src/components/admin/AdminCenterPage.tsx",
       "src/components/leaderboard/LeaderboardPage.tsx",
       "src/lib/recognition/recognition-service.ts",
     ];
@@ -164,7 +166,7 @@ describe("Super Admin does not change /leaderboard", () => {
   it("20699471 → /leaderboard scoring works", () => {
     const admin = cloudMember("admin-uuid", "20699471", "Super Admin");
     const partner = cloudMember("partner-uuid", "11111111", "一般夥伴");
-    const metricsByMemberId = new Map<string, MemberComputedMetrics>([
+    const metricsByMemberId = new Map<string, LeaderboardPointsSnapshot>([
       [
         admin.id,
         {
@@ -187,7 +189,7 @@ describe("Super Admin does not change /leaderboard", () => {
               isActiveToday: true,
             },
           },
-        } as MemberComputedMetrics,
+        } as LeaderboardPointsSnapshot,
       ],
       [
         partner.id,
@@ -211,7 +213,7 @@ describe("Super Admin does not change /leaderboard", () => {
               isActiveToday: true,
             },
           },
-        } as MemberComputedMetrics,
+        } as LeaderboardPointsSnapshot,
       ],
     ]);
 
@@ -243,7 +245,7 @@ describe("Super Admin does not change /leaderboard", () => {
 
     const monthly = buildPointsLeaderboard({
       members: [cloudMember("partner-uuid", "11111111", "一般夥伴")],
-      metricsByMemberId: new Map([["partner-uuid", metrics]]),
+      metricsByMemberId: new Map([["partner-uuid", metrics as LeaderboardPointsSnapshot]]),
       yearMonth: "2026-08",
       referenceDate: "2026-08-18",
       viewerMemberId: "partner-uuid",
@@ -266,7 +268,7 @@ describe("privileged Recognition routes stay on the Super Admin resolver", () =>
       }
       expect(source, rel).toContain("getMemberIdFromRequest");
       if (rel.endsWith("admin/me/route.ts")) {
-        expect(source, rel).toContain("isRecognitionAdmin");
+        expect(source, rel).toContain("resolveIsSuperAdmin");
         continue;
       }
       expect(source, rel).toContain("assertRecognitionAdmin");

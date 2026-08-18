@@ -27,8 +27,8 @@ import {
   MY_HOME_MORE_ENTRIES,
   type HomeTodayPriorityCard,
 } from "@/lib/home/my-home-presentation";
-import { homeMoreEntriesForViewer } from "@/lib/recognition/recognition-access";
-import { useRecognitionAdmin } from "@/lib/recognition/use-recognition-admin";
+import { homeMoreEntriesForViewer } from "@/lib/auth/admin-access";
+import { useSuperAdmin } from "@/lib/auth/use-super-admin";
 import { APP_ICON } from "@/lib/ui/app-icons";
 
 type LoadState = "loading" | "ready" | "error";
@@ -80,7 +80,7 @@ function BusinessHomeView({ metrics }: { metrics: MemberComputedMetrics }) {
   );
   const daily = useMemo(() => buildDailyActionSnapshot(metrics, storage), [metrics, storage]);
   const progress = useMemo(() => buildHomeProgressView(metrics, daily), [metrics, daily]);
-  const { isAdmin } = useRecognitionAdmin();
+  const { isAdmin } = useSuperAdmin();
   const moreEntries = homeMoreEntriesForViewer(MY_HOME_MORE_ENTRIES, isAdmin === true);
   const [moreOpen, setMoreOpen] = useState(false);
 

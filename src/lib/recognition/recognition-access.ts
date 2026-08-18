@@ -1,35 +1,27 @@
 import { normalizePathname } from "@/lib/auth/public-paths";
+import {
+  ADMIN_AUTHORITY,
+  ADMIN_CENTER_HOME_ENTRY,
+  decideAdminAccess,
+  homeMoreEntriesForViewer as homeMoreEntriesForAdminViewer,
+  RECOGNITION_CENTER_ENTRY,
+  type AdminAccessDecision,
+} from "@/lib/auth/admin-access";
 import type { HomeMoreEntry } from "@/lib/home/my-home-presentation";
 
 /**
- * Canonical Recognition Center / administration-center authority:
- * `SUPER_ADMIN_MEMBER_NUMBERS` via `isSuperAdmin` / `resolveIsSuperAdmin`.
- *
- * Not inferred from career rank, president status, a client-provided role,
- * or `recognition_admin_members` rows. The Super Admin 會員編號 lives only
- * in `src/lib/auth/super-admin.ts`.
+ * Canonical Recognition Center authority is the same Super Admin source
+ * as Admin Center. See `src/lib/auth/super-admin.ts`.
  */
-export const RECOGNITION_ADMIN_AUTHORITY = {
-  source: "src/lib/auth/super-admin.ts",
-  memberNumbers: "SUPER_ADMIN_MEMBER_NUMBERS",
-  resolver: "resolveIsSuperAdmin",
-} as const;
+export const RECOGNITION_ADMIN_AUTHORITY = ADMIN_AUTHORITY;
 
-export type RecognitionAccessDecision = "unauthenticated" | "forbidden" | "allowed";
+export type RecognitionAccessDecision = AdminAccessDecision;
 
-export const RECOGNITION_CENTER_HOME_ENTRY: HomeMoreEntry = {
-  href: "/recognition",
-  title: "表揚中心",
-};
+export const RECOGNITION_CENTER_HOME_ENTRY: HomeMoreEntry = RECOGNITION_CENTER_ENTRY;
 
-export function decideRecognitionAdminAccess(input: {
-  memberId: string | null | undefined;
-  isAdmin: boolean;
-}): RecognitionAccessDecision {
-  if (!input.memberId) return "unauthenticated";
-  if (!input.isAdmin) return "forbidden";
-  return "allowed";
-}
+export const decideRecognitionAdminAccess = decideAdminAccess;
+
+export { ADMIN_CENTER_HOME_ENTRY, homeMoreEntriesForAdminViewer as homeMoreEntriesForViewer };
 
 export function isRecognitionPublicCollectionPath(pathname: string): boolean {
   return normalizePathname(pathname).startsWith("/recognition/p/");
@@ -51,19 +43,3 @@ export function isRecognitionAdminApiPath(pathname: string): boolean {
   return normalized === "/api/recognition" || normalized.startsWith("/api/recognition/");
 }
 
-export function homeMoreEntriesForViewer(
-  entries: readonly HomeMoreEntry[],
-  isRecognitionAdmin: boolean,
-): HomeMoreEntry[] {
-  const withoutRecognition = entries.filter((entry) => entry.href !== RECOGNITION_CENTER_HOME_ENTRY.href);
-  if (!isRecognitionAdmin) return withoutRecognition;
-  const profileIndex = withoutRecognition.findIndex((entry) => entry.href === "/profile");
-  if (profileIndex === -1) {
-    return [...withoutRecognition, RECOGNITION_CENTER_HOME_ENTRY];
-  }
-  return [
-    ...withoutRecognition.slice(0, profileIndex),
-    RECOGNITION_CENTER_HOME_ENTRY,
-    ...withoutRecognition.slice(profileIndex),
-  ];
-}
