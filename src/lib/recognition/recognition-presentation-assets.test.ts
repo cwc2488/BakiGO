@@ -165,8 +165,8 @@ describe("Recognition master portrait geometry", () => {
     expect(titleSafeBoxForMaster("hero-1").y).toBeGreaterThanOrEqual(1.45);
     expect(titleSafeBoxForMaster("hero-2-3").y).toBeGreaterThanOrEqual(1.6);
     expect(titleSafeBoxForMaster("wall-4-12").y).toBeGreaterThanOrEqual(1.55);
-    expect(titleGeometryForMaster("hero-1").maxFontPt).toBeLessThanOrEqual(16);
-    expect(titleGeometryForMaster("wall-4-12").maxFontPt).toBeLessThanOrEqual(14);
+    expect(titleGeometryForMaster("hero-1").maxFontPt).toBeLessThanOrEqual(15);
+    expect(titleGeometryForMaster("wall-4-12").maxFontPt).toBeLessThanOrEqual(13);
   });
 
   it("sizes mapped badges for projector visibility", () => {

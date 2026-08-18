@@ -37,9 +37,9 @@ export const RECOGNITION_MASTER_FILL: RecognitionSlideBox = {
  */
 export const RECOGNITION_TITLE_GEOMETRY: Record<RecognitionMasterId, RecognitionTitleGeometry> = {
   "name-only": { x: 2.55, y: 1.12, w: 4.9, h: 0.3, maxFontPt: 22, minFontPt: 12 },
-  "hero-1": { x: 3.05, y: 1.48, w: 3.9, h: 0.22, maxFontPt: 16, minFontPt: 10 },
+  "hero-1": { x: 3.05, y: 1.48, w: 3.9, h: 0.22, maxFontPt: 15, minFontPt: 10 },
   "hero-2-3": { x: 3.15, y: 1.64, w: 3.7, h: 0.32, maxFontPt: 20, minFontPt: 11 },
-  "wall-4-12": { x: 2.7, y: 1.58, w: 4.6, h: 0.2, maxFontPt: 14, minFontPt: 10 },
+  "wall-4-12": { x: 2.7, y: 1.61, w: 4.6, h: 0.17, maxFontPt: 13, minFontPt: 10 },
   "million-lifetime": { x: 1.3, y: 0.04, w: 7.4, h: 0.26, maxFontPt: 16, minFontPt: 10 },
 };
 
@@ -63,9 +63,9 @@ export const RECOGNITION_NAME_ON_NAVY = "#F6F0E4";
 export const RECOGNITION_NAME_ON_GOLD = "#0B1F3A";
 
 const HERO_1_INNER: RecognitionSlideBox = { x: 3.4669, y: 1.8163, w: 3.0318, h: 4.2058 };
-const HERO_1_PHOTO: RecognitionSlideBox = { x: 3.5014, y: 1.8508, w: 2.9627, h: 4.1367 };
+const HERO_1_PHOTO: RecognitionSlideBox = { x: 3.536, y: 1.8854, w: 2.8936, h: 4.0676 };
 const HERO_1_OVERLAY: RecognitionSlideBox = { x: 3.4392, y: 1.7887, w: 3.087, h: 4.32 };
-const HERO_1_NAME: RecognitionSlideBox = { x: 3.2, y: 6.2, w: 3.6, h: 0.3 };
+const HERO_1_NAME: RecognitionSlideBox = { x: 3.2, y: 6.32, w: 3.6, h: 0.28 };
 
 const HERO_3_INNER: readonly RecognitionSlideBox[] = [
   { x: 1.1671, y: 2.2099, w: 2.1961, h: 3.5152 },
@@ -73,9 +73,9 @@ const HERO_3_INNER: readonly RecognitionSlideBox[] = [
   { x: 6.5953, y: 2.2099, w: 2.2445, h: 3.5152 },
 ];
 const HERO_3_PHOTO: readonly RecognitionSlideBox[] = [
-  { x: 1.2017, y: 2.2445, w: 2.1271, h: 3.4461 },
-  { x: 3.9157, y: 2.2445, w: 2.1064, h: 3.4461 },
-  { x: 6.6298, y: 2.2445, w: 2.1754, h: 3.4461 },
+  { x: 1.2362, y: 2.279, w: 2.0579, h: 3.377 },
+  { x: 3.9503, y: 2.279, w: 2.0372, h: 3.377 },
+  { x: 6.6644, y: 2.279, w: 2.1063, h: 3.377 },
 ];
 const HERO_3_OVERLAY: readonly RecognitionSlideBox[] = [
   { x: 1.0152, y: 2.134, w: 2.4999, h: 3.7845 },
@@ -94,7 +94,7 @@ const HERO_PAIR_FRAME = {
   innerOffsetY: 0.0759,
   innerW: 2.1754,
   innerH: 3.5152,
-  photoInset: 0.0345,
+  photoInset: 0.0691,
   gap: 0.28,
   overlayY: 2.134,
 } as const;
@@ -114,18 +114,18 @@ const WALL_INNER: readonly RecognitionSlideBox[] = [
   { x: 8.018, y: 3.9503, w: 1.0912, h: 1.6436 },
 ];
 const WALL_PHOTO: readonly RecognitionSlideBox[] = [
-  { x: 0.8771, y: 1.9544, w: 0.9945, h: 1.5608 },
-  { x: 2.2859, y: 1.9544, w: 1.0014, h: 1.5608 },
-  { x: 3.6948, y: 1.9544, w: 1.0221, h: 1.5608 },
-  { x: 5.145, y: 1.9544, w: 1.029, h: 1.5608 },
-  { x: 6.5953, y: 1.9544, w: 1.0359, h: 1.5608 },
-  { x: 8.0525, y: 1.9544, w: 1.0221, h: 1.5608 },
-  { x: 0.8771, y: 3.9848, w: 0.9945, h: 1.5746 },
-  { x: 2.2928, y: 3.9848, w: 0.9945, h: 1.5746 },
-  { x: 3.6948, y: 3.9848, w: 1.0221, h: 1.5746 },
-  { x: 5.145, y: 3.9848, w: 1.029, h: 1.5746 },
-  { x: 6.5953, y: 3.9848, w: 1.0359, h: 1.5746 },
-  { x: 8.0525, y: 3.9848, w: 1.0221, h: 1.5746 },
+  { x: 0.9116, y: 1.989, w: 0.9253, h: 1.4916 },
+  { x: 2.3205, y: 1.989, w: 0.9322, h: 1.4916 },
+  { x: 3.7294, y: 1.989, w: 0.9528, h: 1.4916 },
+  { x: 5.1796, y: 1.989, w: 0.9599, h: 1.4916 },
+  { x: 6.6299, y: 1.989, w: 0.9668, h: 1.4916 },
+  { x: 8.0871, y: 1.989, w: 0.953, h: 1.4916 },
+  { x: 0.9116, y: 4.0194, w: 0.9253, h: 1.5054 },
+  { x: 2.3274, y: 4.0194, w: 0.9253, h: 1.5054 },
+  { x: 3.7294, y: 4.0194, w: 0.9528, h: 1.5054 },
+  { x: 5.1796, y: 4.0194, w: 0.9599, h: 1.5054 },
+  { x: 6.6299, y: 4.0194, w: 0.9668, h: 1.5054 },
+  { x: 8.0871, y: 4.0194, w: 0.953, h: 1.5054 },
 ];
 const WALL_NAME_PLAQUES: readonly RecognitionSlideBox[] = [
   { x: 0.8425, y: 3.57, w: 1.0635, h: 0.2 },
@@ -143,7 +143,7 @@ const WALL_NAME_PLAQUES: readonly RecognitionSlideBox[] = [
 ];
 
 const MILLION_INNER: RecognitionSlideBox = { x: 3.308, y: 1.6367, w: 3.3978, h: 3.3564 };
-const MILLION_PHOTO: RecognitionSlideBox = { x: 3.3425, y: 1.6713, w: 3.3287, h: 3.2873 };
+const MILLION_PHOTO: RecognitionSlideBox = { x: 3.3771, y: 1.7058, w: 3.2596, h: 3.2182 };
 const MILLION_NAME: RecognitionSlideBox = { x: 2.2, y: 5.28, w: 5.6, h: 0.36 };
 
 const NAME_ONLY_CONTENT: RecognitionSlideBox = {

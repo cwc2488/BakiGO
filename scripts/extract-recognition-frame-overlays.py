@@ -128,17 +128,24 @@ def full_slide_overlay(rgb: np.ndarray, inners: list[tuple[int, int, int, int]])
 
 
 def cover_baked_frames(rgb: np.ndarray, inners: list[tuple[int, int, int, int]], pad: int) -> np.ndarray:
-    """Hide baked gold frames with the master's own interior navy. Not a new design."""
-    out = np.dstack([rgb.copy(), np.zeros(rgb.shape[:2], np.uint8)])
+    """Hide baked gold frames using sparkle sampled from the gaps between them."""
     h, w = rgb.shape[:2]
-    fill = rgb[inners[0][1] + 40, inners[0][0] + 40]
+    out = np.dstack([rgb.copy(), np.zeros((h, w), np.uint8)])
+    # Gap between left and center frames — approved master navy + sparkle, not a new fill.
+    gap_x0 = inners[0][2] + pad + 2
+    gap_x1 = inners[1][0] - pad - 2
+    if gap_x1 <= gap_x0:
+        gap_x0, gap_x1 = inners[0][2] + 4, inners[1][0] - 4
+    gap = rgb[:, gap_x0:gap_x1].copy()
+    gap_w = gap.shape[1]
     for ix0, iy0, ix1, iy1 in inners:
-        x0, y0 = max(0, ix0 - pad), max(0, iy0 - pad)
-        x1, y1 = min(w - 1, ix1 + pad), min(h - 1, iy1 + pad)
-        patch = out[y0 : y1 + 1, x0 : x1 + 1]
-        patch[:, :, :3] = fill
-        patch[:, :, 3] = 255
-        out[y0 : y1 + 1, x0 : x1 + 1] = patch
+        x0, y_start = max(0, ix0 - pad), max(0, iy0 - pad)
+        x1, y_end = min(w - 1, ix1 + pad), min(h - 1, iy1 + pad)
+        width = x1 - x0 + 1
+        tiles = int(np.ceil(width / gap_w))
+        sampled = np.concatenate([gap[y_start : y_end + 1]] * tiles, axis=1)[:, :width]
+        out[y_start : y_end + 1, x0 : x1 + 1, :3] = sampled
+        out[y_start : y_end + 1, x0 : x1 + 1, 3] = 255
     return out
 
 
