@@ -74,15 +74,18 @@ Frozen rules:
 
 ### Recognition Admin rules
 
-Recognition Center 使用專用 allowlist：
+BakiGO 唯一 Super Admin 為會員編號 `20699471`。
 
-- `recognition_admin_members`
+Canonical source: `src/lib/auth/super-admin.ts` (`SUPER_ADMIN_MEMBER_NUMBERS` / `isSuperAdmin` / `resolveIsSuperAdmin`).
 
 Frozen rules:
 
-- Recognition Admin 權限**不得**由 rank 推論
+- Recognition Center / 管理中心 僅 Super Admin 可進入
+- 權限**不得**由 rank 推論
 - President rank **不會**自動擁有 Recognition Admin 權限
-- 必須由 allowlist 明確授權
+- 不得把 Super Admin 會員編號散落 hard-code 在 component / route
+- 一般會員既有功能（含 `/leaderboard`、夥伴關懷）不因此改變
+- `recognition_admin_members` 表不得單獨授權；server/API 必須走同一 Super Admin 判斷
 
 ### Recognition Event Template compatibility
 

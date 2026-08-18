@@ -263,8 +263,10 @@ describe("Recognition admin-only table grants", () => {
     expect(migration).toContain("Do not add storage.objects policies for bucket recognition-photos");
   });
 
-  it("keeps recognition_admin_members as the canonical admin authority", () => {
-    expect(migration).toContain("Canonical admin authority remains public.recognition_admin_members");
+  it("does not treat recognition_admin_members as a grant source", () => {
     expect(migration).toContain("President rank does not grant access");
+    const service = readFileSync(resolve(process.cwd(), "src/lib/recognition/recognition-service.ts"), "utf8");
+    expect(service).toContain("resolveIsSuperAdmin");
+    expect(service).not.toContain('.from("recognition_admin_members")');
   });
 });

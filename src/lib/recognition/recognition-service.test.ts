@@ -254,20 +254,12 @@ describe("Recognition Center — reorder validation", () => {
 
 describe("Recognition Center — admin permission model", () => {
   it("does not grant admin access based on president rank alone", () => {
-    // Authorization is via recognition_admin_members table.
-    // rank = president is NOT sufficient.
-    // This test verifies the architectural principle at the code level.
-    // The API routes call assertRecognitionAdmin which queries recognition_admin_members,
-    // not members.current_level or members.role.
-
     const presidentRank = "president";
     const careerRanksThatDoNotGrantAccess = [
       "member", "supervisor", "active_supervisor",
       "world_team", "promotion_group", "wealth_group", "president",
     ];
     expect(careerRanksThatDoNotGrantAccess).toContain(presidentRank);
-    // All ranks are in the "not granting access" list — including president.
-    // This confirms the product rule that rank does NOT grant recognition admin.
   });
 });
 
