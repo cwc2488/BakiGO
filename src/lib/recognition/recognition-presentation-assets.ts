@@ -99,23 +99,51 @@ export function selectRecognitionMaster(input: {
 
 const pngDataUriCache = new Map<string, string>();
 
-export function recognitionAssetAbsolutePath(relativePath: string): string {
-  return join(process.cwd(), relativePath);
+function recognitionMastersDir(): string {
+  return join(process.cwd(), "public", "recognition", "masters");
 }
 
-export function loadRecognitionPngDataUri(relativePath: string): string {
-  const cached = pngDataUriCache.get(relativePath);
+function recognitionBadgesDir(): string {
+  return join(process.cwd(), "public", "recognition", "badges");
+}
+
+export function recognitionMasterAbsolutePath(masterId: RecognitionMasterId): string {
+  return join(recognitionMastersDir(), `${masterId}.png`);
+}
+
+export function recognitionBadgeAbsolutePath(badgeId: RecognitionBadgeId): string {
+  return join(recognitionBadgesDir(), `${badgeId}.png`);
+}
+
+export function recognitionAssetAbsolutePath(relativePath: string): string {
+  if (relativePath.startsWith("public/recognition/masters/")) {
+    const masterId = relativePath.slice("public/recognition/masters/".length).replace(/\.png$/, "");
+    if ((RECOGNITION_MASTER_IDS as readonly string[]).includes(masterId)) {
+      return recognitionMasterAbsolutePath(masterId as RecognitionMasterId);
+    }
+  }
+  if (relativePath.startsWith("public/recognition/badges/")) {
+    const badgeId = relativePath.slice("public/recognition/badges/".length).replace(/\.png$/, "");
+    if ((RECOGNITION_BADGE_IDS as readonly string[]).includes(badgeId)) {
+      return recognitionBadgeAbsolutePath(badgeId as RecognitionBadgeId);
+    }
+  }
+  throw new Error(`unrecognized recognition visual asset path: ${relativePath}`);
+}
+
+function loadPngDataUri(cacheKey: string, absolutePath: string): string {
+  const cached = pngDataUriCache.get(cacheKey);
   if (cached) return cached;
-  const buffer = readFileSync(recognitionAssetAbsolutePath(relativePath));
+  const buffer = readFileSync(absolutePath);
   const dataUri = `image/png;base64,${buffer.toString("base64")}`;
-  pngDataUriCache.set(relativePath, dataUri);
+  pngDataUriCache.set(cacheKey, dataUri);
   return dataUri;
 }
 
 export function loadRecognitionMasterDataUri(masterId: RecognitionMasterId): string {
-  return loadRecognitionPngDataUri(RECOGNITION_MASTER_RELATIVE_PATHS[masterId]);
+  return loadPngDataUri(`master:${masterId}`, recognitionMasterAbsolutePath(masterId));
 }
 
 export function loadRecognitionBadgeDataUri(badgeId: RecognitionBadgeId): string {
-  return loadRecognitionPngDataUri(RECOGNITION_BADGE_RELATIVE_PATHS[badgeId]);
+  return loadPngDataUri(`badge:${badgeId}`, recognitionBadgeAbsolutePath(badgeId));
 }
