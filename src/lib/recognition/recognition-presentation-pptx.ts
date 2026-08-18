@@ -1,10 +1,37 @@
 import PptxGenJS from "pptxgenjs";
 import {
+  loadRecognitionBadgeDataUri,
+  loadRecognitionMasterDataUri,
+  recognitionBadgeIdForAwardSlug,
+  selectRecognitionMaster,
+  type RecognitionMasterId,
+} from "@/lib/recognition/recognition-presentation-assets";
+import {
   fitRecognitionPresentationName,
   nameListColumnCount,
-  photoGridRowPattern,
   RECOGNITION_PPTX_SLIDE,
 } from "@/lib/recognition/recognition-presentation-layout";
+import {
+  fitPortraitInFrame,
+  hero1NameBox,
+  hero1PortraitFrame,
+  hero23PortraitFrames,
+  millionNameBox,
+  millionPortraitFrames,
+  nameBoxBelowFrame,
+  nameOnlyContentBox,
+  nameOnlyLineBoxes,
+  RECOGNITION_BADGE_BOX,
+  RECOGNITION_MASTER_FILL,
+  RECOGNITION_NAME_ON_GOLD,
+  RECOGNITION_NAME_ON_NAVY,
+  RECOGNITION_PAGE_INDICATOR_BOX,
+  titleBoxForMaster,
+  wallNamePlaque,
+  wallPortraitFrame,
+  wallSlotCount,
+  type RecognitionSlideBox,
+} from "@/lib/recognition/recognition-presentation-master-layout";
 import { jpegBufferToPptxData } from "@/lib/recognition/recognition-presentation-images";
 import {
   LIFETIME_RECOGNITION_PRESENTATION_THEME,
@@ -18,7 +45,6 @@ import type {
   RecognitionPresentationTheme,
   RecognitionSlidePlan,
 } from "@/lib/recognition/recognition-presentation-types";
-import { isLifetimeAchievementAwardSlug } from "@/lib/recognition/recognition-presentation-types";
 
 type PptxCtor = typeof PptxGenJS;
 type Presentation = InstanceType<PptxCtor>;
@@ -48,53 +74,60 @@ function createPresentation(theme: RecognitionPresentationTheme): Presentation {
   return pptx;
 }
 
-function addBackground(slide: Slide, theme: RecognitionPresentationTheme) {
-  slide.addShape("rect", {
-    x: 0,
-    y: 0,
-    w: RECOGNITION_PPTX_SLIDE.widthIn,
-    h: RECOGNITION_PPTX_SLIDE.heightIn,
-    fill: { color: pptHex(theme.background) },
-    line: { color: pptHex(theme.background), pt: 0 },
+function addMasterBackground(slide: Slide, masterId: RecognitionMasterId) {
+  slide.addImage({
+    data: loadRecognitionMasterDataUri(masterId),
+    x: RECOGNITION_MASTER_FILL.x,
+    y: RECOGNITION_MASTER_FILL.y,
+    w: RECOGNITION_MASTER_FILL.w,
+    h: RECOGNITION_MASTER_FILL.h,
   });
-  if (theme.decorative.showCornerAccent) {
-    slide.addShape("rect", {
-      x: 0,
-      y: 0,
-      w: 0.18,
-      h: RECOGNITION_PPTX_SLIDE.heightIn,
-      fill: { color: pptHex(theme.accent) },
-      line: { color: pptHex(theme.accent), pt: 0 },
-    });
-  }
 }
 
-function addAwardChrome(
+function addAwardOverlay(
   slide: Slide,
   plan: RecognitionSlidePlan,
   theme: RecognitionPresentationTheme,
+  masterId: RecognitionMasterId,
 ) {
-  const { spacing } = theme;
-  slide.addText(plan.awardName, {
-    x: spacing.slideMarginIn + 0.12,
-    y: spacing.titleTopIn,
-    w: RECOGNITION_PPTX_SLIDE.widthIn - spacing.slideMarginIn * 2 - 1.1,
-    h: spacing.titleHeightIn,
+  const titleBox = titleBoxForMaster(masterId);
+  const fittedTitle = fitRecognitionPresentationName(plan.awardName, {
+    baseFontPt: theme.titleTypography.fontSizePt,
+    minFontPt: theme.titleTypography.minFontSizePt,
+    comfortableChars: 14,
+  });
+  slide.addText(fittedTitle.text, {
+    x: titleBox.x,
+    y: titleBox.y,
+    w: titleBox.w,
+    h: titleBox.h,
     fontFace: theme.titleTypography.fontFace,
-    fontSize: theme.titleTypography.fontSizePt,
+    fontSize: fittedTitle.fontSizePt,
     bold: theme.titleTypography.bold,
     color: pptHex(theme.titleTypography.color),
-    margin: 0,
+    align: "center",
     valign: "middle",
+    margin: 0,
     wrap: true,
   });
 
+  const badgeId = recognitionBadgeIdForAwardSlug(plan.awardSlug);
+  if (badgeId) {
+    slide.addImage({
+      data: loadRecognitionBadgeDataUri(badgeId),
+      x: RECOGNITION_BADGE_BOX.x,
+      y: RECOGNITION_BADGE_BOX.y,
+      w: RECOGNITION_BADGE_BOX.w,
+      h: RECOGNITION_BADGE_BOX.h,
+    });
+  }
+
   if (plan.pageCount > 1) {
     slide.addText(`${plan.pageIndex} / ${plan.pageCount}`, {
-      x: RECOGNITION_PPTX_SLIDE.widthIn - spacing.slideMarginIn - 1.05,
-      y: spacing.titleTopIn + 0.08,
-      w: 1.0,
-      h: 0.36,
+      x: RECOGNITION_PAGE_INDICATOR_BOX.x,
+      y: RECOGNITION_PAGE_INDICATOR_BOX.y,
+      w: RECOGNITION_PAGE_INDICATOR_BOX.w,
+      h: RECOGNITION_PAGE_INDICATOR_BOX.h,
       fontFace: theme.captionTypography.fontFace,
       fontSize: theme.captionTypography.fontSizePt,
       color: pptHex(theme.captionTypography.color),
@@ -103,81 +136,49 @@ function addAwardChrome(
       margin: 0,
     });
   }
-
-  slide.addShape("rect", {
-    x: spacing.slideMarginIn + 0.12,
-    y: spacing.titleTopIn + spacing.titleHeightIn,
-    w: 2.4,
-    h: theme.decorative.ruleHeightIn,
-    fill: { color: pptHex(theme.decorative.ruleColor) },
-    line: { color: pptHex(theme.decorative.ruleColor), pt: 0 },
-  });
 }
 
 function addPortrait(input: {
   slide: Slide;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  frame: RecognitionSlideBox;
   portrait: RecognitionPreparedPortrait | undefined;
-  theme: RecognitionPresentationTheme;
   displayName: string;
 }) {
-  const border = input.theme.photoFrame.borderPt / 72;
-  input.slide.addShape("rect", {
-    x: input.x - border,
-    y: input.y - border,
-    w: input.width + border * 2,
-    h: input.height + border * 2,
-    fill: { color: pptHex(input.theme.photoFrame.borderColor) },
-    line: { color: pptHex(input.theme.photoFrame.borderColor), pt: 0 },
-  });
-  input.slide.addShape("rect", {
-    x: input.x,
-    y: input.y,
-    w: input.width,
-    h: input.height,
-    fill: { color: pptHex(input.theme.photoFrame.backdropColor) },
-    line: { color: pptHex(input.theme.photoFrame.backdropColor), pt: 0 },
-  });
   if (!input.portrait) {
     throw new Error(`missing presentation portrait for ${input.displayName}`);
   }
+  const box = fitPortraitInFrame(input.frame);
   input.slide.addImage({
     data: jpegBufferToPptxData(input.portrait.jpegBuffer),
-    x: input.x,
-    y: input.y,
-    w: input.width,
-    h: input.height,
+    x: box.x,
+    y: box.y,
+    w: box.w,
+    h: box.h,
   });
 }
 
 function addNameLabel(input: {
   slide: Slide;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  box: RecognitionSlideBox;
   name: string;
   theme: RecognitionPresentationTheme;
+  color: string;
   fontSizePt?: number;
-  align?: "left" | "center";
 }) {
   const fitted = fitRecognitionPresentationName(input.name, {
     baseFontPt: input.fontSizePt ?? input.theme.nameTypography.fontSizePt,
     minFontPt: input.theme.nameTypography.minFontSizePt,
   });
   input.slide.addText(fitted.text, {
-    x: input.x,
-    y: input.y,
-    w: input.width,
-    h: input.height,
+    x: input.box.x,
+    y: input.box.y,
+    w: input.box.w,
+    h: input.box.h,
     fontFace: input.theme.nameTypography.fontFace,
     fontSize: fitted.fontSizePt,
     bold: input.theme.nameTypography.bold,
-    color: pptHex(input.theme.nameTypography.color),
-    align: input.align ?? "center",
+    color: pptHex(input.color),
+    align: "center",
     valign: "middle",
     wrap: true,
     margin: 0,
@@ -205,137 +206,151 @@ function renderNameListSlide(input: {
   candidates: RecognitionPresentationCandidate[];
   theme: RecognitionPresentationTheme;
 }) {
+  const lineBoxes = nameOnlyLineBoxes(input.candidates.length);
+  if (lineBoxes) {
+    input.candidates.forEach((candidate, index) => {
+      addNameLabel({
+        slide: input.slide,
+        box: lineBoxes[index]!,
+        name: candidate.displayName,
+        theme: input.theme,
+        color: RECOGNITION_NAME_ON_NAVY,
+        fontSizePt: input.candidates.length <= 3 ? 32 : 26,
+      });
+    });
+    return;
+  }
+
   const columns = nameListColumnCount(input.candidates.length);
-  const margin = input.theme.spacing.slideMarginIn + 0.18;
-  const top = input.theme.spacing.contentTopIn;
-  const usableWidth = RECOGNITION_PPTX_SLIDE.widthIn - margin * 2;
-  const usableHeight = RECOGNITION_PPTX_SLIDE.heightIn - top - 0.38;
-  const columnGap = 0.28;
-  const columnWidth = (usableWidth - columnGap * (columns - 1)) / columns;
+  const area = nameOnlyContentBox();
+  const columnGap = 0.22;
+  const columnWidth = (area.w - columnGap * (columns - 1)) / columns;
   const rows = Math.ceil(input.candidates.length / columns);
-  const rowHeight = Math.min(0.62, usableHeight / Math.max(rows, 1));
+  const rowHeight = Math.min(0.58, area.h / Math.max(rows, 1));
 
   input.candidates.forEach((candidate, index) => {
     const column = index % columns;
     const row = Math.floor(index / columns);
     addNameLabel({
       slide: input.slide,
-      x: margin + column * (columnWidth + columnGap),
-      y: top + row * rowHeight,
-      width: columnWidth,
-      height: rowHeight,
+      box: {
+        x: area.x + column * (columnWidth + columnGap),
+        y: area.y + row * rowHeight,
+        w: columnWidth,
+        h: rowHeight,
+      },
       name: candidate.displayName,
       theme: input.theme,
-      fontSizePt: columns === 1 ? 32 : columns === 2 ? 24 : 20,
-      align: columns === 1 ? "center" : "left",
+      color: RECOGNITION_NAME_ON_NAVY,
+      fontSizePt: columns === 1 ? 28 : columns === 2 ? 22 : 18,
     });
   });
 }
 
-function renderPhotoHeroSlide(input: {
+function renderHero1Slide(input: {
   slide: Slide;
   candidates: RecognitionPresentationCandidate[];
   portraits: Map<string, RecognitionPreparedPortrait>;
   theme: RecognitionPresentationTheme;
 }) {
-  const count = input.candidates.length;
-  const top = input.theme.spacing.contentTopIn + 0.08;
-  const availableHeight = RECOGNITION_PPTX_SLIDE.heightIn - top - 0.85;
-  const portraitHeight = Math.min(4.55, availableHeight);
-  const portraitWidth = portraitHeight * 0.75;
-  const gap = count === 1 ? 0 : 0.42;
-  const totalWidth = portraitWidth * count + gap * (count - 1);
-  const startX = (RECOGNITION_PPTX_SLIDE.widthIn - totalWidth) / 2;
+  const candidate = input.candidates[0];
+  if (!candidate) return;
+  addPortrait({
+    slide: input.slide,
+    frame: hero1PortraitFrame(),
+    portrait: input.portraits.get(candidate.candidateId),
+    displayName: candidate.displayName,
+  });
+  addNameLabel({
+    slide: input.slide,
+    box: hero1NameBox(),
+    name: candidate.displayName,
+    theme: input.theme,
+    color: RECOGNITION_NAME_ON_GOLD,
+    fontSizePt: 28,
+  });
+}
 
+function renderHero23Slide(input: {
+  slide: Slide;
+  candidates: RecognitionPresentationCandidate[];
+  portraits: Map<string, RecognitionPreparedPortrait>;
+  theme: RecognitionPresentationTheme;
+}) {
+  const count = input.candidates.length === 2 ? 2 : 3;
+  const frames = hero23PortraitFrames(count);
   input.candidates.forEach((candidate, index) => {
-    const x = startX + index * (portraitWidth + gap);
+    const frame = frames[index];
+    if (!frame) return;
     addPortrait({
       slide: input.slide,
-      x,
-      y: top,
-      width: portraitWidth,
-      height: portraitHeight,
+      frame,
       portrait: input.portraits.get(candidate.candidateId),
-      theme: input.theme,
       displayName: candidate.displayName,
     });
     addNameLabel({
       slide: input.slide,
-      x: x - 0.12,
-      y: top + portraitHeight + 0.12,
-      width: portraitWidth + 0.24,
-      height: 0.58,
+      box: nameBoxBelowFrame(frame),
       name: candidate.displayName,
       theme: input.theme,
-      fontSizePt: count === 1 ? 30 : 22,
+      color: RECOGNITION_NAME_ON_NAVY,
+      fontSizePt: count === 2 ? 22 : 18,
     });
   });
 }
 
-function renderPhotoGridSlide(input: {
+function renderWallSlide(input: {
   slide: Slide;
   candidates: RecognitionPresentationCandidate[];
   portraits: Map<string, RecognitionPreparedPortrait>;
   theme: RecognitionPresentationTheme;
 }) {
-  const pattern = photoGridRowPattern(input.candidates.length);
-  const margin = input.theme.spacing.slideMarginIn + 0.12;
-  const top = input.theme.spacing.contentTopIn;
-  const usableWidth = RECOGNITION_PPTX_SLIDE.widthIn - margin * 2;
-  const usableHeight = RECOGNITION_PPTX_SLIDE.heightIn - top - 0.28;
-  const rowGap = 0.16;
-  const colGap = 0.16;
-  const rowCount = pattern.length;
-  const rowHeight = (usableHeight - rowGap * (rowCount - 1)) / rowCount;
-  const nameHeight = 0.34;
-  const portraitHeight = Math.max(0.9, rowHeight - nameHeight - 0.06);
-  const portraitWidth = portraitHeight * 0.75;
-
-  let cursor = 0;
-  pattern.forEach((count, rowIndex) => {
-    const rowCandidates = input.candidates.slice(cursor, cursor + count);
-    cursor += count;
-    const rowWidth = portraitWidth * count + colGap * (count - 1);
-    const startX = margin + Math.max(0, (usableWidth - rowWidth) / 2);
-    const y = top + rowIndex * (rowHeight + rowGap);
-    rowCandidates.forEach((candidate, col) => {
-      const x = startX + col * (portraitWidth + colGap);
-      addPortrait({
-        slide: input.slide,
-        x,
-        y,
-        width: portraitWidth,
-        height: portraitHeight,
-        portrait: input.portraits.get(candidate.candidateId),
-        theme: input.theme,
-        displayName: candidate.displayName,
-      });
-      addNameLabel({
-        slide: input.slide,
-        x: x - 0.04,
-        y: y + portraitHeight + 0.04,
-        width: portraitWidth + 0.08,
-        height: nameHeight,
-        name: candidate.displayName,
-        theme: input.theme,
-        fontSizePt: 13,
-      });
+  if (input.candidates.length > wallSlotCount()) {
+    throw new Error("wall master cannot place more than 12 recipients on one slide");
+  }
+  input.candidates.forEach((candidate, index) => {
+    addPortrait({
+      slide: input.slide,
+      frame: wallPortraitFrame(index),
+      portrait: input.portraits.get(candidate.candidateId),
+      displayName: candidate.displayName,
+    });
+    addNameLabel({
+      slide: input.slide,
+      box: wallNamePlaque(index),
+      name: candidate.displayName,
+      theme: input.theme,
+      color: RECOGNITION_NAME_ON_GOLD,
+      fontSizePt: 11,
     });
   });
 }
 
-function themeForPlan(
-  plan: RecognitionSlidePlan,
-  baseTheme: RecognitionPresentationTheme,
-): RecognitionPresentationTheme {
-  if (plan.layoutType === "lifetime_achievement" || isLifetimeAchievementAwardSlug(plan.awardSlug)) {
-    return {
-      ...LIFETIME_RECOGNITION_PRESENTATION_THEME,
-      id: baseTheme.id,
-      version: baseTheme.version,
-    };
-  }
-  return baseTheme;
+function renderMillionSlide(input: {
+  slide: Slide;
+  candidates: RecognitionPresentationCandidate[];
+  portraits: Map<string, RecognitionPreparedPortrait>;
+  theme: RecognitionPresentationTheme;
+}) {
+  const frames = millionPortraitFrames(input.candidates.length);
+  input.candidates.forEach((candidate, index) => {
+    const frame = frames[index];
+    if (!frame) return;
+    addPortrait({
+      slide: input.slide,
+      frame,
+      portrait: input.portraits.get(candidate.candidateId),
+      displayName: candidate.displayName,
+    });
+    addNameLabel({
+      slide: input.slide,
+      box: millionNameBox(frame, input.candidates.length),
+      name: candidate.displayName,
+      theme: input.theme,
+      color: input.candidates.length === 1 ? RECOGNITION_NAME_ON_GOLD : RECOGNITION_NAME_ON_NAVY,
+      fontSizePt: input.candidates.length === 1 ? 28 : input.candidates.length <= 3 ? 18 : 12,
+    });
+  });
 }
 
 export async function renderRecognitionPresentationPptx(input: {
@@ -348,27 +363,29 @@ export async function renderRecognitionPresentationPptx(input: {
   const pptx = createPresentation(theme);
 
   for (const slidePlan of input.plan) {
-    const slideTheme = themeForPlan(slidePlan, theme);
-    const slide = pptx.addSlide();
-    addBackground(slide, slideTheme);
-    addAwardChrome(slide, slidePlan, slideTheme);
     const candidates = candidatesForPlan(input.data, slidePlan);
+    const masterId = selectRecognitionMaster({
+      awardSlug: slidePlan.awardSlug,
+      layoutType: slidePlan.layoutType,
+      recipientCount: candidates.length,
+    });
+    const slideTheme = masterId === "million-lifetime"
+      ? {
+          ...LIFETIME_RECOGNITION_PRESENTATION_THEME,
+          id: theme.id,
+          version: theme.version,
+        }
+      : theme;
+    const slide = pptx.addSlide();
+    addMasterBackground(slide, masterId);
+    addAwardOverlay(slide, slidePlan, slideTheme, masterId);
 
-    if (slidePlan.layoutType === "name_list") {
+    if (masterId === "name-only") {
       renderNameListSlide({ slide, candidates, theme: slideTheme });
       continue;
     }
-
-    if (
-      slidePlan.layoutType === "photo_hero_1"
-      || slidePlan.layoutType === "photo_hero_2"
-      || slidePlan.layoutType === "photo_hero_3"
-      || (
-        slidePlan.layoutType === "lifetime_achievement"
-        && candidates.length <= 3
-      )
-    ) {
-      renderPhotoHeroSlide({
+    if (masterId === "hero-1") {
+      renderHero1Slide({
         slide,
         candidates,
         portraits: input.portraits,
@@ -376,8 +393,25 @@ export async function renderRecognitionPresentationPptx(input: {
       });
       continue;
     }
-
-    renderPhotoGridSlide({
+    if (masterId === "hero-2-3") {
+      renderHero23Slide({
+        slide,
+        candidates,
+        portraits: input.portraits,
+        theme: slideTheme,
+      });
+      continue;
+    }
+    if (masterId === "million-lifetime") {
+      renderMillionSlide({
+        slide,
+        candidates,
+        portraits: input.portraits,
+        theme: slideTheme,
+      });
+      continue;
+    }
+    renderWallSlide({
       slide,
       candidates,
       portraits: input.portraits,

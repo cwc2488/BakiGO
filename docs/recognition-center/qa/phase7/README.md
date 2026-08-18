@@ -7,7 +7,9 @@ These are **not** application assets. They are not served by production routes.
 ## How they were produced
 
 - Deck: `scripts/generate-recognition-phase7-qa.ts`
-- Renderer: `renderRecognitionPresentationPptx` (current Phase 7 production renderer)
+- Renderer: `renderRecognitionPresentationPptx` (current Phase 7 production renderer with approved master PNGs)
+- Masters: `public/recognition/masters/*.png` (fill 4:3 slides; not redrawn)
+- Badges: `public/recognition/badges/*.png` for mapped rank awards only
 - Theme: `recognition_ceremony_navy_gold` v1 (current default)
 - Slide size: **4:3** (10 in × 7.5 in)
 - PNG previews: LibreOffice Impress headless export of the generated `.pptx` to PDF, then `pdftoppm` to PNG
@@ -25,7 +27,7 @@ These are **not** application assets. They are not served by production routes.
 | `slide-04-photo-hero-2.png` | Photo hero, 2 people |
 | `slide-05-photo-hero-3.png` | Photo hero, 3 people |
 | `slide-06-photo-grid-6.png` | Photo grid, 6 people |
-| `slide-07-photo-grid-12.png` | Photo grid, 12 people (4×3) |
+| `slide-07-photo-grid-12.png` | Photo wall, 12 people (master 6×2 frames) |
 | `slide-08-photo-grid-pagination-page1.png` | 17 people, page 1 of 2 (12) |
 | `slide-09-photo-grid-pagination-page2.png` | 17 people, page 2 of 2 (5) |
 | `slide-10-million-hero.png` | 百萬終生成就獎, 1 person |

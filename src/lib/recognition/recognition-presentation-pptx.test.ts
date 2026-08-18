@@ -176,6 +176,20 @@ describe("Recognition PPTX smoke", () => {
     const slide2 = unzipText(buffer, "ppt/slides/slide2.xml");
     expect(slide2).toContain("新科督導");
     expect(slide2).toContain("李小華");
+
+    mkdirSync(QA_DIR, { recursive: true });
+    const inspectFile = join(QA_DIR, "media-inspect.pptx");
+    writeFileSync(inspectFile, buffer);
+    const media = execFileSync("python3", ["-c", `
+import zipfile, sys
+with zipfile.ZipFile(sys.argv[1]) as z:
+    names = [n for n in z.namelist() if n.startswith("ppt/media/")]
+    print("\\n".join(names))
+    for name in names:
+        print(name, z.read(name)[:8].hex())
+`, inspectFile], { encoding: "utf8" });
+    expect(media).toContain("ppt/media/");
+    expect(media).toContain("89504e47");
   });
 });
 

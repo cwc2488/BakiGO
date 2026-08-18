@@ -9,9 +9,9 @@ import { join } from "node:path";
 import sharp from "sharp";
 import { buildRecognitionPresentationData } from "../src/lib/recognition/recognition-presentation-dto";
 import { cropRecognitionPortraitForPresentation } from "../src/lib/recognition/recognition-presentation-images";
+import { selectRecognitionMaster } from "../src/lib/recognition/recognition-presentation-assets";
 import {
   planRecognitionPresentation,
-  photoGridRowPattern,
   RECOGNITION_PPTX_SLIDE,
 } from "../src/lib/recognition/recognition-presentation-layout";
 import { renderRecognitionPresentationPptx } from "../src/lib/recognition/recognition-presentation-pptx";
@@ -165,13 +165,34 @@ async function main() {
   if (!grid12 || grid12.layoutType !== "photo_grid" || grid12.candidateIds.length !== 12) {
     throw new Error("12-person award did not plan a single 12-person photo_grid slide");
   }
-  if (JSON.stringify(photoGridRowPattern(12)) !== JSON.stringify([4, 4, 4])) {
-    throw new Error("12-person grid is not 4×3");
+  if (selectRecognitionMaster({
+    awardSlug: grid12.awardSlug,
+    layoutType: grid12.layoutType,
+    recipientCount: grid12.candidateIds.length,
+  }) !== "wall-4-12") {
+    throw new Error("12-person photo award did not select the wall master");
   }
 
   const paginated = plan.filter((item) => item.awardId === "g17");
   if (paginated.length !== 2 || paginated[0]?.candidateIds.length !== 12 || paginated[1]?.candidateIds.length !== 5) {
     throw new Error("13+ case did not paginate as 12 + 5");
+  }
+
+  const life1 = plan.find((item) => item.awardId === "life1");
+  const life2 = plan.find((item) => item.awardId === "life2");
+  if (!life1 || !life2) {
+    throw new Error("million lifetime slides missing");
+  }
+  if (selectRecognitionMaster({
+    awardSlug: life1.awardSlug,
+    layoutType: life1.layoutType,
+    recipientCount: life1.candidateIds.length,
+  }) !== "million-lifetime" || selectRecognitionMaster({
+    awardSlug: life2.awardSlug,
+    layoutType: life2.layoutType,
+    recipientCount: life2.candidateIds.length,
+  }) !== "million-lifetime") {
+    throw new Error("百萬終生成就獎 did not select million-lifetime master");
   }
 
   const portraits = new Map<string, RecognitionPreparedPortrait>();
@@ -224,11 +245,20 @@ async function main() {
 
   rmSync(convertDir, { recursive: true, force: true });
 
+  const zipPath = join(OUT_DIR, "recognition-phase7-visual-qa.zip");
+  execFileSync("zip", ["-q", "-j", zipPath, ...SLIDE_FILES.map((file) => join(OUT_DIR, file))]);
+
   console.log(JSON.stringify({
     pptx: pptxPath,
+    zip: zipPath,
     slides: plan.map((item, index) => ({
       file: SLIDE_FILES[index],
       layoutType: item.layoutType,
+      master: selectRecognitionMaster({
+        awardSlug: item.awardSlug,
+        layoutType: item.layoutType,
+        recipientCount: item.candidateIds.length,
+      }),
       awardName: item.awardName,
       page: `${item.pageIndex}/${item.pageCount}`,
       names: item.candidateIds.length,

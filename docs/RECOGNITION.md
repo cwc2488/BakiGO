@@ -1125,15 +1125,45 @@ Paginate rather than shrinking names to fit everyone on one slide.
 ### Photo layouts
 
 - 1 / 2 / 3 approved photo recipients → hero layouts
-- 4–12 → adaptive photo grid; 12 uses frozen 4×3
-- more than 12 → page of 12, then remainder (17 → 12 + 5). Remainder of 1–3 uses hero layouts so one person is never a tiny grid cell
-- each card uses the Phase 6 3:4 crop; no automatic recrop or face detection
+- 4–12 → wall master; more than 12 paginates (17 → 12 + 5). Remainder of 1–3 uses hero layouts so one person is never a tiny grid cell
+- each portrait uses the Phase 6 3:4 crop; no automatic recrop or face detection
+- AI must not choose a presentation layout. Master selection is deterministic from award slug + planner layout type / recipient count.
+
+### Approved visual masters
+
+Phase 7 uses the frozen approved PNGs as actual 4:3 slide backgrounds (`10 in × 7.5 in`, fill without distortion). Dynamic overlay is limited to award title, names, 3:4 portraits, mapped rank badge, and pagination when needed.
+
+| Master | Path | Rule |
+|---|---|---|
+| Name-only | `public/recognition/masters/name-only.png` | name-only awards |
+| Hero 1 | `public/recognition/masters/hero-1.png` | photo award, 1 recipient |
+| Hero 2–3 | `public/recognition/masters/hero-2-3.png` | photo award, 2–3 recipients |
+| Wall | `public/recognition/masters/wall-4-12.png` | photo award, 4–12 recipients (and paginated remainder ≥4) |
+| 百萬終生成就獎 | `public/recognition/masters/million-lifetime.png` | slug `million_lifetime`, always, regardless of count |
+
+The wall master artwork contains **12 gold frames in 6 columns × 2 rows**. Portrait placement follows those frames. Pagination still caps at 12 recipients per slide.
+
+### Rank badges
+
+Only these existing catalog slugs receive a badge. Unlisted awards (including MAP, 1%世界組, 5K俱樂部, 萬點高手, 百萬終生成就獎, and month-1/2 name-only ranks) get none.
+
+| Catalog slug | Badge |
+|---|---|
+| `new_supervisor` | `public/recognition/badges/supervisor.png` |
+| `new_world_team_pass` | `public/recognition/badges/world-team.png` |
+| `new_promo_pass` | `public/recognition/badges/get.png` |
+| `new_ro2500_promo_pass` | `public/recognition/badges/get-2500.png` |
+| `new_wealth_pass` | `public/recognition/badges/millionaire-team.png` |
+| `ro7500_wealth_pass` | `public/recognition/badges/millionaire-team-7500.png` |
+| `new_president_pass` | `public/recognition/badges/presidents-team.png` |
+
+Slide titles use the event-specific catalog display name. Do not invent slugs or substitute 百萬終生成就獎 with the President's Team badge.
 
 ### 百萬終生成就獎
 
 Keyed by slug `million_lifetime`, not by comparing Chinese text.
 
-Uses layout type `lifetime_achievement` with a premium gold treatment of the same theme tokens. One or many recipients are both valid.
+Uses layout type `lifetime_achievement` and **always** the `million-lifetime.png` master. One or many recipients are both valid. Portrait placement adapts to count without changing master.
 
 ### Crop rendering
 
@@ -1183,7 +1213,7 @@ Server-side validation remains authoritative even if the UI disables the button.
 
 ### Tests
 
-Cover DTO inclusion/order, empty/disabled awards, name-only pagination, photo hero/grid/pagination, lifetime layout, readiness blockers, crop geometry, filename sanitization, 4:3 size, non-admin 401/403, private image loading, HEIC conversion path, PPTX smoke (ZIP signature, slide count, presentation.xml size, names), and additive audit migration.
+Cover DTO inclusion/order, empty/disabled awards, name-only pagination, photo hero/grid/pagination, lifetime layout, master selection, badge mapping, readiness blockers, crop geometry, filename sanitization, 4:3 size, non-admin 401/403, private image loading, HEIC conversion path, PPTX smoke (ZIP signature, slide count, presentation.xml size, names, embedded PNG masters), and additive audit migration.
 
 ### UI
 
