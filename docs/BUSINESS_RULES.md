@@ -35,6 +35,197 @@ The following remain optional / future KPIs:
 
 Activity, MAP, VP qualification, President tree, and Super League targets are defined below.
 
+## Recognition Center
+
+Recognition Center（表揚中心）是 Baki GO 的**組織營運模組**，負責固定、重複性的表揚收件、去重、審核、歷史查詢與 4:3 表揚簡報資料準備。
+
+### Scope boundary
+
+Recognition Center **不是**：
+
+- career rank / promotion engine
+- GAME_DESIGN 成就系統
+- `/leaderboard` 排行
+- `/events` 個人活動紀錄
+- 完整月會 PPT 自動化
+
+以下需求不屬於 Recognition Center V1：
+
+- 培訓時間
+- 活動宣傳文宣
+- 總裁組勉勵內容
+- 當月特殊簡報
+- 完整月會 PPT 自動化
+
+### Recognition Event rules
+
+`Recognition Event` 是表揚中心的主要業務實體。`year` / `month` 是其屬性，不是唯一識別。
+
+Frozen rules:
+
+- 同一個年月 **可以有多個** Recognition Event
+- 不得將 `(year, month)` 視為唯一業務鍵
+- 公開收件必須同時滿足：
+  - `status = collecting`
+  - current time 位於 `collect_starts_at` / `collect_ends_at`
+- `closed` event 可由 Recognition Admin 重新開回 `collecting`
+- 重新開啟後仍必須遵守原本的收件時間窗判定
+- 旋轉 public collection token 時，舊 token **立即失效**
+
+### Recognition Admin rules
+
+Recognition Center 使用專用 allowlist：
+
+- `recognition_admin_members`
+
+Frozen rules:
+
+- Recognition Admin 權限**不得**由 rank 推論
+- President rank **不會**自動擁有 Recognition Admin 權限
+- 必須由 allowlist 明確授權
+
+### Recognition Event Template compatibility
+
+Recognition Center 架構必須保留未來 `Recognition Event Template` 概念：
+
+Template
+→ default award set
+→ default award ordering
+→ default PPT theme
+→ create Recognition Event
+→ event-specific customization
+
+Template 例子可能包括：
+
+- 月會
+- STS
+- 世界組大學
+- 特別活動
+
+`Copy Previous Month Settings` 必須保留，但不得成為唯一可重用機制。
+
+### Submission evidence rule
+
+公開 submission 是**原始證據**，不是正式表揚結果。
+
+Rules:
+
+- submission 不得直接成為正式 PPT 資料
+- raw submissions / raw entries 必須保留
+- approved candidate 才能進入正式 presentation dataset
+
+### Duplicate / consolidation rules
+
+同一活動 + 同一表揚項目 + 同一 normalized name：
+
+- 可以整併為同一 candidate
+- 但必須保留所有來源與 submitted_by
+
+同一活動 + 不同表揚項目 + 同一 normalized name：
+
+- 只作為 **warning**
+- 不得自動 merge
+- 不得自動 reject
+- 不得自動 delete
+- 不得阻止 PPT generation
+
+Name normalization frozen rule:
+
+- 不得自動移除稱謂 / 頭銜，例如 `老師`、`督導`、`先生`、`組`
+- 帶稱謂但相似的名字可列為 suspected duplicate
+- 但不得靜默合併
+
+### Review state rules
+
+Recognition candidates review states:
+
+- `pending`
+- `approved`
+- `needs_fix`
+- `rejected`
+
+Rules:
+
+- 只有 `approved` 可進正式 PPT
+- `pending` / `needs_fix` 代表審核未完成
+- `rejected` 不代表刪除原始 submission evidence
+
+### Photo rules
+
+Photo awards 必須遵守：
+
+- 原始圖片必須保留
+- presentation crop / processed image 與原圖分離
+- public submitter 在 V1 不需做手動 crop 確認
+- 照片異常 / 團體照 / 多人照交由 admin review
+- AI **不得**從多人照片中自動選定受表揚者
+
+### Presentation rules
+
+Recognition Center presentation 規則：
+
+- 目標比例：`4:3`
+- 支援：
+  - 純姓名版型
+  - 12 人照片版型（4×3）
+  - 少人 hero 版型（1–3 人）
+  - 百萬終生成就獎 premium 版型
+- 照片超過 12 人自動分頁
+- theme 與 roster data 必須分離
+- 某 award 無 approved recipients 時，必須完全省略，不得產生空白頁
+
+Frozen rule:
+
+- 純姓名每頁人數在 Phase 2 仍保持 **configurable / unresolved**
+- 不得在此階段硬寫成永久產品規則
+
+### Birthday scope
+
+Recognition Center V1：
+
+- 不將 birthday slide 視為 PPT generation 範圍
+- 保留未來月會模板可由 event month 推導 `X月壽星` 的概念
+- 自動壽星姓名填入仍不在範圍內
+
+### Default Recognition award catalog (27 items)
+
+> These awards are **Recognition Center catalog entries**, not career-rank keys, promotion rules, or mission rules.
+
+| # | Award | Photo required |
+|---|---|---|
+| 1 | MAP 第一個月 | No |
+| 2 | MAP 第二個月 | No |
+| 3 | MAP 第三個月（MAP 第三個月過關） | Yes |
+| 4 | 新科督導 | Yes |
+| 5 | 世界組第一個月 | No |
+| 6 | 世界組第二個月 | No |
+| 7 | 世界組第三個月 | No |
+| 8 | 新科世界組（第四個月過關） | Yes |
+| 9 | 1%世界組 | Yes |
+| 10 | 5K俱樂部 | Yes |
+| 11 | 萬點高手 | Yes |
+| 12 | 推廣組第一個月 | No |
+| 13 | 推廣組第二個月 | No |
+| 14 | 新科推廣組（第三個月過關） | Yes |
+| 15 | RO2500推廣組第一個月 | No |
+| 16 | RO2500推廣組第二個月 | No |
+| 17 | 新科RO2500推廣組（第三個月過關） | Yes |
+| 18 | 富豪組第一個月 | No |
+| 19 | 富豪組第二個月 | No |
+| 20 | 新科富豪組（第三個月過關） | Yes |
+| 21 | RO7500富豪組第一個月 | No |
+| 22 | RO7500富豪組第二個月 | No |
+| 23 | RO7500富豪組（第三個月過關） | Yes |
+| 24 | 總裁組第一個月 | No |
+| 25 | 總裁組第二個月 | No |
+| 26 | 新科總裁組（第三個月過關） | Yes |
+| 27 | 百萬終生成就獎 | Yes |
+
+Future rule:
+
+- Catalog must be extensible by admin configuration
+- V1 default 27 項不是永久封閉列表
+
 ## Monthly Activity
 
 Every member should maintain monthly field activity — **either** criterion satisfies the month:
@@ -520,3 +711,4 @@ Document any intentional exceptions to the rules above in this section.
 | 2026-08 | Coaching Phase 4f — Growth share tokens + A→B attribution + Referral Center | — |
 | 2026-08 | UX-1.2 — Referral Center = all Customers; Growth = timing evidence; Coach UI humanization | — |
 | 2026-08 | Coaching Product Correction P0/P1 — enrollment window, portal Home, directives, bowel signal, Hub IA | — |
+| 2026-08 | Recognition Center Phase 2 — domain rules freeze, admin allowlist, multi-event month support, 27-award default catalog | — |

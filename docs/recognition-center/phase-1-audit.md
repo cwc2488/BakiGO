@@ -6,7 +6,9 @@
 
 **Date:** 2026-08-18
 
-**Scope of this document:** current-architecture audit, reuse map, proposed schema / RLS / Storage, routes, public vs admin security, duplicate detection, PPT architecture, phased plan, risks and open product decisions.
+**Scope of this document:** current-architecture audit, reuse map, proposed schema / RLS / Storage, routes, public vs admin security, duplicate detection, PPT architecture, phased plan, risks, and the original pre-freeze decision set.
+
+> Phase 2 note: product and architecture freeze decisions are now recorded in `docs/RECOGNITION.md`, with corresponding updates in `docs/BUSINESS_RULES.md`, `docs/DATABASE.md`, and `docs/ROADMAP.md`. When this audit and the frozen docs differ, the Phase 2 frozen docs win.
 
 ---
 

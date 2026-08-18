@@ -46,6 +46,311 @@ Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `oc
 | `quiz_results` | Scored outcomes |
 | `quiz_ai_followups` | Rule-based follow-up messages |
 
+### Recognition Center (planned; documentation freeze only)
+
+**Status:** Phase 2 documentation frozen. No migration applied in this phase.
+
+Recognition Center is an **organization operations module**, not member-local workspace data. It must use dedicated SQL tables + service-role APIs, not `member_app_data`.
+
+| Table | Purpose |
+|-------|---------|
+| `recognition_award_definitions` | Recognition award catalog; default 27 items plus future custom items |
+| `recognition_ppt_themes` | Theme/config layer separated from roster data |
+| `recognition_event_templates` | Future reusable defaults for event creation; not required in first implementation phase, but the architecture must stay compatible |
+| `recognition_events` | Primary business entity for one recognition collection/review/export cycle |
+| `recognition_event_awards` | Event-specific enabled awards + ordering |
+| `recognition_submissions` | Raw public submission envelopes (`submitted_by`, org text, metadata) |
+| `recognition_submission_entries` | One row per submitted honoree item |
+| `recognition_photo_assets` | Original uploaded photos + metadata/flags |
+| `recognition_photo_crops` | Presentation crop / processed image references |
+| `recognition_candidates` | Consolidated admin review objects; PPT source uses approved candidates only |
+| `recognition_candidate_sources` | Mapping from candidate back to raw submission entries |
+| `recognition_duplicate_signals` | Warning/blocking duplicate hints across candidates |
+| `recognition_admin_members` | Dedicated Recognition Admin allowlist |
+| `recognition_ppt_exports` | Future export audit rows for generated PPTX output |
+
+#### Recognition design rules
+
+- `Recognition Event` is the primary entity; `year` / `month` are attributes only.
+- **Multiple events in the same year/month are allowed.**
+- Do **not** define `(year, month)` as unique.
+- Public submissions are **evidence**, not approved recognition.
+- Raw submissions and raw entries are retained.
+- Consolidated `recognition_candidates` are the admin/PPT working source.
+- Only `approved` candidates may enter formal presentation output.
+- Public collection requires **both**:
+  - `event.status = collecting`
+  - current time inside `collect_starts_at` / `collect_ends_at`
+- `closed` events may be reopened back to `collecting` by Recognition Admin, but the same time-window rules still apply.
+- Public token rotation invalidates the previous token immediately.
+
+#### `recognition_award_definitions`
+
+Catalog table for default + future custom awards.
+
+Suggested columns:
+
+- `id` uuid PK
+- `slug` text unique
+- `name` text
+- `requires_photo` boolean
+- `layout_hint` text (`name_list | photo_grid | photo_hero | premium`)
+- `sort_order` integer
+- `is_active` boolean
+- timestamps
+
+The default 27 awards are catalog entries only. They are **not** career rank keys and must not be merged into promotion / qualification tables.
+
+#### `recognition_ppt_themes`
+
+Theme/config table separated from recognition data.
+
+Suggested columns:
+
+- `id` uuid PK
+- `slug` text unique
+- `name` text
+- `aspect_ratio` text (default `4:3`)
+- `config_json` jsonb
+- `is_active`
+- timestamps
+
+#### `recognition_event_templates`
+
+Future reusable configuration layer.
+
+Suggested scope:
+
+- default award set
+- default award ordering
+- default PPT theme
+- create event from template, then allow event-specific customization
+
+This table is **future-compatible architecture**, not a requirement to implement first. If omitted from the first migration sequence, event schema must still make later template introduction straightforward.
+
+#### `recognition_events`
+
+Primary lifecycle entity.
+
+Suggested columns:
+
+- `id` uuid PK
+- `name`
+- `year`
+- `month`
+- `collect_starts_at`
+- `collect_ends_at`
+- `status` (`draft | collecting | closed | archived`)
+- `public_token_hash`
+- `public_token_prefix`
+- `ppt_theme_id`
+- `event_template_id` nullable for future template lineage
+- `copied_from_event_id` nullable
+- `created_by_member_id`
+- `closed_at` nullable
+- timestamps
+
+Important:
+
+- do **not** add unique `(year, month)`
+- `event_template_id` is optional but keeps the model template-compatible
+- copy-previous-month remains supported independently of templates
+
+#### `recognition_event_awards`
+
+Event-specific projection of the catalog.
+
+Suggested columns:
+
+- `id` uuid PK
+- `event_id`
+- `award_definition_id`
+- `sort_order`
+- `is_enabled`
+
+Use this table to preserve event-specific ordering and enable/disable behavior.
+
+#### `recognition_submissions`
+
+Raw public submission envelopes.
+
+Suggested columns:
+
+- `id` uuid PK
+- `event_id`
+- `submitted_by_name`
+- `submitted_by_org` (free text in V1)
+- `ip_hash` nullable
+- `user_agent` nullable
+- `created_at`
+
+These rows are append-only evidence and must not be treated as official roster data.
+
+#### `recognition_submission_entries`
+
+One row per submitted item.
+
+Suggested columns:
+
+- `id` uuid PK
+- `submission_id`
+- `event_id`
+- `award_definition_id`
+- `raw_name`
+- `normalized_name`
+- `photo_asset_id` nullable
+- `created_at`
+
+Raw entries are retained even when candidates consolidate.
+
+#### `recognition_photo_assets`
+
+Original photo storage metadata.
+
+Suggested columns:
+
+- `id` uuid PK
+- `event_id`
+- `original_storage_path`
+- `sha256`
+- `mime_type`
+- `width`
+- `height`
+- `byte_size`
+- `source` (`public | admin`)
+- `flags_json`
+- `review_status` (`pending_process | auto_ok | needs_review | rejected`)
+- `created_at`
+
+Original photos must always be preserved.
+
+#### `recognition_photo_crops`
+
+Presentation-ready crop / processed image rows.
+
+Suggested columns:
+
+- `id` uuid PK
+- `photo_asset_id`
+- `crop_box_json`
+- `processed_storage_path`
+- `confirmed_by`
+- `confirmed_at`
+- `is_current`
+
+Crop rows do not replace originals.
+
+#### `recognition_candidates`
+
+Consolidated admin review objects and formal PPT working source.
+
+Suggested columns:
+
+- `id` uuid PK
+- `event_id`
+- `award_definition_id`
+- `display_name`
+- `normalized_name`
+- `review_status` (`pending | approved | needs_fix | rejected`)
+- `current_photo_asset_id` nullable
+- `current_crop_id` nullable
+- `reviewer_member_id` nullable
+- `review_note` nullable
+- `member_id` nullable for future person-history/timeline support
+- timestamps
+
+Business rules:
+
+- same event + same award + same normalized name may consolidate
+- all sources must still be preserved
+- same normalized name across **different** awards is a warning only
+- cross-award duplicate names must **not** auto-merge, reject, delete, or block PPT generation
+
+#### `recognition_candidate_sources`
+
+Join table linking a candidate to all raw submission entries that fed it.
+
+This is required so the system can preserve:
+
+- all `submitted_by`
+- all raw sources
+- auditability after consolidation
+
+#### `recognition_duplicate_signals`
+
+Stores suspected duplicate warnings, including:
+
+- same-award same-name
+- cross-award same-name
+- future photo-hash / fuzzy-name signals
+
+Cross-award same-name is a warning only by product decision.
+
+#### `recognition_admin_members`
+
+Dedicated allowlist for Recognition Admin.
+
+Do **not** infer from rank.
+President does **not** automatically qualify.
+
+#### `recognition_ppt_exports`
+
+Future export/audit table for generated outputs. The formal roster source remains approved candidates; generated PPTX files are outputs, not the truth source.
+
+### Recognition conceptual relationships
+
+```
+Recognition Event
+  ├── event awards (enabled catalog + order)
+  ├── submissions
+  │     └── submission entries
+  │           └── optional original photo asset
+  ├── candidates
+  │     ├── candidate sources → submission entries
+  │     ├── duplicate signals
+  │     └── optional current crop → original photo asset
+  └── optional ppt exports
+```
+
+### Recognition storage
+
+Recognition photos should use a **private Supabase Storage bucket** (planned), separate from:
+
+- `member-avatars`
+- `coaching-meal-photos`
+- customer photo/data-URL patterns
+
+Rules:
+
+- original uploads stored privately
+- presentation crops stored separately
+- no public bucket access
+- reads via signed URLs / service-role APIs
+- public submitters do not receive direct table access
+
+### Recognition RLS / API pattern
+
+Recognition tables should follow the same broad access model as Quiz/Growth Share, not `members`:
+
+- RLS enabled
+- no anon table policies
+- no broad authenticated read/write policies
+- public submission goes through service-role API after token verification
+- admin actions go through authenticated API + `recognition_admin_members` allowlist
+
+### Recognition Event Template compatibility
+
+The schema must stay compatible with a future reusable template concept.
+
+Minimum compatibility requirements:
+
+- event-specific award ordering must not be hardwired to “copy previous month”
+- event-specific theme selection must not assume a one-off event model
+- event creation should later support:
+  - create from template
+  - copy previous month settings
+  - create from scratch
+
 ### Consultation Engine V1 (`023_consultation_engine_v1.sql`)
 
 **Status:** `experimental_hidden`
@@ -252,3 +557,4 @@ Member (coach)
 - [PRODUCT.md](./PRODUCT.md)
 - [BUSINESS_RULES.md](./BUSINESS_RULES.md)
 - [COACHING.md](./COACHING.md)
+- [RECOGNITION.md](./RECOGNITION.md)
