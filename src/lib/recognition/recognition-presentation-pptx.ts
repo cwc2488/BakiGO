@@ -1,6 +1,6 @@
 import PptxGenJS from "pptxgenjs";
 import {
-  loadRecognitionBadgeDataUri,
+  loadTrimmedRecognitionBadgeDataUri,
   loadRecognitionMasterDataUri,
   recognitionBadgeIdForAwardSlug,
   selectRecognitionMaster,
@@ -12,27 +12,32 @@ import {
   RECOGNITION_PPTX_SLIDE,
 } from "@/lib/recognition/recognition-presentation-layout";
 import {
-  fitPortraitInFrame,
   hero1NameBox,
-  hero1PortraitFrame,
-  hero23PortraitFrames,
+  hero1PortraitViewport,
+  hero2PortraitViewports,
+  hero3PortraitViewports,
   millionNameBox,
-  millionPortraitFrames,
-  nameBoxBelowFrame,
+  millionPortraitViewports,
+  nameBoxBelowViewport,
   nameOnlyContentBox,
   nameOnlyLineBoxes,
-  RECOGNITION_BADGE_BOX,
+  overlayGoldFrame,
+  RECOGNITION_FRAME_GOLD,
   RECOGNITION_MASTER_FILL,
   RECOGNITION_NAME_ON_GOLD,
   RECOGNITION_NAME_ON_NAVY,
   RECOGNITION_PAGE_INDICATOR_BOX,
-  titleBoxForMaster,
+  titleAndBadgeBoxes,
+  viewportPixelSize,
   wallNamePlaque,
-  wallPortraitFrame,
+  wallPortraitViewport,
   wallSlotCount,
   type RecognitionSlideBox,
 } from "@/lib/recognition/recognition-presentation-master-layout";
-import { jpegBufferToPptxData } from "@/lib/recognition/recognition-presentation-images";
+import {
+  coverRecognitionPortraitToViewport,
+  jpegBufferToPptxData,
+} from "@/lib/recognition/recognition-presentation-images";
 import {
   LIFETIME_RECOGNITION_PRESENTATION_THEME,
   pptHex,
@@ -84,23 +89,24 @@ function addMasterBackground(slide: Slide, masterId: RecognitionMasterId) {
   });
 }
 
-function addAwardOverlay(
+async function addAwardOverlay(
   slide: Slide,
   plan: RecognitionSlidePlan,
   theme: RecognitionPresentationTheme,
   masterId: RecognitionMasterId,
 ) {
-  const titleBox = titleBoxForMaster(masterId);
+  const badgeId = recognitionBadgeIdForAwardSlug(plan.awardSlug);
+  const boxes = titleAndBadgeBoxes({ masterId, hasBadge: Boolean(badgeId) });
   const fittedTitle = fitRecognitionPresentationName(plan.awardName, {
-    baseFontPt: theme.titleTypography.fontSizePt,
-    minFontPt: theme.titleTypography.minFontSizePt,
+    baseFontPt: masterId === "million-lifetime" ? 26 : theme.titleTypography.fontSizePt,
+    minFontPt: masterId === "million-lifetime" ? 20 : theme.titleTypography.minFontSizePt,
     comfortableChars: 14,
   });
   slide.addText(fittedTitle.text, {
-    x: titleBox.x,
-    y: titleBox.y,
-    w: titleBox.w,
-    h: titleBox.h,
+    x: boxes.title.x,
+    y: boxes.title.y,
+    w: boxes.title.w,
+    h: boxes.title.h,
     fontFace: theme.titleTypography.fontFace,
     fontSize: fittedTitle.fontSizePt,
     bold: theme.titleTypography.bold,
@@ -111,14 +117,13 @@ function addAwardOverlay(
     wrap: true,
   });
 
-  const badgeId = recognitionBadgeIdForAwardSlug(plan.awardSlug);
-  if (badgeId) {
+  if (badgeId && boxes.badge) {
     slide.addImage({
-      data: loadRecognitionBadgeDataUri(badgeId),
-      x: RECOGNITION_BADGE_BOX.x,
-      y: RECOGNITION_BADGE_BOX.y,
-      w: RECOGNITION_BADGE_BOX.w,
-      h: RECOGNITION_BADGE_BOX.h,
+      data: await loadTrimmedRecognitionBadgeDataUri(badgeId),
+      x: boxes.badge.x,
+      y: boxes.badge.y,
+      w: boxes.badge.w,
+      h: boxes.badge.h,
     });
   }
 
@@ -138,22 +143,39 @@ function addAwardOverlay(
   }
 }
 
-function addPortrait(input: {
+async function addCoveredPortrait(input: {
   slide: Slide;
-  frame: RecognitionSlideBox;
+  viewport: RecognitionSlideBox;
   portrait: RecognitionPreparedPortrait | undefined;
   displayName: string;
+  overlayFrame?: boolean;
 }) {
   if (!input.portrait) {
     throw new Error(`missing presentation portrait for ${input.displayName}`);
   }
-  const box = fitPortraitInFrame(input.frame);
+  if (input.overlayFrame) {
+    const frame = overlayGoldFrame(input.viewport);
+    input.slide.addShape("rect", {
+      x: frame.x,
+      y: frame.y,
+      w: frame.w,
+      h: frame.h,
+      fill: { color: pptHex(RECOGNITION_FRAME_GOLD) },
+      line: { color: pptHex(RECOGNITION_FRAME_GOLD), pt: 0 },
+    });
+  }
+  const pixels = viewportPixelSize(input.viewport);
+  const covered = await coverRecognitionPortraitToViewport({
+    jpegBuffer: input.portrait.jpegBuffer,
+    widthPx: pixels.width,
+    heightPx: pixels.height,
+  });
   input.slide.addImage({
-    data: jpegBufferToPptxData(input.portrait.jpegBuffer),
-    x: box.x,
-    y: box.y,
-    w: box.w,
-    h: box.h,
+    data: jpegBufferToPptxData(covered.jpegBuffer),
+    x: input.viewport.x,
+    y: input.viewport.y,
+    w: input.viewport.w,
+    h: input.viewport.h,
   });
 }
 
@@ -247,7 +269,7 @@ function renderNameListSlide(input: {
   });
 }
 
-function renderHero1Slide(input: {
+async function renderHero1Slide(input: {
   slide: Slide;
   candidates: RecognitionPresentationCandidate[];
   portraits: Map<string, RecognitionPreparedPortrait>;
@@ -255,9 +277,9 @@ function renderHero1Slide(input: {
 }) {
   const candidate = input.candidates[0];
   if (!candidate) return;
-  addPortrait({
+  await addCoveredPortrait({
     slide: input.slide,
-    frame: hero1PortraitFrame(),
+    viewport: hero1PortraitViewport(),
     portrait: input.portraits.get(candidate.candidateId),
     displayName: candidate.displayName,
   });
@@ -267,39 +289,40 @@ function renderHero1Slide(input: {
     name: candidate.displayName,
     theme: input.theme,
     color: RECOGNITION_NAME_ON_GOLD,
-    fontSizePt: 28,
+    fontSizePt: 26,
   });
 }
 
-function renderHero23Slide(input: {
+async function renderHero23Slide(input: {
   slide: Slide;
   candidates: RecognitionPresentationCandidate[];
   portraits: Map<string, RecognitionPreparedPortrait>;
   theme: RecognitionPresentationTheme;
 }) {
-  const count = input.candidates.length === 2 ? 2 : 3;
-  const frames = hero23PortraitFrames(count);
-  input.candidates.forEach((candidate, index) => {
-    const frame = frames[index];
-    if (!frame) return;
-    addPortrait({
+  const twoPerson = input.candidates.length === 2;
+  const viewports = twoPerson ? hero2PortraitViewports() : hero3PortraitViewports();
+  for (const [index, candidate] of input.candidates.entries()) {
+    const viewport = viewports[index];
+    if (!viewport) continue;
+    await addCoveredPortrait({
       slide: input.slide,
-      frame,
+      viewport,
       portrait: input.portraits.get(candidate.candidateId),
       displayName: candidate.displayName,
+      overlayFrame: twoPerson,
     });
     addNameLabel({
       slide: input.slide,
-      box: nameBoxBelowFrame(frame),
+      box: nameBoxBelowViewport(viewport, twoPerson ? 0.36 : 0.34, 0.08),
       name: candidate.displayName,
       theme: input.theme,
       color: RECOGNITION_NAME_ON_NAVY,
-      fontSizePt: count === 2 ? 22 : 18,
+      fontSizePt: twoPerson ? 22 : 18,
     });
-  });
+  }
 }
 
-function renderWallSlide(input: {
+async function renderWallSlide(input: {
   slide: Slide;
   candidates: RecognitionPresentationCandidate[];
   portraits: Map<string, RecognitionPreparedPortrait>;
@@ -308,10 +331,10 @@ function renderWallSlide(input: {
   if (input.candidates.length > wallSlotCount()) {
     throw new Error("wall master cannot place more than 12 recipients on one slide");
   }
-  input.candidates.forEach((candidate, index) => {
-    addPortrait({
+  for (const [index, candidate] of input.candidates.entries()) {
+    await addCoveredPortrait({
       slide: input.slide,
-      frame: wallPortraitFrame(index),
+      viewport: wallPortraitViewport(index),
       portrait: input.portraits.get(candidate.candidateId),
       displayName: candidate.displayName,
     });
@@ -323,34 +346,36 @@ function renderWallSlide(input: {
       color: RECOGNITION_NAME_ON_GOLD,
       fontSizePt: 11,
     });
-  });
+  }
 }
 
-function renderMillionSlide(input: {
+async function renderMillionSlide(input: {
   slide: Slide;
   candidates: RecognitionPresentationCandidate[];
   portraits: Map<string, RecognitionPreparedPortrait>;
   theme: RecognitionPresentationTheme;
 }) {
-  const frames = millionPortraitFrames(input.candidates.length);
-  input.candidates.forEach((candidate, index) => {
-    const frame = frames[index];
-    if (!frame) return;
-    addPortrait({
+  const viewports = millionPortraitViewports(input.candidates.length);
+  const overlayFrame = input.candidates.length !== 1;
+  for (const [index, candidate] of input.candidates.entries()) {
+    const viewport = viewports[index];
+    if (!viewport) continue;
+    await addCoveredPortrait({
       slide: input.slide,
-      frame,
+      viewport,
       portrait: input.portraits.get(candidate.candidateId),
       displayName: candidate.displayName,
+      overlayFrame,
     });
     addNameLabel({
       slide: input.slide,
-      box: millionNameBox(frame, input.candidates.length),
+      box: millionNameBox(viewport, input.candidates.length),
       name: candidate.displayName,
       theme: input.theme,
-      color: input.candidates.length === 1 ? RECOGNITION_NAME_ON_GOLD : RECOGNITION_NAME_ON_NAVY,
-      fontSizePt: input.candidates.length === 1 ? 28 : input.candidates.length <= 3 ? 18 : 12,
+      color: RECOGNITION_NAME_ON_NAVY,
+      fontSizePt: input.candidates.length === 1 ? 26 : input.candidates.length <= 3 ? 18 : 12,
     });
-  });
+  }
 }
 
 export async function renderRecognitionPresentationPptx(input: {
@@ -378,14 +403,14 @@ export async function renderRecognitionPresentationPptx(input: {
       : theme;
     const slide = pptx.addSlide();
     addMasterBackground(slide, masterId);
-    addAwardOverlay(slide, slidePlan, slideTheme, masterId);
+    await addAwardOverlay(slide, slidePlan, slideTheme, masterId);
 
     if (masterId === "name-only") {
       renderNameListSlide({ slide, candidates, theme: slideTheme });
       continue;
     }
     if (masterId === "hero-1") {
-      renderHero1Slide({
+      await renderHero1Slide({
         slide,
         candidates,
         portraits: input.portraits,
@@ -394,7 +419,7 @@ export async function renderRecognitionPresentationPptx(input: {
       continue;
     }
     if (masterId === "hero-2-3") {
-      renderHero23Slide({
+      await renderHero23Slide({
         slide,
         candidates,
         portraits: input.portraits,
@@ -403,7 +428,7 @@ export async function renderRecognitionPresentationPptx(input: {
       continue;
     }
     if (masterId === "million-lifetime") {
-      renderMillionSlide({
+      await renderMillionSlide({
         slide,
         candidates,
         portraits: input.portraits,
@@ -411,7 +436,7 @@ export async function renderRecognitionPresentationPptx(input: {
       });
       continue;
     }
-    renderWallSlide({
+    await renderWallSlide({
       slide,
       candidates,
       portraits: input.portraits,

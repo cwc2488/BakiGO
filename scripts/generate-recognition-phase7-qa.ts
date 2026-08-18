@@ -45,16 +45,30 @@ function qaNames(prefix: string, count: number): string[] {
 }
 
 async function makeSyntheticOriginal(seed: number): Promise<Buffer> {
-  const hue = (seed * 41) % 360;
-  const subject = `hsl(${hue} 42% 38%)`;
-  const discard = "#D14A9A";
+  const hue = (seed * 47) % 360;
+  const bg = `hsl(${(hue + 180) % 360} 28% 22%)`;
+  const bg2 = `hsl(${(hue + 200) % 360} 22% 14%)`;
+  const skin = `hsl(${28 + (seed % 12)} 42% ${58 + (seed % 8)}%)`;
+  const hair = `hsl(${20 + (seed % 40)} 28% ${18 + (seed % 10)}%)`;
+  const shirt = `hsl(${hue} 38% 36%)`;
   const svg = Buffer.from(`
     <svg width="${QA_ORIGINAL_WIDTH}" height="${QA_ORIGINAL_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-      <rect width="100%" height="100%" fill="${discard}"/>
-      <rect x="${QA_ORIGINAL_WIDTH * 0.25}" y="0" width="${QA_ORIGINAL_WIDTH * 0.75}" height="100%" fill="${subject}"/>
-      <rect x="${QA_ORIGINAL_WIDTH * 0.40}" y="${QA_ORIGINAL_HEIGHT * 0.12}" width="${QA_ORIGINAL_WIDTH * 0.32}" height="${QA_ORIGINAL_HEIGHT * 0.62}" rx="24" fill="#F4E7C8"/>
-      <circle cx="${QA_ORIGINAL_WIDTH * 0.56}" cy="${QA_ORIGINAL_HEIGHT * 0.30}" r="90" fill="#E8D4A8"/>
-      <text x="${QA_ORIGINAL_WIDTH * 0.56}" y="${QA_ORIGINAL_HEIGHT * 0.88}" text-anchor="middle" font-size="64" font-family="Noto Sans CJK TC, sans-serif" fill="#F6F0E4">QA ${seed + 1}</text>
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${bg}"/>
+          <stop offset="100%" stop-color="${bg2}"/>
+        </linearGradient>
+        <radialGradient id="face" cx="50%" cy="38%" r="42%">
+          <stop offset="0%" stop-color="${skin}"/>
+          <stop offset="100%" stop-color="hsl(20 30% 42%)"/>
+        </radialGradient>
+      </defs>
+      <rect width="100%" height="100%" fill="${bg}"/>
+      <rect x="${QA_ORIGINAL_WIDTH * 0.25}" y="0" width="${QA_ORIGINAL_WIDTH * 0.75}" height="100%" fill="url(#bg)"/>
+      <ellipse cx="${QA_ORIGINAL_WIDTH * 0.56}" cy="${QA_ORIGINAL_HEIGHT * 0.92}" rx="420" ry="300" fill="${shirt}"/>
+      <ellipse cx="${QA_ORIGINAL_WIDTH * 0.56}" cy="${QA_ORIGINAL_HEIGHT * 0.16}" rx="280" ry="160" fill="${hair}"/>
+      <ellipse cx="${QA_ORIGINAL_WIDTH * 0.56}" cy="${QA_ORIGINAL_HEIGHT * 0.40}" rx="210" ry="260" fill="url(#face)"/>
+      <ellipse cx="${QA_ORIGINAL_WIDTH * 0.56}" cy="${QA_ORIGINAL_HEIGHT * 0.14}" rx="240" ry="120" fill="${hair}"/>
     </svg>
   `);
   return sharp(svg).jpeg({ quality: 90 }).toBuffer();

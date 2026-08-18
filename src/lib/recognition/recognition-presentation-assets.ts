@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import sharp from "sharp";
 import { isLifetimeAchievementAwardSlug } from "@/lib/recognition/recognition-presentation-types";
 import type { RecognitionSlideLayoutType } from "@/lib/recognition/recognition-presentation-types";
 
@@ -144,6 +145,15 @@ export function loadRecognitionMasterDataUri(masterId: RecognitionMasterId): str
   return loadPngDataUri(`master:${masterId}`, recognitionMasterAbsolutePath(masterId));
 }
 
-export function loadRecognitionBadgeDataUri(badgeId: RecognitionBadgeId): string {
-  return loadPngDataUri(`badge:${badgeId}`, recognitionBadgeAbsolutePath(badgeId));
+export async function loadTrimmedRecognitionBadgeDataUri(badgeId: RecognitionBadgeId): Promise<string> {
+  const cacheKey = `badge-trim:${badgeId}`;
+  const cached = pngDataUriCache.get(cacheKey);
+  if (cached) return cached;
+  const trimmed = await sharp(recognitionBadgeAbsolutePath(badgeId))
+    .trim({ threshold: 16 })
+    .png()
+    .toBuffer();
+  const dataUri = `image/png;base64,${trimmed.toString("base64")}`;
+  pngDataUriCache.set(cacheKey, dataUri);
+  return dataUri;
 }

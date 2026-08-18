@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
-import { cropRecognitionPortraitForPresentation } from "@/lib/recognition/recognition-presentation-images";
+import { cropRecognitionPortraitForPresentation, coverRecognitionPortraitToViewport } from "@/lib/recognition/recognition-presentation-images";
 import { buildRecognitionPresentationData } from "@/lib/recognition/recognition-presentation-dto";
 import { planRecognitionPresentation, RECOGNITION_PPTX_SLIDE } from "@/lib/recognition/recognition-presentation-layout";
 import { renderRecognitionPresentationPptx } from "@/lib/recognition/recognition-presentation-pptx";
@@ -79,6 +79,22 @@ describe("Recognition presentation crop rendering", () => {
     const stats = await sharp(cropped.jpegBuffer).stats();
     expect(stats.channels[2]?.mean ?? 0).toBeGreaterThan(200);
     expect(stats.channels[0]?.mean ?? 0).toBeLessThan(40);
+  });
+
+  it("cover-fits a 3:4 crop into a viewport without letterboxing", async () => {
+    const portrait = await sharp({
+      create: { width: 300, height: 400, channels: 3, background: { r: 40, g: 90, b: 70 } },
+    }).jpeg().toBuffer();
+    const covered = await coverRecognitionPortraitToViewport({
+      jpegBuffer: portrait,
+      widthPx: 210,
+      heightPx: 400,
+    });
+    expect(covered.width).toBe(210);
+    expect(covered.height).toBe(400);
+    const meta = await sharp(covered.jpegBuffer).metadata();
+    expect(meta.width).toBe(210);
+    expect(meta.height).toBe(400);
   });
 });
 

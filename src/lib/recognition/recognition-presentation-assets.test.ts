@@ -12,7 +12,11 @@ import {
 } from "@/lib/recognition/recognition-presentation-assets";
 import { RECOGNITION_LIFETIME_ACHIEVEMENT_SLUG } from "@/lib/recognition/recognition-presentation-types";
 import {
-  fitPortraitInFrame,
+  hero1PortraitViewport,
+  hero2PortraitViewports,
+  hero3PortraitViewports,
+  titleAndBadgeBoxes,
+  titleSafeBoxForMaster,
   wallSlotCount,
 } from "@/lib/recognition/recognition-presentation-master-layout";
 
@@ -121,14 +125,40 @@ describe("Recognition badge mapping", () => {
 });
 
 describe("Recognition master portrait geometry", () => {
-  it("keeps 3:4 portraits inside the supplied frame", () => {
-    const fitted = fitPortraitInFrame({ x: 1, y: 2, w: 3, h: 5 });
-    expect(fitted.w / fitted.h).toBeCloseTo(0.75, 8);
-    expect(fitted.w).toBeLessThanOrEqual(3);
-    expect(fitted.h).toBeLessThanOrEqual(5);
+  it("uses cover-fit viewports rather than letterboxed contain", () => {
+    const hero1 = hero1PortraitViewport();
+    expect(hero1.w).toBeGreaterThan(2.5);
+    expect(hero1.h).toBeGreaterThan(3.5);
   });
 
-  it("exposes 12 wall-master slots", () => {
+  it("places two people in a centered pair, not a 3-frame layout", () => {
+    const two = hero2PortraitViewports();
+    const three = hero3PortraitViewports();
+    expect(two).toHaveLength(2);
+    expect(three).toHaveLength(3);
+    expect(two[0]?.x).not.toBe(three[0]?.x);
+    expect(two[1]?.x).not.toBe(three[2]?.x);
+    const left = two[0]!;
+    const right = two[1]!;
+    const leftGap = left.x;
+    const rightGap = 10 - (right.x + right.w);
+    expect(Math.abs(leftGap - rightGap)).toBeLessThan(0.02);
+    expect(left.w / left.h).toBeCloseTo(0.75, 5);
+    expect(right.w / right.h).toBeCloseTo(0.75, 5);
+  });
+
+  it("keeps titles below the crown band on navy masters", () => {
+    expect(titleSafeBoxForMaster("name-only").y).toBeGreaterThanOrEqual(1.18);
+    expect(titleSafeBoxForMaster("hero-1").y).toBeGreaterThanOrEqual(1.35);
+    expect(titleSafeBoxForMaster("hero-2-3").y).toBeGreaterThanOrEqual(1.45);
+    expect(titleSafeBoxForMaster("wall-4-12").y).toBeGreaterThanOrEqual(1.5);
+  });
+
+  it("sizes mapped badges for projector visibility", () => {
+    const supervisor = titleAndBadgeBoxes({ masterId: "hero-2-3", hasBadge: true });
+    expect(supervisor.badge).not.toBeNull();
+    expect(supervisor.badge?.w ?? 0).toBeGreaterThanOrEqual(1.5);
+    expect(supervisor.title.y).toBeGreaterThan(supervisor.badge?.y ?? 0);
     expect(wallSlotCount()).toBe(12);
   });
 });

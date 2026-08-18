@@ -137,3 +137,28 @@ export async function loadRecognitionPresentationPortraits(input: {
 export function jpegBufferToPptxData(buffer: Buffer): string {
   return `image/jpeg;base64,${buffer.toString("base64")}`;
 }
+
+/**
+ * Cover-fit the approved 3:4 presentation crop into a master viewport.
+ * Center-crops as needed. Does not stretch and does not change admin crop metadata.
+ */
+export async function coverRecognitionPortraitToViewport(input: {
+  jpegBuffer: Buffer;
+  widthPx: number;
+  heightPx: number;
+}): Promise<{ jpegBuffer: Buffer; width: number; height: number }> {
+  const jpegBuffer = await sharp(input.jpegBuffer)
+    .resize({
+      width: input.widthPx,
+      height: input.heightPx,
+      fit: "cover",
+      position: "centre",
+    })
+    .jpeg({ quality: PRESENTATION_JPEG_QUALITY })
+    .toBuffer();
+  return {
+    jpegBuffer,
+    width: input.widthPx,
+    height: input.heightPx,
+  };
+}

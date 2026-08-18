@@ -1131,7 +1131,7 @@ Paginate rather than shrinking names to fit everyone on one slide.
 
 ### Approved visual masters
 
-Phase 7 uses the frozen approved PNGs as actual 4:3 slide backgrounds (`10 in × 7.5 in`, fill without distortion). Dynamic overlay is limited to award title, names, 3:4 portraits, mapped rank badge, and pagination when needed.
+Phase 7 uses the frozen approved PNGs as actual 4:3 slide backgrounds (`10 in × 7.5 in`, fill without distortion). Dynamic overlay is limited to award title, names, cover-fit 3:4 portraits, mapped rank badge, and pagination when needed. Titles use a per-master title-safe band **below the crown**. Mapped badges sit in the title hierarchy at projector-visible size (trimmed square PNG, not a corner favicon). Two recipients use a centered two-portrait overlay on the 2–3 master; three recipients use the three painted frames.
 
 | Master | Path | Rule |
 |---|---|---|
@@ -1167,9 +1167,11 @@ Uses layout type `lifetime_achievement` and **always** the `million-lifetime.png
 
 ### Crop rendering
 
-Admin crop is authoritative.
+Admin crop is authoritative and remains 3:4.
 
-`normalizedCropToPixelRect(originalWidth, originalHeight, crop)` converts 0–1 coordinates to an integer pixel rectangle. Sharp extracts that rectangle in memory. The generator does not center-crop the original again.
+`normalizedCropToPixelRect(originalWidth, originalHeight, crop)` converts 0–1 coordinates to an integer pixel rectangle. Sharp extracts that rectangle in memory. The generator does not center-crop the original again and does not run face detection.
+
+At PPT placement, that 3:4 crop is **cover-fit** into the master portrait viewport (center crop as needed, no stretch, no letterbox) so the photo fills the inside of the gold frame.
 
 ### Image compatibility
 
