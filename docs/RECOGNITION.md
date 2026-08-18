@@ -1131,7 +1131,13 @@ Paginate rather than shrinking names to fit everyone on one slide.
 
 ### Approved visual masters
 
-Phase 7 uses the frozen approved PNGs as actual 4:3 slide backgrounds (`10 in × 7.5 in`, fill without distortion). Dynamic overlay is limited to award title, names, cover-fit 3:4 portraits, mapped rank badge, and pagination when needed. Titles use a per-master title-safe band **below the crown**. Mapped badges sit in the title hierarchy at projector-visible size (trimmed square PNG, not a corner favicon). Two recipients use a centered two-portrait overlay on the 2–3 master; three recipients use the three painted frames.
+Phase 7 uses the frozen approved PNGs as actual 4:3 slide backgrounds (`10 in × 7.5 in`, fill without distortion). Dynamic overlay is limited to award title, names, cover-fit 3:4 portraits, mapped rank badge, extracted gold-frame overlays, and pagination when needed. Each master has an explicit title box (`x, y, w, h`, max/min font). Longer titles shrink inside that box and never move into the crown or down into portraits. Mapped badges sit in the title hierarchy at projector-visible size (trimmed square PNG, not a corner favicon).
+
+Portrait stacking is:
+
+`master background` → `cover-fit 3:4 photo in the inner viewport` → `gold frame overlay` → `recipient name`
+
+The inner photo viewport is slightly smaller than the visible inside edge of the approved gold frame. Frame overlays live in `public/recognition/frames/` and are extracted from the approved masters (not redesigned). Two recipients use a centered pair of extracted frames on the 2–3 master after covering the baked three-frame row. Three recipients use the three painted frames with the same overlay stacking.
 
 | Master | Path | Rule |
 |---|---|---|

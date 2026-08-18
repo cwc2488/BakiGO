@@ -38,6 +38,17 @@ export const RECOGNITION_BADGE_IDS = [
 
 export type RecognitionBadgeId = (typeof RECOGNITION_BADGE_IDS)[number];
 
+export const RECOGNITION_FRAME_RELATIVE_PATHS = {
+  "hero-1-frames": "public/recognition/frames/hero-1-frames.png",
+  "hero-2-3-frames": "public/recognition/frames/hero-2-3-frames.png",
+  "hero-2-3-clear-frames": "public/recognition/frames/hero-2-3-clear-frames.png",
+  "hero-portrait-frame": "public/recognition/frames/hero-portrait-frame.png",
+  "wall-frames": "public/recognition/frames/wall-frames.png",
+  "million-ring": "public/recognition/frames/million-ring.png",
+} as const;
+
+export type RecognitionFrameOverlayId = keyof typeof RECOGNITION_FRAME_RELATIVE_PATHS;
+
 export const RECOGNITION_BADGE_RELATIVE_PATHS = {
   supervisor: "public/recognition/badges/supervisor.png",
   "world-team": "public/recognition/badges/world-team.png",
@@ -108,12 +119,20 @@ function recognitionBadgesDir(): string {
   return join(process.cwd(), "public", "recognition", "badges");
 }
 
+function recognitionFramesDir(): string {
+  return join(process.cwd(), "public", "recognition", "frames");
+}
+
 export function recognitionMasterAbsolutePath(masterId: RecognitionMasterId): string {
   return join(recognitionMastersDir(), `${masterId}.png`);
 }
 
 export function recognitionBadgeAbsolutePath(badgeId: RecognitionBadgeId): string {
   return join(recognitionBadgesDir(), `${badgeId}.png`);
+}
+
+export function recognitionFrameAbsolutePath(frameId: RecognitionFrameOverlayId): string {
+  return join(recognitionFramesDir(), `${frameId}.png`);
 }
 
 export function recognitionAssetAbsolutePath(relativePath: string): string {
@@ -127,6 +146,12 @@ export function recognitionAssetAbsolutePath(relativePath: string): string {
     const badgeId = relativePath.slice("public/recognition/badges/".length).replace(/\.png$/, "");
     if ((RECOGNITION_BADGE_IDS as readonly string[]).includes(badgeId)) {
       return recognitionBadgeAbsolutePath(badgeId as RecognitionBadgeId);
+    }
+  }
+  if (relativePath.startsWith("public/recognition/frames/")) {
+    const frameId = relativePath.slice("public/recognition/frames/".length).replace(/\.png$/, "");
+    if (frameId in RECOGNITION_FRAME_RELATIVE_PATHS) {
+      return recognitionFrameAbsolutePath(frameId as RecognitionFrameOverlayId);
     }
   }
   throw new Error(`unrecognized recognition visual asset path: ${relativePath}`);
@@ -143,6 +168,10 @@ function loadPngDataUri(cacheKey: string, absolutePath: string): string {
 
 export function loadRecognitionMasterDataUri(masterId: RecognitionMasterId): string {
   return loadPngDataUri(`master:${masterId}`, recognitionMasterAbsolutePath(masterId));
+}
+
+export function loadRecognitionFrameDataUri(frameId: RecognitionFrameOverlayId): string {
+  return loadPngDataUri(`frame:${frameId}`, recognitionFrameAbsolutePath(frameId));
 }
 
 export async function loadTrimmedRecognitionBadgeDataUri(badgeId: RecognitionBadgeId): Promise<string> {

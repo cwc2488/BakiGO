@@ -15,6 +15,11 @@ import {
   RECOGNITION_PPTX_SLIDE,
 } from "../src/lib/recognition/recognition-presentation-layout";
 import { renderRecognitionPresentationPptx } from "../src/lib/recognition/recognition-presentation-pptx";
+import {
+  portraitSlotsForMaster,
+  verifyRecognitionSlideGeometry,
+} from "../src/lib/recognition/recognition-presentation-geometry";
+import { titleGeometryForMaster } from "../src/lib/recognition/recognition-presentation-master-layout";
 import { DEFAULT_RECOGNITION_PRESENTATION_THEME } from "../src/lib/recognition/recognition-presentation-theme";
 import { RECOGNITION_LIFETIME_ACHIEVEMENT_SLUG } from "../src/lib/recognition/recognition-presentation-types";
 import type { RecognitionPreparedPortrait } from "../src/lib/recognition/recognition-presentation-types";
@@ -214,6 +219,34 @@ async function main() {
   for (const candidate of candidates.filter((item) => item.hasOriginalPhoto)) {
     portraits.set(candidate.id, await croppedQaPortrait(candidate.id, seed));
     seed += 1;
+  }
+
+  for (const item of plan) {
+    const masterId = selectRecognitionMaster({
+      awardSlug: item.awardSlug,
+      layoutType: item.layoutType,
+      recipientCount: item.candidateIds.length,
+    });
+    const issues = verifyRecognitionSlideGeometry({
+      masterId,
+      title: titleGeometryForMaster(masterId),
+      slots: portraitSlotsForMaster(masterId, item.candidateIds.length),
+      expectedPortraitCount: masterId === "name-only" ? 0 : item.candidateIds.length,
+    });
+    if (issues.length > 0) {
+      throw new Error(`geometry gate failed for ${item.awardName} (${masterId}, ${item.candidateIds.length}): ${issues.map((issue) => issue.message).join("; ")}`);
+    }
+  }
+
+  const twoPerson = plan.find((item) => item.awardId === "h2");
+  if (!twoPerson || twoPerson.candidateIds.length !== 2) {
+    throw new Error("2-person QA slide does not have exactly 2 portraits");
+  }
+  if (portraitSlotsForMaster("hero-2-3", 2).length !== 2) {
+    throw new Error("2-person geometry does not define exactly 2 portrait slots");
+  }
+  if (portraitSlotsForMaster("wall-4-12", 12).length !== 12) {
+    throw new Error("12-person geometry does not define exactly 12 portrait slots");
   }
 
   const buffer = await renderRecognitionPresentationPptx({

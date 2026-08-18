@@ -1,6 +1,7 @@
 import PptxGenJS from "pptxgenjs";
 import {
   loadTrimmedRecognitionBadgeDataUri,
+  loadRecognitionFrameDataUri,
   loadRecognitionMasterDataUri,
   recognitionBadgeIdForAwardSlug,
   selectRecognitionMaster,
@@ -12,26 +13,21 @@ import {
   RECOGNITION_PPTX_SLIDE,
 } from "@/lib/recognition/recognition-presentation-layout";
 import {
-  hero1NameBox,
-  hero1PortraitViewport,
-  hero2PortraitViewports,
-  hero3PortraitViewports,
-  millionNameBox,
-  millionPortraitViewports,
-  nameBoxBelowViewport,
+  fitRecognitionTitleInBox,
+  hero1PortraitSlot,
+  hero2PortraitSlots,
+  hero3PortraitSlots,
+  millionPortraitSlots,
   nameOnlyContentBox,
   nameOnlyLineBoxes,
-  overlayGoldFrame,
-  RECOGNITION_FRAME_GOLD,
   RECOGNITION_MASTER_FILL,
   RECOGNITION_NAME_ON_GOLD,
   RECOGNITION_NAME_ON_NAVY,
   RECOGNITION_PAGE_INDICATOR_BOX,
   titleAndBadgeBoxes,
   viewportPixelSize,
-  wallNamePlaque,
-  wallPortraitViewport,
-  wallSlotCount,
+  wallPortraitSlots,
+  type RecognitionPortraitSlot,
   type RecognitionSlideBox,
 } from "@/lib/recognition/recognition-presentation-master-layout";
 import {
@@ -97,11 +93,7 @@ async function addAwardOverlay(
 ) {
   const badgeId = recognitionBadgeIdForAwardSlug(plan.awardSlug);
   const boxes = titleAndBadgeBoxes({ masterId, hasBadge: Boolean(badgeId) });
-  const fittedTitle = fitRecognitionPresentationName(plan.awardName, {
-    baseFontPt: masterId === "million-lifetime" ? 26 : theme.titleTypography.fontSizePt,
-    minFontPt: masterId === "million-lifetime" ? 20 : theme.titleTypography.minFontSizePt,
-    comfortableChars: 14,
-  });
+  const fittedTitle = fitRecognitionTitleInBox(plan.awardName, boxes.title);
   slide.addText(fittedTitle.text, {
     x: boxes.title.x,
     y: boxes.title.y,
@@ -143,26 +135,24 @@ async function addAwardOverlay(
   }
 }
 
+function addFullSlideOverlay(slide: Slide, frameId: "hero-1-frames" | "hero-2-3-frames" | "hero-2-3-clear-frames" | "wall-frames" | "million-ring") {
+  slide.addImage({
+    data: loadRecognitionFrameDataUri(frameId),
+    x: RECOGNITION_MASTER_FILL.x,
+    y: RECOGNITION_MASTER_FILL.y,
+    w: RECOGNITION_MASTER_FILL.w,
+    h: RECOGNITION_MASTER_FILL.h,
+  });
+}
+
 async function addCoveredPortrait(input: {
   slide: Slide;
   viewport: RecognitionSlideBox;
   portrait: RecognitionPreparedPortrait | undefined;
   displayName: string;
-  overlayFrame?: boolean;
 }) {
   if (!input.portrait) {
     throw new Error(`missing presentation portrait for ${input.displayName}`);
-  }
-  if (input.overlayFrame) {
-    const frame = overlayGoldFrame(input.viewport);
-    input.slide.addShape("rect", {
-      x: frame.x,
-      y: frame.y,
-      w: frame.w,
-      h: frame.h,
-      fill: { color: pptHex(RECOGNITION_FRAME_GOLD) },
-      line: { color: pptHex(RECOGNITION_FRAME_GOLD), pt: 0 },
-    });
   }
   const pixels = viewportPixelSize(input.viewport);
   const covered = await coverRecognitionPortraitToViewport({
@@ -176,6 +166,16 @@ async function addCoveredPortrait(input: {
     y: input.viewport.y,
     w: input.viewport.w,
     h: input.viewport.h,
+  });
+}
+
+function addExtractedPortraitFrame(slide: Slide, overlay: RecognitionSlideBox) {
+  slide.addImage({
+    data: loadRecognitionFrameDataUri("hero-portrait-frame"),
+    x: overlay.x,
+    y: overlay.y,
+    w: overlay.w,
+    h: overlay.h,
   });
 }
 
@@ -269,27 +269,67 @@ function renderNameListSlide(input: {
   });
 }
 
+async function addPortraits(input: {
+  slide: Slide;
+  candidates: RecognitionPresentationCandidate[];
+  portraits: Map<string, RecognitionPreparedPortrait>;
+  slots: RecognitionPortraitSlot[];
+}) {
+  for (const [index, candidate] of input.candidates.entries()) {
+    const slot = input.slots[index];
+    if (!slot) continue;
+    await addCoveredPortrait({
+      slide: input.slide,
+      viewport: slot.photo,
+      portrait: input.portraits.get(candidate.candidateId),
+      displayName: candidate.displayName,
+    });
+  }
+}
+
+function addSlotNames(input: {
+  slide: Slide;
+  candidates: RecognitionPresentationCandidate[];
+  slots: RecognitionPortraitSlot[];
+  theme: RecognitionPresentationTheme;
+  color: string;
+  fontSizePt: number;
+}) {
+  input.candidates.forEach((candidate, index) => {
+    const slot = input.slots[index];
+    if (!slot) return;
+    addNameLabel({
+      slide: input.slide,
+      box: slot.name,
+      name: candidate.displayName,
+      theme: input.theme,
+      color: input.color,
+      fontSizePt: input.fontSizePt,
+    });
+  });
+}
+
 async function renderHero1Slide(input: {
   slide: Slide;
   candidates: RecognitionPresentationCandidate[];
   portraits: Map<string, RecognitionPreparedPortrait>;
   theme: RecognitionPresentationTheme;
 }) {
-  const candidate = input.candidates[0];
-  if (!candidate) return;
-  await addCoveredPortrait({
+  const slots = [hero1PortraitSlot()];
+  await addPortraits({
     slide: input.slide,
-    viewport: hero1PortraitViewport(),
-    portrait: input.portraits.get(candidate.candidateId),
-    displayName: candidate.displayName,
+    candidates: input.candidates,
+    portraits: input.portraits,
+    slots,
   });
-  addNameLabel({
+  addFullSlideOverlay(input.slide, "hero-1-frames");
+  addSlotNames({
     slide: input.slide,
-    box: hero1NameBox(),
-    name: candidate.displayName,
+    candidates: input.candidates,
+    slots,
     theme: input.theme,
     color: RECOGNITION_NAME_ON_GOLD,
-    fontSizePt: 26,
+    fontSizePt: 22,
   });
 }
 
@@ -300,26 +340,31 @@ async function renderHero23Slide(input: {
   theme: RecognitionPresentationTheme;
 }) {
   const twoPerson = input.candidates.length === 2;
-  const viewports = twoPerson ? hero2PortraitViewports() : hero3PortraitViewports();
-  for (const [index, candidate] of input.candidates.entries()) {
-    const viewport = viewports[index];
-    if (!viewport) continue;
-    await addCoveredPortrait({
-      slide: input.slide,
-      viewport,
-      portrait: input.portraits.get(candidate.candidateId),
-      displayName: candidate.displayName,
-      overlayFrame: twoPerson,
-    });
-    addNameLabel({
-      slide: input.slide,
-      box: nameBoxBelowViewport(viewport, twoPerson ? 0.36 : 0.34, 0.08),
-      name: candidate.displayName,
-      theme: input.theme,
-      color: RECOGNITION_NAME_ON_NAVY,
-      fontSizePt: twoPerson ? 22 : 18,
-    });
+  const slots = twoPerson ? hero2PortraitSlots() : hero3PortraitSlots();
+  if (twoPerson) {
+    addFullSlideOverlay(input.slide, "hero-2-3-clear-frames");
   }
+  await addPortraits({
+    slide: input.slide,
+    candidates: input.candidates,
+    portraits: input.portraits,
+    slots,
+  });
+  if (twoPerson) {
+    for (const slot of slots) {
+      addExtractedPortraitFrame(input.slide, slot.overlay);
+    }
+  } else {
+    addFullSlideOverlay(input.slide, "hero-2-3-frames");
+  }
+  addSlotNames({
+    slide: input.slide,
+    candidates: input.candidates,
+    slots,
+    theme: input.theme,
+    color: RECOGNITION_NAME_ON_NAVY,
+    fontSizePt: twoPerson ? 20 : 18,
+  });
 }
 
 async function renderWallSlide(input: {
@@ -328,25 +373,25 @@ async function renderWallSlide(input: {
   portraits: Map<string, RecognitionPreparedPortrait>;
   theme: RecognitionPresentationTheme;
 }) {
-  if (input.candidates.length > wallSlotCount()) {
+  const slots = wallPortraitSlots();
+  if (input.candidates.length > slots.length) {
     throw new Error("wall master cannot place more than 12 recipients on one slide");
   }
-  for (const [index, candidate] of input.candidates.entries()) {
-    await addCoveredPortrait({
-      slide: input.slide,
-      viewport: wallPortraitViewport(index),
-      portrait: input.portraits.get(candidate.candidateId),
-      displayName: candidate.displayName,
-    });
-    addNameLabel({
-      slide: input.slide,
-      box: wallNamePlaque(index),
-      name: candidate.displayName,
-      theme: input.theme,
-      color: RECOGNITION_NAME_ON_GOLD,
-      fontSizePt: 11,
-    });
-  }
+  await addPortraits({
+    slide: input.slide,
+    candidates: input.candidates,
+    portraits: input.portraits,
+    slots,
+  });
+  addFullSlideOverlay(input.slide, "wall-frames");
+  addSlotNames({
+    slide: input.slide,
+    candidates: input.candidates,
+    slots,
+    theme: input.theme,
+    color: RECOGNITION_NAME_ON_GOLD,
+    fontSizePt: 11,
+  });
 }
 
 async function renderMillionSlide(input: {
@@ -355,27 +400,28 @@ async function renderMillionSlide(input: {
   portraits: Map<string, RecognitionPreparedPortrait>;
   theme: RecognitionPresentationTheme;
 }) {
-  const viewports = millionPortraitViewports(input.candidates.length);
-  const overlayFrame = input.candidates.length !== 1;
-  for (const [index, candidate] of input.candidates.entries()) {
-    const viewport = viewports[index];
-    if (!viewport) continue;
-    await addCoveredPortrait({
-      slide: input.slide,
-      viewport,
-      portrait: input.portraits.get(candidate.candidateId),
-      displayName: candidate.displayName,
-      overlayFrame,
-    });
-    addNameLabel({
-      slide: input.slide,
-      box: millionNameBox(viewport, input.candidates.length),
-      name: candidate.displayName,
-      theme: input.theme,
-      color: RECOGNITION_NAME_ON_NAVY,
-      fontSizePt: input.candidates.length === 1 ? 26 : input.candidates.length <= 3 ? 18 : 12,
-    });
+  const slots = millionPortraitSlots(input.candidates.length);
+  await addPortraits({
+    slide: input.slide,
+    candidates: input.candidates,
+    portraits: input.portraits,
+    slots,
+  });
+  if (input.candidates.length === 1) {
+    addFullSlideOverlay(input.slide, "million-ring");
+  } else if (input.candidates.length <= 3) {
+    for (const slot of slots) {
+      addExtractedPortraitFrame(input.slide, slot.overlay);
+    }
   }
+  addSlotNames({
+    slide: input.slide,
+    candidates: input.candidates,
+    slots,
+    theme: input.theme,
+    color: RECOGNITION_NAME_ON_NAVY,
+    fontSizePt: input.candidates.length === 1 ? 26 : input.candidates.length <= 3 ? 18 : 12,
+  });
 }
 
 export async function renderRecognitionPresentationPptx(input: {
@@ -403,45 +449,39 @@ export async function renderRecognitionPresentationPptx(input: {
       : theme;
     const slide = pptx.addSlide();
     addMasterBackground(slide, masterId);
-    await addAwardOverlay(slide, slidePlan, slideTheme, masterId);
 
     if (masterId === "name-only") {
       renderNameListSlide({ slide, candidates, theme: slideTheme });
-      continue;
-    }
-    if (masterId === "hero-1") {
+    } else if (masterId === "hero-1") {
       await renderHero1Slide({
         slide,
         candidates,
         portraits: input.portraits,
         theme: slideTheme,
       });
-      continue;
-    }
-    if (masterId === "hero-2-3") {
+    } else if (masterId === "hero-2-3") {
       await renderHero23Slide({
         slide,
         candidates,
         portraits: input.portraits,
         theme: slideTheme,
       });
-      continue;
-    }
-    if (masterId === "million-lifetime") {
+    } else if (masterId === "million-lifetime") {
       await renderMillionSlide({
         slide,
         candidates,
         portraits: input.portraits,
         theme: slideTheme,
       });
-      continue;
+    } else {
+      await renderWallSlide({
+        slide,
+        candidates,
+        portraits: input.portraits,
+        theme: slideTheme,
+      });
     }
-    await renderWallSlide({
-      slide,
-      candidates,
-      portraits: input.portraits,
-      theme: slideTheme,
-    });
+    await addAwardOverlay(slide, slidePlan, slideTheme, masterId);
   }
 
   const output = await pptx.write({ outputType: "nodebuffer" });

@@ -5,6 +5,7 @@ import {
   loadRecognitionMasterDataUri,
   RECOGNITION_AWARD_SLUG_BADGE_IDS,
   RECOGNITION_BADGE_RELATIVE_PATHS,
+  RECOGNITION_FRAME_RELATIVE_PATHS,
   RECOGNITION_MASTER_RELATIVE_PATHS,
   recognitionAssetAbsolutePath,
   recognitionBadgeIdForAwardSlug,
@@ -13,9 +14,11 @@ import {
 import { RECOGNITION_LIFETIME_ACHIEVEMENT_SLUG } from "@/lib/recognition/recognition-presentation-types";
 import {
   hero1PortraitViewport,
+  hero2PortraitSlots,
   hero2PortraitViewports,
   hero3PortraitViewports,
   titleAndBadgeBoxes,
+  titleGeometryForMaster,
   titleSafeBoxForMaster,
   wallSlotCount,
 } from "@/lib/recognition/recognition-presentation-master-layout";
@@ -28,6 +31,9 @@ describe("Recognition approved visual assets", () => {
       expect(existsSync(recognitionAssetAbsolutePath(relativePath))).toBe(true);
     }
     for (const relativePath of Object.values(RECOGNITION_BADGE_RELATIVE_PATHS)) {
+      expect(existsSync(recognitionAssetAbsolutePath(relativePath))).toBe(true);
+    }
+    for (const relativePath of Object.values(RECOGNITION_FRAME_RELATIVE_PATHS)) {
       expect(existsSync(recognitionAssetAbsolutePath(relativePath))).toBe(true);
     }
   });
@@ -143,15 +149,24 @@ describe("Recognition master portrait geometry", () => {
     const leftGap = left.x;
     const rightGap = 10 - (right.x + right.w);
     expect(Math.abs(leftGap - rightGap)).toBeLessThan(0.02);
-    expect(left.w / left.h).toBeCloseTo(0.75, 5);
-    expect(right.w / right.h).toBeCloseTo(0.75, 5);
+    expect(left.w).toBeCloseTo(right.w, 5);
+    expect(left.h).toBeCloseTo(right.h, 5);
+    expect(left.y).toBeCloseTo(right.y, 5);
+    const slots = hero2PortraitSlots();
+    expect(slots).toHaveLength(2);
+    expect(slots[0]!.photo.x).toBeGreaterThan(slots[0]!.inner.x);
+    expect(slots[0]!.photo.y).toBeGreaterThan(slots[0]!.inner.y);
+    expect(slots[0]!.photo.x + slots[0]!.photo.w).toBeLessThan(slots[0]!.inner.x + slots[0]!.inner.w);
+    expect(slots[0]!.photo.y + slots[0]!.photo.h).toBeLessThan(slots[0]!.inner.y + slots[0]!.inner.h);
   });
 
-  it("keeps titles below the crown band on navy masters", () => {
-    expect(titleSafeBoxForMaster("name-only").y).toBeGreaterThanOrEqual(1.18);
-    expect(titleSafeBoxForMaster("hero-1").y).toBeGreaterThanOrEqual(1.35);
-    expect(titleSafeBoxForMaster("hero-2-3").y).toBeGreaterThanOrEqual(1.45);
-    expect(titleSafeBoxForMaster("wall-4-12").y).toBeGreaterThanOrEqual(1.5);
+  it("keeps titles in the locked per-master band below the crown", () => {
+    expect(titleSafeBoxForMaster("name-only").y).toBeGreaterThanOrEqual(1.1);
+    expect(titleSafeBoxForMaster("hero-1").y).toBeGreaterThanOrEqual(1.45);
+    expect(titleSafeBoxForMaster("hero-2-3").y).toBeGreaterThanOrEqual(1.6);
+    expect(titleSafeBoxForMaster("wall-4-12").y).toBeGreaterThanOrEqual(1.55);
+    expect(titleGeometryForMaster("hero-1").maxFontPt).toBeLessThanOrEqual(16);
+    expect(titleGeometryForMaster("wall-4-12").maxFontPt).toBeLessThanOrEqual(14);
   });
 
   it("sizes mapped badges for projector visibility", () => {
