@@ -1,7 +1,10 @@
 import type {
   RecognitionEventCreateInput,
   RecognitionEventStatus,
+  RecognitionPublicEventAward,
+  RecognitionSubmissionCreateEntry,
 } from "@/types/recognition";
+import { createHash, randomBytes } from "node:crypto";
 
 export const DEFAULT_RECOGNITION_AWARDS = [
   { slug: "map_month_1", name: "MAP 第一個月", requiresPhoto: false, layoutHint: "name_list", sortOrder: 1 },
@@ -122,4 +125,134 @@ export function toCreateRecognitionEventRpcArgs(
     p_copied_from_event_id: input.copiedFromEventId ?? null,
     p_created_by_member_id: input.createdByMemberId,
   };
+}
+
+export const RECOGNITION_PUBLIC_MAX_ENTRIES = 10;
+export const RECOGNITION_PUBLIC_MAX_TEXT_LENGTH = 100;
+export const RECOGNITION_PUBLIC_MAX_ORG_LENGTH = 120;
+export const RECOGNITION_PUBLIC_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+export const RECOGNITION_PUBLIC_ALLOWED_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+]);
+
+export function generateRecognitionPublicToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+export function hashRecognitionPublicToken(token: string): string {
+  return createHash("sha256").update(token.trim(), "utf8").digest("hex");
+}
+
+export function normalizeRecognitionSubmittedName(name: string): string {
+  return name
+    .normalize("NFKC")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export type RecognitionPublicCollectionState =
+  | "invalid"
+  | "not_started"
+  | "closed"
+  | "expired"
+  | "open";
+
+export function resolveRecognitionCollectionState(input: {
+  exists: boolean;
+  status: RecognitionEventStatus | null;
+  collectStartsAt: string | null;
+  collectEndsAt: string | null;
+  nowMs?: number;
+}): RecognitionPublicCollectionState {
+  if (!input.exists || !input.status) return "invalid";
+  const nowMs = input.nowMs ?? Date.now();
+  const startMs = input.collectStartsAt ? new Date(input.collectStartsAt).getTime() : null;
+  const endMs = input.collectEndsAt ? new Date(input.collectEndsAt).getTime() : null;
+
+  if (input.status !== "collecting") {
+    return input.status === "closed" || input.status === "archived" ? "closed" : "not_started";
+  }
+  if (startMs !== null && nowMs < startMs) return "not_started";
+  if (endMs !== null && nowMs > endMs) return "expired";
+  return "open";
+}
+
+export function validateRecognitionPublicEntryCount(count: number): string | null {
+  if (count <= 0) return "至少需要一位受表揚者。";
+  if (count > RECOGNITION_PUBLIC_MAX_ENTRIES) {
+    return `一次最多可送出 ${RECOGNITION_PUBLIC_MAX_ENTRIES} 位。`;
+  }
+  return null;
+}
+
+export function validateRecognitionPublicTextField(value: string, maxLength: number, fieldLabel: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return `${fieldLabel} 為必填。`;
+  if (trimmed.length > maxLength) return `${fieldLabel} 長度不可超過 ${maxLength} 字。`;
+  return null;
+}
+
+export function validateRecognitionPublicPhoto(input: {
+  mimeType: string;
+  byteSize: number;
+}): string | null {
+  if (!RECOGNITION_PUBLIC_ALLOWED_MIME_TYPES.has(input.mimeType)) {
+    return "不支援的圖片格式。";
+  }
+  if (input.byteSize > RECOGNITION_PUBLIC_MAX_IMAGE_BYTES) {
+    return `圖片不可超過 ${Math.floor(RECOGNITION_PUBLIC_MAX_IMAGE_BYTES / (1024 * 1024))}MB。`;
+  }
+  return null;
+}
+
+export function validateRecognitionPublicSubmissionAgainstAwards(input: {
+  entries: Array<{
+    submittedName: string;
+    eventAwardId: string;
+    originalPhotoStoragePath: string | null;
+  }>;
+  awards: RecognitionPublicEventAward[];
+}): string | null {
+  const countError = validateRecognitionPublicEntryCount(input.entries.length);
+  if (countError) return countError;
+
+  const awardMap = new Map(input.awards.map((award) => [award.eventAwardId, award]));
+  for (const entry of input.entries) {
+    const award = awardMap.get(entry.eventAwardId);
+    if (!award) {
+      return "包含無效或已停用的表揚項目。";
+    }
+    const nameError = validateRecognitionPublicTextField(entry.submittedName, 100, "受表揚者姓名");
+    if (nameError) return nameError;
+    if (award.requiresPhoto && !entry.originalPhotoStoragePath) {
+      return `「${award.name}」需要照片。`;
+    }
+  }
+  return null;
+}
+
+export function toRecognitionSubmissionRpcEntries(
+  entries: RecognitionSubmissionCreateEntry[],
+): Array<{
+  id: string;
+  event_award_id: string;
+  submitted_name: string;
+  normalized_name: string;
+  original_photo_storage_path: string | null;
+  original_photo_mime_type: string | null;
+  original_photo_size_bytes: number | null;
+}> {
+  return entries.map((entry) => ({
+    id: entry.id,
+    event_award_id: entry.eventAwardId,
+    submitted_name: entry.submittedName,
+    normalized_name: normalizeRecognitionSubmittedName(entry.submittedName),
+    original_photo_storage_path: entry.originalPhotoStoragePath,
+    original_photo_mime_type: entry.originalPhotoMimeType,
+    original_photo_size_bytes: entry.originalPhotoSizeBytes,
+  }));
 }

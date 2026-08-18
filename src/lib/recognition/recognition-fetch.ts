@@ -8,6 +8,8 @@ import type {
   RecognitionAwardDefinition,
   RecognitionEvent,
   RecognitionEventAward,
+  RecognitionPublicEvent,
+  RecognitionRawSubmissionView,
   RecognitionEventCreateInput,
   RecognitionEventUpdateInput,
 } from "@/types/recognition";
@@ -101,4 +103,64 @@ export async function reorderEventAwards(
     body: JSON.stringify({ orderedAwardIds }),
   });
   await handleResponse<{ ok: boolean }>(res, "Failed to reorder awards.");
+}
+
+export async function fetchRecognitionEventToken(eventId: string): Promise<{
+  token: string | null;
+  url: string | null;
+  rotatedAt: string | null;
+}> {
+  const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}/token`);
+  const body = await handleResponse<{ token: string | null; url: string | null; rotatedAt: string | null }>(
+    res,
+    "Failed to load public token.",
+  );
+  return body;
+}
+
+export async function rotateRecognitionEventToken(eventId: string): Promise<{
+  token: string | null;
+  url: string | null;
+  rotatedAt: string | null;
+}> {
+  const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}/token`, {
+    method: "POST",
+  });
+  const body = await handleResponse<{ token: string | null; url: string | null; rotatedAt: string | null }>(
+    res,
+    "Failed to rotate public token.",
+  );
+  return body;
+}
+
+export async function fetchRecognitionRawSubmissions(eventId: string): Promise<{
+  totalSubmissions: number;
+  totalEntries: number;
+  submissions: RecognitionRawSubmissionView[];
+}> {
+  const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}/submissions`);
+  return handleResponse<{
+    totalSubmissions: number;
+    totalEntries: number;
+    submissions: RecognitionRawSubmissionView[];
+  }>(res, "Failed to load raw submissions.");
+}
+
+export async function fetchRecognitionPublicEvent(token: string): Promise<RecognitionPublicEvent> {
+  const res = await fetch(`/api/recognition/public/${encodeURIComponent(token)}`, {
+    method: "GET",
+  });
+  const body = await handleResponse<{ event: RecognitionPublicEvent }>(res, "Failed to load event.");
+  return body.event;
+}
+
+export async function submitRecognitionPublicForm(token: string, formData: FormData): Promise<{
+  submissionId: string;
+  message: string;
+}> {
+  const res = await fetch(`/api/recognition/public/${encodeURIComponent(token)}/submissions`, {
+    method: "POST",
+    body: formData,
+  });
+  return handleResponse<{ submissionId: string; message: string }>(res, "Submission failed.");
 }

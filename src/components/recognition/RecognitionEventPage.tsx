@@ -1,13 +1,22 @@
 "use client";
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import {
   fetchEventAwards,
   fetchRecognitionEvent,
+  fetchRecognitionEventToken,
+  fetchRecognitionRawSubmissions,
   reorderEventAwards,
+  rotateRecognitionEventToken,
   updateEventAward,
   updateRecognitionEvent,
 } from "@/lib/recognition/recognition-fetch";
-import type { RecognitionEvent, RecognitionEventAward, RecognitionEventStatus } from "@/types/recognition";
+import type {
+  RecognitionEvent,
+  RecognitionEventAward,
+  RecognitionEventStatus,
+  RecognitionRawSubmissionView,
+} from "@/types/recognition";
 import { PageShell } from "@/components/ui/PageShell";
 import { BrandCard } from "@/components/ui/brand-ui";
 import { useCallback, useEffect, useState } from "react";
@@ -249,6 +258,7 @@ function AwardSection({
       .finally(() => { setLoading(false); });
   }, [eventId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch starts here; state updates happen in promise callbacks
   useEffect(() => {
     loadAwards();
   }, [loadAwards]);
@@ -318,6 +328,7 @@ export function RecognitionEventPage({ eventId }: { eventId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch starts here; state updates happen in promise callbacks
   useEffect(() => {
     setLoading(true);
     fetchRecognitionEvent(eventId)
@@ -350,20 +361,169 @@ export function RecognitionEventPage({ eventId }: { eventId: string }) {
       backLabel="返回表揚中心"
     >
       <EventInfoSection event={event} onUpdated={setEvent} />
+      <PublicCollectionSection eventId={event.id} />
       <AwardSection eventId={event.id} />
+      <RawSubmissionsSection eventId={event.id} />
 
       {/* Phase 4+ placeholders — clearly labelled as not yet available */}
       <div className="flex flex-col gap-3">
-        <BrandCard variant="bordered" className="opacity-50">
-          <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">Phase 4+ — 尚未開放</p>
-          <p className="mt-1 text-[0.9375rem] text-[#1d1d1f]">公開填報連結</p>
-          <p className="mt-0.5 text-[0.875rem] text-[#86868b]">公開收件功能將在 Phase 4 實作。</p>
-        </BrandCard>
         <BrandCard variant="bordered" className="opacity-50">
           <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">Phase 5+ — 尚未開放</p>
           <p className="mt-1 text-[0.9375rem] text-[#1d1d1f]">審核名單 / PPT 預覽</p>
         </BrandCard>
       </div>
     </PageShell>
+  );
+}
+
+function PublicCollectionSection({ eventId }: { eventId: string }) {
+  const [tokenInfo, setTokenInfo] = useState<{ token: string | null; url: string | null; rotatedAt: string | null } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const loadToken = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchRecognitionEventToken(eventId)
+      .then(setTokenInfo)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "無法載入公開連結"))
+      .finally(() => setLoading(false));
+  }, [eventId]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch starts here; state updates happen in promise callbacks
+  useEffect(() => {
+    loadToken();
+  }, [loadToken]);
+
+  async function handleRotate() {
+    setSaving(true);
+    setError(null);
+    try {
+      const next = await rotateRecognitionEventToken(eventId);
+      setTokenInfo(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "無法更新公開連結");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCopy() {
+    if (!tokenInfo?.url) return;
+    await navigator.clipboard.writeText(tokenInfo.url);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <BrandCard variant="bordered">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">公開收件連結</p>
+          <p className="mt-1 text-[0.875rem] text-[#86868b]">Recognition Admin 可分享這個連結給各組織提交表揚名單。</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void handleRotate()}
+          disabled={saving}
+          className="rounded-xl border border-[var(--brand-border)] px-3 py-1.5 text-[0.875rem] font-medium text-[#1d1d1f] disabled:opacity-60"
+        >
+          {tokenInfo?.token ? "旋轉 token" : "產生 token"}
+        </button>
+      </div>
+
+      {loading && <p className="mt-3 text-[0.875rem] text-[#86868b]">載入中…</p>}
+      {!loading && tokenInfo?.url && (
+        <div className="mt-3 rounded-2xl bg-[#f5f5f7] p-4">
+          <p className="text-[0.875rem] break-all text-[#1d1d1f]">{tokenInfo.url}</p>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleCopy()}
+              className="rounded-xl bg-[#1d1d1f] px-3 py-2 text-[0.875rem] font-semibold text-white"
+            >
+              {copied ? "已複製" : "複製連結"}
+            </button>
+            {tokenInfo.rotatedAt && (
+              <p className="text-[0.75rem] text-[#86868b]">
+                最後更新：{new Date(tokenInfo.rotatedAt).toLocaleString("zh-TW")}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+      {!loading && !tokenInfo?.url && (
+        <p className="mt-3 text-[0.875rem] text-[#86868b]">尚未建立公開收件連結。</p>
+      )}
+      {error && <p className="mt-2 text-[0.875rem] text-[#ff375f]">{error}</p>}
+    </BrandCard>
+  );
+}
+
+function RawSubmissionsSection({ eventId }: { eventId: string }) {
+  const [data, setData] = useState<{ totalSubmissions: number; totalEntries: number; submissions: RecognitionRawSubmissionView[] } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchRecognitionRawSubmissions(eventId)
+      .then(setData)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "無法載入原始 submissions"))
+      .finally(() => setLoading(false));
+  }, [eventId]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch starts here; state updates happen in promise callbacks
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <BrandCard variant="bordered">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">原始 submissions</p>
+          <p className="mt-1 text-[0.875rem] text-[#86868b]">只讀 evidence 檢視；Phase 4 不做合併、不做審核。</p>
+        </div>
+        {data && (
+          <p className="text-[0.8125rem] text-[#86868b]">
+            {data.totalSubmissions} submissions / {data.totalEntries} entries
+          </p>
+        )}
+      </div>
+
+      {loading && <p className="mt-3 text-[0.875rem] text-[#86868b]">載入中…</p>}
+      {error && <p className="mt-3 text-[0.875rem] text-[#ff375f]">{error}</p>}
+      {!loading && !error && data && data.submissions.length === 0 && (
+        <p className="mt-3 text-[0.875rem] text-[#86868b]">尚無 public submissions。</p>
+      )}
+      {!loading && !error && data && data.submissions.length > 0 && (
+        <div className="mt-3 flex flex-col gap-3">
+          {data.submissions.map(({ submission, entries }) => (
+            <div key={submission.id} className="rounded-2xl bg-[#f5f5f7] p-4">
+              <div className="flex flex-col gap-1">
+                <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">{submission.submitterName}</p>
+                <p className="text-[0.8125rem] text-[#86868b]">{submission.submitterOrganization}</p>
+                <p className="text-[0.75rem] text-[#86868b]">{new Date(submission.submittedAt).toLocaleString("zh-TW")}</p>
+              </div>
+              <div className="mt-3 flex flex-col gap-2">
+                {entries.map((entry) => (
+                  <div key={entry.id} className="rounded-xl bg-white px-3 py-2">
+                    <p className="text-[0.875rem] font-medium text-[#1d1d1f]">{entry.submittedName}</p>
+                    <p className="text-[0.75rem] text-[#86868b]">{entry.awardName}</p>
+                    <p className="text-[0.75rem] text-[#86868b]">
+                      {entry.hasOriginalPhoto ? "有原圖" : "無原圖"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </BrandCard>
   );
 }

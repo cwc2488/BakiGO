@@ -579,6 +579,135 @@ This is a manual bootstrap step by design — there is no self-service admin gra
 - History export (Phase 5)
 - PPT preview (Phase 6+)
 
+## Phase 4 implementation notes
+
+Phase 4 public collection has been implemented.
+
+### Migration
+
+`supabase/migrations/037_recognition_public_collection.sql`
+
+Adds:
+
+- `recognition_events.public_collection_token`
+- `recognition_events.public_collection_token_hash`
+- `recognition_events.public_collection_token_rotated_at`
+- `recognition_submissions`
+- `recognition_submission_entries`
+- private Storage bucket `recognition-photos`
+- atomic RPC `create_public_recognition_submission(...)`
+
+### Token architecture
+
+Phase 4 stores both:
+
+- raw high-entropy token
+- SHA-256 token hash
+
+Reason:
+
+- admins must repeatedly view/copy the current public URL
+- Phase 4 does not introduce a separate encryption subsystem
+- access remains server-mediated and service-role only
+
+Public route resolves by token **hash**.
+
+Rotation:
+
+- creates a new token
+- updates token + hash immediately
+- invalidates the previous token immediately
+- no grace overlap
+
+### Public route
+
+`/recognition/p/[token]`
+
+This is an **open public** route. No BakiGO login is required.
+
+### APIs
+
+Admin:
+
+```text
+GET  /api/recognition/events/[eventId]/token
+POST /api/recognition/events/[eventId]/token
+GET  /api/recognition/events/[eventId]/submissions
+```
+
+Public:
+
+```text
+GET  /api/recognition/public/[token]
+POST /api/recognition/public/[token]/submissions
+```
+
+### Upload/storage model
+
+- bucket: `recognition-photos`
+- private only
+- no public `storage.objects` policies
+- uploads are server-mediated only
+- originals only in Phase 4
+- no crop / no AI / no face selection
+
+Current original path model:
+
+```text
+recognition/<submission-id>/entries/<entry-id>/original.<ext>
+```
+
+### Upload limits
+
+- max entries per submission: `10`
+- max image size: `10 MB`
+- allowed MIME:
+  - `image/jpeg`
+  - `image/png`
+  - `image/webp`
+  - `image/heic`
+  - `image/heif`
+
+### Atomic submission strategy
+
+Phase 4 uses a staged upload + atomic DB finalization model:
+
+1. server validates token and request
+2. server uploads original photos to private Storage
+3. server calls atomic RPC `create_public_recognition_submission(...)`
+4. submission + entries commit together
+
+If DB finalization fails:
+
+- uploaded objects are deleted with best-effort cleanup
+- if cleanup also fails, orphaned files remain private and can be cleaned later
+
+This avoids creating valid-looking partial DB submissions.
+
+### Rate-limit strategy
+
+Phase 4 uses a **minimal in-memory** server-side rate limiter:
+
+- public lookup limit
+- public submission limit
+
+This is acceptable for initial hardening but is not a distributed/global abuse-control system. Stronger multi-instance rate limiting remains a future hardening task.
+
+### Admin raw-submission visibility
+
+Phase 4 adds read-only raw submission visibility:
+
+- total raw submissions
+- total raw entries
+- submitter name
+- organization
+- submission timestamp
+- raw submitted names
+- submitted award
+- whether original photo exists
+
+No candidate approval / dedupe / review actions are implemented in Phase 4.
+
 ## Implementation guardrails
 
 Implementation must follow this document together with:

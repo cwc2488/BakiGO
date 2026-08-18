@@ -43,6 +43,9 @@ export interface RecognitionEvent {
   copiedFromEventId: string | null;
   createdByMemberId: string | null;
   closedAt: string | null;
+  publicCollectionToken: string | null;
+  publicCollectionTokenHash: string | null;
+  publicCollectionTokenRotatedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -99,4 +102,67 @@ export interface RecognitionAdminMember {
   grantedByMemberId: string | null;
   isActive: boolean;
   grantedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Public collection
+// ---------------------------------------------------------------------------
+
+export interface RecognitionPublicEventAward {
+  eventAwardId: string;
+  awardDefinitionId: string;
+  slug: string;
+  name: string;
+  requiresPhoto: boolean;
+  sortOrder: number;
+}
+
+export interface RecognitionPublicEvent {
+  eventId: string;
+  name: string;
+  year: number;
+  month: number;
+  collectEndsAt: string | null;
+  awards: RecognitionPublicEventAward[];
+}
+
+export interface RecognitionSubmission {
+  id: string;
+  eventId: string;
+  submitterName: string;
+  submitterOrganization: string;
+  submittedAt: string;
+  createdAt: string;
+}
+
+export interface RecognitionSubmissionEntry {
+  id: string;
+  submissionId: string;
+  eventId: string;
+  eventAwardId: string;
+  submittedName: string;
+  normalizedName: string;
+  originalPhotoStoragePath: string | null;
+  originalPhotoMimeType: string | null;
+  originalPhotoSizeBytes: number | null;
+  createdAt: string;
+}
+
+export interface RecognitionSubmissionCreateEntry {
+  id: string;
+  eventAwardId: string;
+  submittedName: string;
+  normalizedName: string;
+  originalPhotoStoragePath: string | null;
+  originalPhotoMimeType: string | null;
+  originalPhotoSizeBytes: number | null;
+}
+
+export interface RecognitionRawSubmissionView {
+  submission: RecognitionSubmission;
+  entries: Array<RecognitionSubmissionEntry & {
+    awardName: string;
+    requiresPhoto: boolean;
+    hasOriginalPhoto: boolean;
+  }>;
 }

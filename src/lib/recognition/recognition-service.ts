@@ -11,14 +11,25 @@
 import { createSupabaseServiceClient } from "@/lib/supabase/service-client";
 import {
   assertRecognitionStatusTransition,
+  generateRecognitionPublicToken,
+  hashRecognitionPublicToken,
+  resolveRecognitionCollectionState,
   toCreateRecognitionEventRpcArgs,
+  toRecognitionSubmissionRpcEntries,
   validateRecognitionAwardReorderInput,
   validateRecognitionEventInput,
+  validateRecognitionPublicSubmissionAgainstAwards,
+  validateRecognitionPublicTextField,
 } from "@/lib/recognition/recognition-domain";
 import type {
   RecognitionAwardDefinition,
   RecognitionEvent,
   RecognitionEventAward,
+  RecognitionPublicEvent,
+  RecognitionRawSubmissionView,
+  RecognitionSubmission,
+  RecognitionSubmissionCreateEntry,
+  RecognitionSubmissionEntry,
   RecognitionEventCreateInput,
   RecognitionEventUpdateInput,
   RecognitionLayoutHint,
@@ -63,6 +74,9 @@ type EventRow = {
   copied_from_event_id: string | null;
   created_by_member_id: string | null;
   closed_at: string | null;
+  public_collection_token: string | null;
+  public_collection_token_hash: string | null;
+  public_collection_token_rotated_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -76,6 +90,39 @@ type EventAwardRow = {
   created_at: string;
   updated_at: string;
   recognition_award_definitions?: AwardDefinitionRow | null;
+};
+
+type PublicEventAwardRow = {
+  id: string;
+  award_definition_id: string;
+  sort_order: number;
+  is_enabled: boolean;
+  recognition_award_definitions?: AwardDefinitionRow | AwardDefinitionRow[] | null;
+};
+
+type SubmissionRow = {
+  id: string;
+  event_id: string;
+  submitter_name: string;
+  submitter_organization: string;
+  submitted_at: string;
+  created_at: string;
+};
+
+type SubmissionEntryRow = {
+  id: string;
+  submission_id: string;
+  event_id: string;
+  event_award_id: string;
+  submitted_name: string;
+  normalized_name: string;
+  original_photo_storage_path: string | null;
+  original_photo_mime_type: string | null;
+  original_photo_size_bytes: number | null;
+  created_at: string;
+  recognition_event_awards?: {
+    recognition_award_definitions?: AwardDefinitionRow | null;
+  } | null;
 };
 
 function mapAwardDefinition(row: AwardDefinitionRow): RecognitionAwardDefinition {
@@ -106,6 +153,9 @@ function mapEvent(row: EventRow): RecognitionEvent {
     copiedFromEventId: row.copied_from_event_id,
     createdByMemberId: row.created_by_member_id,
     closedAt: row.closed_at,
+    publicCollectionToken: row.public_collection_token,
+    publicCollectionTokenHash: row.public_collection_token_hash,
+    publicCollectionTokenRotatedAt: row.public_collection_token_rotated_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -125,6 +175,32 @@ function mapEventAward(row: EventAwardRow): RecognitionEventAward {
     awardName: def?.name,
     requiresPhoto: def?.requires_photo,
     layoutHint: def?.layout_hint as RecognitionLayoutHint | undefined,
+  };
+}
+
+function mapSubmission(row: SubmissionRow): RecognitionSubmission {
+  return {
+    id: row.id,
+    eventId: row.event_id,
+    submitterName: row.submitter_name,
+    submitterOrganization: row.submitter_organization,
+    submittedAt: row.submitted_at,
+    createdAt: row.created_at,
+  };
+}
+
+function mapSubmissionEntry(row: SubmissionEntryRow): RecognitionSubmissionEntry {
+  return {
+    id: row.id,
+    submissionId: row.submission_id,
+    eventId: row.event_id,
+    eventAwardId: row.event_award_id,
+    submittedName: row.submitted_name,
+    normalizedName: row.normalized_name,
+    originalPhotoStoragePath: row.original_photo_storage_path,
+    originalPhotoMimeType: row.original_photo_mime_type,
+    originalPhotoSizeBytes: row.original_photo_size_bytes,
+    createdAt: row.created_at,
   };
 }
 
@@ -285,6 +361,203 @@ export async function updateRecognitionEvent(
     throw new RecognitionServiceError(error?.message ?? "Failed to update event.", 500);
   }
   return mapEvent(data as EventRow);
+}
+
+export async function rotateRecognitionPublicToken(eventId: string): Promise<RecognitionEvent> {
+  const supabase = createSupabaseServiceClient();
+  const token = generateRecognitionPublicToken();
+  const tokenHash = hashRecognitionPublicToken(token);
+  const now = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("recognition_events")
+    .update({
+      public_collection_token: token,
+      public_collection_token_hash: tokenHash,
+      public_collection_token_rotated_at: now,
+      updated_at: now,
+    })
+    .eq("id", eventId)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new RecognitionServiceError(error?.message ?? "Failed to rotate public token.", 500);
+  }
+  return mapEvent(data as EventRow);
+}
+
+export async function resolveRecognitionPublicEventByToken(
+  token: string,
+): Promise<{ state: ReturnType<typeof resolveRecognitionCollectionState>; event: RecognitionPublicEvent | null }> {
+  const tokenHash = hashRecognitionPublicToken(token);
+  const supabase = createSupabaseServiceClient();
+
+  const { data: eventData, error: eventError } = await supabase
+    .from("recognition_events")
+    .select("*")
+    .eq("public_collection_token_hash", tokenHash)
+    .maybeSingle();
+
+  if (eventError) {
+    throw new RecognitionServiceError(eventError.message, 500);
+  }
+  if (!eventData) {
+    return { state: "invalid", event: null };
+  }
+
+  const event = mapEvent(eventData as EventRow);
+  const state = resolveRecognitionCollectionState({
+    exists: true,
+    status: event.status,
+    collectStartsAt: event.collectStartsAt,
+    collectEndsAt: event.collectEndsAt,
+  });
+
+  const { data: awardsData, error: awardsError } = await supabase
+    .from("recognition_event_awards")
+    .select("id, award_definition_id, sort_order, is_enabled, recognition_award_definitions(*)")
+    .eq("event_id", event.id)
+    .eq("is_enabled", true)
+    .order("sort_order", { ascending: true });
+
+  if (awardsError) {
+    throw new RecognitionServiceError(awardsError.message, 500);
+  }
+
+  const awards = (awardsData ?? []).map((row) => {
+    const typed = row as PublicEventAwardRow;
+    const definition = Array.isArray(typed.recognition_award_definitions)
+      ? typed.recognition_award_definitions[0]
+      : typed.recognition_award_definitions;
+    return {
+      eventAwardId: typed.id,
+      awardDefinitionId: typed.award_definition_id,
+      slug: definition?.slug ?? "",
+      name: definition?.name ?? "",
+      requiresPhoto: definition?.requires_photo ?? false,
+      sortOrder: typed.sort_order,
+    };
+  });
+
+  return {
+    state,
+    event: {
+      eventId: event.id,
+      name: event.name,
+      year: event.year,
+      month: event.month,
+      collectEndsAt: event.collectEndsAt,
+      awards,
+    },
+  };
+}
+
+export async function createPublicRecognitionSubmission(input: {
+  token: string;
+  submissionId: string;
+  submitterName: string;
+  submitterOrganization: string;
+  sourceContext: Record<string, unknown>;
+  entries: RecognitionSubmissionCreateEntry[];
+}): Promise<RecognitionSubmission> {
+  const eventResolution = await resolveRecognitionPublicEventByToken(input.token);
+  if (eventResolution.state !== "open" || !eventResolution.event) {
+    const messageMap: Record<typeof eventResolution.state, string> = {
+      invalid: "連結無效或已失效。",
+      not_started: "收件尚未開始。",
+      closed: "收件已關閉。",
+      expired: "收件已過期。",
+      open: "ok",
+    };
+    throw new RecognitionServiceError(messageMap[eventResolution.state], 403);
+  }
+
+  const nameError = validateRecognitionPublicTextField(
+    input.submitterName,
+    100,
+    "填報者姓名",
+  );
+  if (nameError) throw new RecognitionServiceError(nameError, 400);
+
+  const orgError = validateRecognitionPublicTextField(
+    input.submitterOrganization,
+    120,
+    "組織名稱",
+  );
+  if (orgError) throw new RecognitionServiceError(orgError, 400);
+
+  const submissionError = validateRecognitionPublicSubmissionAgainstAwards({
+    entries: input.entries.map((entry) => ({
+      submittedName: entry.submittedName,
+      eventAwardId: entry.eventAwardId,
+      originalPhotoStoragePath: entry.originalPhotoStoragePath,
+    })),
+    awards: eventResolution.event.awards,
+  });
+  if (submissionError) {
+    throw new RecognitionServiceError(submissionError, 400);
+  }
+
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase.rpc("create_public_recognition_submission", {
+    p_submission_id: input.submissionId,
+    p_event_id: eventResolution.event.eventId,
+    p_submitter_name: input.submitterName.trim(),
+    p_submitter_organization: input.submitterOrganization.trim(),
+    p_submitted_at: new Date().toISOString(),
+    p_source_context_json: input.sourceContext,
+    p_entries: toRecognitionSubmissionRpcEntries(input.entries),
+  });
+
+  if (error || !data) {
+    throw new RecognitionServiceError(error?.message ?? "Failed to save submission.", 500);
+  }
+  return mapSubmission(data as SubmissionRow);
+}
+
+export async function listRecognitionRawSubmissions(eventId: string): Promise<RecognitionRawSubmissionView[]> {
+  const supabase = createSupabaseServiceClient();
+  const { data: submissionsData, error: submissionsError } = await supabase
+    .from("recognition_submissions")
+    .select("*")
+    .eq("event_id", eventId)
+    .order("submitted_at", { ascending: false });
+
+  if (submissionsError) {
+    throw new RecognitionServiceError(submissionsError.message, 500);
+  }
+
+  const { data: entriesData, error: entriesError } = await supabase
+    .from("recognition_submission_entries")
+    .select("*, recognition_event_awards(recognition_award_definitions(*))")
+    .eq("event_id", eventId)
+    .order("created_at", { ascending: true });
+
+  if (entriesError) {
+    throw new RecognitionServiceError(entriesError.message, 500);
+  }
+
+  const entriesBySubmission = new Map<string, RecognitionRawSubmissionView["entries"]>();
+  for (const row of (entriesData ?? []) as SubmissionEntryRow[]) {
+    const base = mapSubmissionEntry(row);
+    const entries = entriesBySubmission.get(base.submissionId) ?? [];
+    entries.push({
+      ...base,
+      awardName: row.recognition_event_awards?.recognition_award_definitions?.name ?? "",
+      requiresPhoto: row.recognition_event_awards?.recognition_award_definitions?.requires_photo ?? false,
+      hasOriginalPhoto: Boolean(base.originalPhotoStoragePath),
+    });
+    entriesBySubmission.set(base.submissionId, entries);
+  }
+
+  return (submissionsData ?? []).map((row) => {
+    const submission = mapSubmission(row as SubmissionRow);
+    return {
+      submission,
+      entries: entriesBySubmission.get(submission.id) ?? [],
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

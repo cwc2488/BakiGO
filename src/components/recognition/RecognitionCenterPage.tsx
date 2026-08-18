@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import { fetchRecognitionEvents } from "@/lib/recognition/recognition-fetch";
 import type { RecognitionEvent, RecognitionEventStatus } from "@/types/recognition";
@@ -79,6 +80,7 @@ export function RecognitionCenterPage() {
       .finally(() => { setLoading(false); });
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch starts here; state updates happen in promise callbacks
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);

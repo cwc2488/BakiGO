@@ -333,6 +333,112 @@ Rules:
 - reads via signed URLs / service-role APIs
 - public submitters do not receive direct table access
 
+### Recognition public collection (`037_recognition_public_collection.sql`)
+
+**Status:** Phase 4 public collection implemented.
+
+Adds:
+
+- `recognition_events.public_collection_token`
+- `recognition_events.public_collection_token_hash`
+- `recognition_events.public_collection_token_rotated_at`
+- `recognition_submissions`
+- `recognition_submission_entries`
+- private bucket `recognition-photos`
+- atomic RPC `create_public_recognition_submission(...)`
+
+#### Token storage strategy
+
+Phase 4 stores both:
+
+- raw high-entropy token
+- token hash
+
+Reason:
+
+- Recognition Admin must be able to repeatedly view/copy the active public URL
+- browser clients still do **not** read the DB directly
+- all access remains through Next.js server handlers + service_role
+
+Public resolution uses `public_collection_token_hash`.
+
+#### `recognition_submissions`
+
+Raw public submission envelope.
+
+Key fields:
+
+- `event_id`
+- `submitter_name`
+- `submitter_organization`
+- `submitted_at`
+- `source_context_json`
+
+Rules:
+
+- immutable evidence
+- no BakiGO member mapping required
+- free-text organization in V1
+
+#### `recognition_submission_entries`
+
+Raw entry rows inside one submission.
+
+Key fields:
+
+- `submission_id`
+- `event_id`
+- `event_award_id`
+- `submitted_name`
+- `normalized_name`
+- `original_photo_storage_path`
+- `original_photo_mime_type`
+- `original_photo_size_bytes`
+
+Rules:
+
+- preserve raw submitted name
+- normalized name is for future exact duplicate detection only
+- no automatic consolidation in Phase 4
+
+#### Public original-photo storage
+
+Bucket: `recognition-photos`
+
+Rules:
+
+- private bucket only
+- no public bucket read/write
+- server-mediated uploads
+- no generic list/delete/read for public submitters
+- originals only in Phase 4
+- future crop/processed image remains a later phase concern
+
+Current conceptual path:
+
+```text
+recognition/<submission-id>/entries/<entry-id>/original.<ext>
+```
+
+#### Atomic public submission RPC
+
+`create_public_recognition_submission(...)`
+
+Behavior:
+
+- inserts one `recognition_submissions` row
+- inserts all `recognition_submission_entries`
+- runs in one DB transaction
+- execute allowed only to `service_role`
+
+Upload handling remains outside the DB transaction:
+
+1. server uploads originals first
+2. server finalizes DB rows atomically via RPC
+3. if DB finalization fails, the server performs best-effort delete of uploaded paths
+
+This minimizes orphaned uploads and avoids valid-looking partial DB submissions.
+
 ### Recognition RLS / API pattern
 
 Recognition tables should follow the same broad access model as Quiz/Growth Share, not `members`:
