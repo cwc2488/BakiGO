@@ -347,6 +347,8 @@ Adds:
 - private bucket `recognition-photos`
 - atomic RPC `create_public_recognition_submission(...)`
 
+Additive `038_recognition_public_submission_rpc_guards.sql` replaces that RPC so final DB execution rechecks event collection state and enabled awards before any insert.
+
 #### Token storage strategy
 
 Phase 4 stores both:
@@ -426,9 +428,16 @@ recognition/<submission-id>/entries/<entry-id>/original.<ext>
 
 Behavior:
 
+- at execution time, before inserting anything, rechecks:
+  - the target `recognition_events` row still exists
+  - `event.status = collecting`
+  - current DB time is inside `collect_starts_at` when non-null
+  - current DB time is inside `collect_ends_at` when non-null
+  - each entry award belongs to `p_event_id` and `recognition_event_awards.is_enabled = true`
 - inserts one `recognition_submissions` row
 - inserts all `recognition_submission_entries`
 - runs in one DB transaction
+- if any recheck fails, raises and inserts zero submission/entry rows
 - execute allowed only to `service_role`
 
 Upload handling remains outside the DB transaction:
@@ -437,7 +446,7 @@ Upload handling remains outside the DB transaction:
 2. server finalizes DB rows atomically via RPC
 3. if DB finalization fails, the server performs best-effort delete of uploaded paths
 
-This minimizes orphaned uploads and avoids valid-looking partial DB submissions.
+This minimizes orphaned uploads and avoids valid-looking partial DB submissions. File-signature validation remains in the application layer, not in SQL.
 
 ### Recognition RLS / API pattern
 

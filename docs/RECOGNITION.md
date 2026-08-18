@@ -597,6 +597,8 @@ Adds:
 - private Storage bucket `recognition-photos`
 - atomic RPC `create_public_recognition_submission(...)`
 
+`supabase/migrations/038_recognition_public_submission_rpc_guards.sql` replaces that RPC so final DB execution rechecks event collection state and enabled awards before any insert.
+
 ### Token architecture
 
 Phase 4 stores both:
@@ -677,12 +679,21 @@ Phase 4 uses a staged upload + atomic DB finalization model:
 3. server calls atomic RPC `create_public_recognition_submission(...)`
 4. submission + entries commit together
 
+Final DB execution of `create_public_recognition_submission(...)` rechecks, before inserting any row:
+
+- the target `recognition_events` row still exists
+- `event.status = collecting`
+- current DB time is inside `collect_starts_at` / `collect_ends_at` when those bounds are non-null
+- each `p_entries` award belongs to `p_event_id` and `recognition_event_awards.is_enabled = true`
+
+If any of those RPC checks fail, the transaction raises and inserts zero submission rows and zero entry rows.
+
 If DB finalization fails:
 
 - uploaded objects are deleted with best-effort cleanup
 - if cleanup also fails, orphaned files remain private and can be cleaned later
 
-This avoids creating valid-looking partial DB submissions.
+This avoids creating valid-looking partial DB submissions. File-signature validation stays in the Next.js server path, not in SQL.
 
 ### Rate-limit strategy
 
