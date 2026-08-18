@@ -486,6 +486,7 @@ Phase 3 foundation has been implemented. The following is now in the repository:
 ### Migration
 
 `supabase/migrations/035_recognition_foundation.sql`
+`supabase/migrations/036_recognition_event_rpcs.sql`
 
 Creates:
 - `recognition_award_definitions` (seeded with 27 default awards)
@@ -493,6 +494,10 @@ Creates:
 - `recognition_admin_members`
 - `recognition_events`
 - `recognition_event_awards`
+
+Atomic RPCs:
+- `create_recognition_event_with_awards(...)`
+- `reorder_recognition_event_awards(...)`
 
 RLS enabled on all tables. Zero anon policies. Zero broad authenticated policies.
 
@@ -513,6 +518,8 @@ POST /api/recognition/events/[eventId]/awards/reorder
 ```
 
 All admin routes: Bearer → member id → `recognition_admin_members` check.
+
+Create event and award reorder now go through PostgreSQL RPCs so the DB applies them transactionally.
 
 ### UI routes
 
@@ -561,7 +568,7 @@ This is a manual bootstrap step by design — there is no self-service admin gra
 
 ### Deferred from Phase 3
 
-- Copy Previous Event UI (route entry point deferred; service-layer `copiedFromEventId` is supported)
+- Copy Previous Event UI (route entry point deferred; atomic event-create RPC already supports `copiedFromEventId`)
 - Recognition Event Template UI (architecture is compatible; no feature code)
 - Public path for `/recognition/p/[token]` (Phase 4)
 - Photo Storage bucket (Phase 5)

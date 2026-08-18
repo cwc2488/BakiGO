@@ -46,9 +46,14 @@ Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `oc
 | `quiz_results` | Scored outcomes |
 | `quiz_ai_followups` | Rule-based follow-up messages |
 
-### Recognition Center (`035_recognition_foundation.sql`)
+### Recognition Center (`035_recognition_foundation.sql` + `036_recognition_event_rpcs.sql`)
 
-**Status:** Phase 3 foundation implemented. Migration file: `supabase/migrations/035_recognition_foundation.sql`. No migration has been applied to production; apply in the controlled Supabase environment before opening to admins.
+**Status:** Phase 3 foundation implemented. Migration files:
+
+- `supabase/migrations/035_recognition_foundation.sql`
+- `supabase/migrations/036_recognition_event_rpcs.sql`
+
+No migration has been applied to production; apply in the controlled Supabase environment before opening to admins.
 
 Recognition Center is an **organization operations module**, not member-local workspace data. It must use dedicated SQL tables + service-role APIs, not `member_app_data`.
 
@@ -337,6 +342,22 @@ Recognition tables should follow the same broad access model as Quiz/Growth Shar
 - no broad authenticated read/write policies
 - public submission goes through service-role API after token verification
 - admin actions go through authenticated API + `recognition_admin_members` allowlist
+
+### Recognition transactional RPCs
+
+Phase 3 foundation uses PostgreSQL RPCs for operations that must be atomic:
+
+- `create_recognition_event_with_awards(...)`
+  - inserts one `recognition_events` row
+  - populates `recognition_event_awards`
+  - supports `copied_from_event_id`
+  - rolls back everything if any step fails
+
+- `reorder_recognition_event_awards(...)`
+  - requires the complete current event-award set
+  - rejects duplicate IDs
+  - rejects foreign IDs
+  - updates all `sort_order` values atomically
 
 ### Recognition Event Template compatibility
 

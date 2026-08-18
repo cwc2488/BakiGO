@@ -9,6 +9,12 @@
  */
 
 import { createSupabaseServiceClient } from "@/lib/supabase/service-client";
+import {
+  assertRecognitionStatusTransition,
+  toCreateRecognitionEventRpcArgs,
+  validateRecognitionAwardReorderInput,
+  validateRecognitionEventInput,
+} from "@/lib/recognition/recognition-domain";
 import type {
   RecognitionAwardDefinition,
   RecognitionEvent,
@@ -206,22 +212,6 @@ export async function getRecognitionEvent(eventId: string): Promise<RecognitionE
   return mapEvent(data as EventRow);
 }
 
-function validateEventInput(input: { year?: number; month?: number; collectStartsAt?: string | null; collectEndsAt?: string | null }): void {
-  if (input.year !== undefined && (input.year < 2000 || input.year > 2100)) {
-    throw new RecognitionServiceError("year must be between 2000 and 2100.", 400);
-  }
-  if (input.month !== undefined && (input.month < 1 || input.month > 12)) {
-    throw new RecognitionServiceError("month must be between 1 and 12.", 400);
-  }
-  if (input.collectStartsAt && input.collectEndsAt) {
-    const start = new Date(input.collectStartsAt).getTime();
-    const end = new Date(input.collectEndsAt).getTime();
-    if (end < start) {
-      throw new RecognitionServiceError("collect_ends_at cannot be before collect_starts_at.", 400);
-    }
-  }
-}
-
 /**
  * Create a new Recognition Event and populate its award configuration
  * from the active catalog. If copiedFromEventId is provided, the award
@@ -230,106 +220,32 @@ function validateEventInput(input: { year?: number; month?: number; collectStart
 export async function createRecognitionEvent(
   input: RecognitionEventCreateInput,
 ): Promise<RecognitionEvent> {
-  validateEventInput(input);
+  const validationError = validateRecognitionEventInput(input);
+  if (validationError) {
+    throw new RecognitionServiceError(validationError, 400);
+  }
 
   const supabase = createSupabaseServiceClient();
+  const { data: eventData, error: rpcError } = await supabase.rpc(
+    "create_recognition_event_with_awards",
+    toCreateRecognitionEventRpcArgs(input),
+  );
 
-  // Insert event row
-  const { data: eventData, error: eventError } = await supabase
-    .from("recognition_events")
-    .insert({
-      name: input.name.trim(),
-      year: input.year,
-      month: input.month,
-      collect_starts_at: input.collectStartsAt ?? null,
-      collect_ends_at: input.collectEndsAt ?? null,
-      status: "draft",
-      copied_from_event_id: input.copiedFromEventId ?? null,
-      created_by_member_id: input.createdByMemberId,
-    })
-    .select("*")
-    .single();
-
-  if (eventError || !eventData) {
-    throw new RecognitionServiceError(eventError?.message ?? "Failed to create event.", 500);
+  if (rpcError || !eventData) {
+    throw new RecognitionServiceError(rpcError?.message ?? "Failed to create event.", 500);
   }
 
-  const event = mapEvent(eventData as EventRow);
-
-  // Populate event awards
-  await populateEventAwards(event.id, input.copiedFromEventId ?? null);
-
-  return event;
-}
-
-/**
- * Populate recognition_event_awards from the active catalog.
- * If sourceEventId provided, copies enable state + ordering from that event.
- */
-async function populateEventAwards(
-  eventId: string,
-  sourceEventId: string | null,
-): Promise<void> {
-  const supabase = createSupabaseServiceClient();
-
-  // Fetch active award definitions
-  const { data: defs, error: defsError } = await supabase
-    .from("recognition_award_definitions")
-    .select("id, sort_order")
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
-
-  if (defsError) {
-    throw new RecognitionServiceError(defsError.message, 500);
-  }
-  if (!defs || defs.length === 0) return;
-
-  type DefRow = { id: string; sort_order: number };
-  const defRows = defs as DefRow[];
-
-  // If copying from a source event, fetch its award config
-  const sourceAwardMap: Map<string, { isEnabled: boolean; sortOrder: number }> = new Map();
-  if (sourceEventId) {
-    const { data: sourceAwards, error: sourceError } = await supabase
-      .from("recognition_event_awards")
-      .select("award_definition_id, is_enabled, sort_order")
-      .eq("event_id", sourceEventId);
-
-    if (!sourceError && sourceAwards) {
-      type SourceRow = { award_definition_id: string; is_enabled: boolean; sort_order: number };
-      for (const row of sourceAwards as SourceRow[]) {
-        sourceAwardMap.set(row.award_definition_id, {
-          isEnabled: row.is_enabled,
-          sortOrder: row.sort_order,
-        });
-      }
-    }
-  }
-
-  const rows = defRows.map((def) => {
-    const source = sourceAwardMap.get(def.id);
-    return {
-      event_id: eventId,
-      award_definition_id: def.id,
-      sort_order: source?.sortOrder ?? def.sort_order,
-      is_enabled: source?.isEnabled ?? true,
-    };
-  });
-
-  const { error: insertError } = await supabase
-    .from("recognition_event_awards")
-    .insert(rows);
-
-  if (insertError) {
-    throw new RecognitionServiceError(insertError.message, 500);
-  }
+  return mapEvent(eventData as EventRow);
 }
 
 export async function updateRecognitionEvent(
   eventId: string,
   input: RecognitionEventUpdateInput,
 ): Promise<RecognitionEvent> {
-  validateEventInput(input);
+  const validationError = validateRecognitionEventInput(input);
+  if (validationError) {
+    throw new RecognitionServiceError(validationError, 400);
+  }
 
   // Validate status transitions
   if (input.status) {
@@ -337,7 +253,10 @@ export async function updateRecognitionEvent(
     if (!existing) {
       throw new RecognitionServiceError("Event not found.", 404);
     }
-    assertValidStatusTransition(existing.status, input.status);
+    const transitionError = assertRecognitionStatusTransition(existing.status, input.status);
+    if (transitionError) {
+      throw new RecognitionServiceError(transitionError, 400);
+    }
   }
 
   const supabase = createSupabaseServiceClient();
@@ -366,24 +285,6 @@ export async function updateRecognitionEvent(
     throw new RecognitionServiceError(error?.message ?? "Failed to update event.", 500);
   }
   return mapEvent(data as EventRow);
-}
-
-function assertValidStatusTransition(
-  current: RecognitionEvent["status"],
-  next: RecognitionEvent["status"],
-): void {
-  const allowed: Record<RecognitionEvent["status"], RecognitionEvent["status"][]> = {
-    draft:      ["collecting", "archived"],
-    collecting: ["closed", "archived"],
-    closed:     ["collecting", "archived"], // reopen is allowed per frozen product rule
-    archived:   [],
-  };
-  if (!allowed[current].includes(next)) {
-    throw new RecognitionServiceError(
-      `Cannot transition event from '${current}' to '${next}'.`,
-      400,
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -437,17 +338,20 @@ export async function reorderEventAwards(
   orderedAwardIds: string[],
 ): Promise<void> {
   const supabase = createSupabaseServiceClient();
+  const currentAwards = await listEventAwards(eventId);
+  const validationError = validateRecognitionAwardReorderInput(
+    orderedAwardIds,
+    currentAwards.map((award) => award.id),
+  );
+  if (validationError) {
+    throw new RecognitionServiceError(validationError, 400);
+  }
 
-  // Fire updates sequentially (order matters for consistency)
-  for (let i = 0; i < orderedAwardIds.length; i++) {
-    const { error } = await supabase
-      .from("recognition_event_awards")
-      .update({ sort_order: i + 1, updated_at: new Date().toISOString() })
-      .eq("id", orderedAwardIds[i]!)
-      .eq("event_id", eventId);
-
-    if (error) {
-      throw new RecognitionServiceError(error.message, 500);
-    }
+  const { error } = await supabase.rpc("reorder_recognition_event_awards", {
+    p_event_id: eventId,
+    p_award_ids: orderedAwardIds,
+  });
+  if (error) {
+    throw new RecognitionServiceError(error.message, 500);
   }
 }

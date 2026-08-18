@@ -1,68 +1,56 @@
-/**
- * Recognition Center Phase 3 — unit tests.
- *
- * These tests focus on pure-logic validations that do not require
- * a live Supabase connection: input validation, status transitions,
- * and the seeded 27-award catalog via the migration SQL.
- *
- * Tests that require a live DB (admin check, create event, populate awards)
- * are integration tests and verified via smoke check scripts;
- * they are not included here to avoid requiring test credentials.
- */
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  assertRecognitionStatusTransition,
+  DEFAULT_RECOGNITION_AWARDS,
+  isValidRecognitionStatusTransition,
+  toCreateRecognitionEventRpcArgs,
+  validateRecognitionAwardReorderInput,
+  validateRecognitionEventInput,
+} from "@/lib/recognition/recognition-domain";
+import {
+  createRecognitionEvent,
+  RecognitionServiceError,
+  reorderEventAwards,
+} from "@/lib/recognition/recognition-service";
 
-import { describe, expect, it } from "vitest";
+const mockRpc = vi.fn();
+const mockSelect = vi.fn();
+const mockEq = vi.fn();
+const mockOrder = vi.fn();
+const mockFrom = vi.fn();
 
-// ---------------------------------------------------------------------------
-// 1. Seeded award catalog constants — validate the 27 items
-// ---------------------------------------------------------------------------
+vi.mock("@/lib/supabase/service-client", () => ({
+  createSupabaseServiceClient: () => ({
+    rpc: mockRpc,
+    from: mockFrom,
+  }),
+}));
 
-const SEEDED_AWARDS = [
-  { slug: "map_month_1",           name: "MAP 第一個月",                    requiresPhoto: false },
-  { slug: "map_month_2",           name: "MAP 第二個月",                    requiresPhoto: false },
-  { slug: "map_month_3_pass",      name: "MAP 第三個月（MAP 第三個月過關）", requiresPhoto: true  },
-  { slug: "new_supervisor",        name: "新科督導",                         requiresPhoto: true  },
-  { slug: "world_team_month_1",    name: "世界組第一個月",                  requiresPhoto: false },
-  { slug: "world_team_month_2",    name: "世界組第二個月",                  requiresPhoto: false },
-  { slug: "world_team_month_3",    name: "世界組第三個月",                  requiresPhoto: false },
-  { slug: "new_world_team_pass",   name: "新科世界組（第四個月過關）",       requiresPhoto: true  },
-  { slug: "world_team_1pct",       name: "1%世界組",                        requiresPhoto: true  },
-  { slug: "club_5k",               name: "5K俱樂部",                        requiresPhoto: true  },
-  { slug: "top_10000",             name: "萬點高手",                        requiresPhoto: true  },
-  { slug: "promo_month_1",         name: "推廣組第一個月",                  requiresPhoto: false },
-  { slug: "promo_month_2",         name: "推廣組第二個月",                  requiresPhoto: false },
-  { slug: "new_promo_pass",        name: "新科推廣組（第三個月過關）",       requiresPhoto: true  },
-  { slug: "ro2500_promo_month_1",  name: "RO2500推廣組第一個月",            requiresPhoto: false },
-  { slug: "ro2500_promo_month_2",  name: "RO2500推廣組第二個月",            requiresPhoto: false },
-  { slug: "new_ro2500_promo_pass", name: "新科RO2500推廣組（第三個月過關）",requiresPhoto: true  },
-  { slug: "wealth_month_1",        name: "富豪組第一個月",                  requiresPhoto: false },
-  { slug: "wealth_month_2",        name: "富豪組第二個月",                  requiresPhoto: false },
-  { slug: "new_wealth_pass",       name: "新科富豪組（第三個月過關）",       requiresPhoto: true  },
-  { slug: "ro7500_wealth_month_1", name: "RO7500富豪組第一個月",            requiresPhoto: false },
-  { slug: "ro7500_wealth_month_2", name: "RO7500富豪組第二個月",            requiresPhoto: false },
-  { slug: "ro7500_wealth_pass",    name: "RO7500富豪組（第三個月過關）",    requiresPhoto: true  },
-  { slug: "president_month_1",     name: "總裁組第一個月",                  requiresPhoto: false },
-  { slug: "president_month_2",     name: "總裁組第二個月",                  requiresPhoto: false },
-  { slug: "new_president_pass",    name: "新科總裁組（第三個月過關）",       requiresPhoto: true  },
-  { slug: "million_lifetime",      name: "百萬終生成就獎",                  requiresPhoto: true  },
-] as const;
+beforeEach(() => {
+  mockRpc.mockReset();
+  mockSelect.mockReset();
+  mockEq.mockReset();
+  mockOrder.mockReset();
+  mockFrom.mockReset();
+});
 
 describe("Recognition Center — seeded award catalog", () => {
   it("has exactly 27 default awards", () => {
-    expect(SEEDED_AWARDS).toHaveLength(27);
+    expect(DEFAULT_RECOGNITION_AWARDS).toHaveLength(27);
   });
 
   it("has exactly 12 photo-required awards", () => {
-    const photoAwards = SEEDED_AWARDS.filter((a) => a.requiresPhoto);
+    const photoAwards = DEFAULT_RECOGNITION_AWARDS.filter((a) => a.requiresPhoto);
     expect(photoAwards).toHaveLength(12);
   });
 
   it("has exactly 15 name-only awards", () => {
-    const nameOnly = SEEDED_AWARDS.filter((a) => !a.requiresPhoto);
+    const nameOnly = DEFAULT_RECOGNITION_AWARDS.filter((a) => !a.requiresPhoto);
     expect(nameOnly).toHaveLength(15);
   });
 
   it("photo-required slugs match frozen specification", () => {
-    const photoSlugs = SEEDED_AWARDS.filter((a) => a.requiresPhoto).map((a) => a.slug);
+    const photoSlugs = DEFAULT_RECOGNITION_AWARDS.filter((a) => a.requiresPhoto).map((a) => a.slug);
     expect(photoSlugs).toContain("map_month_3_pass");
     expect(photoSlugs).toContain("new_supervisor");
     expect(photoSlugs).toContain("new_world_team_pass");
@@ -88,14 +76,14 @@ describe("Recognition Center — seeded award catalog", () => {
       "president_month_1", "president_month_2",
     ];
     for (const slug of nameOnlySlugs) {
-      const award = SEEDED_AWARDS.find((a) => a.slug === slug);
+      const award = DEFAULT_RECOGNITION_AWARDS.find((a) => a.slug === slug);
       expect(award, `Award ${slug} should exist`).toBeDefined();
       expect(award?.requiresPhoto, `Award ${slug} should not require photo`).toBe(false);
     }
   });
 
   it("all slugs are unique", () => {
-    const slugs = SEEDED_AWARDS.map((a) => a.slug);
+    const slugs = DEFAULT_RECOGNITION_AWARDS.map((a) => a.slug);
     const uniqueSlugs = new Set(slugs);
     expect(uniqueSlugs.size).toBe(slugs.length);
   });
@@ -105,84 +93,72 @@ describe("Recognition Center — seeded award catalog", () => {
       "member", "supervisor", "active_supervisor",
       "world_team", "promotion_group", "wealth_group", "president",
     ];
-    for (const award of SEEDED_AWARDS) {
+    for (const award of DEFAULT_RECOGNITION_AWARDS) {
       expect(careerRankKeys).not.toContain(award.slug);
     }
   });
 });
 
 // ---------------------------------------------------------------------------
-// 2. Validation helpers — tested as pure functions
+// 2. Validation helpers — tests exercise production helpers
 // ---------------------------------------------------------------------------
-
-function validateMonth(month: number): string | null {
-  if (month < 1 || month > 12) return "month must be between 1 and 12.";
-  return null;
-}
-
-function validateYear(year: number): string | null {
-  if (year < 2000 || year > 2100) return "year must be between 2000 and 2100.";
-  return null;
-}
-
-function validateCollectionWindow(
-  startIso: string | null,
-  endIso: string | null,
-): string | null {
-  if (!startIso || !endIso) return null;
-  if (new Date(endIso).getTime() < new Date(startIso).getTime()) {
-    return "collect_ends_at cannot be before collect_starts_at.";
-  }
-  return null;
-}
 
 describe("Recognition Center — event input validation (pure)", () => {
   it("rejects month 0", () => {
-    expect(validateMonth(0)).not.toBeNull();
+    expect(validateRecognitionEventInput({ month: 0 })).not.toBeNull();
   });
 
   it("rejects month 13", () => {
-    expect(validateMonth(13)).not.toBeNull();
+    expect(validateRecognitionEventInput({ month: 13 })).not.toBeNull();
   });
 
   it("accepts months 1–12", () => {
     for (let m = 1; m <= 12; m++) {
-      expect(validateMonth(m)).toBeNull();
+      expect(validateRecognitionEventInput({ month: m })).toBeNull();
     }
   });
 
   it("accepts valid year 2026", () => {
-    expect(validateYear(2026)).toBeNull();
+    expect(validateRecognitionEventInput({ year: 2026 })).toBeNull();
   });
 
   it("rejects year 1999", () => {
-    expect(validateYear(1999)).not.toBeNull();
+    expect(validateRecognitionEventInput({ year: 1999 })).not.toBeNull();
   });
 
   it("rejects year 2101", () => {
-    expect(validateYear(2101)).not.toBeNull();
+    expect(validateRecognitionEventInput({ year: 2101 })).not.toBeNull();
   });
 
   it("rejects end before start", () => {
     expect(
-      validateCollectionWindow("2026-09-10T00:00:00Z", "2026-09-01T00:00:00Z"),
+      validateRecognitionEventInput({
+        collectStartsAt: "2026-09-10T00:00:00Z",
+        collectEndsAt: "2026-09-01T00:00:00Z",
+      }),
     ).not.toBeNull();
   });
 
   it("accepts end equal to start", () => {
     expect(
-      validateCollectionWindow("2026-09-10T00:00:00Z", "2026-09-10T00:00:00Z"),
+      validateRecognitionEventInput({
+        collectStartsAt: "2026-09-10T00:00:00Z",
+        collectEndsAt: "2026-09-10T00:00:00Z",
+      }),
     ).toBeNull();
   });
 
   it("accepts end after start", () => {
     expect(
-      validateCollectionWindow("2026-09-01T00:00:00Z", "2026-09-30T00:00:00Z"),
+      validateRecognitionEventInput({
+        collectStartsAt: "2026-09-01T00:00:00Z",
+        collectEndsAt: "2026-09-30T00:00:00Z",
+      }),
     ).toBeNull();
   });
 
   it("allows both null (no collection window)", () => {
-    expect(validateCollectionWindow(null, null)).toBeNull();
+    expect(validateRecognitionEventInput({ collectStartsAt: null, collectEndsAt: null })).toBeNull();
   });
 
   it("allows same year/month for two independent events (no uniqueness constraint)", () => {
@@ -192,8 +168,8 @@ describe("Recognition Center — event input validation (pure)", () => {
     const event1 = { year: 2026, month: 9, name: "月會" };
     const event2 = { year: 2026, month: 9, name: "STS" };
     // Both should be valid — no uniqueness conflict
-    expect(validateMonth(event1.month)).toBeNull();
-    expect(validateMonth(event2.month)).toBeNull();
+    expect(validateRecognitionEventInput({ year: event1.year, month: event1.month })).toBeNull();
+    expect(validateRecognitionEventInput({ year: event2.year, month: event2.month })).toBeNull();
     expect(event1.year).toBe(event2.year);
     expect(event1.month).toBe(event2.month);
     expect(event1.name).not.toBe(event2.name);
@@ -201,71 +177,65 @@ describe("Recognition Center — event input validation (pure)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3. Status transition rules
+// 3. Status transition rules — tests exercise production helpers
 // ---------------------------------------------------------------------------
-
-type EventStatus = "draft" | "collecting" | "closed" | "archived";
-
-const ALLOWED_TRANSITIONS: Record<EventStatus, EventStatus[]> = {
-  draft:      ["collecting", "archived"],
-  collecting: ["closed", "archived"],
-  closed:     ["collecting", "archived"], // reopen is allowed per frozen product rule
-  archived:   [],
-};
-
-function isValidTransition(current: EventStatus, next: EventStatus): boolean {
-  return ALLOWED_TRANSITIONS[current].includes(next);
-}
 
 describe("Recognition Center — status transition rules", () => {
   it("draft → collecting is valid", () => {
-    expect(isValidTransition("draft", "collecting")).toBe(true);
+    expect(isValidRecognitionStatusTransition("draft", "collecting")).toBe(true);
   });
 
   it("collecting → closed is valid", () => {
-    expect(isValidTransition("collecting", "closed")).toBe(true);
+    expect(isValidRecognitionStatusTransition("collecting", "closed")).toBe(true);
   });
 
   it("closed → collecting is valid (reopen, frozen product rule)", () => {
-    expect(isValidTransition("closed", "collecting")).toBe(true);
+    expect(isValidRecognitionStatusTransition("closed", "collecting")).toBe(true);
   });
 
   it("archived cannot transition to anything", () => {
-    const targets: EventStatus[] = ["draft", "collecting", "closed", "archived"];
+    const targets = ["draft", "collecting", "closed", "archived"] as const;
     for (const t of targets) {
-      expect(isValidTransition("archived", t)).toBe(false);
+      expect(isValidRecognitionStatusTransition("archived", t)).toBe(false);
     }
   });
 
   it("draft → closed is not directly valid", () => {
-    expect(isValidTransition("draft", "closed")).toBe(false);
+    expect(assertRecognitionStatusTransition("draft", "closed")).not.toBeNull();
   });
 
   it("collecting → draft is not valid", () => {
-    expect(isValidTransition("collecting", "draft")).toBe(false);
+    expect(assertRecognitionStatusTransition("collecting", "draft")).not.toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// 4. Award uniqueness within an event (schema enforces; test the intent)
+// 4. Award reorder validation — tests exercise production helper
 // ---------------------------------------------------------------------------
 
-describe("Recognition Center — event award uniqueness intent", () => {
-  it("same award definition cannot appear twice in one event (constraint documented)", () => {
-    // The migration defines:
-    //   constraint recognition_event_awards_event_award_unique unique (event_id, award_definition_id)
-    // This test documents the intent. The actual enforcement is at the DB level.
-    const seenAwardIds = new Set<string>();
-    const awards = [
-      { awardDefinitionId: "aaa" },
-      { awardDefinitionId: "bbb" },
-      { awardDefinitionId: "ccc" },
-    ];
-    for (const award of awards) {
-      expect(seenAwardIds.has(award.awardDefinitionId)).toBe(false);
-      seenAwardIds.add(award.awardDefinitionId);
-    }
-    expect(seenAwardIds.size).toBe(3);
+describe("Recognition Center — reorder validation", () => {
+  it("accepts a complete ordered set", () => {
+    expect(
+      validateRecognitionAwardReorderInput(["a", "b", "c"], ["a", "b", "c"]),
+    ).toBeNull();
+  });
+
+  it("rejects duplicate reorder ids", () => {
+    expect(
+      validateRecognitionAwardReorderInput(["a", "a", "c"], ["a", "b", "c"]),
+    ).toBe("ordered award ids contain duplicates.");
+  });
+
+  it("rejects incomplete reorder list", () => {
+    expect(
+      validateRecognitionAwardReorderInput(["a", "b"], ["a", "b", "c"]),
+    ).toBe("ordered award ids must include the complete current event-award set.");
+  });
+
+  it("rejects foreign ids", () => {
+    expect(
+      validateRecognitionAwardReorderInput(["a", "b", "x"], ["a", "b", "c"]),
+    ).toBe("ordered award ids must all belong to the target event.");
   });
 });
 
@@ -309,10 +279,197 @@ describe("Recognition Center — does not affect existing career rank keys", () 
     };
 
     const rankKeyValues = Object.values(RANK_KEYS);
-    const awardSlugs = SEEDED_AWARDS.map((a) => a.slug);
+    const awardSlugs = DEFAULT_RECOGNITION_AWARDS.map((a) => a.slug);
 
     for (const slug of awardSlugs) {
       expect(rankKeyValues).not.toContain(slug);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Service contract tests — atomic create and reorder call RPCs
+// ---------------------------------------------------------------------------
+
+describe("Recognition Center service contract", () => {
+  it("uses atomic RPC for event creation", async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: {
+        id: "evt-1",
+        name: "2026 年 9 月月會",
+        year: 2026,
+        month: 9,
+        collect_starts_at: "2026-09-01T00:00:00Z",
+        collect_ends_at: "2026-09-30T00:00:00Z",
+        status: "draft",
+        ppt_theme_id: null,
+        event_template_id: null,
+        copied_from_event_id: null,
+        created_by_member_id: "mem-1",
+        closed_at: null,
+        created_at: "2026-08-18T00:00:00Z",
+        updated_at: "2026-08-18T00:00:00Z",
+      },
+      error: null,
+    });
+
+    const event = await createRecognitionEvent({
+      name: "2026 年 9 月月會",
+      year: 2026,
+      month: 9,
+      collectStartsAt: "2026-09-01T00:00:00Z",
+      collectEndsAt: "2026-09-30T00:00:00Z",
+      createdByMemberId: "mem-1",
+    });
+
+    expect(event.id).toBe("evt-1");
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(mockRpc).toHaveBeenCalledWith(
+      "create_recognition_event_with_awards",
+      toCreateRecognitionEventRpcArgs({
+        name: "2026 年 9 月月會",
+        year: 2026,
+        month: 9,
+        collectStartsAt: "2026-09-01T00:00:00Z",
+        collectEndsAt: "2026-09-30T00:00:00Z",
+        createdByMemberId: "mem-1",
+      }),
+    );
+  });
+
+  it("surfaces RPC failure for atomic event creation", async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: "rpc failed" },
+    });
+
+    await expect(
+      createRecognitionEvent({
+        name: "2026 年 9 月月會",
+        year: 2026,
+        month: 9,
+        createdByMemberId: "mem-1",
+      }),
+    ).rejects.toThrow(RecognitionServiceError);
+  });
+
+  it("rejects duplicate reorder ids before RPC call", async () => {
+    mockFrom.mockReturnValue({
+      select: mockSelect.mockReturnValue({
+        eq: mockEq.mockReturnValue({
+          order: mockOrder.mockResolvedValue({
+            data: [
+              {
+                id: "a",
+                event_id: "evt-1",
+                award_definition_id: "def-1",
+                sort_order: 1,
+                is_enabled: true,
+                created_at: "x",
+                updated_at: "x",
+                recognition_award_definitions: null,
+              },
+              {
+                id: "b",
+                event_id: "evt-1",
+                award_definition_id: "def-2",
+                sort_order: 2,
+                is_enabled: true,
+                created_at: "x",
+                updated_at: "x",
+                recognition_award_definitions: null,
+              },
+            ],
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    await expect(reorderEventAwards("evt-1", ["a", "a"])).rejects.toThrow(
+      "ordered award ids contain duplicates.",
+    );
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("rejects incomplete reorder list before RPC call", async () => {
+    mockFrom.mockReturnValue({
+      select: mockSelect.mockReturnValue({
+        eq: mockEq.mockReturnValue({
+          order: mockOrder.mockResolvedValue({
+            data: [
+              {
+                id: "a",
+                event_id: "evt-1",
+                award_definition_id: "def-1",
+                sort_order: 1,
+                is_enabled: true,
+                created_at: "x",
+                updated_at: "x",
+                recognition_award_definitions: null,
+              },
+              {
+                id: "b",
+                event_id: "evt-1",
+                award_definition_id: "def-2",
+                sort_order: 2,
+                is_enabled: true,
+                created_at: "x",
+                updated_at: "x",
+                recognition_award_definitions: null,
+              },
+            ],
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    await expect(reorderEventAwards("evt-1", ["a"])).rejects.toThrow(
+      "ordered award ids must include the complete current event-award set.",
+    );
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("uses atomic RPC for complete valid reorder", async () => {
+    mockFrom.mockReturnValue({
+      select: mockSelect.mockReturnValue({
+        eq: mockEq.mockReturnValue({
+          order: mockOrder.mockResolvedValue({
+            data: [
+              {
+                id: "a",
+                event_id: "evt-1",
+                award_definition_id: "def-1",
+                sort_order: 1,
+                is_enabled: true,
+                created_at: "x",
+                updated_at: "x",
+                recognition_award_definitions: null,
+              },
+              {
+                id: "b",
+                event_id: "evt-1",
+                award_definition_id: "def-2",
+                sort_order: 2,
+                is_enabled: true,
+                created_at: "x",
+                updated_at: "x",
+                recognition_award_definitions: null,
+              },
+            ],
+            error: null,
+          }),
+        }),
+      }),
+    });
+    mockRpc.mockResolvedValueOnce({ data: null, error: null });
+
+    await reorderEventAwards("evt-1", ["b", "a"]);
+
+    expect(mockRpc).toHaveBeenCalledWith("reorder_recognition_event_awards", {
+      p_event_id: "evt-1",
+      p_award_ids: ["b", "a"],
+    });
   });
 });
