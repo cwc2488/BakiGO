@@ -499,6 +499,8 @@ Atomic RPCs:
 - `create_recognition_event_with_awards(...)`
 - `reorder_recognition_event_awards(...)`
 
+Both RPCs are `SECURITY DEFINER`, with `EXECUTE` revoked from `PUBLIC`, `anon`, and `authenticated`, and granted only to `service_role`.
+
 RLS enabled on all tables. Zero anon policies. Zero broad authenticated policies.
 
 **This migration has not been applied to production.** Apply via Supabase SQL Editor or CLI before opening Recognition Center to admins.
@@ -520,6 +522,7 @@ POST /api/recognition/events/[eventId]/awards/reorder
 All admin routes: Bearer → member id → `recognition_admin_members` check.
 
 Create event and award reorder now go through PostgreSQL RPCs so the DB applies them transactionally.
+The browser cannot execute these RPCs directly; only the Next.js server, through the service-role Supabase client, may call them.
 
 ### UI routes
 

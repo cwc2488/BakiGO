@@ -359,6 +359,13 @@ Phase 3 foundation uses PostgreSQL RPCs for operations that must be atomic:
   - rejects foreign IDs
   - updates all `sort_order` values atomically
 
+Security rule:
+
+- both RPCs are `SECURITY DEFINER`
+- `EXECUTE` is revoked from `PUBLIC`, `anon`, and `authenticated`
+- `EXECUTE` is granted only to `service_role`
+- browser clients must go through authenticated Next.js API → `assertRecognitionAdmin(memberId)` → service-role client → RPC
+
 ### Recognition Event Template compatibility
 
 The schema must stay compatible with a future reusable template concept.

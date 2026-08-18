@@ -2,6 +2,19 @@
 -- Phase 3 fix: make event creation and award reordering atomic.
 --
 -- Additive only. No destructive changes.
+--
+-- SECURITY BOUNDARY:
+-- These functions are SECURITY DEFINER and MUST NOT be directly executable by
+-- ordinary browser-authenticated Supabase users. The intended path is:
+--
+-- browser
+--   -> authenticated Next.js API
+--   -> assertRecognitionAdmin(memberId)
+--   -> service-role Supabase client
+--   -> RPC
+--
+-- Therefore EXECUTE is revoked from PUBLIC / anon / authenticated and granted
+-- only to service_role.
 
 -- ---------------------------------------------------------------------------
 -- create_recognition_event_with_awards
@@ -109,10 +122,16 @@ $$;
 revoke all on function public.create_recognition_event_with_awards(
   text, integer, integer, timestamptz, timestamptz, uuid, uuid
 ) from public;
+revoke all on function public.create_recognition_event_with_awards(
+  text, integer, integer, timestamptz, timestamptz, uuid, uuid
+) from anon;
+revoke all on function public.create_recognition_event_with_awards(
+  text, integer, integer, timestamptz, timestamptz, uuid, uuid
+) from authenticated;
 
 grant execute on function public.create_recognition_event_with_awards(
   text, integer, integer, timestamptz, timestamptz, uuid, uuid
-) to authenticated;
+) to service_role;
 
 comment on function public.create_recognition_event_with_awards(
   text, integer, integer, timestamptz, timestamptz, uuid, uuid
@@ -190,7 +209,9 @@ end;
 $$;
 
 revoke all on function public.reorder_recognition_event_awards(uuid, uuid[]) from public;
-grant execute on function public.reorder_recognition_event_awards(uuid, uuid[]) to authenticated;
+revoke all on function public.reorder_recognition_event_awards(uuid, uuid[]) from anon;
+revoke all on function public.reorder_recognition_event_awards(uuid, uuid[]) from authenticated;
+grant execute on function public.reorder_recognition_event_awards(uuid, uuid[]) to service_role;
 
 comment on function public.reorder_recognition_event_awards(uuid, uuid[]) is
   'Atomically reorder the complete set of recognition_event_awards for one event. Rejects duplicates, omissions, and foreign ids.';
