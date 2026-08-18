@@ -461,6 +461,37 @@ export async function createPublicRecognitionSubmission(input: {
   sourceContext: Record<string, unknown>;
   entries: RecognitionSubmissionCreateEntry[];
 }): Promise<RecognitionSubmission> {
+  const prepared = await prepareRecognitionPublicSubmissionContext({
+    token: input.token,
+    submitterName: input.submitterName,
+    submitterOrganization: input.submitterOrganization,
+    entries: input.entries.map((entry) => ({
+      submittedName: entry.submittedName,
+      eventAwardId: entry.eventAwardId,
+      hasPhoto: Boolean(entry.originalPhotoStoragePath),
+    })),
+  });
+
+  return finalizeRecognitionPublicSubmission({
+    eventId: prepared.event.eventId,
+    submissionId: input.submissionId,
+    submitterName: input.submitterName,
+    submitterOrganization: input.submitterOrganization,
+    sourceContext: input.sourceContext,
+    entries: input.entries,
+  });
+}
+
+export async function prepareRecognitionPublicSubmissionContext(input: {
+  token: string;
+  submitterName: string;
+  submitterOrganization: string;
+  entries: Array<{
+    submittedName: string;
+    eventAwardId: string;
+    hasPhoto: boolean;
+  }>;
+}): Promise<{ event: RecognitionPublicEvent }> {
   const eventResolution = await resolveRecognitionPublicEventByToken(input.token);
   if (eventResolution.state !== "open" || !eventResolution.event) {
     const messageMap: Record<typeof eventResolution.state, string> = {
@@ -491,7 +522,7 @@ export async function createPublicRecognitionSubmission(input: {
     entries: input.entries.map((entry) => ({
       submittedName: entry.submittedName,
       eventAwardId: entry.eventAwardId,
-      originalPhotoStoragePath: entry.originalPhotoStoragePath,
+      originalPhotoStoragePath: entry.hasPhoto ? "__present__" : null,
     })),
     awards: eventResolution.event.awards,
   });
@@ -499,10 +530,21 @@ export async function createPublicRecognitionSubmission(input: {
     throw new RecognitionServiceError(submissionError, 400);
   }
 
+  return { event: eventResolution.event };
+}
+
+export async function finalizeRecognitionPublicSubmission(input: {
+  eventId: string;
+  submissionId: string;
+  submitterName: string;
+  submitterOrganization: string;
+  sourceContext: Record<string, unknown>;
+  entries: RecognitionSubmissionCreateEntry[];
+}): Promise<RecognitionSubmission> {
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase.rpc("create_public_recognition_submission", {
     p_submission_id: input.submissionId,
-    p_event_id: eventResolution.event.eventId,
+    p_event_id: input.eventId,
     p_submitter_name: input.submitterName.trim(),
     p_submitter_organization: input.submitterOrganization.trim(),
     p_submitted_at: new Date().toISOString(),

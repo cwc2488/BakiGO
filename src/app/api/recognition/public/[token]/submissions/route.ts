@@ -2,7 +2,8 @@ import { randomUUID, createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createSupabaseServiceClient, isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 import {
-  createPublicRecognitionSubmission,
+  finalizeRecognitionPublicSubmission,
+  prepareRecognitionPublicSubmissionContext,
   RecognitionServiceError,
 } from "@/lib/recognition/recognition-service";
 import {
@@ -13,6 +14,7 @@ import {
   validateRecognitionPublicEntryCount,
   validateRecognitionPublicPhoto,
 } from "@/lib/recognition/recognition-domain";
+import { validateRecognitionImageSignature } from "@/lib/recognition/recognition-image-signature";
 
 export const runtime = "nodejs";
 
@@ -73,6 +75,17 @@ export async function POST(
     }
 
     const submissionId = randomUUID();
+    const prepared = await prepareRecognitionPublicSubmissionContext({
+      token,
+      submitterName,
+      submitterOrganization,
+      entries: entries.map((entry) => ({
+        submittedName: String(entry.submittedName ?? ""),
+        eventAwardId: String(entry.eventAwardId ?? ""),
+        hasPhoto: Boolean(entry.photoFieldKey?.trim() && formData.get(entry.photoFieldKey.trim())),
+      })),
+    });
+
     const finalizedEntries = [] as Array<{
       id: string;
       eventAwardId: string;
@@ -103,8 +116,16 @@ export async function POST(
           return NextResponse.json({ error: photoValidationError, code: "invalid_file" }, { status: 400 });
         }
 
-        const path = `recognition/${submissionId}/entries/${entryId}/original.${inferExtension(file)}`;
         const buffer = Buffer.from(await file.arrayBuffer());
+        const signatureError = validateRecognitionImageSignature({
+          declaredMimeType: file.type,
+          buffer,
+        });
+        if (signatureError) {
+          return NextResponse.json({ error: signatureError, code: "invalid_file" }, { status: 400 });
+        }
+
+        const path = `recognition/${submissionId}/entries/${entryId}/original.${inferExtension(file)}`;
         const supabase = createSupabaseServiceClient();
         const { error: uploadError } = await supabase.storage
           .from("recognition-photos")
@@ -134,8 +155,8 @@ export async function POST(
       });
     }
 
-    const submission = await createPublicRecognitionSubmission({
-      token,
+    const submission = await finalizeRecognitionPublicSubmission({
+      eventId: prepared.event.eventId,
       submissionId,
       submitterName,
       submitterOrganization,

@@ -129,9 +129,9 @@ export function RecognitionCenterPage() {
       )}
 
       <div className="rounded-2xl border border-dashed border-[var(--brand-border)] bg-[var(--brand-surface)] p-5">
-        <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">即將推出</p>
-        <p className="mt-1 text-[0.9375rem] font-semibold text-[#1d1d1f]">公開收件、審核、PPT 預覽</p>
-        <p className="mt-1 text-[0.875rem] text-[#86868b]">Phase 4+ 功能，目前尚未開放。</p>
+        <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">目前可用</p>
+        <p className="mt-1 text-[0.9375rem] font-semibold text-[#1d1d1f]">活動設定與公開收件</p>
+        <p className="mt-1 text-[0.875rem] text-[#86868b]">Phase 5 之後才會加入名單整併、審核與 PPT 預覽。</p>
       </div>
     </PageShell>
   );
