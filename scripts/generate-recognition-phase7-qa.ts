@@ -19,7 +19,7 @@ import {
   portraitSlotsForMaster,
   verifyRecognitionSlideGeometry,
 } from "../src/lib/recognition/recognition-presentation-geometry";
-import { titleGeometryForMaster } from "../src/lib/recognition/recognition-presentation-master-layout";
+import { hero2PortraitSlots, millionPortraitSlots, titleGeometryForMaster } from "../src/lib/recognition/recognition-presentation-master-layout";
 import { DEFAULT_RECOGNITION_PRESENTATION_THEME } from "../src/lib/recognition/recognition-presentation-theme";
 import { RECOGNITION_LIFETIME_ACHIEVEMENT_SLUG } from "../src/lib/recognition/recognition-presentation-types";
 import type { RecognitionPreparedPortrait } from "../src/lib/recognition/recognition-presentation-types";
@@ -260,6 +260,13 @@ async function main() {
   }
   if (life1.candidateIds.length !== 1 || portraitSlotsForMaster("million-lifetime", 1).length !== 1) {
     throw new Error("million lifetime 1-person QA is not a single centered portrait");
+  }
+  const millionOne = millionPortraitSlots(1)[0];
+  if (!millionOne || Math.abs(millionOne.photo.w - millionOne.photo.h) > 0.001) {
+    throw new Error("million lifetime 1-person viewport must be the circular medallion bounding square");
+  }
+  if (JSON.stringify(millionPortraitSlots(2)) !== JSON.stringify(hero2PortraitSlots())) {
+    throw new Error("million lifetime multiple geometry must stay identical to the approved 2-person pair");
   }
   if (life2.candidateIds.length !== 2 || portraitSlotsForMaster("million-lifetime", 2).length !== 2) {
     throw new Error("million lifetime multiple QA is not a 2-person composition");

@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
-import { cropRecognitionPortraitForPresentation, coverRecognitionPortraitToViewport } from "@/lib/recognition/recognition-presentation-images";
+import { cropRecognitionPortraitForPresentation, coverRecognitionPortraitToCircularViewport, coverRecognitionPortraitToViewport } from "@/lib/recognition/recognition-presentation-images";
 import { buildRecognitionPresentationData } from "@/lib/recognition/recognition-presentation-dto";
 import { planRecognitionPresentation, RECOGNITION_PPTX_SLIDE } from "@/lib/recognition/recognition-presentation-layout";
 import { renderRecognitionPresentationPptx } from "@/lib/recognition/recognition-presentation-pptx";
@@ -95,6 +95,25 @@ describe("Recognition presentation crop rendering", () => {
     const meta = await sharp(covered.jpegBuffer).metadata();
     expect(meta.width).toBe(210);
     expect(meta.height).toBe(400);
+  });
+
+  it("circular-masks the Million Lifetime 1-person cover-fit without stretching", async () => {
+    const portrait = await sharp({
+      create: { width: 300, height: 400, channels: 3, background: { r: 40, g: 90, b: 70 } },
+    }).jpeg().toBuffer();
+    const covered = await coverRecognitionPortraitToCircularViewport({
+      jpegBuffer: portrait,
+      diameterPx: 200,
+    });
+    expect(covered.width).toBe(200);
+    expect(covered.height).toBe(200);
+    const { data, info } = await sharp(covered.pngBuffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    expect(info.width).toBe(200);
+    expect(info.height).toBe(200);
+    const alphaAt = (x: number, y: number) => data[(y * info.width + x) * info.channels + 3];
+    expect(alphaAt(100, 100)).toBeGreaterThan(200);
+    expect(alphaAt(1, 1)).toBe(0);
+    expect(alphaAt(198, 1)).toBe(0);
   });
 });
 

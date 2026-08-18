@@ -138,6 +138,40 @@ export function jpegBufferToPptxData(buffer: Buffer): string {
   return `image/jpeg;base64,${buffer.toString("base64")}`;
 }
 
+export function pngBufferToPptxData(buffer: Buffer): string {
+  return `image/png;base64,${buffer.toString("base64")}`;
+}
+
+/**
+ * Cover-fit the approved 3:4 presentation crop into a circular viewport.
+ * Center-crops as needed, then applies a circular alpha mask so corners cannot
+ * cover medallion artwork. Does not change admin crop metadata.
+ */
+export async function coverRecognitionPortraitToCircularViewport(input: {
+  jpegBuffer: Buffer;
+  diameterPx: number;
+}): Promise<{ pngBuffer: Buffer; width: number; height: number }> {
+  const diameterPx = Math.max(1, Math.round(input.diameterPx));
+  const covered = await sharp(input.jpegBuffer)
+    .resize({
+      width: diameterPx,
+      height: diameterPx,
+      fit: "cover",
+      position: "centre",
+    })
+    .ensureAlpha()
+    .png()
+    .toBuffer();
+  const mask = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${diameterPx}" height="${diameterPx}"><circle cx="${diameterPx / 2}" cy="${diameterPx / 2}" r="${diameterPx / 2}" fill="white"/></svg>`,
+  );
+  const pngBuffer = await sharp(covered)
+    .composite([{ input: mask, blend: "dest-in" }])
+    .png()
+    .toBuffer();
+  return { pngBuffer, width: diameterPx, height: diameterPx };
+}
+
 /**
  * Cover-fit the approved 3:4 presentation crop into a master viewport.
  * Center-crops as needed. Does not stretch and does not change admin crop metadata.

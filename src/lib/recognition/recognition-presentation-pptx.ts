@@ -31,8 +31,10 @@ import {
   type RecognitionSlideBox,
 } from "@/lib/recognition/recognition-presentation-master-layout";
 import {
+  coverRecognitionPortraitToCircularViewport,
   coverRecognitionPortraitToViewport,
   jpegBufferToPptxData,
+  pngBufferToPptxData,
 } from "@/lib/recognition/recognition-presentation-images";
 import {
   LIFETIME_RECOGNITION_PRESENTATION_THEME,
@@ -162,6 +164,29 @@ async function addCoveredPortrait(input: {
   });
   input.slide.addImage({
     data: jpegBufferToPptxData(covered.jpegBuffer),
+    x: input.viewport.x,
+    y: input.viewport.y,
+    w: input.viewport.w,
+    h: input.viewport.h,
+  });
+}
+
+async function addCoveredCircularPortrait(input: {
+  slide: Slide;
+  viewport: RecognitionSlideBox;
+  portrait: RecognitionPreparedPortrait | undefined;
+  displayName: string;
+}) {
+  if (!input.portrait) {
+    throw new Error(`missing presentation portrait for ${input.displayName}`);
+  }
+  const pixels = viewportPixelSize(input.viewport);
+  const covered = await coverRecognitionPortraitToCircularViewport({
+    jpegBuffer: input.portrait.jpegBuffer,
+    diameterPx: Math.min(pixels.width, pixels.height),
+  });
+  input.slide.addImage({
+    data: pngBufferToPptxData(covered.pngBuffer),
     x: input.viewport.x,
     y: input.viewport.y,
     w: input.viewport.w,
@@ -394,12 +419,45 @@ async function renderWallSlide(input: {
   });
 }
 
+async function renderMillionOneSlide(input: {
+  slide: Slide;
+  candidates: RecognitionPresentationCandidate[];
+  portraits: Map<string, RecognitionPreparedPortrait>;
+  theme: RecognitionPresentationTheme;
+}) {
+  const slots = millionPortraitSlots(1);
+  const slot = slots[0]!;
+  const candidate = input.candidates[0];
+  if (!candidate) {
+    throw new Error("million lifetime 1-person slide is missing its recipient");
+  }
+  await addCoveredCircularPortrait({
+    slide: input.slide,
+    viewport: slot.photo,
+    portrait: input.portraits.get(candidate.candidateId),
+    displayName: candidate.displayName,
+  });
+  addFullSlideOverlay(input.slide, "million-ring");
+  addSlotNames({
+    slide: input.slide,
+    candidates: input.candidates,
+    slots,
+    theme: input.theme,
+    color: RECOGNITION_NAME_ON_NAVY,
+    fontSizePt: 26,
+  });
+}
+
 async function renderMillionSlide(input: {
   slide: Slide;
   candidates: RecognitionPresentationCandidate[];
   portraits: Map<string, RecognitionPreparedPortrait>;
   theme: RecognitionPresentationTheme;
 }) {
+  if (input.candidates.length === 1) {
+    await renderMillionOneSlide(input);
+    return;
+  }
   const slots = millionPortraitSlots(input.candidates.length);
   await addPortraits({
     slide: input.slide,
@@ -407,9 +465,7 @@ async function renderMillionSlide(input: {
     portraits: input.portraits,
     slots,
   });
-  if (input.candidates.length === 1) {
-    addFullSlideOverlay(input.slide, "million-ring");
-  } else if (input.candidates.length <= 3) {
+  if (input.candidates.length <= 3) {
     for (const slot of slots) {
       addExtractedPortraitFrame(input.slide, slot.overlay);
     }
@@ -420,7 +476,7 @@ async function renderMillionSlide(input: {
     slots,
     theme: input.theme,
     color: RECOGNITION_NAME_ON_NAVY,
-    fontSizePt: input.candidates.length === 1 ? 26 : input.candidates.length <= 3 ? 18 : 12,
+    fontSizePt: input.candidates.length <= 3 ? 18 : 12,
   });
 }
 

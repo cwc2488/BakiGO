@@ -142,9 +142,13 @@ const WALL_NAME_PLAQUES: readonly RecognitionSlideBox[] = [
   { x: 8.018, y: 5.62, w: 1.0912, h: 0.2 },
 ];
 
-const MILLION_INNER: RecognitionSlideBox = { x: 3.308, y: 1.6367, w: 3.3978, h: 3.3564 };
-const MILLION_PHOTO: RecognitionSlideBox = { x: 3.3771, y: 1.7058, w: 3.2596, h: 3.2182 };
-const MILLION_NAME: RecognitionSlideBox = { x: 2.2, y: 5.28, w: 5.6, h: 0.36 };
+/**
+ * Million Lifetime + exactly 1 recipient. Inner/photo boxes are the bounding
+ * squares of the baked circular medallion opening (extracted overlay sits above).
+ */
+const MILLION_1_INNER: RecognitionSlideBox = { x: 3.2782, y: 1.6428, w: 3.446, h: 3.446 };
+const MILLION_1_PHOTO: RecognitionSlideBox = { x: 3.3127, y: 1.6774, w: 3.377, h: 3.377 };
+const MILLION_1_NAME: RecognitionSlideBox = { x: 2.2, y: 5.28, w: 5.6, h: 0.36 };
 
 const NAME_ONLY_CONTENT: RecognitionSlideBox = {
   x: 0.9,
@@ -376,7 +380,12 @@ export function wallNamePlaque(index: number): RecognitionSlideBox {
 export function millionPortraitSlots(count: number): RecognitionPortraitSlot[] {
   if (count <= 0) return [];
   if (count === 1) {
-    return [{ photo: MILLION_PHOTO, inner: MILLION_INNER, overlay: MILLION_INNER, name: MILLION_NAME }];
+    return [{
+      photo: MILLION_1_PHOTO,
+      inner: MILLION_1_INNER,
+      overlay: RECOGNITION_MASTER_FILL,
+      name: MILLION_1_NAME,
+    }];
   }
   if (count === 2) {
     return heroPairSlots();
@@ -422,7 +431,7 @@ function millionGridViewports(count: number): RecognitionSlideBox[] {
 }
 
 export function millionNameBox(viewport: RecognitionSlideBox, count: number): RecognitionSlideBox {
-  if (count === 1) return MILLION_NAME;
+  if (count === 1) return MILLION_1_NAME;
   return nameBoxBelowViewport(viewport, count <= 3 ? 0.34 : 0.26, 0.07);
 }
 

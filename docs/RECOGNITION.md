@@ -1171,6 +1171,8 @@ Keyed by slug `million_lifetime`, not by comparing Chinese text.
 
 Uses layout type `lifetime_achievement` and **always** the `million-lifetime.png` master. One or many recipients are both valid. Portrait placement adapts to count without changing master.
 
+Exactly 1 recipient uses a dedicated circular inner viewport of the baked central medallion. The approved 3:4 crop is cover-fit into that circle (no stretch, no letterbox), then circular-masked so the portrait cannot cover the gold ring, crown, or laurels. The extracted `million-ring` overlay (the existing medallion artwork, not a redesigned frame) sits above the portrait. Multiple-recipient placement on this master is unchanged.
+
 ### Crop rendering
 
 Admin crop is authoritative and remains 3:4.

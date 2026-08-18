@@ -7,6 +7,8 @@ import {
 import { recognitionFrameAbsolutePath } from "@/lib/recognition/recognition-presentation-assets";
 import {
   fitRecognitionTitleInBox,
+  hero2PortraitSlots,
+  millionPortraitSlots,
   titleGeometryForMaster,
 } from "@/lib/recognition/recognition-presentation-master-layout";
 
@@ -47,5 +49,26 @@ describe("Recognition presentation geometry lock", () => {
     const cy = Math.floor(info.height / 2);
     const alpha = data[(cy * info.width + cx) * info.channels + 3];
     expect(alpha).toBe(0);
+  });
+
+  it("uses a circular medallion viewport only for Million Lifetime 1-person", async () => {
+    const one = millionPortraitSlots(1);
+    expect(one).toHaveLength(1);
+    expect(one[0]!.photo.w).toBeCloseTo(one[0]!.photo.h, 5);
+    expect(one[0]!.inner.w).toBeCloseTo(one[0]!.inner.h, 5);
+    expect(one[0]!.photo.w).toBeGreaterThan(3.2);
+    expect(one[0]!.photo.h).toBeGreaterThan(3.2);
+
+    const two = millionPortraitSlots(2);
+    const heroTwo = hero2PortraitSlots();
+    expect(two).toEqual(heroTwo);
+
+    const overlay = sharp(recognitionFrameAbsolutePath("million-ring"));
+    const { data, info } = await overlay.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const channels = info.channels;
+    const centerAlpha = data[(487 * info.width + 724) * channels + 3];
+    expect(centerAlpha).toBe(0);
+    const ringAlpha = data[(305 * info.width + 906) * channels + 3];
+    expect(ringAlpha).toBeGreaterThan(200);
   });
 });

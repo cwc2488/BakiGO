@@ -73,6 +73,12 @@ def punch_rect(rgba: np.ndarray, x0: int, y0: int, x1: int, y1: int) -> None:
     rgba[y0 : y1 + 1, x0 : x1 + 1, 3] = 0
 
 
+def punch_circle(rgba: np.ndarray, cx: float, cy: float, radius: float) -> None:
+    h, w = rgba.shape[:2]
+    yy, xx = np.ogrid[:h, :w]
+    rgba[(xx - cx) ** 2 + (yy - cy) ** 2 <= radius ** 2, 3] = 0
+
+
 def extract_sprite(rgb: np.ndarray, inner: tuple[int, int, int, int], pad: int) -> tuple[np.ndarray, dict]:
     h, w = rgb.shape[:2]
     ix0, iy0, ix1, iy1 = inner
@@ -108,6 +114,38 @@ def extract_sprite(rgb: np.ndarray, inner: tuple[int, int, int, int], pad: int) 
         "inner": inner_in,
         "photo": photo,
         "px": {"inner": [ix0, iy0, ix1, iy1], "overlay": [abs_x0, abs_y0, abs_x0 + sprite.shape[1] - 1, abs_y0 + sprite.shape[0] - 1]},
+    }
+
+
+def extract_million_medallion_overlay(rgb: np.ndarray, circle: dict[str, float]) -> np.ndarray:
+    """Keep the baked circular gold medallion; punch only its inner opening."""
+    rgba = np.dstack([rgb, np.full(rgb.shape[:2], 255, np.uint8)])
+    punch_circle(rgba, circle["cx"], circle["cy"], circle["r"] - 2)
+    h, w = rgba.shape[:2]
+    seeds = []
+    for x in range(0, w, 8):
+        seeds.append((x, 0))
+        seeds.append((x, h - 1))
+    for y in range(0, h, 8):
+        seeds.append((0, y))
+        seeds.append((w - 1, y))
+    flood_transparent(rgba, seeds)
+    return rgba
+
+
+def million_one_geometry(circle: dict[str, float]) -> dict:
+    cx, cy, r = circle["cx"], circle["cy"], circle["r"]
+    inner = px_to_in(cx - r, cy - r, r * 2, r * 2)
+    photo = px_to_in(
+        cx - r + INSET_PX,
+        cy - r + INSET_PX,
+        r * 2 - 2 * INSET_PX,
+        r * 2 - 2 * INSET_PX,
+    )
+    return {
+        "circlePx": {"cx": cx, "cy": cy, "r": r},
+        "inner": inner,
+        "photo": photo,
     }
 
 
@@ -184,13 +222,14 @@ def main() -> None:
         (950, 572, 1109, 809),
         (1161, 572, 1318, 809),
     ]
-    million_inner = (479, 237, 970, 722)
+    # Fitted inner opening of the baked circular medallion (not a rectangle).
+    million_circle = {"cx": 724.1793, "cy": 487.3757, "r": 249.4937}
 
     # Full-slide gold overlays with interiors punched — exact master artwork.
     save_png(full_slide_overlay(hero1, [hero1_inner]), OUT / "hero-1-frames.png")
     save_png(full_slide_overlay(hero23, hero23_inners), OUT / "hero-2-3-frames.png")
     save_png(full_slide_overlay(wall, wall_inners), OUT / "wall-frames.png")
-    save_png(full_slide_overlay(million, [million_inner]), OUT / "million-ring.png")
+    save_png(extract_million_medallion_overlay(million, million_circle), OUT / "million-ring.png")
 
     # Single hero-2-3 frame sprite from the center slot (canonical pair size).
     sprite, sprite_geo = extract_sprite(hero23, hero23_inners[1], pad=28)
@@ -210,7 +249,7 @@ def main() -> None:
     geo["hero1"] = {"inner": inner_in(hero1_inner), "photo": photo_from_inner(hero1_inner)}
     geo["hero3"] = [{"inner": inner_in(i), "photo": photo_from_inner(i)} for i in hero23_inners]
     geo["wall"] = [{"inner": inner_in(i), "photo": photo_from_inner(i)} for i in wall_inners]
-    geo["million"] = {"inner": inner_in(million_inner), "photo": photo_from_inner(million_inner)}
+    geo["million1"] = million_one_geometry(million_circle)
     print(json.dumps(geo, indent=2))
 
 
