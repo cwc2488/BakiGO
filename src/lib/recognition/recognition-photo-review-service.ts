@@ -85,7 +85,11 @@ function photoReviewInputFrom(
     reviewStatus: RecognitionPhotoReviewQueueItem["candidate"]["reviewStatus"];
     hasOriginalPhoto: boolean;
     preferredSourceEntryId: string | null;
-    sources: Array<{ submissionEntryId: string; hasOriginalPhoto: boolean }>;
+    sources: Array<{
+      submissionEntryId: string;
+      hasOriginalPhoto: boolean;
+      originalPhotoStoragePath?: string | null;
+    }>;
   },
   review: RecognitionPhotoReview | null,
 ) {
@@ -96,6 +100,9 @@ function photoReviewInputFrom(
     requiresPhoto: item.requiresPhoto,
     reviewStatus: item.reviewStatus,
     hasOriginalPhoto: item.hasOriginalPhoto,
+    originalPhotoStoragePath: preferred?.originalPhotoStoragePath
+      ?? item.sources.find((source) => source.originalPhotoStoragePath)?.originalPhotoStoragePath
+      ?? null,
     preferredSourceEntryId: item.preferredSourceEntryId,
     preferredSourceBelongsToCandidate: item.preferredSourceEntryId
       ? item.sources.some((source) => source.submissionEntryId === item.preferredSourceEntryId)

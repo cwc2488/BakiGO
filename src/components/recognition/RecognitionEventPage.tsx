@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 
+import { recognitionPhotoStatusErrorMessage } from "@/lib/recognition/recognition-photo-url";
 import {
   fetchEventAwards,
   fetchRecognitionEvent,
@@ -675,16 +676,25 @@ function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([
+    void Promise.allSettled([
       fetchRecognitionEventPptReadiness(eventId),
       fetchRecognitionPresentationSummary(eventId),
-    ])
-      .then(([nextReadiness, nextSummary]) => {
-        setReadiness(nextReadiness);
-        setSummary(nextSummary);
-      })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "無法載入 PPT 準備狀態"))
-      .finally(() => setLoading(false));
+    ]).then(([readinessResult, summaryResult]) => {
+      const failures: string[] = [];
+      if (readinessResult.status === "fulfilled") {
+        setReadiness(readinessResult.value);
+      } else {
+        setReadiness(null);
+        failures.push(recognitionPhotoStatusErrorMessage(readinessResult.reason));
+      }
+      if (summaryResult.status === "fulfilled") {
+        setSummary(summaryResult.value);
+      } else {
+        setSummary(null);
+        failures.push(recognitionPhotoStatusErrorMessage(summaryResult.reason));
+      }
+      setError(failures.length > 0 ? [...new Set(failures)].join("\n") : null);
+    }).finally(() => setLoading(false));
   }, [eventId]);
 
   useEffect(() => {
@@ -701,7 +711,7 @@ function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
     try {
       await downloadRecognitionEventPresentation(eventId);
     } catch (err: unknown) {
-      setGenerateError(err instanceof Error ? err.message : "無法產生簡報");
+      setGenerateError(recognitionPhotoStatusErrorMessage(err, "無法產生簡報"));
     } finally {
       setGenerating(false);
     }
@@ -734,6 +744,7 @@ function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
             <p>需要照片：{readiness.photoRequiredApproved}</p>
             <p>照片已完成：{readiness.readyPhotos}</p>
             <p>缺少原圖：{readiness.missingOriginalPhotos}</p>
+            <p>照片無效：{readiness.invalidPhotos}</p>
             <p>尚未選照片：{readiness.missingPreferredPhoto}</p>
             <p>尚未裁切：{readiness.missingCrop}</p>
             <p>照片有問題：{readiness.blockedPhotos}</p>
@@ -744,12 +755,23 @@ function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
                 <p>預估投影片：{summary.expectedSlideCount}</p>
               </>
             )}
+            {(summary?.blockers.length ?? 0) > 0 && (
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-[0.8125rem] text-[#ff375f]">
+                {summary?.blockers.map((blocker) => (
+                  <li key={blocker.candidateId}>
+                    {blocker.displayName}：{blocker.reason}
+                  </li>
+                ))}
+              </ul>
+            )}
             <p className="pt-1 font-medium">
               {pending > 0
                 ? `尚有 ${pending} 個問題需要處理`
                 : summary && summary.expectedSlideCount === 0
                   ? "尚無已核准名單"
-                  : "照片準備完成"}
+                  : summary?.ready
+                    ? "照片準備完成"
+                    : "尚未完成審核"}
             </p>
           </div>
         )}

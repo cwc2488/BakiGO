@@ -262,6 +262,7 @@ export type RecognitionPhotoReviewFlag =
 export type RecognitionPresentationPhotoReadinessState =
   | "not_required"
   | "no_original_photo"
+  | "invalid_photo"
   | "preferred_source_not_selected"
   | "needs_photo_review"
   | "crop_ready"
@@ -323,6 +324,7 @@ export interface RecognitionEventPptReadiness {
   photoRequiredApproved: number;
   readyPhotos: number;
   missingOriginalPhotos: number;
+  invalidPhotos: number;
   missingPreferredPhoto: number;
   missingCrop: number;
   blockedPhotos: number;

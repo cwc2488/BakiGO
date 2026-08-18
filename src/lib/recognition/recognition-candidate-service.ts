@@ -12,6 +12,14 @@ import {
 } from "@/lib/recognition/recognition-candidates";
 import { parseRecognitionNormalizedCrop } from "@/lib/recognition/recognition-photo-review";
 import {
+  parseRecognitionPhotoRef,
+  recognitionNamedPhotoError,
+  recognitionPhotoHasUsableOriginal,
+  recognitionPhotoStoragePathForDownload,
+  RECOGNITION_MISSING_VALID_PHOTO,
+  RECOGNITION_PHOTOS_BUCKET,
+} from "@/lib/recognition/recognition-photo-url";
+import {
   getRecognitionEvent,
   listEventAwards,
   RecognitionServiceError,
@@ -367,6 +375,33 @@ export async function getRecognitionTextRoster(eventId: string): Promise<{ text:
   return { text: formatRecognitionTextRoster(roster), roster };
 }
 
+const MAX_REMOTE_PHOTO_BYTES = 15 * 1024 * 1024;
+
+function decodeRecognitionDataUrl(url: string): { body: ArrayBuffer; mimeType: string } {
+  const match = url.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=\s]+)$/i);
+  if (!match?.[1] || !match[2]) {
+    throw new RecognitionServiceError(RECOGNITION_MISSING_VALID_PHOTO, 422);
+  }
+  const buffer = Buffer.from(match[2], "base64");
+  return {
+    mimeType: match[1],
+    body: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+  };
+}
+
+async function fetchRecognitionHttpsPhoto(url: string): Promise<{ body: ArrayBuffer; mimeType: string }> {
+  const response = await fetch(url, { redirect: "follow" });
+  if (!response.ok) {
+    throw new RecognitionServiceError(`無法讀取照片（HTTP ${response.status}）`, 422);
+  }
+  const mimeType = response.headers.get("content-type") || "application/octet-stream";
+  const body = await response.arrayBuffer();
+  if (body.byteLength > MAX_REMOTE_PHOTO_BYTES) {
+    throw new RecognitionServiceError("照片檔案過大", 422);
+  }
+  return { body, mimeType };
+}
+
 export async function getRecognitionCandidatePhotoObject(input: {
   eventId: string;
   candidateId: string;
@@ -375,20 +410,75 @@ export async function getRecognitionCandidatePhotoObject(input: {
   const candidate = await getRecognitionCandidate(input.eventId, input.candidateId);
   const source = candidate.sources.find((item) => item.submissionEntryId === input.sourceEntryId);
   if (!source || !source.originalPhotoStoragePath) {
-    throw new RecognitionServiceError("Photo is not part of this candidate's evidence.", 404);
+    throw new RecognitionServiceError(
+      recognitionNamedPhotoError(candidate.displayName),
+      404,
+    );
+  }
+
+  const parsed = parseRecognitionPhotoRef(source.originalPhotoStoragePath);
+  if (!parsed.ok || parsed.kind === "blob-url") {
+    throw new RecognitionServiceError(
+      recognitionNamedPhotoError(candidate.displayName),
+      422,
+    );
+  }
+
+  if (parsed.kind === "data-url") {
+    const decoded = decodeRecognitionDataUrl(parsed.url);
+    return {
+      path: source.originalPhotoStoragePath,
+      mimeType: source.originalPhotoMimeType || decoded.mimeType,
+      body: decoded.body,
+    };
+  }
+
+  if (parsed.kind === "https-url") {
+    try {
+      const fetched = await fetchRecognitionHttpsPhoto(parsed.url);
+      return {
+        path: source.originalPhotoStoragePath,
+        mimeType: source.originalPhotoMimeType || fetched.mimeType,
+        body: fetched.body,
+      };
+    } catch (error) {
+      if (error instanceof RecognitionServiceError) {
+        throw new RecognitionServiceError(
+          recognitionNamedPhotoError(candidate.displayName, error.message),
+          error.status,
+        );
+      }
+      const detail = error instanceof Error ? error.message : undefined;
+      throw new RecognitionServiceError(
+        recognitionNamedPhotoError(candidate.displayName, detail),
+        422,
+      );
+    }
+  }
+
+  const storagePath = recognitionPhotoStoragePathForDownload(source.originalPhotoStoragePath)
+    ?? (parsed.kind === "storage-path" ? parsed.storagePath : null);
+  if (!storagePath) {
+    throw new RecognitionServiceError(
+      recognitionNamedPhotoError(candidate.displayName),
+      422,
+    );
   }
 
   const supabase = createSupabaseServiceClient();
   const { data, error } = await supabase.storage
-    .from("recognition-photos")
-    .download(source.originalPhotoStoragePath);
+    .from(RECOGNITION_PHOTOS_BUCKET)
+    .download(storagePath);
 
   if (error || !data) {
-    throw new RecognitionServiceError(error?.message ?? "Failed to load photo.", 500);
+    throw new RecognitionServiceError(
+      recognitionNamedPhotoError(candidate.displayName, error?.message ?? "無法下載原圖"),
+      500,
+    );
   }
 
   return {
-    path: source.originalPhotoStoragePath,
+    path: storagePath,
     mimeType: source.originalPhotoMimeType || "application/octet-stream",
     body: await data.arrayBuffer(),
   };
@@ -477,7 +567,7 @@ async function loadRecognitionCandidates(eventId: string): Promise<RecognitionCa
       submittedAt: submission?.submitted_at ?? "",
       originalPhotoStoragePath: entry?.original_photo_storage_path ?? null,
       originalPhotoMimeType: entry?.original_photo_mime_type ?? null,
-      hasOriginalPhoto: Boolean(entry?.original_photo_storage_path),
+      hasOriginalPhoto: recognitionPhotoHasUsableOriginal(entry?.original_photo_storage_path),
       createdAt: source.created_at,
     };
     const list = sourcesByCandidate.get(source.candidate_id) ?? [];

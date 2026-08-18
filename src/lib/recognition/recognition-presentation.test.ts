@@ -119,6 +119,57 @@ describe("Recognition presentation DTO", () => {
     expect(data.awards[0]?.candidates.map((item) => item.displayName)).toEqual(["王小明"]);
   });
 
+  it("extracts a Supabase Storage object path from a full photo URL", () => {
+    const storagePath = "recognition/c-photo.jpg";
+    const data = build({
+      awards: [award({
+        eventAwardId: "a3",
+        awardSlug: "new_world_team_pass",
+        awardName: "新科世界組",
+        requiresPhoto: true,
+      })],
+      candidates: [candidate({
+        id: "c-photo",
+        eventAwardId: "a3",
+        displayName: "王小明",
+        hasOriginalPhoto: true,
+        sources: [{
+          submissionEntryId: "c-photo-src",
+          originalPhotoStoragePath: `https://xyz.supabase.co/storage/v1/object/public/recognition-photos/${storagePath}`,
+          originalPhotoMimeType: "image/jpeg",
+          hasOriginalPhoto: true,
+        }],
+      })],
+      reviews: [review({ candidateId: "c-photo" })],
+    });
+    expect(data.awards[0]?.candidates[0]?.photo?.storagePath).toBe(storagePath);
+  });
+
+  it("omits a malformed photo ref instead of putting it on the slide DTO", () => {
+    const data = build({
+      awards: [award({
+        eventAwardId: "a3",
+        awardSlug: "new_world_team_pass",
+        awardName: "新科世界組",
+        requiresPhoto: true,
+      })],
+      candidates: [candidate({
+        id: "c-photo",
+        eventAwardId: "a3",
+        displayName: "王小明",
+        hasOriginalPhoto: true,
+        sources: [{
+          submissionEntryId: "c-photo-src",
+          originalPhotoStoragePath: "not a url",
+          originalPhotoMimeType: "image/jpeg",
+          hasOriginalPhoto: true,
+        }],
+      })],
+      reviews: [review({ candidateId: "c-photo" })],
+    });
+    expect(data.awards[0]?.candidates[0]?.photo).toBeNull();
+  });
+
   it("omits disabled awards even when they have approved candidates", () => {
     const data = build({
       awards: [

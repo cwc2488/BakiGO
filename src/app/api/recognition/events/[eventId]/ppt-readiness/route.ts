@@ -6,6 +6,7 @@ import {
   RecognitionServiceError,
 } from "@/lib/recognition/recognition-service";
 import { getRecognitionEventPptReadiness } from "@/lib/recognition/recognition-photo-review-service";
+import { isRecognitionUrlPatternError } from "@/lib/recognition/recognition-photo-url";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,8 @@ export async function GET(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load PPT readiness.";
     const status = error instanceof RecognitionServiceError ? error.status : 500;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({
+      error: isRecognitionUrlPatternError(error) ? "缺少有效照片" : message,
+    }, { status });
   }
 }
