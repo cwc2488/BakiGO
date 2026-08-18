@@ -46,9 +46,9 @@ Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `oc
 | `quiz_results` | Scored outcomes |
 | `quiz_ai_followups` | Rule-based follow-up messages |
 
-### Recognition Center (planned; documentation freeze only)
+### Recognition Center (`035_recognition_foundation.sql`)
 
-**Status:** Phase 2 documentation frozen. No migration applied in this phase.
+**Status:** Phase 3 foundation implemented. Migration file: `supabase/migrations/035_recognition_foundation.sql`. No migration has been applied to production; apply in the controlled Supabase environment before opening to admins.
 
 Recognition Center is an **organization operations module**, not member-local workspace data. It must use dedicated SQL tables + service-role APIs, not `member_app_data`.
 

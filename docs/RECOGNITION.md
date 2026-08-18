@@ -479,17 +479,97 @@ Recognition Center architecture should allow future work such as:
 
 But V1 should not over-engineer or pre-build those features beyond what is necessary to keep the architecture open.
 
+## Phase 3 implementation notes
+
+Phase 3 foundation has been implemented. The following is now in the repository:
+
+### Migration
+
+`supabase/migrations/035_recognition_foundation.sql`
+
+Creates:
+- `recognition_award_definitions` (seeded with 27 default awards)
+- `recognition_ppt_themes` (seeded with one default 4:3 theme)
+- `recognition_admin_members`
+- `recognition_events`
+- `recognition_event_awards`
+
+RLS enabled on all tables. Zero anon policies. Zero broad authenticated policies.
+
+**This migration has not been applied to production.** Apply via Supabase SQL Editor or CLI before opening Recognition Center to admins.
+
+### API routes
+
+```
+GET  /api/recognition/catalog
+GET  /api/recognition/admin/me
+GET  /api/recognition/events
+POST /api/recognition/events
+GET  /api/recognition/events/[eventId]
+PATCH /api/recognition/events/[eventId]
+GET  /api/recognition/events/[eventId]/awards
+PATCH /api/recognition/events/[eventId]/awards/[awardId]
+POST /api/recognition/events/[eventId]/awards/reorder
+```
+
+All admin routes: Bearer → member id → `recognition_admin_members` check.
+
+### UI routes
+
+```
+/recognition             Recognition Center home (admin only)
+/recognition/events/new  Create event
+/recognition/events/[id] Event management
+```
+
+Navigation: `/recognition` added to **More** entries in home navigation.
+
+### Authorization
+
+`src/lib/recognition/recognition-service.ts` — `isRecognitionAdmin()` / `assertRecognitionAdmin()` query `recognition_admin_members` table only. No rank inference.
+
+### First Recognition Admin bootstrap procedure
+
+The `recognition_admin_members` table starts empty. To grant the first admin:
+
+1. Go to Supabase Dashboard → SQL Editor
+2. Find the `members.id` UUID for the target member (query by email or member_number)
+3. Run:
+
+```sql
+insert into public.recognition_admin_members (member_id, is_active)
+values ('<target-member-id>', true);
+```
+
+4. Verify: that member can now access `/recognition` in the app.
+
+This is a manual bootstrap step by design — there is no self-service admin grant and no insecure shortcut. All subsequent admin grants can be done via additional SQL inserts until a management UI is built.
+
+### Tests
+
+`src/lib/recognition/recognition-service.test.ts` — 27 passing tests covering:
+- 27 default awards exist
+- photo-required flags correct (12 photo, 15 name-only)
+- multiple events in same year/month allowed
+- invalid month rejected
+- invalid year rejected
+- collection end before start rejected
+- status transition rules (including closed → collecting reopen)
+- award uniqueness within event documented
+- admin permission model not rank-based
+- no collision with existing RANK_KEYS
+
+### Deferred from Phase 3
+
+- Copy Previous Event UI (route entry point deferred; service-layer `copiedFromEventId` is supported)
+- Recognition Event Template UI (architecture is compatible; no feature code)
+- Public path for `/recognition/p/[token]` (Phase 4)
+- Photo Storage bucket (Phase 5)
+- Candidate consolidation (Phase 5)
+- History export (Phase 5)
+- PPT preview (Phase 6+)
+
 ## Implementation guardrails
-
-Recognition Center documentation freeze does **not** authorize:
-
-- feature-code implementation
-- migrations
-- database changes
-- Storage changes
-- dependency changes
-- production data changes
-- deployment
 
 Implementation must follow this document together with:
 

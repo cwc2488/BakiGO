@@ -10,6 +10,8 @@
 
 > Phase 2 note: product and architecture freeze decisions are now recorded in `docs/RECOGNITION.md`, with corresponding updates in `docs/BUSINESS_RULES.md`, `docs/DATABASE.md`, and `docs/ROADMAP.md`. When this audit and the frozen docs differ, the Phase 2 frozen docs win.
 
+> Phase 3 note: Foundation implementation shipped. See Phase 3 sections in `docs/RECOGNITION.md` and `docs/DATABASE.md` for actual migration name, routes, and bootstrap procedure.
+
 ---
 
 ## 0. Product goal (frozen as specified)

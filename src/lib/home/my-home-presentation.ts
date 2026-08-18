@@ -259,6 +259,7 @@ export const MY_HOME_MORE_ENTRIES: HomeMoreEntry[] = [
   { href: "/promotions", title: "活動／促銷" },
   { href: "/events", title: "活動紀錄" },
   { href: "/pre-meeting-graphic", title: "會前會圖" },
+  { href: "/recognition", title: "表揚中心" },
   { href: "/profile", title: "個人資料／設定" },
 ];
 
