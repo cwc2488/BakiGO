@@ -30,7 +30,7 @@ function parseEvents(raw: string | null): BakiEvent[] {
 
   try {
     const parsed = JSON.parse(raw) as BakiEvent[];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.filter((event) => Boolean(event?.id)) : [];
   } catch {
     return [];
   }

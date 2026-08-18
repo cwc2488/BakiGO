@@ -72,7 +72,7 @@ Recognition Center is an **organization operations module**, not member-local wo
 | `recognition_candidates` | Consolidated admin review objects; PPT source uses approved candidates only |
 | `recognition_candidate_sources` | Mapping from candidate back to raw submission entries |
 | `recognition_duplicate_signals` | Warning/blocking duplicate hints across candidates |
-| `recognition_admin_members` | Dedicated Recognition Admin allowlist |
+| `recognition_admin_members` | Historical admin table; does not grant access. Super Admin is `src/lib/auth/super-admin.ts` |
 | `recognition_ppt_exports` | Conceptual name; Phase 7 implemented `recognition_presentation_exports` |
 | `recognition_presentation_exports` | PPTX generation audit rows (no file storage) |
 
@@ -319,7 +319,9 @@ A persisted `recognition_duplicate_signals` table remains a future extension for
 
 #### `recognition_admin_members`
 
-Dedicated allowlist for Recognition Admin.
+Historical Recognition Admin allowlist table. **Does not grant access.**
+
+Canonical Super Admin is 會員編號 `20699471` via `src/lib/auth/super-admin.ts`.
 
 Do **not** infer from rank.
 President does **not** automatically qualify.
@@ -552,7 +554,7 @@ Recognition tables should follow the same broad access model as Quiz/Growth Shar
 - Recognition RPCs remain execute-only for `service_role` (migrations 036–040)
 - private bucket `recognition-photos` has no client `storage.objects` policies; uploads/downloads stay server-mediated
 - public submission goes through service-role API after token verification
-- admin actions go through authenticated API + `recognition_admin_members` allowlist (`is_active = true`)
+- admin actions go through authenticated API + Super Admin (`src/lib/auth/super-admin.ts`)
 
 ### Recognition transactional RPCs
 

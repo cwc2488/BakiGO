@@ -1,7 +1,7 @@
 "use client";
 
-import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import { todayISODate, toYearMonthFromDate } from "@/lib/config/app-config";
+import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import { loadAllMembers } from "@/lib/members/member-service";
 import { loadMemberMetrics } from "@/lib/mission-control/format";
 import { buildPointsLeaderboard } from "@/lib/points/build-points-leaderboard";
@@ -21,7 +21,10 @@ function useLeaderboardViews(metrics: MemberComputedMetrics) {
     const viewerId = resolveAuthenticatedMemberId(storage);
     const members = loadAllMembers(storage).filter((member) => member.status === "active");
     const metricsByMemberId = new Map(
-      members.map((member) => [member.id, loadMemberMetrics(member.id, storage)]),
+      members.map((member) => [
+        member.id,
+        loadMemberMetrics(member.id, storage, undefined, { includeMapUniverse: false }),
+      ]),
     );
 
     const baseInput = {

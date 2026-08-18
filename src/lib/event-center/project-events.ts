@@ -67,6 +67,9 @@ export function projectEventsForEngines(events: BakiEvent[]): ProjectedEvents {
   const transactions: RetailTransaction[] = [];
 
   events.forEach((event) => {
+    if (!event || typeof event !== "object" || !event.id || !event.eventDate) {
+      return;
+    }
     if (event.eventCategory === "transaction") {
       const transaction = toRetailTransaction(event);
       if (transaction) {

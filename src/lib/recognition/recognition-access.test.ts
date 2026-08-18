@@ -26,13 +26,15 @@ const API_DIR = resolve(ROOT, "src/app/api/recognition");
 const PAGE_DIR = resolve(ROOT, "src/app/recognition");
 
 describe("Recognition Center canonical admin authority", () => {
-  it("uses recognition_admin_members rather than rank or a second admin system", () => {
-    expect(RECOGNITION_ADMIN_AUTHORITY.table).toBe("recognition_admin_members");
+  it("uses Super Admin (src/lib/auth/super-admin.ts) rather than rank or a second admin system", () => {
+    expect(RECOGNITION_ADMIN_AUTHORITY.source).toBe("src/lib/auth/super-admin.ts");
+    expect(RECOGNITION_ADMIN_AUTHORITY.memberNumbers).toBe("SUPER_ADMIN_MEMBER_NUMBERS");
     const source = readFileSync(resolve(ROOT, "src/lib/recognition/recognition-service.ts"), "utf8");
-    expect(source).toContain('.from("recognition_admin_members")');
-    expect(source).toContain('.eq("is_active", true)');
+    expect(source).toContain("resolveIsSuperAdmin");
+    expect(source).not.toContain('.from("recognition_admin_members")');
     expect(source).not.toMatch(/current_level/);
     expect(source).not.toMatch(/role === ["']president["']/);
+    expect(source).not.toContain("20699471");
   });
 });
 

@@ -106,23 +106,28 @@ Submission 內的單一被提報人項目。每一個姓名 / 照片組合都是
 4. **Theme and roster data are separate.**
 5. **No blank award slides.** Awards with zero approved recipients are omitted.
 6. **Public form stays simple.** Photo anomalies go to admin review.
-7. **Recognition admin is an explicit allowlist, not inferred from rank.**
+7. **Recognition admin is the unique Super Admin, not inferred from rank.**
 
 ## Recognition Admin permission model
 
-Recognition Center V1 uses a dedicated **`recognition_admin_members` allowlist**.
+BakiGO 唯一 Super Admin 為會員編號 **20699471**.
+
+Canonical source: `src/lib/auth/super-admin.ts`
+
+- `SUPER_ADMIN_MEMBER_NUMBERS`
+- `isSuperAdmin(memberIdOrNumber)`
+- `resolveIsSuperAdmin(memberIdOrNumber)` — server-side; resolves `members.id` → `members.member_number`
 
 Rules:
 
 - Recognition Admin permission is **not** derived from career rank.
 - President rank does **not** automatically grant Recognition Admin access.
-- A member must be explicitly added to the Recognition Admin allowlist.
-- This allowlist is independent of member-management, promotions, partner-care, or leaderboard permissions.
-- Canonical `isAdmin === true` is a server-side lookup: authenticated `members.id` exists in `recognition_admin_members` with `is_active = true`.
+- Partner-care / member-management / leaderboard permissions are unchanged.
 - Client role claims are never trusted.
-- Admin UI routes live under `src/app/recognition/(admin)/`. Direct URLs are denied server-side (`notFound`) when the signed-in member is not on the allowlist. Unauthenticated visitors are denied by AuthGate (`/recognition` is not a public path).
+- Admin UI routes live under `src/app/recognition/(admin)/`. Direct URLs are denied server-side (`notFound`) when the signed-in member is not Super Admin. Unauthenticated visitors are denied by AuthGate (`/recognition` is not a public path).
 - The home「更多」entry for 表揚中心 is shown only after that same server check succeeds. Partners do not see a disabled or “admin only” link.
 - Public collection `/recognition/p/[token]` remains open without Recognition Admin.
+- `recognition_admin_members` remains a storage table with RLS; it does **not** grant access.
 
 If implementation discovers architectural friction with current app permission helpers, that friction must be documented; it must **not** be resolved by changing this product rule.
 

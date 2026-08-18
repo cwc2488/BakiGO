@@ -8,6 +8,7 @@
  * All DB access uses the service role client (no anon/authenticated RLS policies exist).
  */
 
+import { resolveIsSuperAdmin } from "@/lib/auth/super-admin";
 import { createSupabaseServiceClient } from "@/lib/supabase/service-client";
 import {
   assertRecognitionStatusTransition,
@@ -210,18 +211,14 @@ function mapSubmissionEntry(row: SubmissionEntryRow): RecognitionSubmissionEntry
 // ---------------------------------------------------------------------------
 
 export async function isRecognitionAdmin(memberId: string): Promise<boolean> {
-  const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
-    .from("recognition_admin_members")
-    .select("member_id")
-    .eq("member_id", memberId)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (error) {
-    throw new RecognitionServiceError(error.message, 500);
+  try {
+    return await resolveIsSuperAdmin(memberId);
+  } catch (error) {
+    throw new RecognitionServiceError(
+      error instanceof Error ? error.message : "Failed to resolve Super Admin access.",
+      500,
+    );
   }
-  return data !== null;
 }
 
 export async function assertRecognitionAdmin(memberId: string): Promise<void> {

@@ -2,16 +2,17 @@ import { normalizePathname } from "@/lib/auth/public-paths";
 import type { HomeMoreEntry } from "@/lib/home/my-home-presentation";
 
 /**
- * Canonical Recognition Center admin authority:
- * `public.recognition_admin_members` where `is_active = true`.
+ * Canonical Recognition Center / administration-center authority:
+ * `SUPER_ADMIN_MEMBER_NUMBERS` via `isSuperAdmin` / `resolveIsSuperAdmin`.
  *
- * This is the existing Recognition Admin allowlist. It is not inferred from
- * career rank, president status, or a client-provided role claim.
+ * Not inferred from career rank, president status, a client-provided role,
+ * or `recognition_admin_members` rows. The Super Admin 會員編號 lives only
+ * in `src/lib/auth/super-admin.ts`.
  */
 export const RECOGNITION_ADMIN_AUTHORITY = {
-  table: "recognition_admin_members",
-  memberIdColumn: "member_id",
-  activeColumn: "is_active",
+  source: "src/lib/auth/super-admin.ts",
+  memberNumbers: "SUPER_ADMIN_MEMBER_NUMBERS",
+  resolver: "resolveIsSuperAdmin",
 } as const;
 
 export type RecognitionAccessDecision = "unauthenticated" | "forbidden" | "allowed";

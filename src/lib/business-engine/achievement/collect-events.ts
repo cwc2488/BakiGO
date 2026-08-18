@@ -52,7 +52,9 @@ export function collectGamificationEvents(
     });
   });
 
-  return events.sort((left, right) => left.eventDate.localeCompare(right.eventDate));
+  return events.sort((left, right) =>
+    (left.eventDate ?? "").localeCompare(right.eventDate ?? ""),
+  );
 }
 
 export function resolveTriggerMetric(

@@ -5,14 +5,17 @@ import type { BusinessRulesConfig } from "../rules";
 import { DEFAULT_BUSINESS_RULES } from "../rules";
 import { resolveStreakMultiplier } from "@/lib/points/streak-multiplier";
 
-function toDateOnly(isoDate: string): string {
+function toDateOnly(isoDate: string | null | undefined): string | null {
+  if (typeof isoDate !== "string" || isoDate.length < 10) {
+    return null;
+  }
   return isoDate.slice(0, 10);
 }
 
 function previousDate(isoDate: string): string {
   const date = new Date(`${isoDate}T00:00:00`);
   date.setDate(date.getDate() - 1);
-  return toDateOnly(date.toISOString());
+  return toDateOnly(date.toISOString()) ?? isoDate;
 }
 
 function resolveBasePoints(
@@ -78,11 +81,25 @@ export function calculatePoints(
             qualifyingSources.includes(event.eventSource) &&
             resolveBasePoints(event, rules) > 0,
         )
-        .map((event) => toDateOnly(event.eventDate)),
+        .map((event) => toDateOnly(event.eventDate))
+        .filter((date): date is string => Boolean(date)),
     ),
   ).sort();
 
   const reference = toDateOnly(input.referenceDate);
+  if (!reference) {
+    return {
+      memberId: input.memberId,
+      lifetimePoints: 0,
+      monthlyPoints: 0,
+      weeklyPoints: 0,
+      todayPoints: 0,
+      redeemedPoints: 0,
+      availablePoints: 0,
+      streakMultiplier: 1,
+    };
+  }
+
   const { weekStartDate, weekEndDate } = resolvePointsWeekRange(reference);
   let lifetimePoints = 0;
   let monthlyPoints = 0;
@@ -96,6 +113,9 @@ export function calculatePoints(
     }
 
     const eventDate = toDateOnly(event.eventDate);
+    if (!eventDate) {
+      return;
+    }
     const streakDays = computeStreakOnDate(activeDates, eventDate);
     const multiplier = resolveStreakMultiplier(Math.max(streakDays, 1));
     const earned = Math.round(basePoints * multiplier * 10) / 10;

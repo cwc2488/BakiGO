@@ -53,7 +53,7 @@ function sortEntries(entries: Omit<PointsLeaderboardEntry, "rank">[]): PointsLea
     if (right.lifetimePoints !== left.lifetimePoints) {
       return right.lifetimePoints - left.lifetimePoints;
     }
-    return left.displayName.localeCompare(right.displayName, "zh-Hant");
+    return (left.displayName ?? "").localeCompare(right.displayName ?? "", "zh-Hant");
   });
 
   return sorted.map((entry, index) => ({

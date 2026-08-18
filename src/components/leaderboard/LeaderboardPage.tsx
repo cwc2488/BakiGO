@@ -1,9 +1,9 @@
 "use client";
 
+import { todayISODate, toYearMonthFromDate } from "@/lib/config/app-config";
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import { fetchDownlineCloudData, getDownlineEvents } from "@/lib/cloud/downline-cloud-data";
 import type { DownlineCloudDataCache } from "@/lib/cloud/downline-cloud-data";
-import { todayISODate, toYearMonthFromDate } from "@/lib/config/app-config";
 import { loadAllMembers } from "@/lib/members/member-service";
 import { loadMemberMetrics } from "@/lib/mission-control/format";
 import { buildPointsLeaderboard } from "@/lib/points/build-points-leaderboard";
@@ -83,12 +83,16 @@ export default function LeaderboardPage() {
     void (async () => {
       const viewerId = resolveAuthenticatedMemberId(storage);
       const members = loadAllMembers(storage).filter((member) => member.status === "active");
-      const cache = await fetchDownlineCloudData(
-        members.map((member) => member.id),
-        viewerId,
-      );
-      setDownlineCache(cache);
-      setRefreshKey((current) => current + 1);
+      try {
+        const cache = await fetchDownlineCloudData(
+          members.map((member) => member.id),
+          viewerId,
+        );
+        setDownlineCache(cache);
+        setRefreshKey((current) => current + 1);
+      } catch (error) {
+        console.error("Leaderboard downline cloud data failed:", error);
+      }
     })();
   }, [storage]);
 
@@ -101,7 +105,9 @@ export default function LeaderboardPage() {
     const metricsByMemberId = new Map(
       members.map((member) => [
         member.id,
-        loadMemberMetrics(member.id, storage, getDownlineEvents(member.id, downlineCache)),
+        loadMemberMetrics(member.id, storage, getDownlineEvents(member.id, downlineCache), {
+          includeMapUniverse: false,
+        }),
       ]),
     );
 
@@ -116,7 +122,9 @@ export default function LeaderboardPage() {
     return {
       weekly: buildPointsLeaderboard({ ...baseInput, period: "weekly" }),
       monthly: buildPointsLeaderboard({ ...baseInput, period: "monthly" }),
-      viewerMetrics: loadMemberMetrics(viewerId, storage),
+      viewerMetrics: loadMemberMetrics(viewerId, storage, undefined, {
+        includeMapUniverse: false,
+      }),
     };
   }, [downlineCache, refreshKey, storage]);
 
@@ -137,7 +145,7 @@ export default function LeaderboardPage() {
         {monthly.viewerEntry ? (
           <PointsHeroBanner
             points={monthly.viewerEntry}
-            streak={viewerMetrics.gamification.streak.currentStreak}
+            streak={viewerMetrics.gamification?.streak?.currentStreak ?? 0}
             yearMonth={monthly.yearMonth}
           />
         ) : null}

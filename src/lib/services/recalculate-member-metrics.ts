@@ -152,9 +152,15 @@ export function recalculateMemberMetrics(
   const eventRepository = createEventRepository(storage);
   const mergedById = new Map<string, BakiEvent>();
   for (const event of eventRepository.getAll()) {
+    if (!event?.id) {
+      continue;
+    }
     mergedById.set(event.id, event);
   }
   for (const event of input.supplementalEvents ?? []) {
+    if (!event?.id) {
+      continue;
+    }
     mergedById.set(event.id, event);
   }
   const allEvents = [...mergedById.values()];
