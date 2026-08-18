@@ -425,7 +425,7 @@ Rules:
 
 - immutable evidence
 - no BakiGO member mapping required
-- free-text organization in V1
+- `submitter_organization` is a legacy column; public UX does not collect it (default `''`)
 
 #### `recognition_submission_entries`
 
@@ -626,6 +626,31 @@ Security rule:
 - `EXECUTE` is revoked from `PUBLIC`, `anon`, and `authenticated`
 - `EXECUTE` is granted only to `service_role`
 - browser clients must go through authenticated Next.js API → `assertRecognitionAdmin(memberId)` → service-role client → RPC
+
+### Recognition self-service validation (`045_recognition_self_service_validation.sql`)
+
+**Status:** Additive / backward-compatible. Production must apply this file; code deploy does not change the DB.
+
+Adds to `recognition_submissions`:
+
+- `public_edit_token` / `public_edit_token_hash` — submitter resume/edit before deadline
+
+Adds to `recognition_submission_entries`:
+
+- `validation_status` (`PASS` | `WARNING` | `BLOCKED` | `ADMIN_OVERRIDE` | `EXCLUDED`)
+- `validation_issues` jsonb
+- `submitter_confirmed_warnings` text[]
+- `current_photo_storage_path` / mime / size — PPT authoritative photo (fallback: original)
+- `confirmed_crop` jsonb + dimensions + `crop_confirmed_at`
+- `admin_override_json` jsonb
+- `excluded_at` / `excluded_by_member_id` / `excluded_reason`
+
+Also:
+
+- `CREATE OR REPLACE create_public_recognition_submission` so `submitter_organization` may be empty (stored as `''`)
+- `CREATE OR REPLACE delete_recognition_event` also removes `current_photo_storage_path` objects
+
+Does not DROP organization columns or Award Definitions.
 
 ### Recognition Event Template compatibility
 

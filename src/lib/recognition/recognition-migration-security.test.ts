@@ -270,3 +270,26 @@ describe("Recognition admin-only table grants", () => {
     expect(service).not.toContain('.from("recognition_admin_members")');
   });
 });
+
+describe("Recognition self-service validation migration 045", () => {
+  const migration = readMigration("045_recognition_self_service_validation.sql");
+
+  it("is additive and keeps submitter_organization as a legacy column", () => {
+    expect(migration).toContain("add column if not exists validation_status");
+    expect(migration).toContain("add column if not exists confirmed_crop");
+    expect(migration).toContain("add column if not exists admin_override_json");
+    expect(migration).toContain("add column if not exists current_photo_storage_path");
+    expect(migration).not.toMatch(/drop column/i);
+    expect(migration).not.toMatch(/drop table/i);
+    expect(migration).not.toContain("submitter_organization is required");
+    expect(migration).toContain("Organization is a legacy field");
+  });
+
+  it("keeps public submission RPC on service_role only", () => {
+    expect(migration).toContain("grant execute on function public.create_public_recognition_submission(");
+    expect(migration).toContain("to service_role;");
+    expect(migration).toContain(") from public;");
+    expect(migration).toContain(") from anon;");
+    expect(migration).toContain(") from authenticated;");
+  });
+});

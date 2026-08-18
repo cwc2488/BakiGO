@@ -54,6 +54,7 @@ describe("Recognition Center authorization decisions", () => {
     expect(isRecognitionAdminPagePath("/recognition/events/evt-1")).toBe(true);
     expect(isRecognitionAdminPagePath("/recognition/events/evt-1/review")).toBe(true);
     expect(isRecognitionAdminPagePath("/recognition/events/evt-1/photos")).toBe(true);
+    expect(isRecognitionAdminPagePath("/recognition/events/evt-1/exceptions")).toBe(true);
   });
 
   it("C/D/E/I. classifies admin API paths as protected, including PPT generation", () => {
@@ -64,6 +65,8 @@ describe("Recognition Center authorization decisions", () => {
     expect(isRecognitionAdminApiPath("/api/recognition/events/evt-1/presentation")).toBe(true);
     expect(isRecognitionAdminApiPath("/api/recognition/events/evt-1/ppt-readiness")).toBe(true);
     expect(isRecognitionAdminApiPath("/api/recognition/events/evt-1/roster")).toBe(true);
+    expect(isRecognitionAdminApiPath("/api/recognition/events/evt-1/exceptions")).toBe(true);
+    expect(isRecognitionAdminApiPath("/api/recognition/events/evt-1/dashboard")).toBe(true);
     expect(isRecognitionPublicApiPath("/api/recognition/public/token")).toBe(true);
     expect(isRecognitionAdminApiPath("/api/recognition/public/token")).toBe(false);
   });

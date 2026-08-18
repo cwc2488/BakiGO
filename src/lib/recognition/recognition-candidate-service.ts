@@ -68,6 +68,9 @@ type EntryRow = {
   original_photo_storage_path: string | null;
   original_photo_mime_type: string | null;
   original_photo_size_bytes: number | null;
+  current_photo_storage_path?: string | null;
+  current_photo_mime_type?: string | null;
+  validation_status?: string | null;
   created_at: string;
 };
 
@@ -554,6 +557,8 @@ async function loadRecognitionCandidates(eventId: string): Promise<RecognitionCa
     const entry = entriesById.get(source.submission_entry_id);
     const submission = entry ? submissionsById.get(entry.submission_id) : undefined;
     const award = entry ? awardMap.get(entry.event_award_id) : undefined;
+    const photoPath = entry?.current_photo_storage_path || entry?.original_photo_storage_path || null;
+    const photoMime = entry?.current_photo_mime_type || entry?.original_photo_mime_type || null;
     const mapped: RecognitionCandidateSource = {
       id: source.id,
       candidateId: source.candidate_id,
@@ -565,9 +570,9 @@ async function loadRecognitionCandidates(eventId: string): Promise<RecognitionCa
       submitterName: submission?.submitter_name ?? "",
       submitterOrganization: submission?.submitter_organization ?? "",
       submittedAt: submission?.submitted_at ?? "",
-      originalPhotoStoragePath: entry?.original_photo_storage_path ?? null,
-      originalPhotoMimeType: entry?.original_photo_mime_type ?? null,
-      hasOriginalPhoto: recognitionPhotoHasUsableOriginal(entry?.original_photo_storage_path),
+      originalPhotoStoragePath: photoPath,
+      originalPhotoMimeType: photoMime,
+      hasOriginalPhoto: recognitionPhotoHasUsableOriginal(photoPath),
       createdAt: source.created_at,
     };
     const list = sourcesByCandidate.get(source.candidate_id) ?? [];

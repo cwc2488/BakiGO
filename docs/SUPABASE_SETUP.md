@@ -88,7 +88,7 @@ Production 若出現：
 - `Could not find the table 'public.recognition_events' in the schema cache`
 - `Could not find the function public.create_recognition_event_with_awards(...) in the schema cache`
 
-代表 035–044 尚未套用到 **同一個** Production Supabase 專案。
+代表 035–045 尚未套用到 **同一個** Production Supabase 專案。
 
 ### 步驟
 
@@ -105,13 +105,14 @@ Production 若出現：
    - `supabase/migrations/042_recognition_award_display_names.sql`
    - `supabase/migrations/043_recognition_admin_only_grants.sql`
    - `supabase/migrations/044_recognition_delete_event.sql`
-4. 或一次貼上串接檔：`node scripts/print-recognition-production-sql.mjs > /tmp/recognition-center-035-044.sql`
-5. 再跑一次 preflight，確認 `recognition_events` 與 `create_recognition_event_with_awards` / `delete_recognition_event` 存在
+   - `supabase/migrations/045_recognition_self_service_validation.sql`
+4. 或一次貼上串接檔：`node scripts/print-recognition-production-sql.mjs > /tmp/recognition-center-035-045.sql`
+5. 再跑一次 preflight，確認 `recognition_events` 與 `create_recognition_event_with_awards` / `delete_recognition_event` 存在，且 `recognition_submission_entries.validation_status` 存在
 
 ### 安全邊界
 
 - **不要**執行 `002_reset_and_seed_virtual_member.sql`（會清空 members / auth.users）
-- 035–044 **不會** DROP / TRUNCATE `members`、`customers`、coaching、quiz、radar、leaderboard 資料
+- 035–045 **不會** DROP / TRUNCATE `members`、`customers`、coaching、quiz、radar、leaderboard 資料
 - 本 repo 沒有 Supabase CLI link，也沒有 Production `SUPABASE_ACCESS_TOKEN`，因此 **無法由 Cloud Agent 自動套用**
 
 套用完成前，不要把「程式已部署」當成「表揚中心 Production 已修復」。

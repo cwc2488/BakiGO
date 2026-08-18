@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Print concatenated Recognition Center production recovery SQL (035-044).
+ * Print concatenated Recognition Center production recovery SQL (035-045).
  *
  * Usage:
- *   node scripts/print-recognition-production-sql.mjs > /tmp/recognition-center-035-044.sql
+ *   node scripts/print-recognition-production-sql.mjs > /tmp/recognition-center-035-045.sql
  *
  * Then paste that file into Supabase Dashboard → SQL Editor, or run
  * the numbered files 035 → 044 one by one.
@@ -24,11 +24,12 @@ const FILES = [
   "042_recognition_award_display_names.sql",
   "043_recognition_admin_only_grants.sql",
   "044_recognition_delete_event.sql",
+  "045_recognition_self_service_validation.sql",
 ];
 
 const header = [
   "-- BakiGO Recognition Center production recovery SQL",
-  "-- Concatenated from supabase/migrations/035-044.",
+  "-- Concatenated from supabase/migrations/035-045.",
   "-- Idempotent / re-runnable. Does not drop members, customers, coaching, quiz, radar, or leaderboard tables.",
   "-- Apply in Supabase SQL Editor after running supabase/recovery/preflight-recognition-center.sql.",
   "",
