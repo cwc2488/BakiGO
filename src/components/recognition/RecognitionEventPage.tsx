@@ -276,7 +276,7 @@ function EventOpsDashboard({ eventId, eventName }: { eventId: string; eventName:
     try {
       await downloadRecognitionEventPresentation(eventId);
     } catch (err: unknown) {
-      setGenerateError(recognitionPhotoStatusErrorMessage(err, "無法產生簡報"));
+      setGenerateError(recognitionPhotoStatusErrorMessage(err, "無法產生表揚簡報。請稍後再試，或聯絡技術支援。"));
     } finally {
       setGenerating(false);
     }
@@ -835,7 +835,7 @@ function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
     try {
       await downloadRecognitionEventPresentation(eventId);
     } catch (err: unknown) {
-      setGenerateError(recognitionPhotoStatusErrorMessage(err, "無法產生簡報"));
+      setGenerateError(recognitionPhotoStatusErrorMessage(err, "無法產生表揚簡報。請稍後再試，或聯絡技術支援。"));
     } finally {
       setGenerating(false);
     }

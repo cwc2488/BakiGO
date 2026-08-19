@@ -331,7 +331,7 @@ export async function downloadRecognitionEventPresentation(eventId: string): Pro
   });
   if (!res.ok) {
     const json = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(json.error ?? "無法產生簡報");
+    throw new Error(json.error ?? "無法產生表揚簡報。請稍後再試，或聯絡技術支援。");
   }
   const blob = await res.blob();
   const filename = filenameFromContentDisposition(res.headers.get("Content-Disposition")) ?? "表揚名單.pptx";

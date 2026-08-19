@@ -94,6 +94,29 @@ describe("Recognition presentation API", () => {
     expect(res.headers.get("Content-Disposition")).toContain("filename*=");
     expect(res.headers.get("Location")).toBeNull();
   });
+
+  it("returns an admin-safe 500 without stack when pptxgenjs fails to load", async () => {
+    getMemberIdFromRequestMock.mockResolvedValueOnce("admin-1");
+    assertRecognitionAdminMock.mockResolvedValueOnce(undefined);
+    generateMock.mockRejectedValueOnce(
+      new SyntaxError("Cannot use import statement outside a module"),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { POST } = await import("./route");
+    const res = await POST(new Request("http://localhost/api/recognition/events/evt-1/presentation", { method: "POST" }), {
+      params: Promise.resolve({ eventId: "evt-1" }),
+    });
+    const json = await res.json() as { error?: string; stack?: string };
+    expect(res.status).toBe(500);
+    expect(json.error).toContain("表揚簡報產生器載入失敗");
+    expect(json.error).not.toContain("import statement");
+    expect(json.stack).toBeUndefined();
+    const logged = JSON.parse(String(errorSpy.mock.calls[0]?.[0])) as Record<string, unknown>;
+    expect(logged.event_id).toBe("evt-1");
+    expect(logged.stage).toBe("unknown");
+    expect(logged.error_class).toBe("SyntaxError");
+    errorSpy.mockRestore();
+  });
 });
 
 describe("Recognition presentation API source contract", () => {
@@ -106,7 +129,9 @@ describe("Recognition presentation API source contract", () => {
     expect(source).toContain("assertRecognitionAdmin");
     expect(source).toContain("generateRecognitionPresentationPptx");
     expect(source).toContain("private, no-store");
+    expect(source).toContain('export const runtime = "nodejs"');
     expect(source).not.toContain("getPublicUrl");
     expect(source).not.toContain("createSignedUrl");
+    expect(source).not.toMatch(/runtime\s*=\s*["']edge["']/);
   });
 });

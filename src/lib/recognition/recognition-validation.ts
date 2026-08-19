@@ -287,6 +287,53 @@ export function evaluateRecognitionEntryValidation(
   };
 }
 
+export type RecognitionEventDashboardCountInput = Pick<
+  RecognitionEntryValidationResult,
+  "status" | "pptReady" | "exception"
+> & {
+  eventAwardId: string;
+};
+
+/**
+ * Single source of truth for Recognition event dashboard numbers.
+ * Counts come from live evaluation results, never from a stale stored column.
+ */
+export function aggregateRecognitionEventDashboardCounts(
+  results: RecognitionEventDashboardCountInput[],
+) {
+  const counts: Record<RecognitionValidationStatus, number> = {
+    PASS: 0,
+    WARNING: 0,
+    BLOCKED: 0,
+    ADMIN_OVERRIDE: 0,
+    EXCLUDED: 0,
+  };
+  const readyAwards = new Set<string>();
+  let pptReadyCount = 0;
+  let exceptionCount = 0;
+
+  for (const result of results) {
+    counts[result.status] += 1;
+    if (result.exception) exceptionCount += 1;
+    if (result.pptReady) {
+      pptReadyCount += 1;
+      readyAwards.add(result.eventAwardId);
+    }
+  }
+
+  return {
+    passCount: counts.PASS,
+    warningCount: counts.WARNING,
+    blockedCount: counts.BLOCKED,
+    adminOverrideCount: counts.ADMIN_OVERRIDE,
+    excludedCount: counts.EXCLUDED,
+    pptReadyCount,
+    exceptionCount,
+    effectiveAwardCount: readyAwards.size,
+    pptReady: exceptionCount === 0,
+  };
+}
+
 export function summarizeRecognitionSubmissionCompletion(
   entries: Array<Pick<RecognitionEntryValidationResult, "status">>,
 ): RecognitionSubmissionCompletion {

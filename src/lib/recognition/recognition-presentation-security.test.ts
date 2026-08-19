@@ -33,6 +33,7 @@ describe("Recognition presentation security and immutability", () => {
       "src/lib/recognition/recognition-presentation-images.ts",
       "src/lib/recognition/recognition-presentation-crop.ts",
       "src/lib/recognition/recognition-presentation-pptx.ts",
+      "src/lib/recognition/load-pptxgenjs.ts",
     ];
     for (const file of files) {
       const source = read(file).toLowerCase();

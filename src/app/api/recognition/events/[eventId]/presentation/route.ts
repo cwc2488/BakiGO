@@ -10,6 +10,10 @@ import {
   getRecognitionPresentationSummary,
 } from "@/lib/recognition/recognition-presentation-service";
 import { isRecognitionUrlPatternError } from "@/lib/recognition/recognition-photo-url";
+import {
+  logRecognitionPresentationFailure,
+  RecognitionPresentationGenerationError,
+} from "@/lib/recognition/recognition-presentation-errors";
 import { recognitionPresentationAsciiFallbackFilename } from "@/lib/recognition/recognition-presentation-filename";
 
 export const runtime = "nodejs";
@@ -56,9 +60,9 @@ export async function POST(
     return NextResponse.json({ error: "Recognition service unavailable." }, { status: 503 });
   }
 
+  const { eventId } = await context.params;
   try {
     await assertRecognitionAdmin(memberId);
-    const { eventId } = await context.params;
     const result = await generateRecognitionPresentationPptx({
       eventId,
       generatedByMemberId: memberId,
@@ -73,10 +77,16 @@ export async function POST(
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to generate presentation.";
-    const status = error instanceof RecognitionServiceError ? error.status : 500;
-    return NextResponse.json({
-      error: isRecognitionUrlPatternError(error) ? "缺少有效照片" : message,
-    }, { status });
+    if (error instanceof RecognitionServiceError) {
+      return NextResponse.json({
+        error: isRecognitionUrlPatternError(error) ? "缺少有效照片" : error.message,
+      }, { status: error.status });
+    }
+    const failure = logRecognitionPresentationFailure({
+      eventId,
+      stage: error instanceof RecognitionPresentationGenerationError ? error.stage : "unknown",
+      error,
+    });
+    return NextResponse.json({ error: failure.clientMessage }, { status: 500 });
   }
 }

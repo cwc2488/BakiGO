@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseRecognitionPhotoRef } from "@/lib/recognition/recognition-photo-url";
 import {
+  aggregateRecognitionEventDashboardCounts,
   defaultCropForInspectedPhoto,
   evaluateRecognitionEntryValidation,
   isRecognitionPptReadyStatus,
@@ -318,5 +319,71 @@ describe("Recognition self-service validation", () => {
     if (parseRecognitionPhotoRef(JPEG_PATH).ok) {
       expect(parseRecognitionPhotoRef(JPEG_PATH)).toMatchObject({ kind: "storage-path" });
     }
+  });
+
+  it("dashboard counts follow live evaluation, not a stale stored BLOCKED column", () => {
+    const livePass = evaluateRecognitionEntryValidation({
+      submittedName: "王小明",
+      award: PHOTO_AWARD,
+      photoStoragePath: JPEG_PATH,
+      photoMimeType: "image/jpeg",
+      imageInspect: PORTRAIT,
+      crop: defaultCropForInspectedPhoto(PORTRAIT),
+    });
+    expect(livePass.status).toBe("PASS");
+    expect(livePass.pptReady).toBe(true);
+
+    const dashboard = aggregateRecognitionEventDashboardCounts([
+      { ...livePass, eventAwardId: "award-photo" },
+      { ...livePass, eventAwardId: "award-photo" },
+    ]);
+    expect(dashboard.pptReadyCount).toBe(2);
+    expect(dashboard.passCount).toBe(2);
+    expect(dashboard.blockedCount).toBe(0);
+    expect(dashboard.exceptionCount).toBe(0);
+    expect(dashboard.blockedCount).toBe(dashboard.exceptionCount);
+    expect(dashboard.pptReady).toBe(true);
+  });
+
+  it("dashboard BLOCKED count matches exceptionCount from the same live results", () => {
+    const blocked = evaluateRecognitionEntryValidation({
+      submittedName: "王小明",
+      award: PHOTO_AWARD,
+      photoStoragePath: null,
+    });
+    const warning = evaluateRecognitionEntryValidation({
+      submittedName: "李小華",
+      award: PHOTO_AWARD,
+      photoStoragePath: JPEG_PATH,
+      photoMimeType: "image/jpeg",
+      imageInspect: LANDSCAPE,
+      crop: defaultCropForInspectedPhoto(LANDSCAPE),
+    });
+    const dashboard = aggregateRecognitionEventDashboardCounts([
+      { ...blocked, eventAwardId: "award-photo" },
+      { ...warning, eventAwardId: "award-photo" },
+    ]);
+    expect(warning.status).toBe("WARNING");
+    expect(dashboard.blockedCount).toBe(1);
+    expect(dashboard.exceptionCount).toBe(1);
+    expect(dashboard.warningCount).toBe(1);
+    expect(dashboard.pptReadyCount).toBe(1);
+    expect(dashboard.pptReady).toBe(false);
+  });
+});
+
+describe("Recognition event dashboard source contract", () => {
+  it("derives dashboard counts from live evaluation, not stored validation_status", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const source = readFileSync(
+      resolve(process.cwd(), "src/lib/recognition/recognition-validation-service.ts"),
+      "utf8",
+    );
+    const start = source.indexOf("export async function getRecognitionEventDashboard");
+    const end = source.indexOf("export async function listRecognitionExceptions");
+    const body = source.slice(start, end);
+    expect(body).toContain("aggregateRecognitionEventDashboardCounts");
+    expect(body).not.toContain("entry.validation_status ?? \"BLOCKED\"");
   });
 });
