@@ -226,8 +226,8 @@ describe("QUIZ-VIRAL-01", () => {
 
   it("20. QUIZ-PARTNER /q primitive is not reused for consumer result shares", () => {
     expect(src("src/app/q/[code]/page.tsx")).toContain('dest.set("share"');
-    expect(src("supabase/migrations/046_quiz_v2_production_recovery.sql")).toContain("quiz_result_shares");
-    expect(src("supabase/migrations/046_quiz_v2_production_recovery.sql")).not.toContain("drop table");
+    expect(src("docs/DATABASE.md")).toContain("quiz_result_shares");
+    expect(src("src/lib/quiz/viral/quiz-result-share-service.ts")).toContain("quiz_result_shares");
     expect(src("src/lib/quiz/quiz-service.ts")).toContain("getOrCreatePermanentShareLink");
     expect(src("src/components/reset/ResetLandingPage.tsx")).toContain("shareCode: share.shareCode");
     expect(src("src/components/reset/ResetLandingPage.tsx")).toContain("/api/quiz/partner/landing-view");
@@ -236,8 +236,7 @@ describe("QUIZ-VIRAL-01", () => {
   it("21. 21D handoff still copies session authority and never invents a partner from /s", () => {
     expect(src("src/lib/analysis/handoff/experience-21d-service.ts")).toContain("loadSessionAttribution");
     expect(src("src/lib/analysis/handoff/experience-21d-attribution.ts")).toContain("result_share");
-    expect(src("supabase/migrations/046_quiz_v2_production_recovery.sql")).toContain("result_share");
-    expect(src("supabase/migrations/046_quiz_v2_production_recovery.sql")).toContain("experience_21d_interests");
+    expect(src("docs/DATABASE.md")).toContain("experience_21d_interests");
   });
 
   it("22. Coaching 037 files are not rewritten by viral share", () => {

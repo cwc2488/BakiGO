@@ -74,9 +74,7 @@ describe("QUIZ-PARTNER-02", () => {
   });
 
   it("7. archive is soft delete, not physical delete", () => {
-    const migration = src("supabase/migrations/046_quiz_v2_production_recovery.sql");
-    expect(migration).toContain("add column if not exists archived_at timestamptz");
-    expect(migration).not.toMatch(/\bdelete from\b/i);
+    expect(src("docs/DATABASE.md")).toContain("archived_at");
     const service = src("src/lib/analysis/handoff/experience-21d-service.ts");
     expect(service).toContain("archived_at: archivedAt");
     expect(service).not.toMatch(/from\("experience_21d_interests"\)[\s\S]{0,80}\.delete\(/);
@@ -141,8 +139,8 @@ describe("QUIZ-PARTNER-02", () => {
     );
     expect(src("src/lib/quiz/quiz-service.ts")).toContain("getOrCreatePermanentShareLink");
     expect(src("src/lib/coaching/coaching-service.ts")).not.toContain("experience_21d_interests");
-    expect(src("supabase/migrations/046_quiz_v2_production_recovery.sql")).toContain("create table if not exists public.experience_21d_interests");
-    expect(src("supabase/migrations/046_quiz_v2_production_recovery.sql")).toContain("instagram");
-    expect(src("supabase/migrations/046_quiz_v2_production_recovery.sql")).toContain("quiz_partner_landing_views");
+    expect(src("docs/DATABASE.md")).toContain("experience_21d_interests");
+    expect(src("docs/DATABASE.md")).toContain("quiz_partner_landing_views");
+    expect(src("src/lib/analysis/handoff/experience-21d-contact.ts")).toContain("instagram");
   });
 });

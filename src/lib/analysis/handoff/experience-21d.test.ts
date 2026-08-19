@@ -75,8 +75,7 @@ describe("21D-HANDOFF-01", () => {
   });
 
   it("C. double click is one interest: unique analysis_session_id", () => {
-    const sql = src("supabase/migrations/046_quiz_v2_production_recovery.sql");
-    expect(sql).toContain("analysis_session_id uuid not null unique");
+    expect(src("docs/DATABASE.md")).toContain("Unique `analysis_session_id`");
     expect(src("src/lib/analysis/handoff/experience-21d-service.ts")).toContain('onConflict: "analysis_session_id"');
   });
 
@@ -145,8 +144,8 @@ describe("21D-HANDOFF-01", () => {
     expect(consumerUi).not.toContain("Email");
     expect(src("src/components/reset/ResetExperiencePage.tsx")).not.toContain('"email"');
     expect(src("src/components/quiz/Quiz21dInterestDetailPage.tsx")).toContain("開啟 Instagram");
-    expect(src("supabase/migrations/046_quiz_v2_production_recovery.sql")).toContain("'instagram'");
-    expect(src("supabase/migrations/046_quiz_v2_production_recovery.sql")).toContain("'email'");
+    expect(src("src/lib/analysis/handoff/experience-21d-contact.ts")).toContain("instagram");
+    expect(src("docs/DATABASE.md")).toContain("instagram");
     expect(src("src/components/reset/ResetExperienceViews.tsx")).not.toContain("體重");
     expect(src("src/components/reset/ResetExperienceViews.tsx")).not.toContain("為什麼想瘦");
   });

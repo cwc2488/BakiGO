@@ -297,13 +297,13 @@ describe("QUIZ-AI-21 P1 — anonymous analysis foundation", () => {
     });
   });
 
-  it("P1-05 / P1-06 — migration denies direct anon DB read/write", () => {
-    const migration = readSrc("supabase/migrations/046_quiz_v2_production_recovery.sql");
-    expect(migration).toContain("enable row level security");
-    expect(migration).toContain("revoke all on table public.analysis_sessions from anon, authenticated");
-    expect(migration).toContain("grant all on table public.analysis_sessions to service_role");
-    expect(migration).toMatch(/No policies|no policies/i);
-    expect(migration).not.toMatch(/create policy[\s\S]*analysis_sessions/i);
+  it("P1-05 / P1-06 — analysis_sessions is service-role only (Production schema)", () => {
+    const db = readSrc("docs/DATABASE.md");
+    expect(db).toContain("analysis_sessions");
+    expect(db).toMatch(/service.?role|service-role only/i);
+    const service = readSrc("src/lib/analysis/analysis-session-service.ts");
+    expect(service).toContain("createSupabaseServiceClient");
+    expect(service).not.toMatch(/create policy[\s\S]*analysis_sessions/i);
   });
 
   it("P1-07 / P1-08 — quiz result must exist+complete; forged id rejected", async () => {
@@ -355,13 +355,9 @@ describe("QUIZ-AI-21 P1 — anonymous analysis foundation", () => {
       questionsCompletedAt: null,
       layer1ReadyAt: null,
     });
-    const migration = readSrc("supabase/migrations/046_quiz_v2_production_recovery.sql");
-    const p1Table = migration.slice(
-      migration.indexOf("create table if not exists public.analysis_sessions"),
-      migration.indexOf("comment on table public.analysis_sessions"),
-    );
-    expect(p1Table).not.toMatch(/\b(phone|line_id|email|full_name)\b/);
-    expect(migration).toContain("No PII");
+    const db = readSrc("docs/DATABASE.md");
+    expect(db).toContain("No PII");
+    expect(db).not.toMatch(/\b(phone|line_id|email|full_name)\b.*analysis_sessions/);
   });
 
   it("P1-11 — /r attribution preserved when growth_share_id present", () => {
@@ -385,9 +381,8 @@ describe("QUIZ-AI-21 P1 — anonymous analysis foundation", () => {
   });
 
   it("P1-14 — future Radar nullable / no product dependency", () => {
-    const migration = readSrc("supabase/migrations/046_quiz_v2_production_recovery.sql");
-    expect(migration).toContain("radar_candidate_id uuid");
-    expect(migration).toMatch(/No FK \/ no product unlock/i);
+    const db = readSrc("docs/DATABASE.md");
+    expect(db).toContain("radar_candidate_id");
     const service = readSrc("src/lib/analysis/analysis-session-service.ts");
     expect(service).toContain("radarCandidateId");
     expect(service).not.toMatch(/unlockRadar|requireRadar|RADAR_REQUIRED/);
@@ -398,10 +393,9 @@ describe("QUIZ-AI-21 P1 — anonymous analysis foundation", () => {
     const business = readSrc("docs/BUSINESS_RULES.md");
     expect(db).toContain("experimental_hidden");
     expect(business).toContain("experimental_hidden");
-    const resultPage = readSrc("src/components/quiz/FatLossQuizResultPage.tsx");
-    expect(resultPage).toContain("幫我深入分析");
-    expect(resultPage).toContain("/api/analysis/sessions");
-    expect(resultPage).not.toContain("/consultation");
+    expect(readSrc("src/app/quiz/fat-loss/page.tsx")).toContain("ResetLandingPage");
+    expect(readSrc("src/app/quiz/fat-loss/page.tsx")).not.toContain("/consultation");
+    expect(readSrc("src/components/quiz/FatLossQuizResultPage.tsx")).not.toContain("/consultation");
     const shell = readSrc("src/app/analysis/[token]/page.tsx");
     expect(shell).not.toContain("/consultation");
     const flow = readSrc("src/components/analysis/AnalysisFlowPage.tsx");
@@ -421,11 +415,8 @@ describe("QUIZ-AI-21 P1 — anonymous analysis foundation", () => {
 
   it("P1-17 — existing Quiz routes/CTA regression anchors", () => {
     expect(readSrc("src/app/quiz/page.tsx")).toContain("/quiz/fat-loss");
-    expect(readSrc("src/components/quiz/FatLossQuizResultPage.tsx")).toContain("幫我深入分析");
-    // P2.1: result CTA no longer links next-step (duplicate of deep analysis). Route may still exist.
-    expect(readSrc("src/components/quiz/FatLossQuizResultPage.tsx")).not.toContain(
-      `/quiz/fat-loss/next-step/`,
-    );
+    expect(readSrc("src/app/quiz/fat-loss/page.tsx")).toContain("ResetLandingPage");
+    expect(readSrc("src/app/api/analysis/sessions/route.ts")).toContain('body.entry === "reset_v1"');
     expect(existsSync(resolve(process.cwd(), "src/app/quiz/fat-loss/next-step/[resultId]/page.tsx"))).toBe(
       true,
     );

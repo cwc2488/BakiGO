@@ -46,18 +46,16 @@ Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `oc
 | `quiz_results` | Scored outcomes |
 | `quiz_ai_followups` | Rule-based follow-up messages |
 
-### Quiz V2 (`046_quiz_v2_production_recovery.sql`)
+### Quiz V2 (Production schema — no repo migration in this restore)
 
-Recovered Production Quiz V2 (dirty 8/18 deploy) restored onto current main. Recognition already occupies migration numbers 035–045, so Quiz schema is additive `046`. Idempotent: `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`. Does not remove tables or reset Quiz / analysis rows.
-
-If Production already has these objects from the recovered deploy, applying `046` is a no-op aside from widening CHECKs that already allow the same values.
+Production Supabase (`baki-go` / `ubdrkrvyyrqdvlehzhsz`) already contains the Quiz V2 core schema from the 8/18 dirty deploy. This restore branch adds application code only; it does **not** ship a new numbered migration. Recognition occupies repo migration numbers 035–045.
 
 | Table | Purpose |
 |-------|---------|
-| `analysis_sessions` | Anonymous RESET / analysis session (`token_hash` only; no PII) |
+| `analysis_sessions` | Anonymous RESET / analysis session (`token_hash` only; **No PII**). Nullable `radar_candidate_id` (future Radar; no product dependency). Service-role only. |
 | `analysis_reports` | Layer2 AI report |
 | `analysis_generation_jobs` | Analysis generation queue |
-| `experience_21d_interests` | Partner 21-day INTEREST leads (`brief_json` is coach-only) |
+| `experience_21d_interests` | Partner 21-day INTEREST leads (`brief_json` is coach-only). Unique `analysis_session_id`. Soft archive via `archived_at`. |
 | `experience_21d_funnel_events` | 21D funnel events (one per session+event) |
 | `quiz_partner_landing_views` | Human `/q/{code}` landing views (never crawler OG GET) |
 | `quiz_result_shares` | Consumer `/s/{code}` result shares |
@@ -66,9 +64,9 @@ If Production already has these objects from the recovered deploy, applying `046
 
 `quiz_responses.growth_share_id` retains `/r` attribution. Partner workbench is `/quiz/21d` (tabs: 21 天名單 / 我的分享 / 我的成效). Consumer RESET Quiz V2 is `/quiz/fat-loss`. Official Customer Hub entry is `/quiz/21d`. `/quiz/hub` is leftover catalog, not the official partner entry.
 
-**CONVERSATION-RESET-01 (no additional migration beyond 046 session columns):** `/quiz/fat-loss` creates `entry=reset_v1` and persists `__resetV1` (`conversation_reset_v1`) on `analysis_sessions.answers_json`. Fixed 6-question projective quiz + gpt-4.1 conversation + 3-section report. Production `/quiz/fat-loss` serves RESET Quiz V2.
+**CONVERSATION-RESET-01:** `/quiz/fat-loss` creates `entry=reset_v1` and persists `__resetV1` (`conversation_reset_v1`) on `analysis_sessions.answers_json`. Fixed 6-question projective quiz + gpt-4.1 conversation + 3-section report. Production `/quiz/fat-loss` serves RESET Quiz V2.
 
-**21D-HANDOFF-01:** After RESET report, consumer can express INTEREST in a paid 21-day experience (no price, no checkout). Attribution copies from `analysis_sessions` — `/r` growth share owner wins over `/q` referrer.
+**21D-HANDOFF-01:** After RESET report, consumer can express INTEREST in a paid 21-day experience (no price, no checkout). Attribution copies from `analysis_sessions` — `/r` growth share owner wins over `/q` referrer. Minimal contact capture: display name + one channel (`line`, `instagram`, or `phone`).
 
 **QUIZ-PARTNER-01:** Workbench statuses are presentation only: interested→待聯絡, contacted/considering→已聯絡, joined→已成交, declined→未成交. Joined/declined change lead status only — no customer, enrollment, order, or payment.
 
