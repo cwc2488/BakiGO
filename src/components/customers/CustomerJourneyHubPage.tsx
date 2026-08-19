@@ -6,7 +6,7 @@ import { AppIcon } from "@/components/ui/AppIcon";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { ROUTE_ICON_COMPONENTS } from "@/components/ui/BrandIcons";
 import {
-  CUSTOMER_JOURNEY_HUB_ITEMS,
+  CUSTOMER_JOURNEY_HUB_SECTIONS,
   type CustomerJourneyHubItem,
 } from "@/lib/customers/customer-journey-hub-items";
 
@@ -80,15 +80,25 @@ export default function CustomerJourneyHubPage() {
     <PageShell
       showBack={false}
       title="顧客"
-      subtitle="名單 → 顧客 → 陪跑 → 轉介紹"
+      subtitle="找人 → 接觸 → 顧客 → 陪跑 → 成果與分享"
       variant="plain"
     >
-      <div className="mx-auto max-w-lg space-y-3 px-4 pb-8 pt-2">
-        {CUSTOMER_JOURNEY_HUB_ITEMS.map((item) => (
-          <HubLinkCard key={item.title} item={item} />
+      <div className="mx-auto max-w-lg space-y-8 px-4 pb-8 pt-2">
+        {CUSTOMER_JOURNEY_HUB_SECTIONS.map((section) => (
+          <section key={section.title} className="min-w-0 space-y-3">
+            <div>
+              <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">{section.title}</h2>
+              <p className="mt-0.5 text-[0.875rem] text-[#86868b]">{section.subtitle}</p>
+            </div>
+            <div className="space-y-2.5">
+              {section.items.map((item) => (
+                <HubLinkCard key={`${section.title}-${item.title}`} item={item} />
+              ))}
+            </div>
+          </section>
         ))}
-        <p className="pt-4 text-center text-[0.8125rem] text-[#86868b]">
-          待聯絡／正在接觸可在「我的名單」裡篩選；這裡只保留主入口。
+        <p className="text-center text-[0.8125rem] text-[#86868b]">
+          轉介紹中心會列出你的所有顧客；陪跑詳情仍可查看成果與分享時機。
         </p>
       </div>
     </PageShell>
