@@ -8,6 +8,10 @@ import {
   estimateRecognitionPresentationSlideCount,
   planRecognitionPresentation,
 } from "@/lib/recognition/recognition-presentation-layout";
+import {
+  RecognitionPresentationGenerationError,
+  type RecognitionPresentationFailureStage,
+} from "@/lib/recognition/recognition-presentation-errors";
 import { renderRecognitionPresentationPptx } from "@/lib/recognition/recognition-presentation-pptx";
 import {
   formatRecognitionPresentationNotReadyError,
@@ -155,44 +159,58 @@ export async function generateRecognitionPresentationPptx(input: {
   slideCount: number;
   approvedCandidateCount: number;
 }> {
-  const snapshot = await loadRecognitionPresentationSnapshot(input.eventId);
-  if (snapshot.blockers.length > 0) {
-    throw new RecognitionPresentationNotReadyError(snapshot.blockers);
+  let stage: RecognitionPresentationFailureStage = "load_snapshot";
+  try {
+    const snapshot = await loadRecognitionPresentationSnapshot(input.eventId);
+    if (snapshot.blockers.length > 0) {
+      throw new RecognitionPresentationNotReadyError(snapshot.blockers);
+    }
+    if (snapshot.plan.length === 0) {
+      throw new RecognitionServiceError("尚無已核准名單，無法產生簡報", 409);
+    }
+
+    stage = "load_portraits";
+    const theme = resolveRecognitionPresentationTheme(snapshot.data.themeId);
+    const portraits = await loadRecognitionPresentationPortraits({
+      data: snapshot.data,
+      loadOriginal: getRecognitionCandidatePhotoObject,
+    });
+
+    stage = "render_pptx";
+    const buffer = await renderRecognitionPresentationPptx({
+      data: snapshot.data,
+      plan: snapshot.plan,
+      portraits,
+      theme,
+    });
+
+    const approvedCandidateCount = snapshot.data.awards.reduce(
+      (sum, award) => sum + award.candidates.length,
+      0,
+    );
+
+    stage = "record_export";
+    await insertRecognitionPresentationExportSuccess({
+      eventId: snapshot.data.event.id,
+      generatedByMemberId: input.generatedByMemberId,
+      approvedCandidateCount,
+      slideCount: snapshot.plan.length,
+      themeId: theme.id,
+      themeVersion: theme.version,
+    });
+
+    return {
+      buffer,
+      filename: recognitionPresentationFilename(snapshot.data.event),
+      slideCount: snapshot.plan.length,
+      approvedCandidateCount,
+    };
+  } catch (error) {
+    if (error instanceof RecognitionServiceError) throw error;
+    throw new RecognitionPresentationGenerationError({
+      eventId: input.eventId,
+      stage,
+      cause: error,
+    });
   }
-  if (snapshot.plan.length === 0) {
-    throw new RecognitionServiceError("尚無已核准名單，無法產生簡報", 409);
-  }
-
-  const theme = resolveRecognitionPresentationTheme(snapshot.data.themeId);
-  const portraits = await loadRecognitionPresentationPortraits({
-    data: snapshot.data,
-    loadOriginal: getRecognitionCandidatePhotoObject,
-  });
-  const buffer = await renderRecognitionPresentationPptx({
-    data: snapshot.data,
-    plan: snapshot.plan,
-    portraits,
-    theme,
-  });
-
-  const approvedCandidateCount = snapshot.data.awards.reduce(
-    (sum, award) => sum + award.candidates.length,
-    0,
-  );
-
-  await insertRecognitionPresentationExportSuccess({
-    eventId: snapshot.data.event.id,
-    generatedByMemberId: input.generatedByMemberId,
-    approvedCandidateCount,
-    slideCount: snapshot.plan.length,
-    themeId: theme.id,
-    themeVersion: theme.version,
-  });
-
-  return {
-    buffer,
-    filename: recognitionPresentationFilename(snapshot.data.event),
-    slideCount: snapshot.plan.length,
-    approvedCandidateCount,
-  };
 }

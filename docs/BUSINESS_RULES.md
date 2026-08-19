@@ -199,6 +199,8 @@ Super Admin 管理畫面預設不列出所有正常投稿。
 
 Dashboard 優先顯示：投稿人數、PASS / WARNING / BLOCKED / ADMIN_OVERRIDE / EXCLUDED、有效表揚項目、PPT readiness。
 
+Dashboard 的狀態計數與「可直接產 PPT」必須來自同一套 live validation 結果（`evaluateRecognitionEntryValidation`）。不得用過期的 stored `validation_status` 覆蓋 live 判定，否則會出現「可直接產 PPT」與 BLOCKED 同時成立的矛盾。
+
 Exception Center 主要顯示：
 
 - 截止後仍 `BLOCKED`

@@ -1,4 +1,4 @@
-import PptxGenJS from "pptxgenjs";
+import { loadPptxGenJs, type PptxGenJsConstructor } from "@/lib/recognition/load-pptxgenjs";
 import {
   loadTrimmedRecognitionBadgeDataUri,
   loadRecognitionFrameDataUri,
@@ -49,17 +49,12 @@ import type {
   RecognitionSlidePlan,
 } from "@/lib/recognition/recognition-presentation-types";
 
-type PptxCtor = typeof PptxGenJS;
+type PptxCtor = PptxGenJsConstructor;
 type Presentation = InstanceType<PptxCtor>;
 type Slide = ReturnType<Presentation["addSlide"]>;
 
-function pptxConstructor(): PptxCtor {
-  const imported = PptxGenJS as PptxCtor & { default?: PptxCtor };
-  return imported.default ?? imported;
-}
-
 function createPresentation(theme: RecognitionPresentationTheme): Presentation {
-  const Ctor = pptxConstructor();
+  const Ctor = loadPptxGenJs();
   const pptx = new Ctor();
   pptx.defineLayout({
     name: RECOGNITION_PPTX_SLIDE.layoutName,

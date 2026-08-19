@@ -21,10 +21,12 @@ import {
 } from "@/lib/recognition/recognition-service";
 import { normalizeRecognitionSubmittedName } from "@/lib/recognition/recognition-domain";
 import {
+  aggregateRecognitionEventDashboardCounts,
   evaluateRecognitionEntryValidation,
   isRecognitionPptReadyStatus,
   recognitionAuthoritativePhotoPath,
   summarizeRecognitionSubmissionCompletion,
+  type RecognitionEventDashboardCountInput,
   type RecognitionImageInspectResult,
 } from "@/lib/recognition/recognition-validation";
 import type {
@@ -472,20 +474,8 @@ export async function getRecognitionEventDashboard(eventId: string): Promise<Rec
     .eq("event_id", eventId);
   if (error) throw new RecognitionServiceError(error.message, 500);
 
-  const counts = {
-    PASS: 0,
-    WARNING: 0,
-    BLOCKED: 0,
-    ADMIN_OVERRIDE: 0,
-    EXCLUDED: 0,
-  };
-  const readyAwards = new Set<string>();
-  let pptReadyCount = 0;
-  let exceptionCount = 0;
-
+  const evaluations: RecognitionEventDashboardCountInput[] = [];
   for (const entry of entries) {
-    const status = (entry.validation_status ?? "BLOCKED") as RecognitionValidationStatus;
-    if (status in counts) counts[status] += 1;
     const award = awards.get(entry.event_award_id);
     const result = await evaluateStoredRecognitionEntry({
       entry,
@@ -497,12 +487,13 @@ export async function getRecognitionEventDashboard(eventId: string): Promise<Rec
         ? { ok: true, width: entry.original_width, height: entry.original_height }
         : undefined,
     });
-    if (result.exception) exceptionCount += 1;
-    if (result.pptReady) {
-      pptReadyCount += 1;
-      readyAwards.add(entry.event_award_id);
-    }
+    evaluations.push({
+      ...result,
+      eventAwardId: entry.event_award_id,
+    });
   }
+
+  const counts = aggregateRecognitionEventDashboardCounts(evaluations);
 
   return {
     eventId: event.id,
@@ -513,15 +504,7 @@ export async function getRecognitionEventDashboard(eventId: string): Promise<Rec
     status: event.status,
     totalEntries: entries.length,
     totalSubmitters: (submissions ?? []).length,
-    passCount: counts.PASS,
-    warningCount: counts.WARNING,
-    blockedCount: counts.BLOCKED,
-    adminOverrideCount: counts.ADMIN_OVERRIDE,
-    excludedCount: counts.EXCLUDED,
-    pptReadyCount,
-    exceptionCount,
-    effectiveAwardCount: readyAwards.size,
-    pptReady: exceptionCount === 0,
+    ...counts,
   };
 }
 

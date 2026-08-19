@@ -347,6 +347,7 @@ Rules:
 - PPT excludes `EXCLUDED`
 - PPT is blocked by technical `BLOCKED`
 - normal `PASS` is not an admin todo
+- Event dashboard PASS / WARNING / BLOCKED / OVERRIDE / EXCLUDED counts and 「可直接產 PPT」 must all derive from the live validation engine. Do not mix a stale stored `validation_status` with live `pptReady`.
 
 ## Photo rules
 
