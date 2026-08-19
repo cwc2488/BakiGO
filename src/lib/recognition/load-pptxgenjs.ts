@@ -1,7 +1,8 @@
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
+import type PptxGenJS from "pptxgenjs";
 
-type PptxGenJsModule = typeof import("pptxgenjs");
+export type PptxGenJsConstructor = typeof PptxGenJS;
 
 /**
  * Load pptxgenjs through Node's CommonJS resolver.
@@ -30,9 +31,9 @@ export function resolvePptxgenjsEntry(): string {
   return pptxgenRequire().resolve("pptxgenjs");
 }
 
-export function loadPptxGenJs(): PptxGenJsModule {
-  const loaded = pptxgenRequire()("pptxgenjs") as PptxGenJsModule & {
-    default?: PptxGenJsModule;
+export function loadPptxGenJs(): PptxGenJsConstructor {
+  const loaded = pptxgenRequire()("pptxgenjs") as PptxGenJsConstructor & {
+    default?: PptxGenJsConstructor;
   };
   const ctor = loaded.default ?? loaded;
   if (typeof ctor !== "function") {

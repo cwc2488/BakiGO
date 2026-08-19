@@ -1,4 +1,4 @@
-import { loadPptxGenJs } from "@/lib/recognition/load-pptxgenjs";
+import { loadPptxGenJs, type PptxGenJsConstructor } from "@/lib/recognition/load-pptxgenjs";
 import {
   loadTrimmedRecognitionBadgeDataUri,
   loadRecognitionFrameDataUri,
@@ -49,7 +49,7 @@ import type {
   RecognitionSlidePlan,
 } from "@/lib/recognition/recognition-presentation-types";
 
-type PptxCtor = typeof import("pptxgenjs");
+type PptxCtor = PptxGenJsConstructor;
 type Presentation = InstanceType<PptxCtor>;
 type Slide = ReturnType<Presentation["addSlide"]>;
 
