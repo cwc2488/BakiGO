@@ -213,15 +213,22 @@ describe("QUIZ-VIRAL-01", () => {
       "Q1_C",
     ]);
     const reveal = src("src/components/reset/ResetExperienceViews.tsx");
-    const revealFn = reveal.slice(reveal.indexOf("export function ResetRevealView"));
+    const revealStart = reveal.indexOf("export function ResetRevealView");
+    const revealEnd = reveal.indexOf("function conversationTurns");
+    const revealFn = reveal.slice(revealStart, revealEnd);
     expect(revealFn).toContain("你比較像——");
     expect(revealFn).toContain("ResetAnimalVisual");
     expect(revealFn).toContain("RESET_CONVERSATION_CTA");
-    expect(RESET_CONVERSATION_CTA).toBe("讓 AI 真正認識我");
-    expect(revealFn.indexOf("ResetResultShareBar")).toBeGreaterThan(0);
-    expect(revealFn.indexOf("ResetResultShareBar")).toBeLessThan(revealFn.indexOf("{RESET_CONVERSATION_CTA}"));
+    expect(RESET_CONVERSATION_CTA).toBe("開始免費 AI 深度分析");
+    expect(revealFn).toContain("RESET_REVEAL_UNLOCK_TITLE");
+    expect(revealFn).toContain("rx-unlock-free");
+    expect(revealFn).not.toContain("ResetResultShareBar");
+    const reportFn = reveal.slice(reveal.indexOf("export function ResetReportView"));
+    expect(reportFn).toContain("ResetResultShareBar");
+    expect(reportFn).toContain("sessionToken");
     expect(src("src/app/globals.css")).toContain("object-fit: contain");
     expect(src("src/app/globals.css")).toContain(".rx-cta-secondary");
+    expect(src("src/app/globals.css")).toContain(".rx-unlock");
   });
 
   it("20. QUIZ-PARTNER /q primitive is not reused for consumer result shares", () => {
