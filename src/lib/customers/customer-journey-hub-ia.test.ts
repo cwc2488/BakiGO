@@ -22,10 +22,11 @@ describe("CustomerJourneyHub IA", () => {
 
     const quiz = CUSTOMER_JOURNEY_HUB_ITEMS.find((item) => item.title === "心理測驗");
     expect(quiz).toMatchObject({
-      href: "/quiz/hub",
+      href: "/quiz/21d",
       title: "心理測驗",
-      desc: "用測驗開啟話題",
-      iconHref: "/quiz/hub",
+      desc: "分享測驗，聯絡想了解 21 天的人",
+      iconHref: "/quiz/21d",
+      waitingBadge: true,
     });
     expect(quiz?.comingSoon).toBeFalsy();
     expect(quiz?.locked).toBeFalsy();

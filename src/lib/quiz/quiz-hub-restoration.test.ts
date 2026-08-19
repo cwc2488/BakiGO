@@ -9,13 +9,13 @@ function read(path: string): string {
 }
 
 describe("Quiz Hub restoration (pre-drop 51f04e9)", () => {
-  it("Customer Hub keeps the original clickable 心理測驗 entry pointing at /quiz/hub", () => {
+  it("Customer Hub official 心理測驗 entry is Quiz V2 /quiz/21d", () => {
     const quiz = CUSTOMER_JOURNEY_HUB_ITEMS.find((item) => item.title === "心理測驗");
     expect(quiz).toMatchObject({
-      href: "/quiz/hub",
+      href: "/quiz/21d",
       title: "心理測驗",
-      desc: "用測驗開啟話題",
-      iconHref: "/quiz/hub",
+      desc: "分享測驗，聯絡想了解 21 天的人",
+      iconHref: "/quiz/21d",
     });
     expect(quiz?.comingSoon).toBeFalsy();
     expect(quiz?.locked).toBeFalsy();
@@ -31,8 +31,8 @@ describe("Quiz Hub restoration (pre-drop 51f04e9)", () => {
     expect(QUIZ_HUB_ITEMS).toHaveLength(1);
     expect(QUIZ_HUB_ITEMS[0]).toMatchObject({
       slug: "fat-loss",
-      manageHref: "/quiz/manage",
-      leadsHref: "/quiz/leads",
+      manageHref: "/quiz/21d?tab=share",
+      leadsHref: "/quiz/21d",
     });
   });
 

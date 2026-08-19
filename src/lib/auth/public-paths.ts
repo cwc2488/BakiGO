@@ -14,10 +14,13 @@ export function isOpenPublicPath(pathname: string): boolean {
     OPEN_PUBLIC_PATHS.has(normalized) ||
     normalized.startsWith("/meta-review/") ||
     normalized.startsWith("/quiz/fat-loss") ||
+    normalized.startsWith("/quiz/21d/preview") ||
     normalized === "/quiz" ||
     normalized.startsWith("/q/") ||
+    normalized.startsWith("/s/") ||
     normalized.startsWith("/r/") ||
-    normalized.startsWith("/recognition/p/")
+    normalized.startsWith("/recognition/p/") ||
+    normalized.startsWith("/analysis/")
   );
 }
 

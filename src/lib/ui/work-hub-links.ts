@@ -29,6 +29,7 @@ export const SIMPLE_QUICK_LINKS = [
   { href: "/coaching", title: "陪跑" },
   { href: "/learning", title: "學習" },
   { href: "/quiz/hub", title: "心理測驗" },
+  { href: "/quiz/21d", title: "心理測驗工作台" },
 ] as const;
 
 /** @deprecated Prefer three-world IA secondary lists. */
@@ -36,6 +37,7 @@ export const WORK_HUB_LINKS = MY_WORLD_SECONDARY_LINKS;
 
 /** Desktop side nav extras — align with three-world IA (customer + my tools). */
 export const SIDE_NAV_EXTRA_LINKS = [
+  { href: "/quiz/21d", title: "心理測驗", icon: APP_ICON.hub.pipeline, waitingBadge: true },
   { href: "/coaching", title: "陪跑", icon: APP_ICON.hub.pipeline },
   { href: "/retail-pipeline", title: "名單", icon: APP_ICON.hub.pipeline },
   { href: "/goals", title: "目標", icon: APP_ICON.hub.goals },

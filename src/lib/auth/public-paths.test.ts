@@ -38,12 +38,17 @@ describe("public-paths", () => {
     expect(isOpenPublicPath("/quiz/fat-loss/result/abc-123")).toBe(true);
     expect(isOpenPublicPath("/quiz/fat-loss/next-step/abc-123")).toBe(true);
     expect(isOpenPublicPath("/q/ABC123")).toBe(true);
+    expect(isOpenPublicPath("/s/ABC123")).toBe(true);
     expect(isOpenPublicPath("/q/fat-loss")).toBe(true);
     expect(isOpenPublicPath("/r/abcdefghijklmnopqrstuvwxyz0123456789ABC")).toBe(true);
     expect(isOpenPublicPath("/recognition/p/token-abc")).toBe(true);
+    expect(isOpenPublicPath("/analysis/abcdefghijklmnopqrstuvwxyz0123456789ABC")).toBe(true);
     expect(isPublicPath("/quiz/manage")).toBe(false);
     expect(isPublicPath("/quiz/leads")).toBe(false);
     expect(isPublicPath("/quiz/hub")).toBe(false);
+    expect(isPublicPath("/quiz/21d")).toBe(false);
+    expect(isPublicPath("/quiz/21d/abc")).toBe(false);
+    expect(isOpenPublicPath("/quiz/21d/preview")).toBe(true);
     expect(isPublicPath("/recognition")).toBe(false);
     expect(isPublicPath("/recognition/events/evt-1")).toBe(false);
     expect(isPublicPath("/recognition/events/evt-1/review")).toBe(false);

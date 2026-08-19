@@ -97,5 +97,16 @@ export function parseCoachingPlanSnapshot(value: unknown): CoachingPlanSnapshot 
       ? raw.reportingRules.filter((item): item is string => typeof item === "string")
       : defaults.reportingRules,
     coachNotes: typeof raw.coachNotes === "string" ? raw.coachNotes : defaults.coachNotes ?? "",
+    experience21d: parseExperience21d(raw.experience21d),
   };
+}
+
+function parseExperience21d(
+  value: CoachingPlanSnapshot["experience21d"] | undefined,
+): CoachingPlanSnapshot["experience21d"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const productReceivedDate = String(value.productReceivedDate ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(productReceivedDate)) return undefined;
+  const interestId = typeof value.interestId === "string" && value.interestId.trim() ? value.interestId.trim() : undefined;
+  return { productReceivedDate, interestId };
 }

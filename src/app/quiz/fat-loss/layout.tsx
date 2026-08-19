@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
-import { buildFatLossQuizPublicMetadata } from "@/lib/quiz/fat-loss/public-metadata";
+import { buildQuizPartnerShareMetadata } from "@/lib/quiz/partner/quiz-partner-share-metadata";
 
-export const metadata: Metadata = buildFatLossQuizPublicMetadata();
+export function generateMetadata(): Metadata {
+  return buildQuizPartnerShareMetadata();
+}
 
 export default function FatLossQuizLayout({ children }: LayoutProps<"/quiz/fat-loss">) {
   return children;

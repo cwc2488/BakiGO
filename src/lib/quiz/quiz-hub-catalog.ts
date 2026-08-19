@@ -13,7 +13,7 @@ export const QUIZ_HUB_ITEMS: readonly QuizHubItem[] = [
     title: "你是哪一種瘦不下來的人？",
     description: "12 題，找出真正讓你卡住的原因",
     coverSrc: "/quiz/fat-loss/quiz-cover.png",
-    manageHref: "/quiz/manage",
-    leadsHref: "/quiz/leads",
+    manageHref: "/quiz/21d?tab=share",
+    leadsHref: "/quiz/21d",
   },
 ] as const;

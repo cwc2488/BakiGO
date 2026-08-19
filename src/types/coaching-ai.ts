@@ -60,7 +60,7 @@ export const COACHING_AI_CUSTOMER_POLL_TIMEOUT_MS = 90_000 as const;
 /** Initial poll interval while AI is pending/processing. */
 export const COACHING_AI_CUSTOMER_POLL_INTERVAL_MS = 2_500 as const;
 
-export type CoachingAiLlmFeature = "coaching" | "consultation" | "radar" | "quiz";
+export type CoachingAiLlmFeature = "coaching" | "consultation" | "radar" | "quiz" | "analysis";
 
 export type CoachingAiLlmCallStatus = "completed" | "failed";
 
