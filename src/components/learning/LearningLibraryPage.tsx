@@ -63,6 +63,9 @@ export default function LearningLibraryPage() {
         {groups.map((group) => (
           <section key={group.key} className="space-y-3">
             <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">{group.title}</h2>
+            {group.note ? (
+              <p className="text-[0.8125rem] leading-relaxed text-[#5856d6]">{group.note}</p>
+            ) : null}
             <div className="space-y-3">
               {group.resources.map((resource) => (
                 <ResourceCard
