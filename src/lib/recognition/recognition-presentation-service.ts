@@ -54,6 +54,9 @@ function photoInputFromCandidate(
     reviewStatus: candidate.reviewStatus,
     requiresPhoto: candidate.requiresPhoto,
     hasOriginalPhoto: candidate.hasOriginalPhoto,
+    originalPhotoStoragePath: preferred?.originalPhotoStoragePath
+      ?? candidate.sources.find((source) => source.originalPhotoStoragePath)?.originalPhotoStoragePath
+      ?? null,
     preferredSourceEntryId: candidate.preferredSourceEntryId,
     preferredSourceBelongsToCandidate: candidate.preferredSourceEntryId
       ? candidate.sources.some((source) => source.submissionEntryId === candidate.preferredSourceEntryId)

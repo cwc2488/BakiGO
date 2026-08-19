@@ -119,13 +119,29 @@ Template 例子可能包括：
 
 ### Submission evidence rule
 
-公開 submission 是**原始證據**，不是正式表揚結果。
+公開 submission 仍是**原始證據**，必須保留；不得 hard delete。
 
-Rules:
+新流程不再把「人工逐筆審核」當成正常資料的必經關卡：
 
-- submission 不得直接成為正式 PPT 資料
+- 投稿者負責把資料整理到可直接進 PPT
+- 系統即時驗證、自動 PASS、自動排版
+- Super Admin 只處理截止後仍未解決的 exception
 - raw submissions / raw entries 必須保留
-- approved candidate 才能進入正式 presentation dataset
+
+### Organization field rule
+
+所有投稿者屬於同一個大組織。Recognition Center **不得**要求填寫：
+
+- 所屬組織
+- 組織名稱
+- A 組 / B 組
+- organization completion / grouping
+
+`submitter_organization` 可保留為 legacy DB 欄位，預設空字串。不得成為必要資料，也不得作為 dashboard 分組依據。
+
+核心關係：
+
+Recognition Event → Award Category → Submission / Entry
 
 ### Duplicate / consolidation rules
 
@@ -148,20 +164,58 @@ Name normalization frozen rule:
 - 帶稱謂但相似的名字可列為 suspected duplicate
 - 但不得靜默合併
 
-### Review state rules
+### Entry validation state rules
 
-Recognition candidates review states:
+投稿 entry 的驗證狀態：
 
-- `pending`
-- `approved`
-- `needs_fix`
-- `rejected`
+- `PASS` — 系統判定資料完整，可直接進 PPT；AUTO PASS，不需 Admin 逐筆核准
+- `WARNING` — 可能需要注意，但技術上可產 PPT；不阻擋投稿完成
+- `BLOCKED` — 必要資料不完整或技術上無法可靠產 PPT；必須修正
+- `ADMIN_OVERRIDE` — Super Admin 明確確認後強制通過；PPT 視為可使用
+- `EXCLUDED` — 本次不進入 PPT；不阻擋活動 PPT readiness；保留 audit
 
 Rules:
 
-- 只有 `approved` 可進正式 PPT
-- `pending` / `needs_fix` 代表審核未完成
-- `rejected` 不代表刪除原始 submission evidence
+- 「資料已送出」不等於「投稿完成」
+- 只有所有 entry 都沒有 `BLOCKED` 才顯示投稿完成
+- `WARNING` 不阻擋完成
+- 正常 `PASS` 不得成為 Admin 主要待辦
+- 截止前投稿者可自行修改；每次修改後立即重新驗證；符合條件即 AUTO PASS
+- 不得以 Email 作為主要補件流程
+
+### Zero-recipient award rules
+
+Award Definition 永久保留。某場活動若某項目**有效投稿數 = 0**：
+
+- Admin 主要畫面自動隱藏
+- PPT readiness 不要求它
+- PPT 不產生空白 slide
+- 不需要 Admin 每月手動 enable / disable
+- 不得刪除 Award Definition
+
+### Exception Center rules
+
+Super Admin 管理畫面預設不列出所有正常投稿。
+
+Dashboard 優先顯示：投稿人數、PASS / WARNING / BLOCKED / ADMIN_OVERRIDE / EXCLUDED、有效表揚項目、PPT readiness。
+
+Exception Center 主要顯示：
+
+- 截止後仍 `BLOCKED`
+- 系統無法可靠判斷、需要 Admin 最終決定的資料
+
+唯一 Super Admin（會員編號 `20699471`，canonical source: `src/lib/auth/super-admin.ts`）可：
+
+- 「確認無誤・強制通過」→ `ADMIN_OVERRIDE`，記錄 original issue / original status / overridden_by / overridden_at / optional reason
+- 「取消此筆表揚」→ `EXCLUDED`，不 hard delete
+
+Override 安全底線：
+
+- Business / quality warning 可以 override
+- Technical impossibility（image missing / corrupted / unreadable / required binary 不存在 / renderer 無法讀取）**不得** unsafe override
+- Technical blocker 只能：修正 或 取消此筆表揚
+
+一般會員不得進入 Exception Center，也不得 Admin Override。
 
 ### Photo rules
 
@@ -170,9 +224,11 @@ Photo awards 必須遵守：
 - 原始圖片必須保留
 - presentation crop / processed image 與原圖分離
 - 簡報卡片人像裁切比例 V1 使用 `3:4`（寬:高），與 PPT 投影片 `4:3` 不同
-- public submitter 在 V1 不需做手動 crop 確認
-- 照片異常 / 團體照 / 多人照交由 admin review
+- **投稿者**負責上傳、裁切、確認照片；Admin 不再負責正常照片裁切
+- 重新上傳 / 重新裁切後，current confirmed image/crop 是 PPT 唯一權威版本
 - AI **不得**從多人照片中自動選定受表揚者
+- 偵測到可能多人照片時 **只能 WARNING，不得自動 BLOCK / 退件**
+- 投稿者確認「保持原照片」（例如夫妻／共同受獎）後，不再因同一個多人 warning 阻擋，也不需 Admin 再審
 
 ### Presentation rules
 
@@ -186,7 +242,11 @@ Recognition Center presentation 規則：
   - 百萬終生成就獎 premium 版型
 - 照片超過 12 人自動分頁
 - theme 與 roster data 必須分離
-- 某 award 無 approved recipients 時，必須完全省略，不得產生空白頁
+- 某 award 無有效 recipients 時，必須完全省略，不得產生空白頁
+- PPT 可使用：`PASS`、`ADMIN_OVERRIDE`，以及投稿者已確認且無 technical blocker 的 `WARNING`
+- PPT 排除：`EXCLUDED`
+- PPT 阻擋：真正 technical `BLOCKED`
+- PPT pipeline 只讀 current confirmed image/crop
 
 Frozen rule:
 
@@ -726,3 +786,4 @@ Document any intentional exceptions to the rules above in this section.
 | 2026-08 | UX-1.2 — Referral Center = all Customers; Growth = timing evidence; Coach UI humanization | — |
 | 2026-08 | Coaching Product Correction P0/P1 — enrollment window, portal Home, directives, bowel signal, Hub IA | — |
 | 2026-08 | Recognition Center Phase 2 — domain rules freeze, admin allowlist, multi-event month support, 27-award default catalog | — |
+| 2026-08 | Recognition Center — self-service validation, AUTO PASS, Exception-only Admin, submitter crop | — |

@@ -2,6 +2,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createSupabaseServiceClient, isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 import {
+  attachRecognitionPublicEditToken,
   finalizeRecognitionPublicSubmission,
   prepareRecognitionPublicSubmissionContext,
   RecognitionServiceError,
@@ -15,6 +16,12 @@ import {
   validateRecognitionPublicPhoto,
 } from "@/lib/recognition/recognition-domain";
 import { validateRecognitionImageSignature } from "@/lib/recognition/recognition-image-signature";
+import {
+  applyRecognitionSubmissionSelfService,
+  inspectRecognitionImageBuffer,
+} from "@/lib/recognition/recognition-validation-service";
+import type { RecognitionNormalizedCrop } from "@/types/recognition";
+import type { RecognitionImageInspectResult } from "@/lib/recognition/recognition-validation";
 
 export const runtime = "nodejs";
 
@@ -22,6 +29,10 @@ type PublicFormEntry = {
   submittedName?: string;
   eventAwardId?: string;
   photoFieldKey?: string | null;
+  crop?: RecognitionNormalizedCrop | null;
+  originalWidth?: number | null;
+  originalHeight?: number | null;
+  confirmedWarnings?: string[];
 };
 
 function inferExtension(file: File): string {
@@ -95,6 +106,10 @@ export async function POST(
       originalPhotoMimeType: string | null;
       originalPhotoSizeBytes: number | null;
     }>;
+    const inspectByEntryId: Record<string, RecognitionImageInspectResult | null> = {};
+    const cropByEntryId: Record<string, RecognitionNormalizedCrop | null> = {};
+    const confirmedWarningsByEntryId: Record<string, string[]> = {};
+    const dimensionsByEntryId: Record<string, { width: number; height: number }> = {};
 
     for (const entry of entries) {
       const entryId = randomUUID();
@@ -125,6 +140,12 @@ export async function POST(
           return NextResponse.json({ error: signatureError, code: "invalid_file" }, { status: 400 });
         }
 
+        const inspect = await inspectRecognitionImageBuffer(buffer);
+        inspectByEntryId[entryId] = inspect;
+        if (inspect.ok) {
+          dimensionsByEntryId[entryId] = { width: inspect.width, height: inspect.height };
+        }
+
         const path = `recognition/${submissionId}/entries/${entryId}/original.${inferExtension(file)}`;
         const supabase = createSupabaseServiceClient();
         const { error: uploadError } = await supabase.storage
@@ -142,6 +163,12 @@ export async function POST(
         originalPhotoStoragePath = path;
         originalPhotoMimeType = file.type;
         originalPhotoSizeBytes = file.size;
+      }
+
+      if (entry.crop) cropByEntryId[entryId] = entry.crop;
+      if (entry.confirmedWarnings) confirmedWarningsByEntryId[entryId] = entry.confirmedWarnings;
+      if (entry.originalWidth && entry.originalHeight && !dimensionsByEntryId[entryId]) {
+        dimensionsByEntryId[entryId] = { width: entry.originalWidth, height: entry.originalHeight };
       }
 
       finalizedEntries.push({
@@ -167,10 +194,27 @@ export async function POST(
       entries: finalizedEntries,
     });
 
+    const selfService = await applyRecognitionSubmissionSelfService({
+      eventId: prepared.event.eventId,
+      submissionId: submission.id,
+      inspectByEntryId,
+      cropByEntryId,
+      confirmedWarningsByEntryId,
+      dimensionsByEntryId,
+    });
+
+    const editToken = await attachRecognitionPublicEditToken(submission.id);
+    const message = selfService.completion.complete
+      ? "✅ 投稿完成"
+      : `⚠️ 投稿尚未完成 ${selfService.completion.readyCount} / ${selfService.completion.total} 完成，${selfService.completion.blockedCount} 筆需要修正`;
+
     return NextResponse.json({
       ok: true,
       submissionId: submission.id,
-      message: "已收到你的表揚名單，將由管理員審核。",
+      editToken,
+      completion: selfService.completion,
+      entries: selfService.entries,
+      message,
     });
   } catch (error) {
     if (uploadedPaths.length > 0) {

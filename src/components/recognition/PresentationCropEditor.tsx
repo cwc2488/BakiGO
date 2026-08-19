@@ -173,6 +173,38 @@ export function PresentationCropEditor({
             />
           </div>
         </div>
+        {natural && (
+          <label className="mt-3 flex items-center gap-3 text-[0.8125rem] text-[#6f7d73]">
+            縮放
+            <input
+              type="range"
+              min={0.7}
+              max={1.4}
+              step={0.01}
+              defaultValue={1}
+              className="flex-1"
+              onChange={(event) => {
+                const factor = Number(event.currentTarget.value);
+                const origin = currentCrop();
+                const cx = origin.x + origin.width / 2;
+                const cy = origin.y + origin.height / 2;
+                const nextWidth = Math.min(1, origin.width / factor);
+                const nextHeight = Math.min(1, origin.height / factor);
+                onChange(constrainRecognitionCropToPortraitAspect({
+                  crop: {
+                    x: cx - nextWidth / 2,
+                    y: cy - nextHeight / 2,
+                    width: nextWidth,
+                    height: nextHeight,
+                  },
+                  originalWidth: natural.width,
+                  originalHeight: natural.height,
+                  aspectRatio: RECOGNITION_PRESENTATION_CROP_ASPECT_RATIO,
+                }));
+              }}
+            />
+          </label>
+        )}
       </div>
       <div className="w-full shrink-0 lg:w-40">
         <p className="mb-2 text-[0.75rem] font-medium text-[#86868b]">3:4 預覽</p>

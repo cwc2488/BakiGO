@@ -108,27 +108,36 @@ export async function loadRecognitionPresentationPortraits(input: {
   for (const award of input.data.awards) {
     for (const candidate of award.candidates) {
       if (!candidate.requiresPhoto || !candidate.photo) continue;
-      const original = await input.loadOriginal({
-        eventId: input.data.event.id,
-        candidateId: candidate.candidateId,
-        sourceEntryId: candidate.photo.sourceEntryId,
-      });
-      const decoded = await decodeRecognitionOriginalForPresentation(
-        Buffer.from(original.body),
-        candidate.displayName,
-      );
-      const cropped = await cropRecognitionPortraitForPresentation({
-        originalBuffer: decoded.buffer,
-        originalWidth: decoded.width,
-        originalHeight: decoded.height,
-        crop: candidate.photo.crop,
-      });
-      portraits.set(candidate.candidateId, {
-        candidateId: candidate.candidateId,
-        jpegBuffer: cropped.jpegBuffer,
-        width: cropped.width,
-        height: cropped.height,
-      });
+      try {
+        const original = await input.loadOriginal({
+          eventId: input.data.event.id,
+          candidateId: candidate.candidateId,
+          sourceEntryId: candidate.photo.sourceEntryId,
+        });
+        const decoded = await decodeRecognitionOriginalForPresentation(
+          Buffer.from(original.body),
+          candidate.displayName,
+        );
+        const cropped = await cropRecognitionPortraitForPresentation({
+          originalBuffer: decoded.buffer,
+          originalWidth: decoded.width,
+          originalHeight: decoded.height,
+          crop: candidate.photo.crop,
+        });
+        portraits.set(candidate.candidateId, {
+          candidateId: candidate.candidateId,
+          jpegBuffer: cropped.jpegBuffer,
+          width: cropped.width,
+          height: cropped.height,
+        });
+      } catch (error) {
+        if (error instanceof RecognitionServiceError) throw error;
+        const detail = error instanceof Error ? error.message : undefined;
+        throw new RecognitionServiceError(
+          `${candidate.displayName}：無法處理照片${detail ? `（${detail}）` : ""}`,
+          422,
+        );
+      }
     }
   }
   return portraits;

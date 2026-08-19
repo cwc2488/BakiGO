@@ -133,6 +133,7 @@ export interface RecognitionSubmission {
   submitterOrganization: string;
   submittedAt: string;
   createdAt: string;
+  publicEditToken?: string | null;
 }
 
 export interface RecognitionSubmissionEntry {
@@ -146,6 +147,16 @@ export interface RecognitionSubmissionEntry {
   originalPhotoMimeType: string | null;
   originalPhotoSizeBytes: number | null;
   createdAt: string;
+  validationStatus?: RecognitionValidationStatus;
+  validationIssues?: RecognitionValidationIssue[];
+  submitterConfirmedWarnings?: string[];
+  currentPhotoStoragePath?: string | null;
+  currentPhotoMimeType?: string | null;
+  confirmedCrop?: RecognitionNormalizedCrop | null;
+  originalWidth?: number | null;
+  originalHeight?: number | null;
+  adminOverride?: RecognitionAdminOverrideAudit | null;
+  excludedAt?: string | null;
 }
 
 export interface RecognitionSubmissionCreateEntry {
@@ -179,6 +190,8 @@ export interface RecognitionEventSummary extends RecognitionEvent {
   needsFixCount: number;
   rejectedCount: number;
   problemCount: number;
+  pptReadyCount?: number;
+  exceptionCount?: number;
 }
 
 export interface RecognitionCandidateSource {
@@ -262,6 +275,7 @@ export type RecognitionPhotoReviewFlag =
 export type RecognitionPresentationPhotoReadinessState =
   | "not_required"
   | "no_original_photo"
+  | "invalid_photo"
   | "preferred_source_not_selected"
   | "needs_photo_review"
   | "crop_ready"
@@ -323,6 +337,7 @@ export interface RecognitionEventPptReadiness {
   photoRequiredApproved: number;
   readyPhotos: number;
   missingOriginalPhotos: number;
+  invalidPhotos: number;
   missingPreferredPhoto: number;
   missingCrop: number;
   blockedPhotos: number;
@@ -383,4 +398,102 @@ export interface RecognitionPresentationSummary {
   expectedSlideCount: number;
   ready: boolean;
   blockers: RecognitionPresentationPhotoBlocker[];
+}
+
+// ---------------------------------------------------------------------------
+// Self-service validation / Exception Center
+// ---------------------------------------------------------------------------
+
+export type RecognitionValidationStatus =
+  | "PASS"
+  | "WARNING"
+  | "BLOCKED"
+  | "ADMIN_OVERRIDE"
+  | "EXCLUDED";
+
+export type RecognitionValidationIssueSeverity = "warning" | "blocked" | "technical";
+
+export type RecognitionValidationIssueCode =
+  | "missing_name"
+  | "invalid_award"
+  | "missing_photo"
+  | "invalid_photo_ref"
+  | "unsupported_image_format"
+  | "corrupted_image"
+  | "unreadable_image"
+  | "storage_object_missing"
+  | "multi_person"
+  | "low_resolution"
+  | "duplicate_name";
+
+export interface RecognitionValidationIssue {
+  code: RecognitionValidationIssueCode;
+  severity: RecognitionValidationIssueSeverity;
+  message: string;
+  overridable: boolean;
+}
+
+export interface RecognitionAdminOverrideAudit {
+  originalStatus: RecognitionValidationStatus;
+  originalIssues: RecognitionValidationIssue[];
+  overriddenBy: string;
+  overriddenAt: string;
+  reason: string | null;
+}
+
+export interface RecognitionEntryValidationResult {
+  status: RecognitionValidationStatus;
+  issues: RecognitionValidationIssue[];
+  pptReady: boolean;
+  submissionComplete: boolean;
+  hasTechnicalBlocker: boolean;
+  canAdminOverride: boolean;
+  exception: boolean;
+}
+
+export interface RecognitionSubmissionCompletion {
+  complete: boolean;
+  total: number;
+  readyCount: number;
+  blockedCount: number;
+  warningCount: number;
+  excludedCount: number;
+}
+
+export interface RecognitionEventDashboard {
+  eventId: string;
+  eventName: string;
+  year: number;
+  month: number;
+  collectEndsAt: string | null;
+  status: RecognitionEventStatus;
+  totalEntries: number;
+  totalSubmitters: number;
+  passCount: number;
+  warningCount: number;
+  blockedCount: number;
+  adminOverrideCount: number;
+  excludedCount: number;
+  pptReadyCount: number;
+  exceptionCount: number;
+  effectiveAwardCount: number;
+  pptReady: boolean;
+}
+
+export interface RecognitionExceptionItem {
+  entryId: string;
+  submissionId: string;
+  eventAwardId: string;
+  awardName: string;
+  requiresPhoto: boolean;
+  submittedName: string;
+  submitterName: string;
+  validationStatus: RecognitionValidationStatus;
+  issues: RecognitionValidationIssue[];
+  hasTechnicalBlocker: boolean;
+  canAdminOverride: boolean;
+  hasOriginalPhoto: boolean;
+  hasCurrentPhoto: boolean;
+  hasConfirmedCrop: boolean;
+  submittedAt: string;
 }

@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 
+import { recognitionPhotoStatusErrorMessage } from "@/lib/recognition/recognition-photo-url";
 import {
   fetchEventAwards,
   fetchRecognitionEvent,
@@ -11,6 +12,7 @@ import {
   fetchRecognitionEventToken,
   fetchRecognitionRawSubmissions,
   fetchRecognitionTextRoster,
+  fetchRecognitionEventDashboard,
   reorderEventAwards,
   rotateRecognitionEventToken,
   updateEventAward,
@@ -23,6 +25,7 @@ import type {
   RecognitionEventStatus,
   RecognitionPresentationSummary,
   RecognitionRawSubmissionView,
+  RecognitionEventDashboard,
 } from "@/types/recognition";
 import { PageShell } from "@/components/ui/PageShell";
 import { BrandCard } from "@/components/ui/brand-ui";
@@ -248,12 +251,100 @@ function AwardRow({
   );
 }
 
+function EventOpsDashboard({ eventId, eventName }: { eventId: string; eventName: string }) {
+  const [dashboard, setDashboard] = useState<RecognitionEventDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetchRecognitionEventDashboard(eventId)
+      .then(setDashboard)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "無法載入總覽"))
+      .finally(() => setLoading(false));
+  }, [eventId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleGenerate() {
+    setGenerating(true);
+    setGenerateError(null);
+    try {
+      await downloadRecognitionEventPresentation(eventId);
+    } catch (err: unknown) {
+      setGenerateError(recognitionPhotoStatusErrorMessage(err, "無法產生簡報"));
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  const exceptionCount = dashboard?.exceptionCount ?? 0;
+  const canGenerate = Boolean(dashboard && dashboard.pptReady && dashboard.pptReadyCount > 0);
+
+  return (
+    <BrandCard variant="bordered">
+      <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">本場活動</p>
+      <h2 className="mt-1 text-[1.25rem] font-semibold text-[#1d1d1f]">{eventName}</h2>
+      {loading && <p className="mt-3 text-[0.875rem] text-[#86868b]">載入中…</p>}
+      {error && <p className="mt-3 text-[0.875rem] text-[#ff375f]">{error}</p>}
+      {dashboard && (
+        <div className="mt-4 grid grid-cols-2 gap-2 text-center">
+          <div className="rounded-2xl bg-[#f5f5f7] p-3">
+            <p className="text-[1.25rem] font-semibold text-[#1d1d1f]">{dashboard.totalEntries}</p>
+            <p className="text-[0.75rem] text-[#86868b]">人投稿</p>
+          </div>
+          <div className="rounded-2xl bg-[#e8f8ed] p-3">
+            <p className="text-[1.25rem] font-semibold text-[#248a3d]">{dashboard.pptReadyCount}</p>
+            <p className="text-[0.75rem] text-[#248a3d]">可直接產 PPT</p>
+          </div>
+          <div className="rounded-2xl bg-[#fff8e5] p-3">
+            <p className="text-[1.25rem] font-semibold text-[#1d1d1f]">{exceptionCount}</p>
+            <p className="text-[0.75rem] text-[#86868b]">待處理</p>
+          </div>
+          <div className="rounded-2xl bg-[#f5f5f7] p-3">
+            <p className="text-[1.25rem] font-semibold text-[#1d1d1f]">{dashboard.effectiveAwardCount}</p>
+            <p className="text-[0.75rem] text-[#86868b]">有效表揚項目</p>
+          </div>
+        </div>
+      )}
+      {dashboard && (
+        <p className="mt-3 text-[0.8125rem] text-[#86868b]">
+          PASS {dashboard.passCount} · WARNING {dashboard.warningCount} · BLOCKED {dashboard.blockedCount} · OVERRIDE {dashboard.adminOverrideCount} · EXCLUDED {dashboard.excludedCount}
+        </p>
+      )}
+      <div className="mt-4 flex flex-col gap-2">
+        <Link
+          href={`/recognition/events/${eventId}/exceptions`}
+          className="rounded-2xl border border-[var(--brand-border)] px-4 py-3 text-center text-[0.9375rem] font-semibold text-[#1d1d1f]"
+        >
+          {exceptionCount > 0 ? `處理 ${exceptionCount} 筆例外` : "例外處理"}
+        </Link>
+        <button
+          type="button"
+          disabled={!canGenerate || generating}
+          onClick={() => void handleGenerate()}
+          className="rounded-2xl bg-[#1d1d1f] px-4 py-3 text-[0.9375rem] font-semibold text-white disabled:opacity-50"
+        >
+          {generating ? "產生中…" : "產生表揚 PPT"}
+        </button>
+        {generateError && <p className="text-[0.875rem] text-[#ff375f]">{generateError}</p>}
+      </div>
+    </BrandCard>
+  );
+}
+
 function AwardSection({
   eventId,
 }: {
   eventId: string;
 }) {
   const [awards, setAwards] = useState<RecognitionEventAward[]>([]);
+  const [entryCounts, setEntryCounts] = useState<Record<string, number>>({});
+  const [showEmpty, setShowEmpty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -261,8 +352,24 @@ function AwardSection({
   const loadAwards = useCallback(() => {
     setLoading(true);
     setError(null);
-    fetchEventAwards(eventId)
-      .then((data) => { setAwards(data); })
+    Promise.all([
+      fetchEventAwards(eventId),
+      fetchRecognitionRawSubmissions(eventId).catch(() => ({
+        totalSubmissions: 0,
+        totalEntries: 0,
+        submissions: [] as RecognitionRawSubmissionView[],
+      })),
+    ])
+      .then(([data, raw]) => {
+        setAwards(data);
+        const counts: Record<string, number> = {};
+        for (const item of raw.submissions) {
+          for (const entry of item.entries) {
+            counts[entry.eventAwardId] = (counts[entry.eventAwardId] ?? 0) + 1;
+          }
+        }
+        setEntryCounts(counts);
+      })
       .catch((err: unknown) => { setError(err instanceof Error ? err.message : "無法載入表揚項目"); })
       .finally(() => { setLoading(false); });
   }, [eventId]);
@@ -302,13 +409,23 @@ function AwardSection({
     }
   }
 
+  const visibleAwards = showEmpty
+    ? awards
+    : awards.filter((award) => (entryCounts[award.id] ?? 0) > 0);
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <h3 className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">
-          表揚項目 ({awards.filter((a) => a.isEnabled).length} / {awards.length} 啟用)
+          有效表揚項目 ({visibleAwards.length})
         </h3>
-        {saving && <p className="text-[0.8125rem] text-[#86868b]">儲存中…</p>}
+        <button
+          type="button"
+          className="text-[0.75rem] font-medium text-[#86868b]"
+          onClick={() => setShowEmpty((value) => !value)}
+        >
+          {showEmpty ? "隱藏無人項目" : "顯示無人投稿項目"}
+        </button>
       </div>
 
       {loading && <p className="text-[0.9375rem] text-[#86868b]">載入中…</p>}
@@ -317,7 +434,9 @@ function AwardSection({
         <p className="text-[0.9375rem] text-[#ff375f]">{error}</p>
       )}
 
-      {!loading && !error && awards.map((award, index) => (
+      {!loading && !error && visibleAwards.map((award) => {
+        const index = awards.findIndex((item) => item.id === award.id);
+        return (
         <AwardRow
           key={award.id}
           award={award}
@@ -327,7 +446,8 @@ function AwardSection({
           onMoveUp={() => void handleMove(index, "up")}
           onMoveDown={() => void handleMove(index, "down")}
         />
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -438,13 +558,19 @@ export function RecognitionEventPage({ eventId }: { eventId: string }) {
       backHref="/recognition"
       backLabel="返回表揚中心"
     >
+      <EventOpsDashboard eventId={event.id} eventName={event.name} />
       <EventInfoSection event={event} onUpdated={setEvent} />
-      <DeleteEventSection event={event} />
       <PublicCollectionSection eventId={event.id} />
       <AwardSection eventId={event.id} />
-      <ReviewAndRosterSection eventId={event.id} eventName={event.name} />
-      <PhotoReviewAndPptSection eventId={event.id} />
-      <RawSubmissionsSection eventId={event.id} />
+      <details className="rounded-[1.5rem] border border-[var(--brand-border)] bg-white p-4">
+        <summary className="cursor-pointer text-[0.9375rem] font-semibold text-[#1d1d1f]">詳細資料</summary>
+        <div className="mt-4 flex flex-col gap-4">
+          <ReviewAndRosterSection eventId={event.id} eventName={event.name} />
+          <PhotoReviewAndPptSection eventId={event.id} />
+          <RawSubmissionsSection eventId={event.id} />
+          <DeleteEventSection event={event} />
+        </div>
+      </details>
     </PageShell>
   );
 }
@@ -495,7 +621,7 @@ function PublicCollectionSection({ eventId }: { eventId: string }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#86868b]">公開收件連結</p>
-          <p className="mt-1 text-[0.875rem] text-[#86868b]">Recognition Admin 可分享這個連結給各組織提交表揚名單。</p>
+          <p className="mt-1 text-[0.875rem] text-[#86868b]">Recognition Admin 可分享這個連結給投稿者。</p>
         </div>
         <button
           type="button"
@@ -579,8 +705,7 @@ function RawSubmissionsSection({ eventId }: { eventId: string }) {
             <div key={submission.id} className="rounded-2xl bg-[#f5f5f7] p-4">
               <div className="flex flex-col gap-1">
                 <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">{submission.submitterName}</p>
-                <p className="text-[0.8125rem] text-[#86868b]">{submission.submitterOrganization}</p>
-                <p className="text-[0.75rem] text-[#86868b]">{new Date(submission.submittedAt).toLocaleString("zh-TW")}</p>
+                <p className="text-[0.8125rem] text-[#86868b]">{new Date(submission.submittedAt).toLocaleString("zh-TW")}</p>
               </div>
               <div className="mt-3 flex flex-col gap-2">
                 {entries.map((entry) => (
@@ -675,16 +800,25 @@ function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([
+    void Promise.allSettled([
       fetchRecognitionEventPptReadiness(eventId),
       fetchRecognitionPresentationSummary(eventId),
-    ])
-      .then(([nextReadiness, nextSummary]) => {
-        setReadiness(nextReadiness);
-        setSummary(nextSummary);
-      })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "無法載入 PPT 準備狀態"))
-      .finally(() => setLoading(false));
+    ]).then(([readinessResult, summaryResult]) => {
+      const failures: string[] = [];
+      if (readinessResult.status === "fulfilled") {
+        setReadiness(readinessResult.value);
+      } else {
+        setReadiness(null);
+        failures.push(recognitionPhotoStatusErrorMessage(readinessResult.reason));
+      }
+      if (summaryResult.status === "fulfilled") {
+        setSummary(summaryResult.value);
+      } else {
+        setSummary(null);
+        failures.push(recognitionPhotoStatusErrorMessage(summaryResult.reason));
+      }
+      setError(failures.length > 0 ? [...new Set(failures)].join("\n") : null);
+    }).finally(() => setLoading(false));
   }, [eventId]);
 
   useEffect(() => {
@@ -701,7 +835,7 @@ function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
     try {
       await downloadRecognitionEventPresentation(eventId);
     } catch (err: unknown) {
-      setGenerateError(err instanceof Error ? err.message : "無法產生簡報");
+      setGenerateError(recognitionPhotoStatusErrorMessage(err, "無法產生簡報"));
     } finally {
       setGenerating(false);
     }
@@ -734,6 +868,7 @@ function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
             <p>需要照片：{readiness.photoRequiredApproved}</p>
             <p>照片已完成：{readiness.readyPhotos}</p>
             <p>缺少原圖：{readiness.missingOriginalPhotos}</p>
+            <p>照片無效：{readiness.invalidPhotos}</p>
             <p>尚未選照片：{readiness.missingPreferredPhoto}</p>
             <p>尚未裁切：{readiness.missingCrop}</p>
             <p>照片有問題：{readiness.blockedPhotos}</p>
@@ -744,12 +879,23 @@ function PhotoReviewAndPptSection({ eventId }: { eventId: string }) {
                 <p>預估投影片：{summary.expectedSlideCount}</p>
               </>
             )}
+            {(summary?.blockers.length ?? 0) > 0 && (
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-[0.8125rem] text-[#ff375f]">
+                {summary?.blockers.map((blocker) => (
+                  <li key={blocker.candidateId}>
+                    {blocker.displayName}：{blocker.reason}
+                  </li>
+                ))}
+              </ul>
+            )}
             <p className="pt-1 font-medium">
               {pending > 0
                 ? `尚有 ${pending} 個問題需要處理`
                 : summary && summary.expectedSlideCount === 0
                   ? "尚無已核准名單"
-                  : "照片準備完成"}
+                  : summary?.ready
+                    ? "照片準備完成"
+                    : "尚未完成審核"}
             </p>
           </div>
         )}

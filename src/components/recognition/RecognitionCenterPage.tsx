@@ -55,10 +55,10 @@ function EventCard({ event }: { event: RecognitionEventSummary }) {
         </div>
         <div className="mt-3 flex flex-wrap gap-2 text-[0.75rem]">
           <span className="rounded-full bg-[#e8f8ed] px-2.5 py-1 font-medium text-[#248a3d]">
-            已核准 {event.approvedCount}
+            可產 PPT {event.pptReadyCount ?? event.approvedCount}
           </span>
           <span className="rounded-full bg-[#f5f5f7] px-2.5 py-1 font-medium text-[#1d1d1f]">
-            待處理 {event.problemCount}
+            例外 {event.exceptionCount ?? event.problemCount}
           </span>
         </div>
       </BrandCard>
@@ -98,7 +98,7 @@ export function RecognitionCenterPage() {
   });
 
   return (
-    <PageShell title="表揚中心" subtitle="管理表揚活動、審核名單、準備簡報" backHref="/admin" backLabel="返回管理中心">
+    <PageShell title="表揚中心" subtitle="建立活動、分享投稿入口、處理例外、產生表揚 PPT" backHref="/admin" backLabel="返回管理中心">
       <div className="flex justify-end">
         <Link
           href="/recognition/events/new"

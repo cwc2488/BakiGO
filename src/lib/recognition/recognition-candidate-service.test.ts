@@ -374,8 +374,10 @@ describe("Recognition candidate service photo-review ownership", () => {
     expect(fn).toContain("getRecognitionCandidate");
     expect(fn).toContain("submissionEntryId === input.sourceEntryId");
     expect(fn).toContain("originalPhotoStoragePath");
-    expect(fn).toContain(".from(\"recognition-photos\")");
+    expect(fn).toContain("parseRecognitionPhotoRef");
+    expect(fn).toContain(".from(RECOGNITION_PHOTOS_BUCKET)");
     expect(fn).toContain(".download(");
+    expect(fn).toContain("recognitionNamedPhotoError");
     expect(fn).not.toContain("getPublicUrl");
     expect(fn).not.toContain("createSignedUrl");
   });

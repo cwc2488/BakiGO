@@ -1,3 +1,4 @@
+import { parseRecognitionPhotoRef } from "@/lib/recognition/recognition-photo-url";
 import { compareRecognitionCandidateOrder } from "@/lib/recognition/recognition-candidates";
 import {
   cropMatchesPreferredSource,
@@ -71,11 +72,14 @@ function presentationPhotoForCandidate(input: {
     return null;
   }
   const source = input.candidate.sources.find((item) => item.submissionEntryId === preferredSourceEntryId);
-  if (!source?.originalPhotoStoragePath) return null;
+  const parsed = parseRecognitionPhotoRef(source?.originalPhotoStoragePath);
+  if (!parsed.ok || parsed.kind === "blob-url") return null;
+  const storagePath = parsed.kind === "storage-path" ? parsed.storagePath : source?.originalPhotoStoragePath;
+  if (!storagePath) return null;
   return {
     sourceEntryId: preferredSourceEntryId,
-    storagePath: source.originalPhotoStoragePath,
-    mimeType: source.originalPhotoMimeType || "application/octet-stream",
+    storagePath,
+    mimeType: source?.originalPhotoMimeType || "application/octet-stream",
     originalWidth: input.review.originalWidth ?? null,
     originalHeight: input.review.originalHeight ?? null,
     crop: input.review.crop,
@@ -180,6 +184,7 @@ export function presentationCandidateIsPhotoReady(candidate: RecognitionPresenta
     requiresPhoto: candidate.requiresPhoto,
     reviewStatus: "approved",
     hasOriginalPhoto: Boolean(candidate.photo?.storagePath),
+    originalPhotoStoragePath: candidate.photo?.storagePath ?? null,
     preferredSourceEntryId: candidate.photo?.sourceEntryId ?? null,
     preferredSourceBelongsToCandidate: Boolean(candidate.photo),
     preferredSourceHasOriginalPhoto: Boolean(candidate.photo?.storagePath),

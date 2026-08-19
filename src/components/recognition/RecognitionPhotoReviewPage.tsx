@@ -40,6 +40,7 @@ const FILTERS: Array<{ id: RecognitionPhotoReviewQueueFilter; label: string }> =
 const STATE_LABELS: Record<RecognitionPresentationPhotoReadinessState, string> = {
   not_required: "不需照片",
   no_original_photo: "缺少原圖",
+  invalid_photo: "缺少有效照片",
   preferred_source_not_selected: "尚未選擇正式照片",
   needs_photo_review: "需要照片審查",
   crop_ready: "裁切完成",
@@ -153,6 +154,7 @@ export function RecognitionPhotoReviewPage({ eventId }: { eventId: string }) {
   const pendingCount = allItems.filter((item) => (
     item.validation.readinessState === "needs_photo_review"
     || item.validation.readinessState === "no_original_photo"
+    || item.validation.readinessState === "invalid_photo"
     || item.validation.readinessState === "preferred_source_not_selected"
     || item.validation.readinessState === "photo_blocked"
   )).length;

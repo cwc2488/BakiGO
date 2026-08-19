@@ -9,6 +9,7 @@ import {
   generateRecognitionPresentationPptx,
   getRecognitionPresentationSummary,
 } from "@/lib/recognition/recognition-presentation-service";
+import { isRecognitionUrlPatternError } from "@/lib/recognition/recognition-photo-url";
 import { recognitionPresentationAsciiFallbackFilename } from "@/lib/recognition/recognition-presentation-filename";
 
 export const runtime = "nodejs";
@@ -39,7 +40,9 @@ export async function GET(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load presentation summary.";
     const status = error instanceof RecognitionServiceError ? error.status : 500;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({
+      error: isRecognitionUrlPatternError(error) ? "缺少有效照片" : message,
+    }, { status });
   }
 }
 
@@ -72,6 +75,8 @@ export async function POST(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to generate presentation.";
     const status = error instanceof RecognitionServiceError ? error.status : 500;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({
+      error: isRecognitionUrlPatternError(error) ? "缺少有效照片" : message,
+    }, { status });
   }
 }

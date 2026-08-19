@@ -181,6 +181,22 @@ export async function fetchRecognitionPublicEvent(token: string): Promise<Recogn
 export async function submitRecognitionPublicForm(token: string, formData: FormData): Promise<{
   submissionId: string;
   message: string;
+  editToken?: string;
+  completion?: {
+    complete: boolean;
+    total: number;
+    readyCount: number;
+    blockedCount: number;
+    warningCount: number;
+  };
+  entries?: Array<{
+    entryId: string;
+    submittedName: string;
+    awardName: string;
+    status: string;
+    issues: Array<{ code: string; message: string }>;
+    pptReady: boolean;
+  }>;
 }> {
   const res = await fetch(`/api/recognition/public/${encodeURIComponent(token)}/submissions`, {
     method: "POST",
@@ -340,4 +356,35 @@ export async function updateRecognitionCandidatePhotoReview(
   });
   const body = await handleResponse<{ item: RecognitionPhotoReviewQueueItem }>(res, "Failed to update photo review.");
   return body.item;
+}
+
+export async function fetchRecognitionEventDashboard(eventId: string) {
+  const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}/dashboard`);
+  const body = await handleResponse<{ dashboard: import("@/types/recognition").RecognitionEventDashboard }>(
+    res,
+    "Failed to load dashboard.",
+  );
+  return body.dashboard;
+}
+
+export async function fetchRecognitionExceptions(eventId: string) {
+  const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}/exceptions`);
+  const body = await handleResponse<{ items: import("@/types/recognition").RecognitionExceptionItem[] }>(
+    res,
+    "Failed to load exceptions.",
+  );
+  return body.items;
+}
+
+export async function postRecognitionExceptionAction(
+  eventId: string,
+  entryId: string,
+  action: "override" | "exclude",
+  reason?: string,
+) {
+  const res = await fetchWithMemberAuth(`/api/recognition/events/${eventId}/exceptions/${entryId}`, {
+    method: "POST",
+    body: JSON.stringify({ action, reason }),
+  });
+  return handleResponse<{ status: string }>(res, "Failed to update exception.");
 }

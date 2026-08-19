@@ -1,3 +1,4 @@
+import { parseRecognitionPhotoRef } from "@/lib/recognition/recognition-photo-url";
 import type {
   RecognitionEventPptReadiness,
   RecognitionNormalizedCrop,
@@ -62,6 +63,7 @@ export const RECOGNITION_PREFERRED_SOURCE_CHANGED_ERROR =
 
 export const RECOGNITION_STRUCTURAL_PHOTO_BLOCKERS = {
   noOriginalPhoto: "缺少需要的原始照片",
+  invalidPhoto: "缺少有效照片",
   preferredNotSelected: "尚未選擇正式使用的照片",
   preferredMissingPhoto: "正式照片來源沒有原始照片",
   preferredNotInEvidence: "正式照片來源不屬於此候選人",
@@ -220,6 +222,7 @@ export type RecognitionPresentationPhotoInput = {
   requiresPhoto: boolean;
   reviewStatus?: RecognitionReviewStatus;
   hasOriginalPhoto: boolean;
+  originalPhotoStoragePath?: string | null;
   preferredSourceEntryId: string | null | undefined;
   preferredSourceBelongsToCandidate?: boolean;
   preferredSourceHasOriginalPhoto?: boolean;
@@ -234,11 +237,19 @@ export type RecognitionPresentationPhotoInput = {
   } | null;
 };
 
+function recognitionPhotoRefIsInvalid(input: RecognitionPresentationPhotoInput): boolean {
+  if (input.originalPhotoStoragePath === undefined) return false;
+  const parsed = parseRecognitionPhotoRef(input.originalPhotoStoragePath);
+  const present = input.originalPhotoStoragePath != null && String(input.originalPhotoStoragePath).trim() !== "";
+  return present && !parsed.ok;
+}
+
 export function recognitionPresentationPhotoReadinessState(
   input: RecognitionPresentationPhotoInput,
 ): RecognitionPresentationPhotoReadinessState {
   if (!input.requiresPhoto) return "not_required";
   if (input.photoReview?.isBlocked) return "photo_blocked";
+  if (recognitionPhotoRefIsInvalid(input)) return "invalid_photo";
   if (!input.hasOriginalPhoto) return "no_original_photo";
   if (!input.preferredSourceEntryId) return "preferred_source_not_selected";
   if (input.preferredSourceBelongsToCandidate === false) return "preferred_source_not_selected";
@@ -263,6 +274,8 @@ export function recognitionPresentationPhotoBlockers(
       return input.preferredSourceEntryId && input.preferredSourceHasOriginalPhoto === false
         ? [RECOGNITION_STRUCTURAL_PHOTO_BLOCKERS.preferredMissingPhoto]
         : [RECOGNITION_STRUCTURAL_PHOTO_BLOCKERS.noOriginalPhoto];
+    case "invalid_photo":
+      return [RECOGNITION_STRUCTURAL_PHOTO_BLOCKERS.invalidPhoto];
     case "preferred_source_not_selected":
       return input.preferredSourceBelongsToCandidate === false
         ? [RECOGNITION_STRUCTURAL_PHOTO_BLOCKERS.preferredNotInEvidence]
@@ -420,7 +433,7 @@ export function matchesRecognitionPhotoReviewQueueFilter(input: {
     case "blocked":
       return input.readinessState === "photo_blocked";
     case "missing-photo":
-      return input.readinessState === "no_original_photo";
+      return input.readinessState === "no_original_photo" || input.readinessState === "invalid_photo";
     case "no-preferred-photo":
       return input.readinessState === "preferred_source_not_selected";
     default:
@@ -434,6 +447,7 @@ export function nextRecognitionPhotoReviewCandidateId(input: {
 }): string | null {
   const actionable = new Set<RecognitionPresentationPhotoReadinessState>([
     "no_original_photo",
+    "invalid_photo",
     "preferred_source_not_selected",
     "needs_photo_review",
     "photo_blocked",
@@ -456,6 +470,7 @@ export function buildRecognitionEventPptReadiness(input: {
     reviewStatus: RecognitionReviewStatus;
     requiresPhoto: boolean;
     hasOriginalPhoto: boolean;
+    originalPhotoStoragePath?: string | null;
     preferredSourceEntryId: string | null;
     preferredSourceBelongsToCandidate?: boolean;
     preferredSourceHasOriginalPhoto?: boolean;
@@ -466,6 +481,7 @@ export function buildRecognitionEventPptReadiness(input: {
   const photoRequired = approved.filter((candidate) => candidate.requiresPhoto);
   let readyPhotos = 0;
   let missingOriginalPhotos = 0;
+  let invalidPhotos = 0;
   let missingPreferredPhoto = 0;
   let missingCrop = 0;
   let blockedPhotos = 0;
@@ -478,6 +494,9 @@ export function buildRecognitionEventPptReadiness(input: {
         break;
       case "no_original_photo":
         missingOriginalPhotos += 1;
+        break;
+      case "invalid_photo":
+        invalidPhotos += 1;
         break;
       case "preferred_source_not_selected":
         missingPreferredPhoto += 1;
@@ -498,10 +517,11 @@ export function buildRecognitionEventPptReadiness(input: {
     photoRequiredApproved: photoRequired.length,
     readyPhotos,
     missingOriginalPhotos,
+    invalidPhotos,
     missingPreferredPhoto,
     missingCrop,
     blockedPhotos,
-    totalBlockingIssues: missingOriginalPhotos + missingPreferredPhoto + missingCrop + blockedPhotos,
+    totalBlockingIssues: missingOriginalPhotos + invalidPhotos + missingPreferredPhoto + missingCrop + blockedPhotos,
   };
 }
 

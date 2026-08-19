@@ -200,4 +200,16 @@ describe("Recognition public domain", () => {
     expect(migration).not.toContain("recognition_candidates");
     expect(migration).not.toContain("approved");
   });
+
+  it("public collection UX does not require organization", () => {
+    const page = readFileSync(
+      resolve(process.cwd(), "src/components/recognition/RecognitionPublicCollectionPage.tsx"),
+      "utf8",
+    );
+    expect(page).not.toContain("組織 / 團隊名稱");
+    expect(page).not.toContain("A 組");
+    expect(page).toContain("PresentationCropEditor");
+    expect(page).toContain("投稿尚未完成");
+    expect(page).toContain("保持原照片");
+  });
 });

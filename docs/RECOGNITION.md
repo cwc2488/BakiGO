@@ -11,7 +11,7 @@ Recognition Center（表揚中心）是 Baki GO 的**組織營運模組**，專�
 - 審核與歷史查詢
 - 4:3 表揚簡報資料準備
 
-Recognition Center 的目標是降低重複行政成本，同時保留完整來源、審核痕跡與未來模板化能力。
+Recognition Center 的目標是讓投稿者把資料整理到可直接進 PPT，系統即時驗證並 AUTO PASS，Super Admin 只處理剩餘 exception，最後一鍵產生表揚簡報。
 
 > Recognition Center 只處理「固定、重複性的表揚工作」。
 
@@ -100,12 +100,12 @@ Submission 內的單一被提報人項目。每一個姓名 / 照片組合都是
 
 ## Product principles specific to Recognition Center
 
-1. **Submission is evidence, not approval.**
-2. **Approved recipients only** can enter the formal PPT data set.
-3. **Raw submissions and raw entries are retained.** Do not silently delete evidence.
+1. **Submitter makes the row PPT-ready.** The system validates live and AUTO PASSes complete rows.
+2. **Super Admin does not review normal PASS rows.** Admin workload is Exception Center only.
+3. **Raw submissions and raw entries are retained.** Do not silently delete evidence. `EXCLUDED` keeps audit.
 4. **Theme and roster data are separate.**
-5. **No blank award slides.** Awards with zero approved recipients are omitted.
-6. **Public form stays simple.** Photo anomalies go to admin review.
+5. **No blank award slides.** Awards with zero valid recipients are omitted and hidden from the primary admin view.
+6. **Public form has no organization field.** Crop, photo confirmation, and fix loops happen on the submitter device.
 7. **Recognition admin is the unique Super Admin, not inferred from rank.**
 
 ## Recognition Admin permission model
@@ -266,26 +266,31 @@ With a valid public link, a submitter may:
 - batch input multiple name-only recipients
 - for photo awards, submit name + photo
 - provide submitter name
-- provide submitter organization information (free text in V1)
+- crop / confirm photos when the award requires a photo
+- fix BLOCKED issues immediately
 - submit
+
+Organization / 組別 is **not** collected.
 
 ### Public submission evidence rule
 
-Public submissions must **never** become official PPT data automatically.
+Public submissions remain raw evidence and are never hard-deleted.
 
-They are evidence that enters review flow:
+Complete rows that pass hard rules **AUTO PASS** and may enter PPT without per-row admin approval:
 
-`public submission` → `raw submission / entries` → `candidate consolidation` → `admin review` → `approved recipients` → `presentation plan`
+`public submission` → `live validation` → `submitter self-fix` → `AUTO PASS` → `presentation plan`
+
+Admin review is **Exception Center only** (post-deadline BLOCKED, technical impossibility, override / exclude).
 
 ### Public simplicity rule
 
-The public form must stay simple in V1:
+The public form must stay simple:
 
-- public submitters do **not** perform manual crop confirmation
-- public submitters do **not** resolve duplicates
+- no organization / A組 / B組 fields
+- public submitters crop and confirm their own photos
 - public submitters do **not** need to map to the Baki GO org tree
-
-Photo anomalies and group-photo issues go to admin review.
+- multi-person photos are WARNING only; submitter may keep the photo for couples / co-recipients
+- Email is **not** the primary correction loop; fix happens in the same session / before deadline
 
 ## Duplicate / consolidation rules
 
@@ -324,20 +329,24 @@ When the same normalized name appears across different awards:
 
 This warning exists to help admins review potential confusion, not to enforce a product rule that one person may appear only once.
 
-## Review states
+## Validation states
 
-Recognition candidates support these review states:
+Each submission entry has a validation status:
 
-- `pending` — waiting for review
-- `approved` — allowed to enter formal presentation data
-- `needs_fix` — data/photo needs correction
-- `rejected` — not used
+- `PASS` — complete; AUTO PASS into PPT
+- `WARNING` — noteworthy but technically PPT-capable; does not block submitter completion
+- `BLOCKED` — cannot reliably generate PPT; submitter must fix before completion
+- `ADMIN_OVERRIDE` — Super Admin forced through after explicit confirm; PPT-usable
+- `EXCLUDED` — omitted from this event's PPT; audit retained
+
+Candidate `review_status` (`pending` / `approved` / `needs_fix` / `rejected`) remains an internal consolidation field. AUTO PASS sets the matching candidate to `approved` so the existing PPT pipeline can read it. `EXCLUDED` entries do not stay approved.
 
 Rules:
 
-- only `approved` can enter PPT
-- `pending` / `needs_fix` are incomplete review states
-- `rejected` does not delete evidence
+- PPT may use `PASS`, `ADMIN_OVERRIDE`, and confirmed `WARNING` with no technical blocker
+- PPT excludes `EXCLUDED`
+- PPT is blocked by technical `BLOCKED`
+- normal `PASS` is not an admin todo
 
 ## Photo rules
 
@@ -369,18 +378,21 @@ This crop exists for display / PPT quality control and is separate from the orig
 
 ### Multi-person photo rule
 
-If a photo contains multiple possible people:
+If a photo may contain multiple people (conservative heuristic, e.g. landscape; **not** face identity):
 
 - AI must **never** choose the honoree
-- the record must go to admin review
+- the result is **WARNING only**, never automatic BLOCK / 退件
+- copy must allow couples / co-recipients to keep the photo
+- after the submitter confirms 「保持原照片」, the same multi-person warning no longer blocks completion and does not create Admin review work
 
 ### Public photo workflow rule
 
-Public V1 flow stays simple:
+Public flow:
 
-- no required manual crop confirmation in the public form
-- anomalies and group photos go to admin review
-- clear, normal photos may pass into review with minimal friction
+- submitter uploads, crops (3:4 portrait matching PPT card), previews, replaces, and recrops
+- current confirmed image/crop is the PPT authoritative version
+- anomalies that are technically PPT-capable stay WARNING
+- technical impossibility stays BLOCKED until the submitter fixes it or Admin excludes the row
 
 ## Public security model
 
@@ -515,7 +527,7 @@ Both RPCs are `SECURITY DEFINER`, with `EXECUTE` revoked from `PUBLIC`, `anon`, 
 
 RLS enabled on all tables. Zero anon policies. Zero broad authenticated policies.
 
-**These migrations are not applied by Vercel deploys.** Apply 035–044 in order via Supabase SQL Editor (`docs/SUPABASE_SETUP.md`) before opening Recognition Center.
+**These migrations are not applied by Vercel deploys.** Apply 035–045 in order via Supabase SQL Editor (`docs/SUPABASE_SETUP.md`) before opening Recognition Center. Self-service validation / Exception Center requires `045_recognition_self_service_validation.sql`.
 
 ### API routes
 
@@ -879,7 +891,9 @@ Public users cannot list candidates, read the approved roster, or fetch private 
 
 ### UI
 
-- Recognition Center home: year/month filter, approved count, pending/problem count
+- Recognition Center home: year/month filter, PPT-ready count, exception count
+- Event page: summary dashboard, Exception Center, generate PPT
+- `/recognition/events/[eventId]/exceptions`: post-deadline BLOCKED, safe override, exclude
 - Event page: Review Center entry + 複製文字版
 - `/recognition/events/[eventId]/review`: sync, filters, review actions, source evidence, preferred photo, reorder
 

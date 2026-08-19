@@ -8,6 +8,7 @@ import type { RecognitionReviewStatus } from "@/types/recognition";
 
 export const RECOGNITION_PRESENTATION_BLOCKER_LABELS = {
   noOriginalPhoto: "尚未提供原始照片",
+  invalidPhoto: "缺少有效照片",
   preferredNotSelected: "尚未選擇正式照片",
   noCrop: "尚未裁切",
   cropSourceMismatch: "裁切對應的照片已變更，請重新裁切",
@@ -26,6 +27,8 @@ export function recognitionPresentationBlockerReason(
       return null;
     case "no_original_photo":
       return RECOGNITION_PRESENTATION_BLOCKER_LABELS.noOriginalPhoto;
+    case "invalid_photo":
+      return RECOGNITION_PRESENTATION_BLOCKER_LABELS.invalidPhoto;
     case "preferred_source_not_selected":
       return RECOGNITION_PRESENTATION_BLOCKER_LABELS.preferredNotSelected;
     case "photo_blocked":
@@ -57,6 +60,7 @@ export function listRecognitionPresentationPhotoBlockers(input: {
     reviewStatus: RecognitionReviewStatus;
     requiresPhoto: boolean;
     hasOriginalPhoto: boolean;
+    originalPhotoStoragePath?: string | null;
     preferredSourceEntryId: string | null;
     preferredSourceBelongsToCandidate?: boolean;
     preferredSourceHasOriginalPhoto?: boolean;

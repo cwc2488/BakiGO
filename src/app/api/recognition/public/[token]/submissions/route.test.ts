@@ -32,6 +32,15 @@ vi.mock("@/lib/recognition/recognition-service", () => ({
   },
   prepareRecognitionPublicSubmissionContext: prepareRecognitionPublicSubmissionContextMock,
   finalizeRecognitionPublicSubmission: finalizeRecognitionPublicSubmissionMock,
+  attachRecognitionPublicEditToken: vi.fn().mockResolvedValue("edit-token"),
+}));
+
+vi.mock("@/lib/recognition/recognition-validation-service", () => ({
+  applyRecognitionSubmissionSelfService: vi.fn().mockResolvedValue({
+    entries: [],
+    completion: { complete: true, total: 1, readyCount: 1, blockedCount: 0, warningCount: 0, excludedCount: 0 },
+  }),
+  inspectRecognitionImageBuffer: vi.fn(),
 }));
 
 vi.mock("@/lib/recognition/recognition-public-rate-limit", () => ({

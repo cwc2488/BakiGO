@@ -131,6 +131,7 @@ type SubmissionRow = {
   submitter_organization: string;
   submitted_at: string;
   created_at: string;
+  public_edit_token?: string | null;
 };
 
 type SubmissionEntryRow = {
@@ -144,6 +145,11 @@ type SubmissionEntryRow = {
   original_photo_mime_type: string | null;
   original_photo_size_bytes: number | null;
   created_at: string;
+  validation_status?: string | null;
+  current_photo_storage_path?: string | null;
+  confirmed_crop?: unknown;
+  original_width?: number | null;
+  original_height?: number | null;
   recognition_event_awards?: {
     recognition_award_definitions?: AwardDefinitionRow | null;
   } | null;
@@ -210,6 +216,7 @@ function mapSubmission(row: SubmissionRow): RecognitionSubmission {
     submitterOrganization: row.submitter_organization,
     submittedAt: row.submitted_at,
     createdAt: row.created_at,
+    publicEditToken: row.public_edit_token ?? null,
   };
 }
 
@@ -225,6 +232,11 @@ function mapSubmissionEntry(row: SubmissionEntryRow): RecognitionSubmissionEntry
     originalPhotoMimeType: row.original_photo_mime_type,
     originalPhotoSizeBytes: row.original_photo_size_bytes,
     createdAt: row.created_at,
+    validationStatus: (row.validation_status as RecognitionSubmissionEntry["validationStatus"]) ?? undefined,
+    currentPhotoStoragePath: row.current_photo_storage_path ?? null,
+    confirmedCrop: (row.confirmed_crop as RecognitionSubmissionEntry["confirmedCrop"]) ?? null,
+    originalWidth: row.original_width ?? null,
+    originalHeight: row.original_height ?? null,
   };
 }
 
@@ -314,6 +326,29 @@ export async function listRecognitionEventSummaries(filter?: {
     throw new RecognitionServiceError(error.message, 500);
   }
 
+  const { data: validationData } = await supabase
+    .from("recognition_submission_entries")
+    .select("event_id, validation_status")
+    .in("event_id", events.map((event) => event.id));
+
+  const validationCounts = new Map<string, { pptReady: number; blocked: number }>();
+  for (const event of events) {
+    validationCounts.set(event.id, { pptReady: 0, blocked: 0 });
+  }
+  for (const row of validationData ?? []) {
+    const typed = row as { event_id: string; validation_status: string | null };
+    const bucket = validationCounts.get(typed.event_id);
+    if (!bucket) continue;
+    if (typed.validation_status === "BLOCKED") bucket.blocked += 1;
+    if (
+      typed.validation_status === "PASS"
+      || typed.validation_status === "WARNING"
+      || typed.validation_status === "ADMIN_OVERRIDE"
+    ) {
+      bucket.pptReady += 1;
+    }
+  }
+
   const counts = new Map<string, { approved: number; pending: number; needsFix: number; rejected: number }>();
   for (const event of events) {
     counts.set(event.id, { approved: 0, pending: 0, needsFix: 0, rejected: 0 });
@@ -330,13 +365,16 @@ export async function listRecognitionEventSummaries(filter?: {
 
   return events.map((event) => {
     const bucket = counts.get(event.id) ?? { approved: 0, pending: 0, needsFix: 0, rejected: 0 };
+    const validation = validationCounts.get(event.id) ?? { pptReady: 0, blocked: 0 };
     return {
       ...event,
       approvedCount: bucket.approved,
       pendingCount: bucket.pending,
       needsFixCount: bucket.needsFix,
       rejectedCount: bucket.rejected,
-      problemCount: bucket.pending + bucket.needsFix,
+      problemCount: validation.blocked || (bucket.pending + bucket.needsFix),
+      pptReadyCount: validation.pptReady || bucket.approved,
+      exceptionCount: validation.blocked,
     };
   });
 }
@@ -602,12 +640,15 @@ export async function prepareRecognitionPublicSubmissionContext(input: {
   );
   if (nameError) throw new RecognitionServiceError(nameError, 400);
 
-  const orgError = validateRecognitionPublicTextField(
-    input.submitterOrganization,
-    120,
-    "組織名稱",
-  );
-  if (orgError) throw new RecognitionServiceError(orgError, 400);
+  const orgValue = input.submitterOrganization?.trim() ?? "";
+  if (orgValue) {
+    const orgError = validateRecognitionPublicTextField(
+      orgValue,
+      120,
+      "組織名稱",
+    );
+    if (orgError) throw new RecognitionServiceError(orgError, 400);
+  }
 
   const submissionError = validateRecognitionPublicSubmissionAgainstAwards({
     entries: input.entries.map((entry) => ({
@@ -637,7 +678,7 @@ export async function finalizeRecognitionPublicSubmission(input: {
     p_submission_id: input.submissionId,
     p_event_id: input.eventId,
     p_submitter_name: input.submitterName.trim(),
-    p_submitter_organization: input.submitterOrganization.trim(),
+    p_submitter_organization: (input.submitterOrganization ?? "").trim(),
     p_submitted_at: new Date().toISOString(),
     p_source_context_json: input.sourceContext,
     p_entries: toRecognitionSubmissionRpcEntries(input.entries),
@@ -647,6 +688,52 @@ export async function finalizeRecognitionPublicSubmission(input: {
     throw new RecognitionServiceError(error?.message ?? "Failed to save submission.", 500);
   }
   return mapSubmission(data as SubmissionRow);
+}
+
+export async function attachRecognitionPublicEditToken(submissionId: string): Promise<string> {
+  const token = generateRecognitionPublicToken();
+  const supabase = createSupabaseServiceClient();
+  const { error } = await supabase
+    .from("recognition_submissions")
+    .update({
+      public_edit_token: token,
+      public_edit_token_hash: hashRecognitionPublicToken(token),
+    })
+    .eq("id", submissionId);
+  if (error) {
+    throw new RecognitionServiceError(error.message, 500);
+  }
+  return token;
+}
+
+export async function getRecognitionPublicSubmissionByEditToken(input: {
+  eventId: string;
+  editToken: string;
+}): Promise<{ submission: RecognitionSubmission; entries: RecognitionSubmissionEntry[] } | null> {
+  const hash = hashRecognitionPublicToken(input.editToken);
+  const supabase = createSupabaseServiceClient();
+  const { data, error } = await supabase
+    .from("recognition_submissions")
+    .select("*")
+    .eq("event_id", input.eventId)
+    .eq("public_edit_token_hash", hash)
+    .maybeSingle();
+  if (error) throw new RecognitionServiceError(error.message, 500);
+  if (!data) return null;
+  const submission = mapSubmission({
+    ...(data as SubmissionRow),
+    public_edit_token: input.editToken,
+  });
+  const { data: entryData, error: entryError } = await supabase
+    .from("recognition_submission_entries")
+    .select("*")
+    .eq("submission_id", submission.id)
+    .order("created_at", { ascending: true });
+  if (entryError) throw new RecognitionServiceError(entryError.message, 500);
+  return {
+    submission,
+    entries: ((entryData ?? []) as SubmissionEntryRow[]).map(mapSubmissionEntry),
+  };
 }
 
 export async function listRecognitionRawSubmissions(eventId: string): Promise<RecognitionRawSubmissionView[]> {
