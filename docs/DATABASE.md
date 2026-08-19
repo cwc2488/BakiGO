@@ -46,6 +46,32 @@ Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `oc
 | `quiz_results` | Scored outcomes |
 | `quiz_ai_followups` | Rule-based follow-up messages |
 
+### Quiz V2 (Production schema — no repo migration in this restore)
+
+Production Supabase (`baki-go` / `ubdrkrvyyrqdvlehzhsz`) already contains the Quiz V2 core schema from the 8/18 dirty deploy. This restore branch adds application code only; it does **not** ship a new numbered migration. Recognition occupies repo migration numbers 035–045.
+
+| Table | Purpose |
+|-------|---------|
+| `analysis_sessions` | Anonymous RESET / analysis session (`token_hash` only; **No PII**). Nullable `radar_candidate_id` (future Radar; no product dependency). Service-role only. |
+| `analysis_reports` | Layer2 AI report |
+| `analysis_generation_jobs` | Analysis generation queue |
+| `experience_21d_interests` | Partner 21-day INTEREST leads (`brief_json` is coach-only). Unique `analysis_session_id`. Soft archive via `archived_at`. |
+| `experience_21d_funnel_events` | 21D funnel events (one per session+event) |
+| `quiz_partner_landing_views` | Human `/q/{code}` landing views (never crawler OG GET) |
+| `quiz_result_shares` | Consumer `/s/{code}` result shares |
+| `quiz_result_share_views` | Human `/s/{code}` views |
+| `quiz_result_share_events` | Observable share-sheet evidence |
+
+`quiz_responses.growth_share_id` retains `/r` attribution. Partner workbench is `/quiz/21d` (tabs: 21 天名單 / 我的分享 / 我的成效). Consumer RESET Quiz V2 is `/quiz/fat-loss`. Official Customer Hub entry is `/quiz/21d`. `/quiz/hub` is leftover catalog, not the official partner entry.
+
+**CONVERSATION-RESET-01:** `/quiz/fat-loss` creates `entry=reset_v1` and persists `__resetV1` (`conversation_reset_v1`) on `analysis_sessions.answers_json`. Fixed 6-question projective quiz + gpt-4.1 conversation + 3-section report. Production `/quiz/fat-loss` serves RESET Quiz V2.
+
+**21D-HANDOFF-01:** After RESET report, consumer can express INTEREST in a paid 21-day experience (no price, no checkout). Attribution copies from `analysis_sessions` — `/r` growth share owner wins over `/q` referrer. Minimal contact capture: display name + one channel (`line`, `instagram`, or `phone`).
+
+**QUIZ-PARTNER-01:** Workbench statuses are presentation only: interested→待聯絡, contacted/considering→已聯絡, joined→已成交, declined→未成交. Joined/declined change lead status only — no customer, enrollment, order, or payment.
+
+**21D-START-01 (no new tables):** After Lead `joined`, Partner creates/selects an owned Customer and starts a 21-day coaching journey on existing `coaching_enrollments`. Marker lives in `plan_snapshot_json.experience21d`.
+
 ### Recognition Center (`035_recognition_foundation.sql` + `036_recognition_event_rpcs.sql`)
 
 **Status:** Phase 3 foundation implemented. Migration files:

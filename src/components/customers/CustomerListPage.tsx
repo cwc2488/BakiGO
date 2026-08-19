@@ -19,6 +19,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Customer, CustomerSex } from "@/types/customer";
 import { CUSTOMER_SEX_LABELS } from "@/types/customer";
+import { flushCustomerCloudPushAsync } from "@/lib/cloud/customer-cloud-service";
+import { safe21dReturnPath } from "@/lib/coaching/experience-21d";
 
 interface CustomerListItem extends Customer {
   latestRecordDate?: string;
@@ -61,9 +63,11 @@ export default function CustomerListPage() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [lineId, setLineId] = useState("");
   const [heightCm, setHeightCm] = useState("");
   const [sex, setSex] = useState<CustomerSex | "">("");
   const [birthDate, setBirthDate] = useState("");
+  const [returnTo, setReturnTo] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [notificationState, setNotificationState] = useState(() =>
     typeof window === "undefined" ? "default" : getNotificationPermissionState(),
@@ -125,6 +129,20 @@ export default function CustomerListPage() {
     queueMicrotask(reload);
   }, [reload]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("create") === "1") {
+      setShowForm(true);
+      const prefillName = params.get("name");
+      const prefillPhone = params.get("phone");
+      const prefillLine = params.get("line");
+      if (prefillName) setName(prefillName);
+      if (prefillPhone) setPhone(prefillPhone);
+      if (prefillLine) setLineId(prefillLine);
+    }
+    setReturnTo(safe21dReturnPath(params.get("returnTo")));
+  }, []);
+
   const followUpCount = dailyFollowUp.count;
 
   const visibleCustomers = useMemo(
@@ -147,6 +165,7 @@ export default function CustomerListPage() {
       ownerMemberId,
       displayName: name,
       phone: phone || undefined,
+      lineId: lineId || undefined,
       heightCm: heightCm ? Number(heightCm) : undefined,
       sex: sex || undefined,
       // Full date only — do not invent MM/DD for legacy birth_year-only rows.
@@ -154,12 +173,18 @@ export default function CustomerListPage() {
     });
     setName("");
     setPhone("");
+    setLineId("");
     setHeightCm("");
     setSex("");
     setBirthDate("");
     setShowForm(false);
     reload();
-    router.push(`/customers/${customer.id}`);
+    const nextHref = returnTo
+      ? `${returnTo}${returnTo.includes("?") ? "&" : "?"}customerId=${encodeURIComponent(customer.id)}`
+      : `/customers/${customer.id}`;
+    void flushCustomerCloudPushAsync(storage).finally(() => {
+      router.push(nextHref);
+    });
   };
 
   return (
@@ -238,6 +263,11 @@ export default function CustomerListPage() {
               label="電話"
               onChange={(event) => setPhone(event.target.value)}
               value={phone}
+            />
+            <CrmInput
+              label="LINE ID"
+              onChange={(event) => setLineId(event.target.value)}
+              value={lineId}
             />
             <CrmInput
               inputMode="decimal"

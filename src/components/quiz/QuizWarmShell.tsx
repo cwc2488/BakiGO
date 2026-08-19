@@ -1,37 +1,44 @@
 import type { ReactNode } from "react";
 
+/** Public quiz/analysis shell — scoped consumer theme, no app dashboard chrome. */
 export function QuizWarmShell({
   children,
   footer,
+  tone = "warm",
 }: {
   children: ReactNode;
   footer?: ReactNode;
+  tone?: "warm" | "night";
 }) {
+  const night = tone === "night";
   return (
-    <div className="min-h-full bg-[#faf6f1]">
-      <main className="mx-auto flex min-h-full w-full max-w-lg flex-col px-4 pb-10 pt-8 sm:px-6">
+    <div
+      className={`quiz-consumer min-h-full${night ? " analysis-xp" : ""}`}
+      data-quiz-consumer-theme="v1"
+      data-analysis-xp={night ? "v1" : undefined}
+    >
+      <main className="mx-auto flex min-h-full w-full max-w-lg flex-col px-4 pb-10 pt-7 sm:px-6">
         {children}
-        {footer ? <footer className="mt-8 text-center text-xs text-[#9a8b82]">{footer}</footer> : null}
+        {footer ? <footer className="qc-caption mt-8 text-center">{footer}</footer> : null}
       </main>
     </div>
   );
 }
 
+/** Truthful progress: N / total + bar from current/total (not fake %). */
 export function QuizProgressBar({ current, total }: { current: number; total: number }) {
-  const percent = Math.round((current / total) * 100);
+  const safeTotal = Math.max(total, 1);
+  const clamped = Math.min(Math.max(current, 0), safeTotal);
+  const widthPct = Math.round((clamped / safeTotal) * 100);
   return (
-    <div className="mb-6 space-y-2">
-      <div className="flex items-center justify-between text-sm text-[#8b7d74]">
+    <div className="mb-6 space-y-2" role="status" aria-label={`進度 ${clamped} / ${safeTotal}`}>
+      <div className="qc-caption flex items-center justify-between">
         <span>
-          第 {current} / {total} 題
+          {clamped} / {safeTotal}
         </span>
-        <span>{percent}%</span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-[#eadfd6]">
-        <div
-          className="h-full rounded-full bg-[#f0a8b8] transition-all duration-300"
-          style={{ width: `${percent}%` }}
-        />
+      <div className="qc-progress-track">
+        <div className="qc-progress-fill" style={{ width: `${widthPct}%` }} />
       </div>
     </div>
   );
@@ -49,12 +56,25 @@ export function QuizPrimaryButton({
   type?: "button" | "submit";
 }) {
   return (
-    <button
-      type={type}
-      disabled={disabled}
-      onClick={onClick}
-      className="w-full rounded-[1.25rem] bg-[#2f2622] px-5 py-4 text-base font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
-    >
+    <button type={type} disabled={disabled} onClick={onClick} className="qc-btn-primary">
+      {children}
+    </button>
+  );
+}
+
+export function QuizSecondaryButton({
+  children,
+  onClick,
+  disabled,
+  type = "button",
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  type?: "button" | "submit";
+}) {
+  return (
+    <button type={type} disabled={disabled} onClick={onClick} className="qc-btn-secondary">
       {children}
     </button>
   );
@@ -73,17 +93,16 @@ export function QuizOptionButton({
     <button
       type="button"
       onClick={onClick}
-      className={`w-full rounded-[1.25rem] border px-4 py-4 text-left text-[0.98rem] leading-7 transition active:scale-[0.99] ${
-        selected
-          ? "border-[#f0a8b8] bg-[#fff4f7] shadow-[0_8px_24px_rgba(240,168,184,0.18)]"
-          : "border-[#eadfd6] bg-white/90"
-      }`}
+      data-selected={selected ? "true" : "false"}
+      className="qc-answer"
+      aria-pressed={selected}
     >
       {children}
     </button>
   );
 }
 
+/** @deprecated Prefer QuizCharacter — kept for compatibility. */
 export function QuizCharacterCard({
   emoji,
   animalName,
@@ -108,11 +127,9 @@ export function QuizCharacterCard({
       >
         <span aria-hidden>{emoji}</span>
       </div>
-      <h2 className="text-2xl font-semibold text-[#2f2622]">{animalName}</h2>
-      <p className="mt-1 text-sm text-[#a0897d]">{tagline}</p>
-      {headline ? (
-        <p className="mt-4 max-w-md text-[1.02rem] leading-8 text-[#5f4f47]">{headline}</p>
-      ) : null}
+      <h2 className="qc-heading">{animalName}</h2>
+      <p className="qc-caption mt-1">{tagline}</p>
+      {headline ? <p className="qc-body mt-4 max-w-md">{headline}</p> : null}
     </div>
   );
 }

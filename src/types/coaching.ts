@@ -34,6 +34,14 @@ export type CoachingPlanSnapshot = {
   reportingRules: string[];
   /** Optional coach-only notes stored in enrollment snapshot. */
   coachNotes?: string;
+  /**
+   * 21D-START-01: marks this journey as a 21-day experience.
+   * Optional. 90-day coaching omits this field. Not sent to AI compact prompts.
+   */
+  experience21d?: {
+    productReceivedDate: string;
+    interestId?: string;
+  };
 };
 
 export type CoachingEnrollment = {

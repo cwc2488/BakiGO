@@ -1,7 +1,8 @@
 import { randomBytes } from "crypto";
 import { createSupabaseServiceClient, isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 import type { FatLossQuizAnswers, FatLossQuizResult } from "@/lib/quiz/fat-loss/types";
-import { FAT_LOSS_QUIZ_SLUG } from "@/lib/quiz/fat-loss/types";
+import { FAT_LOSS_QUIZ_SLUG, type PersonalityType } from "@/lib/quiz/fat-loss/types";
+import { NATIVE_V1_SEED_KEY } from "@/lib/analysis/native-entry";
 import { generateFollowupMessage } from "@/lib/quiz/fat-loss/followup-message";
 import {
   formatActionHistoryLabels,
@@ -89,6 +90,8 @@ export async function createQuizResponse(input: {
   respondentName: string;
   shareCode?: string | null;
   referrerMemberId?: string | null;
+  /** Opaque /r growth share token — validated server-side; wins over member share for A→B. */
+  referralShareToken?: string | null;
 }): Promise<QuizResponseRecord> {
   const quizId = await getQuizIdBySlug(input.quizSlug ?? FAT_LOSS_QUIZ_SLUG);
   if (!quizId) {
@@ -100,6 +103,9 @@ export async function createQuizResponse(input: {
     referrerMemberId: input.referrerMemberId,
   });
 
+  const { resolveValidatedGrowthShareId } = await import("@/lib/analysis/resolve-growth-share");
+  const growthShareId = await resolveValidatedGrowthShareId(input.referralShareToken);
+
   const supabase = requireServiceClient();
   const { data, error } = await supabase
     .from("quiz_responses")
@@ -108,6 +114,7 @@ export async function createQuizResponse(input: {
       respondent_name: input.respondentName.trim(),
       referrer_member_id: referrer.referrerMemberId,
       share_code: referrer.shareCode,
+      growth_share_id: growthShareId,
       answers_json: {},
     })
     .select("id, quiz_id, respondent_name, referrer_member_id, share_code, answers_json, started_at, completed_at")
@@ -127,6 +134,56 @@ export async function createQuizResponse(input: {
     startedAt: data.started_at,
     completedAt: data.completed_at,
   };
+}
+
+/**
+ * Placeholder quiz_result so analysis_sessions.quiz_result_id stays NOT NULL.
+ * Not a personality classification. Preview native_v1 entry only.
+ */
+export async function createNativeSeedQuizResult(input: {
+  respondentName?: string;
+  shareCode?: string | null;
+  referrerMemberId?: string | null;
+  referralShareToken?: string | null;
+}): Promise<{ resultId: string; responseId: string }> {
+  const created = await createQuizResponse({
+    respondentName: input.respondentName?.trim() || "你",
+    shareCode: input.shareCode,
+    referrerMemberId: input.referrerMemberId,
+    referralShareToken: input.referralShareToken,
+  });
+  const now = new Date().toISOString();
+  const emptyScores = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 } as Record<PersonalityType, number>;
+  const supabase = requireServiceClient();
+  const { error: answersError } = await supabase
+    .from("quiz_responses")
+    .update({
+      answers_json: { [NATIVE_V1_SEED_KEY]: true },
+      completed_at: now,
+    })
+    .eq("id", created.id);
+  if (answersError) {
+    throw new Error(answersError.message);
+  }
+  const { data: result, error: resultError } = await supabase
+    .from("quiz_results")
+    .insert({
+      response_id: created.id,
+      primary_type: "A",
+      secondary_type: "A",
+      personality_scores_json: emptyScores,
+      urgency: "low",
+      readiness: "low",
+      action_history_json: [],
+      primary_goal: "unspecified",
+      interaction_priority: "low",
+    })
+    .select("id")
+    .single();
+  if (resultError || !result) {
+    throw new Error(resultError?.message ?? "Failed to save native seed result.");
+  }
+  return { resultId: result.id, responseId: created.id };
 }
 
 export async function updateQuizResponseAnswers(
@@ -379,6 +436,34 @@ export async function createShareLinkForMember(input: {
     }
   }
   throw new Error("Unable to generate share code.");
+}
+
+/** One stable primary /q/{code} per member. Reuses the oldest active fat-loss share code. */
+export async function getOrCreatePermanentShareLink(memberId: string): Promise<{
+  shareCode: string;
+  url: string;
+}> {
+  const quizId = await getQuizIdBySlug(FAT_LOSS_QUIZ_SLUG);
+  if (!quizId) {
+    throw new Error("Quiz not found.");
+  }
+  const supabase = requireServiceClient();
+  const { data: existing, error } = await supabase
+    .from("quiz_share_links")
+    .select("share_code")
+    .eq("owner_member_id", memberId)
+    .eq("quiz_id", quizId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (existing?.share_code) {
+    return { shareCode: existing.share_code, url: `/q/${existing.share_code}` };
+  }
+  return createShareLinkForMember({ memberId });
 }
 
 export async function listShareLinksForMember(memberId: string): Promise<Array<{ shareCode: string; createdAt: string; isActive: boolean }>> {

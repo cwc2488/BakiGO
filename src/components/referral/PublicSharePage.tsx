@@ -119,7 +119,14 @@ export default function PublicSharePage({ token }: { token: string }) {
               <p className="text-[0.9375rem] text-[#86868b]">教練會再與你連絡，謝謝你的信任。</p>
             </CrmCard>
           ) : share.acceptsNewReferral ? (
-            showForm ? (
+            <div className="space-y-3">
+              <a
+                href={`/quiz/fat-loss?gs=${encodeURIComponent(token)}`}
+                className="flex min-h-12 w-full items-center justify-center rounded-2xl border border-[var(--brand-border)] bg-white px-4 text-center text-[0.9375rem] font-semibold text-[#1d1d1f]"
+              >
+                先做減脂心理測驗
+              </a>
+              {showForm ? (
               <CrmCard className="space-y-4">
                 <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">我也想了解</h2>
                 <label className="block space-y-1">
@@ -164,7 +171,8 @@ export default function PublicSharePage({ token }: { token: string }) {
               <CrmButton type="button" onClick={() => setShowForm(true)}>
                 我也想了解
               </CrmButton>
-            )
+              )}
+            </div>
           ) : (
             <CrmCard>
               <p className="text-center text-[0.9375rem] text-[#86868b]">此分享目前無法接受新朋友資料。</p>

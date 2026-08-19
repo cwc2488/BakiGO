@@ -636,6 +636,16 @@ Decision Tree segment after Phase 1 body measurement. All step payloads live in 
 - Paused status keeps existing pause semantics (not rewritten here).
 - Coach may edit start / planned end; Attention dense calendars must clamp to this window without changing Phase 3 precedence.
 
+### 21-day experience start (21D-START-01)
+
+- Reuses the same `coaching_enrollments` row. Not a second coaching product.
+- Partner marks Lead `joined` first. That status change does **not** create a Customer or enrollment.
+- Partner then creates/selects an owned Customer and chooses **product received date**.
+- **Day 1** = the Asia/Taipei calendar day after product received. **Day 21** = inclusive last day = Day 1 + 20 calendar days.
+- Example: received 2026-08-17 → Day 1 2026-08-18 → Day 21 2026-09-07. `planned_end_at` is that inclusive Day 21 (not start+21 exclusive).
+- One active enrollment per customer+coach remains the duplicate lock. After Day 21 (today > `planned_end_at`) a 21-day experience completes; no auto-renewal, no long-term plan.
+- Instagram is not a Customer column — do not invent a field. Prefill only `display_name` / `phone` / `line_id`.
+
 ### Coach Directive × Meal Vision (V1)
 
 - Directive = what customer should do (slot + text + effective window + customer_visible).

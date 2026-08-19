@@ -11,6 +11,7 @@ export type CustomerJourneyHubItem = {
   comingSoon?: boolean;
   locked?: boolean;
   lockLabel?: string;
+  waitingBadge?: boolean;
 };
 
 /** Main hub IA — P0/P1 converged entries only. */
@@ -28,10 +29,11 @@ export const CUSTOMER_JOURNEY_HUB_ITEMS: CustomerJourneyHubItem[] = [
     iconHref: "/retail-pipeline",
   },
   {
-    href: "/quiz/hub",
+    href: "/quiz/21d",
     title: "心理測驗",
-    desc: "用測驗開啟話題",
-    iconHref: "/quiz/hub",
+    desc: "分享測驗，聯絡想了解 21 天的人",
+    iconHref: "/quiz/21d",
+    waitingBadge: true,
   },
   {
     href: "/customers/list",

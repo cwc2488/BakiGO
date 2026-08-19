@@ -1,0 +1,297 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PageShell } from "@/components/ui/PageShell";
+import { fetchWithMemberAuth } from "@/lib/quiz/quiz-member-fetch";
+import { ensureCustomerPortalToken } from "@/lib/cloud/customer-cloud-service";
+import {
+  deriveExperience21dSchedule,
+  formatExperience21dShortDate,
+  formatExperience21dZhDate,
+  isIsoDate,
+} from "@/lib/coaching/experience-21d";
+import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
+
+type ActiveExperience = {
+  enrollmentId: string;
+  startDate: string | null;
+  plannedEndAt: string | null;
+  status: string;
+};
+
+type StartMode =
+  | { kind: "interest"; interestId: string }
+  | { kind: "customer"; customerId: string };
+
+export function Experience21dStartPage({
+  mode,
+  initialCustomerId,
+}: {
+  mode: StartMode;
+  initialCustomerId?: string | null;
+}) {
+  const [customerId, setCustomerId] = useState(initialCustomerId ?? "");
+  const [customerName, setCustomerName] = useState("");
+  const [createHref, setCreateHref] = useState<string | null>(null);
+  const [needsCustomer, setNeedsCustomer] = useState(false);
+  const [active, setActive] = useState<ActiveExperience | null>(null);
+  const [otherCoaching, setOtherCoaching] = useState(false);
+  const [productReceivedDate, setProductReceivedDate] = useState(coachingTodayLogDate());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{
+    enrollmentId: string;
+    startDate: string;
+    plannedEndAt: string;
+    alreadyActive: boolean;
+  } | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    if (mode.kind === "interest") {
+      const response = await fetchWithMemberAuth(`/api/quiz/21d/${mode.interestId}/activation`);
+      const payload = (await response.json()) as {
+        error?: string;
+        interest?: { displayName: string; status: string };
+        matchedCustomer?: { id: string; displayName: string } | null;
+        createCustomerHref?: string;
+        activeExperience?: ActiveExperience | null;
+        activeOtherCoaching?: boolean;
+      };
+      if (!response.ok) throw new Error(payload.error ?? "找不到這筆名單");
+      if (payload.interest?.status && payload.interest.status !== "joined") {
+        throw new Error("請先確認成交");
+      }
+      setCustomerName(payload.matchedCustomer?.displayName || payload.interest?.displayName || "");
+      setCreateHref(payload.createCustomerHref ?? null);
+      setActive(payload.activeExperience ?? null);
+      setOtherCoaching(Boolean(payload.activeOtherCoaching));
+      if (payload.matchedCustomer?.id) {
+        setCustomerId(payload.matchedCustomer.id);
+        setNeedsCustomer(false);
+      } else if (initialCustomerId) {
+        setCustomerId(initialCustomerId);
+        setNeedsCustomer(false);
+      } else {
+        setNeedsCustomer(true);
+      }
+      return;
+    }
+    const response = await fetchWithMemberAuth(
+      `/api/coaching/experience-21d?customerId=${encodeURIComponent(mode.customerId)}`,
+    );
+    const payload = (await response.json()) as {
+      error?: string;
+      customer?: { id: string; displayName: string };
+      activeExperience?: ActiveExperience | null;
+      activeOtherCoaching?: boolean;
+    };
+    if (!response.ok) throw new Error(payload.error ?? "找不到這位顧客");
+    setCustomerId(payload.customer?.id ?? mode.customerId);
+    setCustomerName(payload.customer?.displayName ?? "");
+    setActive(payload.activeExperience ?? null);
+    setOtherCoaching(Boolean(payload.activeOtherCoaching));
+    setNeedsCustomer(false);
+  }, [initialCustomerId, mode]);
+
+  useEffect(() => {
+    void load().catch((loadError) =>
+      setError(loadError instanceof Error ? loadError.message : "無法載入"),
+    );
+  }, [load]);
+
+  const schedule = useMemo(() => {
+    if (!isIsoDate(productReceivedDate)) return null;
+    try {
+      return deriveExperience21dSchedule(productReceivedDate);
+    } catch {
+      return null;
+    }
+  }, [productReceivedDate]);
+
+  async function activate() {
+    if (!customerId || !schedule) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const path =
+        mode.kind === "interest"
+          ? `/api/quiz/21d/${mode.interestId}/activation`
+          : "/api/coaching/experience-21d";
+      const response = await fetchWithMemberAuth(path, {
+        method: "POST",
+        body: JSON.stringify({
+          customerId,
+          productReceivedDate: schedule.productReceivedDate,
+        }),
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        alreadyActive?: boolean;
+        enrollment?: { id: string };
+        schedule?: { startDate: string; plannedEndAt: string };
+      };
+      if (!response.ok) throw new Error(payload.error ?? "無法啟動 21 天體驗");
+      await ensureCustomerPortalToken(customerId).catch(() => undefined);
+      setDone({
+        enrollmentId: payload.enrollment?.id ?? "",
+        startDate: payload.schedule?.startDate ?? schedule.startDate,
+        plannedEndAt: payload.schedule?.plannedEndAt ?? schedule.plannedEndAt,
+        alreadyActive: Boolean(payload.alreadyActive),
+      });
+    } catch (activateError) {
+      setError(activateError instanceof Error ? activateError.message : "無法啟動 21 天體驗");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const backHref = mode.kind === "interest" ? `/quiz/21d/${mode.interestId}` : `/customers/${mode.kind === "customer" ? mode.customerId : customerId}`;
+
+  if (error && !customerName && !needsCustomer && !active) {
+    return (
+      <PageShell title="啟動 21 天體驗" backHref={backHref}>
+        <p className="text-[0.9375rem] text-[#cf1322]">{error}</p>
+      </PageShell>
+    );
+  }
+
+  if (done) {
+    return (
+      <PageShell title="21 天體驗" backHref={backHref}>
+        <section className="rounded-[1.5rem] border border-[#eadfd6] bg-[#fffdf9] p-5">
+          <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">
+            {done.alreadyActive ? "這位顧客目前已在 21 天體驗中" : "21 天體驗已啟動"}
+          </p>
+          <p className="mt-3 text-[0.9375rem] leading-7 text-[#636366]">
+            Day 1：{formatExperience21dShortDate(done.startDate)}
+            <br />
+            Day 21：{formatExperience21dShortDate(done.plannedEndAt)}
+          </p>
+        </section>
+        {done.enrollmentId ? (
+          <Link
+            href={`/coaching/${done.enrollmentId}`}
+            className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-[#1d1d1f] text-[0.9375rem] font-semibold text-white"
+          >
+            查看陪跑
+          </Link>
+        ) : null}
+      </PageShell>
+    );
+  }
+
+  if (active) {
+    return (
+      <PageShell title="啟動 21 天體驗" backHref={backHref}>
+        <section className="rounded-[1.5rem] border border-[#eadfd6] bg-[#fffdf9] p-5">
+          <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">這位顧客目前已在 21 天體驗中</p>
+          {active.startDate && active.plannedEndAt ? (
+            <p className="mt-3 text-[0.9375rem] leading-7 text-[#636366]">
+              Day 1：{formatExperience21dShortDate(active.startDate)}
+              <br />
+              Day 21：{formatExperience21dShortDate(active.plannedEndAt)}
+            </p>
+          ) : null}
+        </section>
+        <Link
+          href={`/coaching/${active.enrollmentId}`}
+          className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-[#1d1d1f] text-[0.9375rem] font-semibold text-white"
+        >
+          查看陪跑
+        </Link>
+      </PageShell>
+    );
+  }
+
+  if (otherCoaching) {
+    return (
+      <PageShell title="啟動 21 天體驗" backHref={backHref}>
+        <p className="text-[0.9375rem] leading-7 text-[#636366]">這位顧客目前已在陪跑中。</p>
+        <Link href={`/customers/${customerId}`} className="mt-4 block text-center text-[0.875rem] text-[#8a5a66]">
+          查看陪跑
+        </Link>
+      </PageShell>
+    );
+  }
+
+  if (needsCustomer) {
+    return (
+      <PageShell title="啟動 21 天體驗" backHref={backHref}>
+        <section className="rounded-[1.5rem] border border-[#eadfd6] bg-[#fffdf9] p-5">
+          <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">成交後，請建立顧客並啟動 21 天體驗</p>
+          <p className="mt-2 text-[0.9375rem] leading-7 text-[#636366]">
+            成交只代表這筆名單已確認。要開始陪跑，請先建立顧客。
+          </p>
+        </section>
+        {createHref ? (
+          <Link
+            href={createHref}
+            className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-[#1d1d1f] text-[0.9375rem] font-semibold text-white"
+          >
+            建立顧客
+          </Link>
+        ) : null}
+      </PageShell>
+    );
+  }
+
+  return (
+    <PageShell title="啟動 21 天體驗" backHref={backHref}>
+      <section className="rounded-[1.5rem] border border-[#eadfd6] bg-[#fffdf9] p-5">
+        <p className="text-[0.75rem] font-semibold tracking-wide text-[#c08a98]">21 天體驗</p>
+        <h2 className="mt-1 text-[1.25rem] font-semibold text-[#1d1d1f]">顧客：{customerName || "—"}</h2>
+        <p className="mt-3 text-[0.9375rem] leading-7 text-[#636366]">21 天從顧客拿到產品的隔天開始。</p>
+
+        <label className="mt-5 block space-y-2">
+          <span className="text-[0.875rem] font-medium text-[#636366]">顧客拿到產品的日期</span>
+          <input
+            className="min-h-12 w-full rounded-2xl border border-[#eadfd6] bg-white px-4 text-[1rem]"
+            onChange={(event) => setProductReceivedDate(event.target.value)}
+            type="date"
+            value={productReceivedDate}
+          />
+        </label>
+
+        {schedule ? (
+          <dl className="mt-5 space-y-3 text-[0.9375rem] leading-7">
+            <div>
+              <dt className="text-[#86868b]">拿到產品</dt>
+              <dd className="font-semibold text-[#1d1d1f]">{formatExperience21dZhDate(schedule.productReceivedDate)}</dd>
+            </div>
+            <div>
+              <dt className="text-[#86868b]">開始陪跑</dt>
+              <dd className="font-semibold text-[#1d1d1f]">{formatExperience21dZhDate(schedule.startDate)}</dd>
+            </div>
+            <div>
+              <dt className="text-[#86868b]">預計完成</dt>
+              <dd className="font-semibold text-[#1d1d1f]">{formatExperience21dZhDate(schedule.plannedEndAt)}</dd>
+            </div>
+          </dl>
+        ) : null}
+
+        {schedule ? (
+          <p className="mt-4 text-[0.8125rem] leading-6 text-[#86868b]">
+            拿到產品：{formatExperience21dShortDate(schedule.productReceivedDate)}
+            <br />
+            開始陪跑：{formatExperience21dShortDate(schedule.startDate)}
+            <br />
+            預計完成：{formatExperience21dShortDate(schedule.plannedEndAt)}
+          </p>
+        ) : null}
+      </section>
+
+      {error ? <p className="mt-3 text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
+
+      <button
+        type="button"
+        disabled={busy || !schedule || !customerId}
+        onClick={() => void activate()}
+        className="mt-4 min-h-12 w-full rounded-2xl bg-[#1d1d1f] text-[0.9375rem] font-semibold text-white disabled:opacity-50"
+      >
+        {busy ? "啟動中…" : "啟動 21 天體驗"}
+      </button>
+    </PageShell>
+  );
+}
