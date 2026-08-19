@@ -70,9 +70,13 @@ export const RESET_ANIMAL_COPY: Record<PersonalityType, ResetAnimalCopy> = {
 export const RESET_ANIMAL_DISCLAIMER =
   "這只是從你剛剛的選擇看到的傾向。真正讓你想改變、又一直卡住的原因，可能完全是另一件事。";
 
+/** Unlock panel title after 6-question reveal (UI copy only). */
+export const RESET_REVEAL_UNLOCK_TITLE = "解鎖免費 AI 深度分析";
+
 export const RESET_REVEAL_BRIDGE = [
-  "這只是從 6 個情境看到的你。",
-  "真正的原因，可能還藏在你沒有選項可以回答的地方。",
+  "剛才 6 題只是你的初步輪廓。",
+  "接下來 AI 會透過幾個問題，更深入了解你現在真正想改變的原因、卡住你的地方，以及適合你的下一步。",
+  "完全免費，不需付款。",
 ] as const;
 
 /** Visual-only first line. Does not change scoring or compact quiz background. */
@@ -85,7 +89,7 @@ export const RESET_ANIMAL_PERSONALITY: Record<PersonalityType, string> = {
   F: "你不是從零開始的人。",
 };
 
-export const RESET_CONVERSATION_CTA = "讓 AI 真正認識我";
+export const RESET_CONVERSATION_CTA = "開始免費 AI 深度分析";
 
 export const RESET_QUIZ_SUPPORT = "憑第一個直覺選就好。";
 export const RESET_COMPOSER_PLACEHOLDER = "直接跟我說就好…";

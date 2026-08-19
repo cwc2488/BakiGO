@@ -141,7 +141,6 @@ function ResetExperiencePage({
         animal={view.animal}
         busy={busy}
         error={error}
-        sessionToken={token}
         onContinue={() => void post({ action: "start_conversation" })}
       />
     );
@@ -174,6 +173,7 @@ function ResetExperiencePage({
       report={view.report}
       safetyGuidance={view.safetyGuidance}
       generating={!view.report}
+      sessionToken={token}
       handoff={view.handoff}
       handoffUi={
         view.handoff?.interest.state === "created"

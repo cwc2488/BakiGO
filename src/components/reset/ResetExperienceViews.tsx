@@ -10,6 +10,7 @@ import {
   RESET_CONVERSATION_CTA,
   RESET_QUIZ_SUPPORT,
   RESET_REVEAL_BRIDGE,
+  RESET_REVEAL_UNLOCK_TITLE,
   RESET_THINKING_LINES,
 } from "@/lib/analysis/reset/reset-animals";
 import { firstVisibleSentence } from "@/lib/analysis/reset/reset-emphasis";
@@ -138,13 +139,11 @@ export function ResetRevealView({
   busy,
   error,
   onContinue,
-  sessionToken,
 }: {
   animal: NonNullable<ResetPublicView["animal"]>;
   busy: boolean;
   error: string | null;
   onContinue: () => void;
-  sessionToken?: string | null;
 }) {
   return (
     <ResetShell act="reveal" shot="reveal" animalType={animal.type}>
@@ -162,15 +161,19 @@ export function ResetRevealView({
               {para}
             </p>
           ))}
-        <div className="rx-bridge">
-          {RESET_REVEAL_BRIDGE.map((line) => (
-            <p key={line}>{line}</p>
-          ))}
-        </div>
-        {sessionToken ? <ResetResultShareBar token={sessionToken} animalType={animal.type} /> : null}
-        <button type="button" className="rx-cta" disabled={busy} onClick={onContinue}>
-          {RESET_CONVERSATION_CTA}
-        </button>
+        <section className="rx-unlock" aria-label={RESET_REVEAL_UNLOCK_TITLE}>
+          <h2 className="rx-unlock-title">
+            解鎖<span className="rx-unlock-free">免費</span> AI 深度分析
+          </h2>
+          <div className="rx-bridge">
+            {RESET_REVEAL_BRIDGE.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+          <button type="button" className="rx-cta" disabled={busy} onClick={onContinue}>
+            {RESET_CONVERSATION_CTA}
+          </button>
+        </section>
         {error ? <p className="rx-error">{error}</p> : null}
       </div>
     </ResetShell>
@@ -315,6 +318,7 @@ export function ResetReportView({
   contactValue = "",
   busy = false,
   error = null,
+  sessionToken = null,
   onPrimary,
   onSecondary,
   onContactName,
@@ -333,6 +337,7 @@ export function ResetReportView({
   contactValue?: string;
   busy?: boolean;
   error?: string | null;
+  sessionToken?: string | null;
   onPrimary?: () => void;
   onSecondary?: () => void;
   onContactName?: (value: string) => void;
@@ -372,6 +377,9 @@ export function ResetReportView({
           </div>
         ) : generating ? (
           <ResetThinkingMark line={RESET_THINKING_LINES[1]} />
+        ) : null}
+        {report && sessionToken && animal ? (
+          <ResetResultShareBar token={sessionToken} animalType={animal.type} />
         ) : null}
         {report && handoff && handoffUi !== "hidden" ? (
           <section className="rx-21d" aria-label={handoff.invitation.heading}>
