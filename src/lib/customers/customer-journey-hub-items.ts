@@ -28,6 +28,12 @@ export const CUSTOMER_JOURNEY_HUB_ITEMS: CustomerJourneyHubItem[] = [
     iconHref: "/retail-pipeline",
   },
   {
+    href: "/quiz/hub",
+    title: "心理測驗",
+    desc: "分享測驗・開啟需求對話",
+    iconHref: "/quiz/hub",
+  },
+  {
     href: "/customers/list",
     title: "我的顧客",
     desc: "顧客資料與追蹤",
