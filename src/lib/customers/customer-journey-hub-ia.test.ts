@@ -24,7 +24,7 @@ describe("CustomerJourneyHub IA", () => {
     expect(quiz).toMatchObject({
       href: "/quiz/hub",
       title: "心理測驗",
-      desc: "分享測驗・開啟需求對話",
+      desc: "用測驗開啟話題",
       iconHref: "/quiz/hub",
     });
     expect(quiz?.comingSoon).toBeFalsy();
