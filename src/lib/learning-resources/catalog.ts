@@ -110,9 +110,140 @@ export const LEARNING_RESOURCE_CATALOG: LearningResource[] = [
     seriesKey: "comprehensive",
     note: "YouTube 播放清單，含多堂業務教學影片。",
   },
+  {
+    id: "training_marketing_plan",
+    title: "市場行銷計劃",
+    youtubeUrl: "https://youtu.be/-zWNALSOOZ8",
+    stuckPoints: ["marketing_overview", "foundation_newcomer"],
+    seriesKey: "training_videos",
+    seriesPart: 1,
+  },
+  {
+    id: "training_talk_case",
+    title: "談case",
+    youtubeUrl: "https://youtu.be/FNQD24OVMYI",
+    stuckPoints: ["pipeline_consultation", "objection_handling"],
+    seriesKey: "training_videos",
+    seriesPart: 2,
+  },
+  {
+    id: "training_weight_loss_female",
+    title: "減重女",
+    youtubeUrl: "https://youtu.be/HDMWnKHsMWc",
+    stuckPoints: ["product_knowledge", "pipeline_consultation"],
+    seriesKey: "training_videos",
+    seriesPart: 3,
+  },
+  {
+    id: "training_weight_loss_male",
+    title: "減重男",
+    youtubeUrl: "https://youtu.be/9ZoNxTE9iBQ",
+    stuckPoints: ["product_knowledge", "pipeline_consultation"],
+    seriesKey: "training_videos",
+    seriesPart: 4,
+  },
+  {
+    id: "training_weight_gain_male",
+    title: "增重男",
+    youtubeUrl: "https://youtu.be/nPbQUmc73vU",
+    stuckPoints: ["product_knowledge", "pipeline_consultation"],
+    seriesKey: "training_videos",
+    seriesPart: 5,
+  },
+  {
+    id: "training_sculpt_female",
+    title: "雕塑女",
+    youtubeUrl: "https://youtu.be/O969KIZuzfw",
+    stuckPoints: ["product_knowledge", "pipeline_consultation"],
+    seriesKey: "training_videos",
+    seriesPart: 6,
+  },
+  {
+    id: "training_baki_close",
+    title: "巴其哥締結",
+    youtubeUrl: "https://youtu.be/jtngUiEbwMc",
+    stuckPoints: ["organization_growth", "pipeline_consultation"],
+    seriesKey: "training_videos",
+    seriesPart: 7,
+  },
+  {
+    id: "training_after_sales",
+    title: "售後服務課程",
+    youtubeUrl: "https://youtu.be/9cvNCXeTpcY",
+    stuckPoints: ["product_knowledge", "retail_house", "pipeline_consultation"],
+    seriesKey: "training_videos",
+    seriesPart: 8,
+  },
+  {
+    id: "training_five_keys",
+    title: "事業成功的五大關鍵",
+    youtubeUrl: "https://youtu.be/YxRiCxLUSao",
+    stuckPoints: ["marketing_overview", "foundation_newcomer"],
+    seriesKey: "training_videos",
+    seriesPart: 9,
+  },
+  {
+    id: "training_how_to_retail",
+    title: "如何零售",
+    youtubeUrl: "https://youtu.be/mswgwDTOQyc",
+    stuckPoints: ["retail_house", "retail_vp"],
+    seriesKey: "training_videos",
+    seriesPart: 10,
+  },
+  {
+    id: "training_packaging_story",
+    title: "包裝故事",
+    youtubeUrl: "https://youtu.be/mswgwDTOQyc",
+    stuckPoints: ["retail_house", "retail_vp"],
+    seriesKey: "training_videos",
+    seriesPart: 11,
+  },
+  {
+    id: "five_courses_develop",
+    title: "開發",
+    youtubeUrl: "https://youtu.be/P9KLepxXCLM?si=EUdYIDd0ubwFp6g7",
+    stuckPoints: ["pipeline_empty", "pipeline_early", "foundation_newcomer"],
+    seriesKey: "five_courses",
+    seriesPart: 1,
+  },
+  {
+    id: "five_courses_after_sales",
+    title: "售服",
+    youtubeUrl: "https://youtu.be/tDPQcERX3hM?si=LPI5ybZaEyEq3kZ5",
+    stuckPoints: ["product_knowledge", "retail_house", "pipeline_consultation"],
+    seriesKey: "five_courses",
+    seriesPart: 2,
+    note: "技術問題，9 分鐘開始有聲音",
+  },
+  {
+    id: "five_courses_uplift",
+    title: "提升",
+    youtubeUrl: "https://youtu.be/YM0mB2laXyA?si=tb0Jg_xrxnzCV3lb",
+    stuckPoints: ["organization_growth"],
+    seriesKey: "five_courses",
+    seriesPart: 3,
+  },
+  {
+    id: "five_courses_retain",
+    title: "保留",
+    youtubeUrl: "https://youtu.be/_fFkyy0V31A?si=_xXzcO2GDe8A2Gu4",
+    stuckPoints: ["organization_growth"],
+    seriesKey: "five_courses",
+    seriesPart: 4,
+  },
+  {
+    id: "five_courses_escape_map",
+    title: "逃生圖",
+    youtubeUrl: "https://youtu.be/CauON42FOWc?si=Rpx3aE8NRxilghzI",
+    stuckPoints: ["marketing_overview", "president_path"],
+    seriesKey: "five_courses",
+    seriesPart: 5,
+  },
 ];
 
 export const LEARNING_SERIES_LABELS: Record<string, string> = {
+  training_videos: "培訓影片",
+  five_courses: "五堂課程",
   dream_quartet: "圓夢四部曲",
   promotion_abc: "促銷ABC · 零售成交或招募",
   objection_handling: "異議處理",
@@ -121,9 +252,14 @@ export const LEARNING_SERIES_LABELS: Record<string, string> = {
   comprehensive: "綜合大全",
 };
 
+export const LEARNING_SERIES_NOTES: Record<string, string> = {
+  five_courses: "內部培訓，連結請勿外傳唷❤️",
+};
+
 export interface LearningResourceGroup {
   key: string;
   title: string;
+  note?: string;
   resources: LearningResource[];
 }
 
@@ -136,6 +272,8 @@ export function formatLearningStuckPoints(resource: LearningResource): string[] 
 }
 
 const GROUP_ORDER = [
+  "training_videos",
+  "five_courses",
   "dream_quartet",
   "promotion_abc",
   "objection_handling",
@@ -169,6 +307,7 @@ export function groupLearningResources(): LearningResourceGroup[] {
   return GROUP_ORDER.filter((key) => buckets.has(key)).map((key) => ({
     key,
     title: LEARNING_SERIES_LABELS[key] ?? key,
+    note: LEARNING_SERIES_NOTES[key],
     resources: buckets.get(key) ?? [],
   }));
 }
