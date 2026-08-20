@@ -20,8 +20,10 @@ import {
   applyRecognitionSubmissionSelfService,
   inspectRecognitionImageBuffer,
 } from "@/lib/recognition/recognition-validation-service";
+import { detectRecognitionPhotoPersons } from "@/lib/recognition/recognition-person-detect";
 import type { RecognitionNormalizedCrop } from "@/types/recognition";
 import type { RecognitionImageInspectResult } from "@/lib/recognition/recognition-validation";
+import type { RecognitionPersonDetection } from "@/lib/recognition/recognition-person-detect";
 
 export const runtime = "nodejs";
 
@@ -107,6 +109,7 @@ export async function POST(
       originalPhotoSizeBytes: number | null;
     }>;
     const inspectByEntryId: Record<string, RecognitionImageInspectResult | null> = {};
+    const personDetectionByEntryId: Record<string, RecognitionPersonDetection | null> = {};
     const cropByEntryId: Record<string, RecognitionNormalizedCrop | null> = {};
     const confirmedWarningsByEntryId: Record<string, string[]> = {};
     const dimensionsByEntryId: Record<string, { width: number; height: number }> = {};
@@ -145,6 +148,10 @@ export async function POST(
         if (inspect.ok) {
           dimensionsByEntryId[entryId] = { width: inspect.width, height: inspect.height };
         }
+        personDetectionByEntryId[entryId] = await detectRecognitionPhotoPersons({
+          buffer,
+          mimeType: file.type,
+        });
 
         const path = `recognition/${submissionId}/entries/${entryId}/original.${inferExtension(file)}`;
         const supabase = createSupabaseServiceClient();
@@ -198,6 +205,7 @@ export async function POST(
       eventId: prepared.event.eventId,
       submissionId: submission.id,
       inspectByEntryId,
+      personDetectionByEntryId,
       cropByEntryId,
       confirmedWarningsByEntryId,
       dimensionsByEntryId,

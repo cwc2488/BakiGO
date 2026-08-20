@@ -423,6 +423,8 @@ export type RecognitionValidationIssueCode =
   | "unreadable_image"
   | "storage_object_missing"
   | "multi_person"
+  | "no_person"
+  | "uncertain_person"
   | "low_resolution"
   | "duplicate_name";
 

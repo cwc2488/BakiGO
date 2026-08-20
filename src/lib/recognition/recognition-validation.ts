@@ -4,18 +4,21 @@
  * UI must not invent KPI-style progress. This module is the source of
  * PASS / WARNING / BLOCKED / ADMIN_OVERRIDE / EXCLUDED for one entry.
  *
- * Multi-person detection is a conservative landscape heuristic only.
- * Face identity / picking an honoree is forbidden.
+ * Person count comes from Recognition Vision (`personDetection`), never from
+ * image dimensions / file size / aspect ratio heuristics.
  */
 
 import { parseRecognitionPhotoRef } from "@/lib/recognition/recognition-photo-url";
 import {
   defaultRecognitionCoverCrop,
-  recognitionHasLandscapeOrientationHint,
   recognitionHasLowResolutionWarning,
   validateRecognitionNormalizedCrop,
 } from "@/lib/recognition/recognition-photo-review";
 import { RECOGNITION_PUBLIC_ALLOWED_MIME_TYPES } from "@/lib/recognition/recognition-domain";
+import {
+  applyRecognitionPersonConfidenceGate,
+  type RecognitionPersonDetection,
+} from "@/lib/recognition/recognition-person-detect";
 import type {
   RecognitionAdminOverrideAudit,
   RecognitionEntryValidationResult,
@@ -28,6 +31,12 @@ import type {
 
 export const RECOGNITION_MULTI_PERSON_WARNING =
   "照片中可能有多位人物。如果照片中的人物都是本次一起受表揚者，可以繼續使用。如果不是，請重新上傳適合的照片。";
+
+export const RECOGNITION_NO_PERSON_MESSAGE =
+  "這張照片看不到清楚的受表揚者。請重新上傳一張可以清楚看到人物的照片。";
+
+export const RECOGNITION_UNCERTAIN_PERSON_MESSAGE =
+  "這張照片無法清楚辨識受表揚者。請重新上傳一張人物較清楚的照片。";
 
 export const RECOGNITION_TECHNICAL_OVERRIDE_BLOCKED =
   "此筆有技術問題，無法強制通過。請修正照片，或取消此筆表揚。";
@@ -84,8 +93,20 @@ const ISSUE = {
   multiPerson: (): RecognitionValidationIssue => ({
     code: "multi_person",
     severity: "warning",
-    message: "照片中可能有多位人物。如果照片中的人物都是本次一起受表揚者，可以繼續使用。如果不是，請重新上傳適合的照片。",
+    message: RECOGNITION_MULTI_PERSON_WARNING,
     overridable: true,
+  }),
+  noPerson: (): RecognitionValidationIssue => ({
+    code: "no_person",
+    severity: "warning",
+    message: RECOGNITION_NO_PERSON_MESSAGE,
+    overridable: false,
+  }),
+  uncertainPerson: (): RecognitionValidationIssue => ({
+    code: "uncertain_person",
+    severity: "warning",
+    message: RECOGNITION_UNCERTAIN_PERSON_MESSAGE,
+    overridable: false,
   }),
   lowResolution: (): RecognitionValidationIssue => ({
     code: "low_resolution",
@@ -122,19 +143,14 @@ export type RecognitionEntryValidationInput = {
   photoStoragePath: string | null;
   photoMimeType?: string | null;
   imageInspect?: RecognitionImageInspectResult | null;
+  /** Fresh or derived person-count result. Never inferred from dimensions alone. */
+  personDetection?: RecognitionPersonDetection | null;
   crop?: RecognitionNormalizedCrop | null;
   confirmedWarnings?: readonly string[];
   duplicateName?: boolean;
   excluded?: boolean;
   adminOverride?: RecognitionAdminOverrideAudit | null;
 };
-
-function hasIssue(
-  issues: RecognitionValidationIssue[],
-  code: RecognitionValidationIssueCode,
-): boolean {
-  return issues.some((issue) => issue.code === code);
-}
 
 function technicalIssueForInspect(
   code: "corrupted_image" | "unreadable_image" | "unsupported_image_format" | "storage_object_missing",
@@ -165,6 +181,13 @@ export function isRecognitionValidationStatus(value: string): value is Recogniti
 
 export function isRecognitionPptReadyStatus(status: RecognitionValidationStatus): boolean {
   return status === "PASS" || status === "ADMIN_OVERRIDE" || status === "WARNING";
+}
+
+export function isRecognitionSubmitterPhotoGateCode(code: string): boolean {
+  return code === "multi_person"
+    || code === "no_person"
+    || code === "uncertain_person"
+    || code === "low_resolution";
 }
 
 export function collectRecognitionEntryIssues(
@@ -204,18 +227,25 @@ export function collectRecognitionEntryIssues(
   const confirmed = new Set(input.confirmedWarnings ?? []);
 
   if (requiresPhoto && inspect) {
-    if (recognitionHasLandscapeOrientationHint({
-      originalWidth: inspect.width,
-      originalHeight: inspect.height,
-    }) && !confirmed.has("multi_person")) {
-      issues.push(ISSUE.multiPerson());
-    }
     // Low resolution is a technical quality gate — submitter must re-upload, cannot confirm away.
     if (recognitionHasLowResolutionWarning({
       originalWidth: inspect.width,
       originalHeight: inspect.height,
     })) {
       issues.push(ISSUE.lowResolution());
+    }
+  }
+
+  if (requiresPhoto && photoPath && input.personDetection) {
+    // Low / missing confidence must not be trusted as single/multiple (fail-closed → uncertain).
+    const personDetection = applyRecognitionPersonConfidenceGate(input.personDetection);
+    const category = personDetection.personCountCategory;
+    if (category === "none") {
+      issues.push(ISSUE.noPerson());
+    } else if (category === "uncertain") {
+      issues.push(ISSUE.uncertainPerson());
+    } else if (category === "multiple" && !confirmed.has("multi_person")) {
+      issues.push(ISSUE.multiPerson());
     }
   }
 
@@ -255,10 +285,8 @@ export function evaluateRecognitionEntryValidation(
   const hasTechnicalBlocker = issues.some((issue) => issue.severity === "technical");
   const hasBlocked = issues.some((issue) => issue.severity === "blocked" || issue.severity === "technical");
   const hasWarning = issues.some((issue) => issue.severity === "warning");
-  const submitterMustResolve = issues.some(
-    (issue) => issue.code === "multi_person" || issue.code === "low_resolution",
-  );
-  // Photo quality / multi-person are submitter-owned. Manager override is for true BLOCKED business exceptions.
+  const submitterMustResolve = issues.some((issue) => isRecognitionSubmitterPhotoGateCode(issue.code));
+  // Photo quality / person gates are submitter-owned. Manager override is for true BLOCKED business exceptions.
   const canAdminOverride = hasBlocked
     && !hasTechnicalBlocker
     && issues.every((issue) => issue.overridable || issue.severity === "warning");

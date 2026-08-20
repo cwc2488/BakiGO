@@ -194,7 +194,7 @@ export async function submitRecognitionPublicForm(token: string, formData: FormD
     submittedName: string;
     awardName: string;
     status: string;
-    issues: Array<{ code: string; message: string }>;
+    issues: Array<{ code?: string; message: string }>;
     pptReady: boolean;
   }>;
 }> {
