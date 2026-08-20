@@ -225,10 +225,9 @@ async function autoPassEntryCandidate(input: {
   entry: RecognitionEntryRow;
   pptReady: boolean;
   excluded: boolean;
+  candidates: Awaited<ReturnType<typeof loadRecognitionCandidatesForEvent>>;
 }): Promise<void> {
-  await syncRecognitionEventCandidates(input.eventId);
-  const candidates = await loadRecognitionCandidatesForEvent(input.eventId);
-  const candidate = candidates.find((item) => (
+  const candidate = input.candidates.find((item) => (
     item.eventAwardId === input.entry.event_award_id
     && item.normalizedName === input.entry.normalized_name
   ));
@@ -295,9 +294,7 @@ async function autoPassEntryCandidate(input: {
       && validateRecognitionNormalizedCrop(input.entry.confirmed_crop) === null
       ? input.entry.confirmed_crop
       : defaultRecognitionCoverCrop({ originalWidth: width, originalHeight: height });
-    const flags = (input.entry.submitter_confirmed_warnings ?? []).includes("multi_person")
-      ? ["group_photo"]
-      : [];
+    // Submitter-confirmed multi-person must not create manager photo-review work.
     const { error: cropError } = await supabase.rpc("upsert_recognition_candidate_photo_review", {
       p_candidate_id: candidate.id,
       p_source_entry_id: input.entry.id,
@@ -308,7 +305,7 @@ async function autoPassEntryCandidate(input: {
       p_crop_aspect_ratio: RECOGNITION_PRESENTATION_CROP_ASPECT.label,
       p_original_width: width,
       p_original_height: height,
-      p_flags: flags,
+      p_flags: [],
       p_is_blocked: false,
       p_blocked_reason: null,
       p_finalize: true,
@@ -343,10 +340,13 @@ export async function applyRecognitionEntrySelfService(input: {
     mimeType: string | null;
     sizeBytes: number | null;
   } | null;
+  /** When batching a submission, sync+approve once after all entries persist. */
+  skipAutoPass?: boolean;
 }): Promise<{
   status: RecognitionValidationStatus;
   issues: RecognitionValidationIssue[];
   pptReady: boolean;
+  submissionComplete: boolean;
   completionHint: RecognitionEntryRow;
 }> {
   const awards = await loadEventAwardsMap(input.eventId);
@@ -390,17 +390,24 @@ export async function applyRecognitionEntrySelfService(input: {
     validation_status: result.status,
     validation_issues: result.issues,
   };
-  await autoPassEntryCandidate({
-    eventId: input.eventId,
-    entry: refreshed,
-    pptReady: result.pptReady,
-    excluded: result.status === "EXCLUDED",
-  });
+
+  if (!input.skipAutoPass) {
+    await syncRecognitionEventCandidates(input.eventId);
+    const candidates = await loadRecognitionCandidatesForEvent(input.eventId);
+    await autoPassEntryCandidate({
+      eventId: input.eventId,
+      entry: refreshed,
+      pptReady: result.pptReady,
+      excluded: result.status === "EXCLUDED",
+      candidates,
+    });
+  }
 
   return {
     status: result.status,
     issues: result.issues,
     pptReady: result.pptReady,
+    submissionComplete: result.submissionComplete,
     completionHint: refreshed,
   };
 }
@@ -420,13 +427,23 @@ export async function applyRecognitionSubmissionSelfService(input: {
     status: RecognitionValidationStatus;
     issues: RecognitionValidationIssue[];
     pptReady: boolean;
+    submissionComplete: boolean;
   }>;
   completion: RecognitionSubmissionCompletion;
 }> {
   const awards = await loadEventAwardsMap(input.eventId);
   const allEntries = await loadEventEntries(input.eventId);
   const submissionEntries = allEntries.filter((entry) => entry.submission_id === input.submissionId);
-  const views = [];
+  const views: Array<{
+    entryId: string;
+    submittedName: string;
+    awardName: string;
+    status: RecognitionValidationStatus;
+    issues: RecognitionValidationIssue[];
+    pptReady: boolean;
+    submissionComplete: boolean;
+    completionHint: RecognitionEntryRow;
+  }> = [];
 
   for (const entry of submissionEntries) {
     const dims = input.dimensionsByEntryId?.[entry.id];
@@ -444,6 +461,7 @@ export async function applyRecognitionSubmissionSelfService(input: {
       originalWidth: dims?.width,
       originalHeight: dims?.height,
       confirmedWarnings: warnings,
+      skipAutoPass: true,
     });
     const award = awards.get(entry.event_award_id);
     views.push({
@@ -453,11 +471,26 @@ export async function applyRecognitionSubmissionSelfService(input: {
       status: applied.status,
       issues: applied.issues,
       pptReady: applied.pptReady,
+      submissionComplete: applied.submissionComplete,
+      completionHint: applied.completionHint,
+    });
+  }
+
+  // One candidate sync for the whole submission, then AUTO PASS ppt-ready rows.
+  await syncRecognitionEventCandidates(input.eventId);
+  const candidates = await loadRecognitionCandidatesForEvent(input.eventId);
+  for (const view of views) {
+    await autoPassEntryCandidate({
+      eventId: input.eventId,
+      entry: view.completionHint,
+      pptReady: view.pptReady,
+      excluded: view.status === "EXCLUDED",
+      candidates,
     });
   }
 
   return {
-    entries: views,
+    entries: views.map(({ completionHint: _hint, ...rest }) => rest),
     completion: summarizeRecognitionSubmissionCompletion(views),
   };
 }

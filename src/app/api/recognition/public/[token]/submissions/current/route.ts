@@ -145,7 +145,13 @@ export async function PATCH(
           sizeBytes: file.size,
         },
       });
-      return NextResponse.json({ ok: true, status: applied.status, issues: applied.issues, pptReady: applied.pptReady });
+      return NextResponse.json({
+        ok: true,
+        status: applied.status,
+        issues: applied.issues,
+        pptReady: applied.pptReady,
+        submissionComplete: applied.submissionComplete,
+      });
     }
 
     const body = await request.json() as {
@@ -188,7 +194,13 @@ export async function PATCH(
       originalHeight: body.originalHeight,
       confirmedWarnings: body.confirmedWarnings,
     });
-    return NextResponse.json({ ok: true, status: applied.status, issues: applied.issues, pptReady: applied.pptReady });
+    return NextResponse.json({
+      ok: true,
+      status: applied.status,
+      issues: applied.issues,
+      pptReady: applied.pptReady,
+      submissionComplete: applied.submissionComplete,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "無法更新投稿。";
     const status = error instanceof RecognitionServiceError ? error.status : 500;
