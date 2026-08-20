@@ -210,13 +210,11 @@ export function collectRecognitionEntryIssues(
     }) && !confirmed.has("multi_person")) {
       issues.push(ISSUE.multiPerson());
     }
-    if (
-      recognitionHasLowResolutionWarning({
-        originalWidth: inspect.width,
-        originalHeight: inspect.height,
-      })
-      && !confirmed.has("low_resolution")
-    ) {
+    // Low resolution is a technical quality gate — submitter must re-upload, cannot confirm away.
+    if (recognitionHasLowResolutionWarning({
+      originalWidth: inspect.width,
+      originalHeight: inspect.height,
+    })) {
       issues.push(ISSUE.lowResolution());
     }
   }

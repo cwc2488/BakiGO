@@ -113,6 +113,21 @@ describe("Recognition self-service validation", () => {
     expect(result.issues.some((issue) => issue.code === "multi_person")).toBe(false);
   });
 
+  it("6b. low_resolution cannot be confirmed away; must re-upload", () => {
+    const result = evaluateRecognitionEntryValidation({
+      submittedName: "王小明",
+      award: PHOTO_AWARD,
+      photoStoragePath: JPEG_PATH,
+      photoMimeType: "image/jpeg",
+      imageInspect: LOW_RES,
+      confirmedWarnings: ["low_resolution"],
+    });
+    expect(result.status).toBe("WARNING");
+    expect(result.issues.some((issue) => issue.code === "low_resolution")).toBe(true);
+    expect(result.pptReady).toBe(false);
+    expect(result.submissionComplete).toBe(false);
+  });
+
   it("7. recrop updates the current crop used for PPT", () => {
     const first = defaultCropForInspectedPhoto(PORTRAIT);
     const recropped = { x: 0.1, y: 0.05, width: 0.6, height: 0.8 };

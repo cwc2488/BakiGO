@@ -79,7 +79,16 @@ describe("recognition simple submission + ppt flow", () => {
       photoMimeType: "image/jpeg",
       imageInspect: LOW_RES,
       confirmedWarnings: ["low_resolution"],
-    }).pptReady).toBe(true);
+    }).pptReady).toBe(false);
+
+    expect(evaluateRecognitionEntryValidation({
+      submittedName: "王小明",
+      award: PHOTO_AWARD,
+      photoStoragePath: JPEG_PATH,
+      photoMimeType: "image/jpeg",
+      imageInspect: LOW_RES,
+      confirmedWarnings: ["low_resolution"],
+    }).submissionComplete).toBe(false);
 
     const businessBlocked = evaluateRecognitionEntryValidation({
       submittedName: "王小明",
@@ -111,11 +120,15 @@ describe("recognition simple submission + ppt flow", () => {
     expect(overridden.pptReady).toBe(true);
   });
 
-  it("8–9. public page redirects to success; dashboard/exception/ppt share eligibility wording", () => {
+  it("8–9. public page exits to success after complete; no return-to-form CTA", () => {
     const page = src("src/components/recognition/RecognitionPublicCollectionPage.tsx");
     expect(page).toContain('setView("success")');
     expect(page).toContain("檢查並送出");
     expect(page).toContain("重新檢查並送出");
+    expect(page).not.toContain("回到投稿表單");
+    expect(page).not.toContain("確認這張夠清楚");
+    expect(page).not.toContain("keepLowResolution");
+    expect(page).toContain("確認照片沒問題");
 
     const eventPage = src("src/components/recognition/RecognitionEventPage.tsx");
     expect(eventPage).toContain("可產 PPT");

@@ -17,7 +17,6 @@ type PublicEntry = {
   originalWidth: number | null;
   originalHeight: number | null;
   keepMultiPerson: boolean;
-  keepLowResolution: boolean;
 };
 
 type IssueCode = "multi_person" | "low_resolution" | "missing_name" | "missing_photo" | "other";
@@ -43,7 +42,6 @@ function createEntry(defaultAwardId = ""): PublicEntry {
     originalWidth: null,
     originalHeight: null,
     keepMultiPerson: false,
-    keepLowResolution: false,
   };
 }
 
@@ -184,7 +182,6 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
         originalWidth: null,
         originalHeight: null,
         keepMultiPerson: false,
-        keepLowResolution: false,
       });
       return;
     }
@@ -202,14 +199,12 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
       originalHeight: dims.height,
       crop: defaultRecognitionCoverCrop({ originalWidth: dims.width, originalHeight: dims.height }),
       keepMultiPerson: false,
-      keepLowResolution: false,
     });
   }
 
   function confirmedWarningsFor(entry: PublicEntry): string[] {
     const warnings: string[] = [];
     if (entry.keepMultiPerson) warnings.push("multi_person");
-    if (entry.keepLowResolution) warnings.push("low_resolution");
     return warnings;
   }
 
@@ -384,12 +379,8 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
     }
   }
 
-  async function handleConfirmIssue(entryId: string, code: "multi_person" | "low_resolution") {
-    if (code === "multi_person") {
-      updateEntry(entryId, { keepMultiPerson: true });
-    } else {
-      updateEntry(entryId, { keepLowResolution: true });
-    }
+  async function handleConfirmMultiPerson(entryId: string) {
+    updateEntry(entryId, { keepMultiPerson: true });
   }
 
   async function handleRecheck() {
@@ -421,18 +412,11 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
             <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#77a183]">{event.name}</p>
             <h1 className="mt-3 text-[1.75rem] font-semibold leading-tight text-[#1d1d1f]">✅ 投稿完成</h1>
             <p className="mt-3 text-[0.9375rem] leading-relaxed text-[#6f7d73]">
-              你的表揚資料已送出。截止前若需要修改，可用同一連結回來更新。
+              你的表揚資料已送出，可以關閉此頁面。
             </p>
-            <button
-              type="button"
-              className="mt-6 w-full rounded-2xl bg-[#1d1d1f] px-4 py-3.5 text-[0.9375rem] font-semibold text-white"
-              onClick={() => {
-                setView("form");
-                setReviewIssues([]);
-              }}
-            >
-              回到投稿表單
-            </button>
+            <p className="mt-2 text-[0.8125rem] leading-relaxed text-[#6f7d73]">
+              截止前若需要修改，請再次開啟同一投稿連結。
+            </p>
           </section>
         </div>
       </div>
@@ -479,22 +463,9 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
                       type="button"
                       disabled={submitting}
                       className="w-full rounded-2xl bg-[#248a3d] px-4 py-3 text-[0.9375rem] font-semibold text-white disabled:opacity-60"
-                      onClick={() => {
-                        void handleConfirmIssue(issue.entryId, "multi_person").then(() => undefined);
-                        updateEntry(issue.entryId, { keepMultiPerson: true });
-                      }}
+                      onClick={() => handleConfirmMultiPerson(issue.entryId)}
                     >
                       ✓ 確認照片沒問題
-                    </button>
-                  )}
-                  {issue.codes.includes("low_resolution") && (
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      className="w-full rounded-2xl border border-[#d9e2dc] bg-white px-4 py-3 text-[0.9375rem] font-semibold text-[#1d1d1f] disabled:opacity-60"
-                      onClick={() => updateEntry(issue.entryId, { keepLowResolution: true })}
-                    >
-                      ✓ 確認這張夠清楚
                     </button>
                   )}
                   {entry && (
@@ -618,7 +589,6 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
                       previewUrl: null,
                       crop: null,
                       keepMultiPerson: false,
-                      keepLowResolution: false,
                     })}
                     disabled={submitting}
                   >

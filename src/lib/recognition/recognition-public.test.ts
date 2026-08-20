@@ -216,6 +216,8 @@ describe("Recognition public domain", () => {
     expect(page).toContain("還有");
     expect(page).toContain("確認照片沒問題");
     expect(page).toContain("✅ 投稿完成");
+    expect(page).not.toContain("回到投稿表單");
+    expect(page).not.toContain("確認這張夠清楚");
     expect(page).toContain("sr-only");
   });
 });
