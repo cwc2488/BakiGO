@@ -146,6 +146,7 @@ type SubmissionEntryRow = {
   original_photo_size_bytes: number | null;
   created_at: string;
   validation_status?: string | null;
+  submitter_confirmed_warnings?: string[] | null;
   current_photo_storage_path?: string | null;
   confirmed_crop?: unknown;
   original_width?: number | null;
@@ -233,6 +234,7 @@ function mapSubmissionEntry(row: SubmissionEntryRow): RecognitionSubmissionEntry
     originalPhotoSizeBytes: row.original_photo_size_bytes,
     createdAt: row.created_at,
     validationStatus: (row.validation_status as RecognitionSubmissionEntry["validationStatus"]) ?? undefined,
+    submitterConfirmedWarnings: row.submitter_confirmed_warnings ?? [],
     currentPhotoStoragePath: row.current_photo_storage_path ?? null,
     confirmedCrop: (row.confirmed_crop as RecognitionSubmissionEntry["confirmedCrop"]) ?? null,
     originalWidth: row.original_width ?? null,

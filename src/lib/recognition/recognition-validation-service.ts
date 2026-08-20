@@ -21,9 +21,14 @@ import {
 } from "@/lib/recognition/recognition-service";
 import { normalizeRecognitionSubmittedName } from "@/lib/recognition/recognition-domain";
 import {
+  personDetectionFromStoredIssueCodes,
+  type RecognitionPersonDetection,
+} from "@/lib/recognition/recognition-person-detect";
+import {
   aggregateRecognitionEventDashboardCounts,
   evaluateRecognitionEntryValidation,
   isRecognitionPptReadyStatus,
+  isRecognitionSubmitterPhotoGateCode,
   recognitionAuthoritativePhotoPath,
   summarizeRecognitionSubmissionCompletion,
   type RecognitionEventDashboardCountInput,
@@ -149,11 +154,28 @@ function duplicateName(input: {
   ));
 }
 
+function resolvePersonDetectionForEntry(input: {
+  entry: RecognitionEntryRow;
+  personDetection?: RecognitionPersonDetection | null;
+}): RecognitionPersonDetection | null {
+  if (input.personDetection) return input.personDetection;
+  const stored = parseIssues(input.entry.validation_issues);
+  const fromIssues = personDetectionFromStoredIssueCodes(stored.map((issue) => issue.code));
+  if (fromIssues) return fromIssues;
+  // Confirmed multi-person: no issue row remains, but category must still be multiple
+  // so clearing confirmation can re-surface the warning without a schema migration.
+  if ((input.entry.submitter_confirmed_warnings ?? []).includes("multi_person")) {
+    return { personCount: 2, personCountCategory: "multiple", confidence: 1 };
+  }
+  return null;
+}
+
 export async function evaluateStoredRecognitionEntry(input: {
   entry: RecognitionEntryRow;
   others: RecognitionEntryRow[];
   award: { eventAwardId: string; name: string; requiresPhoto: boolean } | null;
   imageInspect?: RecognitionImageInspectResult | null;
+  personDetection?: RecognitionPersonDetection | null;
 }): Promise<ReturnType<typeof evaluateRecognitionEntryValidation>> {
   const photoPath = recognitionAuthoritativePhotoPath({
     currentPhotoStoragePath: input.entry.current_photo_storage_path,
@@ -171,6 +193,10 @@ export async function evaluateStoredRecognitionEntry(input: {
     photoStoragePath: photoPath,
     photoMimeType: input.entry.current_photo_mime_type ?? input.entry.original_photo_mime_type,
     imageInspect: inspect,
+    personDetection: resolvePersonDetectionForEntry({
+      entry: input.entry,
+      personDetection: input.personDetection,
+    }),
     crop: input.entry.confirmed_crop ?? null,
     confirmedWarnings: input.entry.submitter_confirmed_warnings ?? [],
     duplicateName: duplicateName({ entry: input.entry, others: input.others }),
@@ -331,6 +357,7 @@ export async function applyRecognitionEntrySelfService(input: {
   eventId: string;
   entryId: string;
   imageInspect?: RecognitionImageInspectResult | null;
+  personDetection?: RecognitionPersonDetection | null;
   crop?: RecognitionNormalizedCrop | null;
   originalWidth?: number | null;
   originalHeight?: number | null;
@@ -372,6 +399,7 @@ export async function applyRecognitionEntrySelfService(input: {
       ? { eventAwardId: award.id, name: award.awardName ?? "", requiresPhoto: Boolean(award.requiresPhoto) }
       : null,
     imageInspect: input.imageInspect,
+    personDetection: input.personDetection,
   });
 
   await persistEntryValidation({
@@ -416,6 +444,7 @@ export async function applyRecognitionSubmissionSelfService(input: {
   eventId: string;
   submissionId: string;
   inspectByEntryId?: Record<string, RecognitionImageInspectResult | null>;
+  personDetectionByEntryId?: Record<string, RecognitionPersonDetection | null>;
   cropByEntryId?: Record<string, RecognitionNormalizedCrop | null>;
   confirmedWarningsByEntryId?: Record<string, string[]>;
   dimensionsByEntryId?: Record<string, { width: number; height: number }>;
@@ -450,10 +479,12 @@ export async function applyRecognitionSubmissionSelfService(input: {
     const crop = input.cropByEntryId?.[entry.id];
     const warnings = input.confirmedWarningsByEntryId?.[entry.id];
     const inspect = input.inspectByEntryId?.[entry.id];
+    const personDetection = input.personDetectionByEntryId?.[entry.id];
     const applied = await applyRecognitionEntrySelfService({
       eventId: input.eventId,
       entryId: entry.id,
       imageInspect: inspect,
+      personDetection,
       crop: crop ?? (dims ? defaultRecognitionCoverCrop({
         originalWidth: dims.width,
         originalHeight: dims.height,
@@ -570,6 +601,10 @@ export async function listRecognitionExceptions(eventId: string): Promise<Recogn
         : undefined,
     });
     if (!result.exception && result.status !== "BLOCKED") continue;
+    // Photo person/quality gates are submitter-owned — never Manager Exception Center work.
+    const onlySubmitterPhotoGates = result.issues.length > 0
+      && result.issues.every((issue) => isRecognitionSubmitterPhotoGateCode(issue.code));
+    if (onlySubmitterPhotoGates) continue;
     const submission = submissionMap.get(entry.submission_id);
     items.push({
       entryId: entry.id,

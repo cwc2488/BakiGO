@@ -18,6 +18,9 @@ const JPEG_PATH = "recognition/sub-1/entries/entry-1/original.jpg";
 const PORTRAIT = { ok: true as const, width: 1200, height: 1600 };
 const LANDSCAPE = { ok: true as const, width: 2400, height: 1200 };
 const LOW_RES = { ok: true as const, width: 400, height: 500 };
+const PERSON_SINGLE = { personCount: 1 as const, personCountCategory: "single" as const, confidence: 0.95 };
+const PERSON_MULTI = { personCount: 2 as const, personCountCategory: "multiple" as const, confidence: 0.9 };
+const PERSON_NONE = { personCount: 0 as const, personCountCategory: "none" as const, confidence: 0.9 };
 
 describe("Recognition self-service validation", () => {
   it("1. complete name-only award AUTO PASSes", () => {
@@ -38,6 +41,7 @@ describe("Recognition self-service validation", () => {
       photoStoragePath: JPEG_PATH,
       photoMimeType: "image/jpeg",
       imageInspect: PORTRAIT,
+      personDetection: PERSON_SINGLE,
       crop: defaultCropForInspectedPhoto(PORTRAIT),
     });
     expect(result.status).toBe("PASS");
@@ -85,6 +89,7 @@ describe("Recognition self-service validation", () => {
       photoStoragePath: JPEG_PATH,
       photoMimeType: "image/jpeg",
       imageInspect: LANDSCAPE,
+      personDetection: PERSON_MULTI,
     });
     expect(result.status).toBe("WARNING");
     expect(result.issues.some((issue) => issue.code === "multi_person")).toBe(true);
@@ -98,6 +103,22 @@ describe("Recognition self-service validation", () => {
     expect(result.pptReady).toBe(false);
   });
 
+  it("5b. 0-person photo cannot PASS or enter PPT; confirmedWarnings hack fails", () => {
+    const result = evaluateRecognitionEntryValidation({
+      submittedName: "張少軒",
+      award: PHOTO_AWARD,
+      photoStoragePath: JPEG_PATH,
+      photoMimeType: "image/jpeg",
+      imageInspect: PORTRAIT,
+      personDetection: PERSON_NONE,
+      confirmedWarnings: ["no_person", "multi_person"],
+    });
+    expect(result.issues.some((issue) => issue.code === "no_person")).toBe(true);
+    expect(result.submissionComplete).toBe(false);
+    expect(result.pptReady).toBe(false);
+    expect(result.exception).toBe(false);
+  });
+
   it("6. submitter confirming multi-person photo makes the row ready", () => {
     const result = evaluateRecognitionEntryValidation({
       submittedName: "王小明、李小華",
@@ -105,6 +126,7 @@ describe("Recognition self-service validation", () => {
       photoStoragePath: JPEG_PATH,
       photoMimeType: "image/jpeg",
       imageInspect: LANDSCAPE,
+      personDetection: PERSON_MULTI,
       confirmedWarnings: ["multi_person"],
     });
     expect(result.status).toBe("PASS");
@@ -120,6 +142,7 @@ describe("Recognition self-service validation", () => {
       photoStoragePath: JPEG_PATH,
       photoMimeType: "image/jpeg",
       imageInspect: LOW_RES,
+      personDetection: PERSON_SINGLE,
       confirmedWarnings: ["low_resolution"],
     });
     expect(result.status).toBe("WARNING");
@@ -211,6 +234,7 @@ describe("Recognition self-service validation", () => {
       photoStoragePath: JPEG_PATH,
       photoMimeType: "image/jpeg",
       imageInspect: LANDSCAPE,
+      personDetection: PERSON_MULTI,
     });
     expect(result.status).toBe("WARNING");
     expect(result.canAdminOverride).toBe(false);
@@ -222,6 +246,7 @@ describe("Recognition self-service validation", () => {
       photoStoragePath: JPEG_PATH,
       photoMimeType: "image/jpeg",
       imageInspect: LANDSCAPE,
+      personDetection: PERSON_MULTI,
       adminOverride: {
         originalStatus: "WARNING",
         originalIssues: result.issues,
@@ -354,6 +379,7 @@ describe("Recognition self-service validation", () => {
       photoStoragePath: JPEG_PATH,
       photoMimeType: "image/jpeg",
       imageInspect: PORTRAIT,
+      personDetection: PERSON_SINGLE,
       crop: defaultCropForInspectedPhoto(PORTRAIT),
     });
     expect(livePass.status).toBe("PASS");
@@ -383,6 +409,7 @@ describe("Recognition self-service validation", () => {
       photoStoragePath: JPEG_PATH,
       photoMimeType: "image/jpeg",
       imageInspect: LANDSCAPE,
+      personDetection: PERSON_MULTI,
       crop: defaultCropForInspectedPhoto(LANDSCAPE),
     });
     const dashboard = aggregateRecognitionEventDashboardCounts([

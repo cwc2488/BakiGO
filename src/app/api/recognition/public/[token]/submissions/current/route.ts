@@ -10,9 +10,13 @@ import {
   applyRecognitionEntrySelfService,
   inspectRecognitionImageBuffer,
 } from "@/lib/recognition/recognition-validation-service";
+import { detectRecognitionPhotoPersons } from "@/lib/recognition/recognition-person-detect";
 import { validateRecognitionPublicPhoto } from "@/lib/recognition/recognition-domain";
 import { validateRecognitionImageSignature } from "@/lib/recognition/recognition-image-signature";
-import { RECOGNITION_PHOTOS_BUCKET } from "@/lib/recognition/recognition-photo-url";
+import {
+  parseRecognitionPhotoRef,
+  RECOGNITION_PHOTOS_BUCKET,
+} from "@/lib/recognition/recognition-photo-url";
 import type { RecognitionNormalizedCrop } from "@/types/recognition";
 
 export const runtime = "nodejs";
@@ -61,18 +65,39 @@ export async function GET(
     if (!found) {
       return NextResponse.json({ error: "找不到這份投稿。" }, { status: 404 });
     }
-    return NextResponse.json({
-      ok: true,
-      submissionId: found.submission.id,
-      submitterName: found.submission.submitterName,
-      entries: found.entries.map((entry) => ({
+
+    const supabase = createSupabaseServiceClient();
+    const entries = await Promise.all(found.entries.map(async (entry) => {
+      const storagePath = entry.currentPhotoStoragePath || entry.originalPhotoStoragePath;
+      let photoPreviewUrl: string | null = null;
+      if (storagePath) {
+        const parsed = parseRecognitionPhotoRef(storagePath);
+        if (parsed.ok && parsed.kind === "storage-path") {
+          const { data } = await supabase.storage
+            .from(RECOGNITION_PHOTOS_BUCKET)
+            .createSignedUrl(parsed.storagePath, 60 * 30);
+          photoPreviewUrl = data?.signedUrl ?? null;
+        }
+      }
+      return {
         entryId: entry.id,
         submittedName: entry.submittedName,
         eventAwardId: entry.eventAwardId,
         validationStatus: entry.validationStatus ?? null,
-        hasPhoto: Boolean(entry.currentPhotoStoragePath || entry.originalPhotoStoragePath),
+        hasPhoto: Boolean(storagePath),
+        photoPreviewUrl,
         confirmedCrop: entry.confirmedCrop ?? null,
-      })),
+        originalWidth: entry.originalWidth ?? null,
+        originalHeight: entry.originalHeight ?? null,
+        confirmedWarnings: entry.submitterConfirmedWarnings ?? [],
+      };
+    }));
+
+    return NextResponse.json({
+      ok: true,
+      submissionId: found.submission.id,
+      submitterName: found.submission.submitterName,
+      entries,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "無法載入投稿。";
@@ -118,6 +143,10 @@ export async function PATCH(
       });
       if (signatureError) return NextResponse.json({ error: signatureError }, { status: 400 });
       const inspect = await inspectRecognitionImageBuffer(buffer);
+      const personDetection = await detectRecognitionPhotoPersons({
+        buffer,
+        mimeType: file.type,
+      });
       const path = `recognition/${found.submission.id}/entries/${entry.id}/current.${inferExtension(file.type)}`;
       const { error: uploadError } = await supabase.storage
         .from(RECOGNITION_PHOTOS_BUCKET)
@@ -135,6 +164,7 @@ export async function PATCH(
         eventId: event.eventId,
         entryId: entry.id,
         imageInspect: inspect,
+        personDetection,
         crop,
         originalWidth: inspect.ok ? inspect.width : null,
         originalHeight: inspect.ok ? inspect.height : null,

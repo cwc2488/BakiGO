@@ -19,7 +19,14 @@ type PublicEntry = {
   keepMultiPerson: boolean;
 };
 
-type IssueCode = "multi_person" | "low_resolution" | "missing_name" | "missing_photo" | "other";
+type IssueCode =
+  | "multi_person"
+  | "no_person"
+  | "uncertain_person"
+  | "low_resolution"
+  | "missing_name"
+  | "missing_photo"
+  | "other";
 
 type ReviewIssue = {
   entryId: string;
@@ -29,7 +36,23 @@ type ReviewIssue = {
   messages: string[];
 };
 
-type PageView = "form" | "review" | "success";
+type PageView = "loading" | "already_submitted" | "form" | "review" | "success";
+
+type ExistingSubmissionSummary = {
+  submissionId: string;
+  submitterName: string;
+  entries: Array<{
+    entryId: string;
+    submittedName: string;
+    eventAwardId: string;
+    hasPhoto: boolean;
+    photoPreviewUrl: string | null;
+    confirmedCrop: RecognitionNormalizedCrop | null;
+    originalWidth: number | null;
+    originalHeight: number | null;
+    confirmedWarnings: string[];
+  }>;
+};
 
 function createEntry(defaultAwardId = ""): PublicEntry {
   return {
@@ -45,20 +68,41 @@ function createEntry(defaultAwardId = ""): PublicEntry {
   };
 }
 
-function classifyIssueMessage(message: string): IssueCode {
-  if (message.includes("多位人物")) return "multi_person";
-  if (message.includes("模糊") || message.includes("畫質") || message.includes("解析度")) return "low_resolution";
-  if (message.includes("姓名")) return "missing_name";
-  if (message.includes("照片")) return "missing_photo";
+function classifyIssueMessage(message: string, code?: string): IssueCode {
+  if (code === "multi_person" || message.includes("多位人物")) return "multi_person";
+  if (code === "no_person" || message.includes("看不到清楚的受表揚者")) return "no_person";
+  if (code === "uncertain_person" || message.includes("無法清楚辨識受表揚者")) return "uncertain_person";
+  if (
+    code === "low_resolution"
+    || message.includes("模糊")
+    || message.includes("畫質")
+    || message.includes("解析度")
+  ) {
+    return "low_resolution";
+  }
+  if (code === "missing_name" || message.includes("姓名")) return "missing_name";
+  if (code === "missing_photo" || message.includes("照片")) return "missing_photo";
   return "other";
 }
 
 function plainIssueTitle(code: IssueCode): string {
   if (code === "multi_person") return "照片中可能有多位人物";
+  if (code === "no_person") return "這張照片看不到清楚的受表揚者";
+  if (code === "uncertain_person") return "這張照片無法清楚辨識受表揚者";
   if (code === "low_resolution") return "照片畫質不足";
   if (code === "missing_name") return "尚未填寫姓名";
   if (code === "missing_photo") return "尚未上傳照片";
   return "需要修正";
+}
+
+function plainIssueHint(code: IssueCode, fallback: string): string {
+  if (code === "no_person") return "請重新上傳一張可以清楚看到人物的照片。";
+  if (code === "uncertain_person") return "請重新上傳一張人物較清楚的照片。";
+  if (code === "low_resolution") return "請重新上傳較清楚的照片。";
+  if (code === "multi_person") {
+    return "如果照片中的人物都是本次一起受表揚者，可以繼續使用。";
+  }
+  return fallback;
 }
 
 const INPUT_CLASS =
@@ -111,7 +155,7 @@ function PhotoPreview({
     : "50% 50%";
   return (
     <div className="overflow-hidden rounded-2xl bg-[#111]" style={{ aspectRatio: "3 / 4" }}>
-      {/* Authorized blob URL; next/image cannot take object URLs. */}
+      {/* Authorized blob/signed URL; next/image cannot take arbitrary object URLs. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={previewUrl}
@@ -131,28 +175,86 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
   const [entries, setEntries] = useState<PublicEntry[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [editToken, setEditToken] = useState<string | null>(null);
-  const [view, setView] = useState<PageView>("form");
+  const [view, setView] = useState<PageView>("loading");
   const [reviewIssues, setReviewIssues] = useState<ReviewIssue[]>([]);
   const [readyCount, setReadyCount] = useState(0);
+  const [existingSummary, setExistingSummary] = useState<ExistingSubmissionSummary | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    fetchRecognitionPublicEvent(token)
-      .then((data) => {
+    setError(null);
+
+    void (async () => {
+      try {
+        const data = await fetchRecognitionPublicEvent(token);
+        if (cancelled) return;
         setEvent(data);
         setEntries([createEntry(data.awards[0]?.eventAwardId ?? "")]);
+
+        let storedEditToken: string | null = null;
         try {
           const raw = window.localStorage.getItem(EDIT_KEY(token));
           if (raw) {
             const parsed = JSON.parse(raw) as { editToken?: string };
-            if (parsed.editToken) setEditToken(parsed.editToken);
+            if (parsed.editToken) storedEditToken = parsed.editToken;
           }
         } catch {
           // ignore bad local cache
         }
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : "無法載入連結"))
-      .finally(() => setLoading(false));
+
+        if (!storedEditToken) {
+          setEditToken(null);
+          setExistingSummary(null);
+          setView("form");
+          return;
+        }
+
+        setEditToken(storedEditToken);
+        const res = await fetch(
+          `/api/recognition/public/${encodeURIComponent(token)}/submissions/current?editToken=${encodeURIComponent(storedEditToken)}`,
+        );
+        if (cancelled) return;
+
+        if (res.ok) {
+          const json = await res.json() as ExistingSubmissionSummary & { ok?: boolean };
+          setExistingSummary({
+            submissionId: json.submissionId,
+            submitterName: json.submitterName,
+            entries: json.entries,
+          });
+          setView("already_submitted");
+          return;
+        }
+
+        if (res.status === 404) {
+          try {
+            window.localStorage.removeItem(EDIT_KEY(token));
+          } catch {
+            // ignore
+          }
+          setEditToken(null);
+          setExistingSummary(null);
+          setView("form");
+          return;
+        }
+
+        // Deadline / closed / other: no edit entry — stay on new form if event still loaded.
+        setExistingSummary(null);
+        setView("form");
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "無法載入連結");
+          setView("form");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   const awardMap = useMemo(
@@ -172,8 +274,27 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
     setEntries((prev) => (prev.length === 1 ? prev : prev.filter((entry) => entry.id !== id)));
   }
 
+  function beginEditExisting() {
+    if (!existingSummary || !event) return;
+    setSubmitterName(existingSummary.submitterName);
+    setEntries(existingSummary.entries.map((item) => ({
+      id: crypto.randomUUID(),
+      serverEntryId: item.entryId,
+      eventAwardId: item.eventAwardId || event.awards[0]?.eventAwardId || "",
+      submittedName: item.submittedName,
+      photo: null,
+      previewUrl: item.photoPreviewUrl,
+      crop: item.confirmedCrop,
+      originalWidth: item.originalWidth,
+      originalHeight: item.originalHeight,
+      keepMultiPerson: (item.confirmedWarnings ?? []).includes("multi_person"),
+    })));
+    setError(null);
+    setView("form");
+  }
+
   async function onPhotoSelected(entry: PublicEntry, file: File | null) {
-    if (entry.previewUrl) URL.revokeObjectURL(entry.previewUrl);
+    if (entry.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(entry.previewUrl);
     if (!file) {
       updateEntry(entry.id, {
         photo: null,
@@ -265,7 +386,7 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
     const json = await res.json() as {
       error?: string;
       status?: string;
-      issues?: Array<{ message: string }>;
+      issues?: Array<{ code?: string; message: string }>;
       pptReady?: boolean;
       submissionComplete?: boolean;
     };
@@ -295,7 +416,7 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
               entryId: entry.id,
               name: entry.submittedName,
               awardName: awardMap.get(entry.eventAwardId)?.name ?? "",
-              codes: messages.map(classifyIssueMessage),
+              codes: (json.issues ?? []).map((issue) => classifyIssueMessage(issue.message, issue.code)),
               messages,
             });
           } else if (json.status !== "EXCLUDED") {
@@ -347,6 +468,21 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
           // Clear local File after successful upload so later fixes only send when replaced.
           photo: null,
         })));
+        setExistingSummary({
+          submissionId: result.submissionId,
+          submitterName,
+          entries: (result.entries ?? []).map((item, index) => ({
+            entryId: item.entryId,
+            submittedName: item.submittedName,
+            eventAwardId: entries[index]?.eventAwardId ?? "",
+            hasPhoto: Boolean(entries[index]?.previewUrl),
+            photoPreviewUrl: entries[index]?.previewUrl ?? null,
+            confirmedCrop: entries[index]?.crop ?? null,
+            originalWidth: entries[index]?.originalWidth ?? null,
+            originalHeight: entries[index]?.originalHeight ?? null,
+            confirmedWarnings: confirmedWarningsFor(entries[index] ?? createEntry()),
+          })),
+        });
       }
 
       const issueRows: ReviewIssue[] = (result.entries ?? [])
@@ -358,7 +494,7 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
             entryId: local?.id ?? item.entryId,
             name: item.submittedName,
             awardName: item.awardName,
-            codes: item.issues.map((issue) => classifyIssueMessage(issue.message)),
+            codes: item.issues.map((issue) => classifyIssueMessage(issue.message, issue.code)),
             messages: item.issues.map((issue) => issue.message),
           };
         });
@@ -387,7 +523,7 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
     await handleCheckAndSubmit();
   }
 
-  if (loading) {
+  if (loading || view === "loading") {
     return <div className="min-h-screen bg-[#f7fbf8] px-5 py-10 text-center text-[#6f7d73]">載入中…</div>;
   }
 
@@ -403,6 +539,29 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
   }
 
   if (!event) return null;
+
+  if (view === "already_submitted" && existingSummary) {
+    return (
+      <div className="min-h-screen bg-[linear-gradient(180deg,#f4fbf6_0%,#f7fbf8_45%,#eef8f1_100%)] px-4 py-8">
+        <div className="mx-auto flex max-w-md flex-col gap-4">
+          <section className="rounded-[2rem] border border-[#b9e4c4] bg-[#eef8f1] p-6 shadow-[0_12px_40px_rgba(36,138,61,0.08)]">
+            <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#77a183]">{event.name}</p>
+            <h1 className="mt-3 text-[1.75rem] font-semibold leading-tight text-[#1d1d1f]">你已經完成投稿</h1>
+            <p className="mt-3 text-[0.9375rem] leading-relaxed text-[#6f7d73]">
+              截止前仍可以修改內容。
+            </p>
+            <button
+              type="button"
+              onClick={beginEditExisting}
+              className="mt-6 w-full rounded-2xl bg-[#1d1d1f] px-4 py-4 text-[1rem] font-semibold text-white"
+            >
+              ✏️ 修改上一篇投稿
+            </button>
+          </section>
+        </div>
+      </div>
+    );
+  }
 
   if (view === "success") {
     return (
@@ -425,12 +584,18 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
 
   if (view === "review") {
     const okCount = Math.max(0, entries.length - reviewIssues.length);
+    const photoFixCount = reviewIssues.filter((item) => (
+      item.codes.includes("multi_person")
+      || item.codes.includes("no_person")
+      || item.codes.includes("uncertain_person")
+      || item.codes.includes("low_resolution")
+    )).length;
     return (
       <div className="min-h-screen bg-[linear-gradient(180deg,#f4fbf6_0%,#f7fbf8_45%,#eef8f1_100%)] px-4 py-8">
         <div className="mx-auto flex max-w-md flex-col gap-4">
           <section className="rounded-[2rem] border border-[#ffd60a] bg-[#fff8e5] p-5">
             <h1 className="text-[1.375rem] font-semibold text-[#1d1d1f]">
-              還有 {reviewIssues.length} {reviewIssues.some((item) => item.codes.includes("multi_person") || item.codes.includes("low_resolution")) ? "張照片／項目" : "項"}需要修改
+              還有 {reviewIssues.length} {photoFixCount > 0 ? "張照片／項目" : "項"}需要修改
             </h1>
             <p className="mt-2 text-[0.9375rem] leading-relaxed text-[#6f7d73]">
               其他資料都沒問題，修改完成後即可投稿。
@@ -440,6 +605,10 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
           {reviewIssues.map((issue) => {
             const entry = entries.find((item) => item.id === issue.entryId);
             const primaryCode = issue.codes[0] ?? "other";
+            const canConfirmMulti = issue.codes.includes("multi_person")
+              && !issue.codes.includes("no_person")
+              && !issue.codes.includes("uncertain_person")
+              && !issue.codes.includes("low_resolution");
             return (
               <section key={issue.entryId} className="rounded-[2rem] border border-[#d9e2dc] bg-white p-5">
                 <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">{issue.name || "未填姓名"}</h2>
@@ -448,7 +617,7 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
                   ⚠️ {plainIssueTitle(primaryCode)}
                 </p>
                 <p className="mt-2 text-[0.875rem] leading-relaxed text-[#6f7d73]">
-                  {issue.messages[0] ?? "請修正後再送出。"}
+                  {plainIssueHint(primaryCode, issue.messages[0] ?? "請修正後再送出。")}
                 </p>
 
                 {entry?.previewUrl ? (
@@ -458,7 +627,7 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
                 ) : null}
 
                 <div className="mt-4 flex flex-col gap-2">
-                  {issue.codes.includes("multi_person") && (
+                  {canConfirmMulti && (
                     <button
                       type="button"
                       disabled={submitting}
@@ -564,7 +733,7 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
               <section key={entry.id} className="rounded-[2rem] border border-[#d9e2dc] bg-white p-5">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">第 {index + 1} 位</p>
-                  {entries.length > 1 && (
+                  {entries.length > 1 && !entry.serverEntryId && (
                     <button type="button" onClick={() => removeEntry(entry.id)} className="text-[0.875rem] font-medium text-[#ff375f]">
                       移除
                     </button>
@@ -622,14 +791,16 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
             );
           })}
 
-          <button
-            type="button"
-            onClick={addEntry}
-            disabled={submitting || entries.length >= 10}
-            className="rounded-2xl border border-dashed border-[#b9cec0] bg-white px-4 py-3 text-[0.9375rem] font-semibold text-[#248a3d] disabled:opacity-50"
-          >
-            + 新增下一位
-          </button>
+          {!entries.some((entry) => entry.serverEntryId) && (
+            <button
+              type="button"
+              onClick={addEntry}
+              disabled={submitting || entries.length >= 10}
+              className="rounded-2xl border border-dashed border-[#b9cec0] bg-white px-4 py-3 text-[0.9375rem] font-semibold text-[#248a3d] disabled:opacity-50"
+            >
+              + 新增下一位
+            </button>
+          )}
 
           {error && <p className="rounded-2xl bg-[#fff1f1] px-4 py-3 text-[0.9375rem] text-[#ff375f]">{error}</p>}
 
