@@ -13,6 +13,9 @@ export const RECOGNITION_PERSON_DETECT_MODEL = "gpt-4o-mini-2024-07-18" as const
 export const RECOGNITION_PERSON_DETECT_TIMEOUT_MS = 20_000 as const;
 export const RECOGNITION_PERSON_DETECT_IMAGE_DETAIL = "low" as const;
 
+/** Fail-closed: classifications below this confidence are treated as uncertain. */
+export const RECOGNITION_PERSON_DETECT_CONFIDENCE_THRESHOLD = 0.70;
+
 export type RecognitionPersonCountCategory = "none" | "single" | "multiple" | "uncertain";
 
 export type RecognitionPersonDetection = {
@@ -32,6 +35,40 @@ const DETECTION_CACHE_MAX = 64;
 
 function uncertainResult(): RecognitionPersonDetection {
   return { personCount: 0, personCountCategory: "uncertain", confidence: 0 };
+}
+
+function normalizePersonCount(
+  category: RecognitionPersonCountCategory,
+): 0 | 1 | 2 {
+  if (category === "none" || category === "uncertain") return 0;
+  if (category === "single") return 1;
+  return 2;
+}
+
+/**
+ * Fail-closed confidence gate for Vision person-count results.
+ * Missing / non-finite / below-threshold confidence → uncertain.
+ * Never defaults missing confidence to a high value.
+ */
+export function applyRecognitionPersonConfidenceGate(input: {
+  personCountCategory: RecognitionPersonCountCategory;
+  personCount?: 0 | 1 | 2;
+  confidence?: number | null;
+}): RecognitionPersonDetection {
+  const confidence = input.confidence;
+  if (
+    typeof confidence !== "number"
+    || !Number.isFinite(confidence)
+    || confidence < RECOGNITION_PERSON_DETECT_CONFIDENCE_THRESHOLD
+  ) {
+    return uncertainResult();
+  }
+  const category = input.personCountCategory;
+  return {
+    personCountCategory: category,
+    personCount: input.personCount ?? normalizePersonCount(category),
+    confidence,
+  };
 }
 
 function cacheGet(key: string): RecognitionPersonDetection | null {
@@ -192,16 +229,11 @@ export async function detectRecognitionPhotoPersons(input: {
       return result;
     }
 
-    const category = parsed.data.personCountCategory;
-    const normalized: RecognitionPersonDetection = {
-      personCountCategory: category,
-      personCount: category === "none" || category === "uncertain"
-        ? 0
-        : category === "single"
-          ? 1
-          : 2,
+    const normalized = applyRecognitionPersonConfidenceGate({
+      personCountCategory: parsed.data.personCountCategory,
+      personCount: normalizePersonCount(parsed.data.personCountCategory),
       confidence: parsed.data.confidence,
-    };
+    });
     cacheSet(cacheKey, normalized);
     return normalized;
   } catch {

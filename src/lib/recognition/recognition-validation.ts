@@ -15,7 +15,10 @@ import {
   validateRecognitionNormalizedCrop,
 } from "@/lib/recognition/recognition-photo-review";
 import { RECOGNITION_PUBLIC_ALLOWED_MIME_TYPES } from "@/lib/recognition/recognition-domain";
-import type { RecognitionPersonDetection } from "@/lib/recognition/recognition-person-detect";
+import {
+  applyRecognitionPersonConfidenceGate,
+  type RecognitionPersonDetection,
+} from "@/lib/recognition/recognition-person-detect";
 import type {
   RecognitionAdminOverrideAudit,
   RecognitionEntryValidationResult,
@@ -234,7 +237,9 @@ export function collectRecognitionEntryIssues(
   }
 
   if (requiresPhoto && photoPath && input.personDetection) {
-    const category = input.personDetection.personCountCategory;
+    // Low / missing confidence must not be trusted as single/multiple (fail-closed → uncertain).
+    const personDetection = applyRecognitionPersonConfidenceGate(input.personDetection);
+    const category = personDetection.personCountCategory;
     if (category === "none") {
       issues.push(ISSUE.noPerson());
     } else if (category === "uncertain") {
