@@ -33,8 +33,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           }
         >
           {children}
-          {showNav ? <AppBottomNav /> : null}
         </div>
+        {/* Keep bottom nav a sibling of page content so body scroll-lock / page
+            overflow never reparents it into a scrolling containing block. */}
+        {showNav ? <AppBottomNav /> : null}
       </div>
     </>
   );
