@@ -154,7 +154,7 @@ describe("recognition simple submission + ppt flow", () => {
     expect(overridden.pptReady).toBe(true);
   });
 
-  it("8–9. public page exits to success after complete; resume entry restored", () => {
+  it("8–9. public page exits to success after complete; resume + new submission entry restored", () => {
     const page = src("src/components/recognition/RecognitionPublicCollectionPage.tsx");
     expect(page).toContain('setView("success")');
     expect(page).toContain("檢查並送出");
@@ -164,10 +164,16 @@ describe("recognition simple submission + ppt flow", () => {
     expect(page).not.toContain("keepLowResolution");
     expect(page).toContain("確認照片沒問題");
     expect(page).toContain("你已經完成投稿");
-    expect(page).toContain("截止前仍可以修改內容");
+    expect(page).toContain("截止前仍可以修改內容，也可以繼續新增其他表揚名單");
     expect(page).toContain("✏️ 修改上一篇投稿");
+    expect(page).toContain("＋ 新增投稿");
+    expect(page).toContain("beginNewSubmission");
     expect(page).toContain("already_submitted");
     expect(page).toContain("beginEditExisting");
+    expect(page).toContain("✓ 已確認，可以使用此照片");
+    expect(page).toContain("✓ 已確認此照片");
+    expect(page).toContain("keepMultiPerson: true");
+    expect(page).toContain("touch-manipulation");
     // User-facing copy must not expose implementation details.
     expect(page).not.toContain("顯示 editToken");
     expect(page).not.toContain("localStorage key");

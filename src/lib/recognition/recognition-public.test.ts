@@ -217,9 +217,42 @@ describe("Recognition public domain", () => {
     expect(page).toContain("確認照片沒問題");
     expect(page).toContain("✅ 投稿完成");
     expect(page).toContain("✏️ 修改上一篇投稿");
+    expect(page).toContain("＋ 新增投稿");
+    expect(page).toContain("beginNewSubmission");
     expect(page).toContain("你已經完成投稿");
+    expect(page).toContain("✓ 已確認，可以使用此照片");
     expect(page).not.toContain("回到投稿表單");
     expect(page).not.toContain("確認這張夠清楚");
     expect(page).toContain("sr-only");
+  });
+
+  it("new submission clears edit session without deleting prior submission", () => {
+    const page = readFileSync(
+      resolve(process.cwd(), "src/components/recognition/RecognitionPublicCollectionPage.tsx"),
+      "utf8",
+    );
+    expect(page).toContain("function beginNewSubmission");
+    expect(page).toContain("setEditToken(null)");
+    expect(page).toContain("setExistingSummary(null)");
+    expect(page).toContain("createEntry(event.awards[0]?.eventAwardId ?? \"\")");
+    // Must not wipe localStorage on「新增投稿」— prior submission stays; latest replaces only after new success.
+    const beginFn = page.slice(page.indexOf("function beginNewSubmission"), page.indexOf("async function onPhotoSelected"));
+    expect(beginFn).not.toContain("localStorage.removeItem");
+    expect(beginFn).not.toContain("localStorage.clear");
+  });
+
+  it("multi-person confirm updates keepMultiPerson and shows confirmed UI", () => {
+    const page = readFileSync(
+      resolve(process.cwd(), "src/components/recognition/RecognitionPublicCollectionPage.tsx"),
+      "utf8",
+    );
+    expect(page).toContain("function handleConfirmMultiPerson");
+    expect(page).toContain("keepMultiPerson: true");
+    expect(page).toContain("multiConfirmed");
+    expect(page).toContain("confirmedWarningsFor");
+    expect(page).toContain('warnings.push("multi_person")');
+    expect(page).toContain("type=\"button\"");
+    expect(page).toContain("touch-manipulation");
+    expect(page).toContain("event.stopPropagation()");
   });
 });

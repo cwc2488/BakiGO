@@ -289,8 +289,28 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
       originalHeight: item.originalHeight,
       keepMultiPerson: (item.confirmedWarnings ?? []).includes("multi_person"),
     })));
+    setReviewIssues([]);
+    setReadyCount(0);
     setError(null);
     setView("form");
+  }
+
+  function beginNewSubmission() {
+    if (!event) return;
+    // New POST submission — clear in-memory edit session only.
+    // localStorage keeps the previous editToken until a new submission succeeds
+    // and replaces it; the previous DB submission is never deleted/overwritten.
+    setEditToken(null);
+    setExistingSummary(null);
+    setSubmitterName("");
+    setEntries([createEntry(event.awards[0]?.eventAwardId ?? "")]);
+    setReviewIssues([]);
+    setReadyCount(0);
+    setError(null);
+    setView("form");
+    window.setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }, 50);
   }
 
   async function onPhotoSelected(entry: PublicEntry, file: File | null) {
@@ -515,8 +535,12 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
     }
   }
 
-  async function handleConfirmMultiPerson(entryId: string) {
-    updateEntry(entryId, { keepMultiPerson: true });
+  function handleConfirmMultiPerson(entryId: string) {
+    // Must update entry confirmation state AND give immediate review UI feedback.
+    // Previously only keepMultiPerson flipped with no visible change — felt like a dead button.
+    setEntries((prev) => prev.map((entry) => (
+      entry.id === entryId ? { ...entry, keepMultiPerson: true } : entry
+    )));
   }
 
   async function handleRecheck() {
@@ -548,14 +572,21 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
             <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#77a183]">{event.name}</p>
             <h1 className="mt-3 text-[1.75rem] font-semibold leading-tight text-[#1d1d1f]">你已經完成投稿</h1>
             <p className="mt-3 text-[0.9375rem] leading-relaxed text-[#6f7d73]">
-              截止前仍可以修改內容。
+              截止前仍可以修改內容，也可以繼續新增其他表揚名單。
             </p>
             <button
               type="button"
               onClick={beginEditExisting}
-              className="mt-6 w-full rounded-2xl bg-[#1d1d1f] px-4 py-4 text-[1rem] font-semibold text-white"
+              className="relative z-10 mt-6 w-full rounded-2xl bg-[#1d1d1f] px-4 py-4 text-[1rem] font-semibold text-white touch-manipulation"
             >
               ✏️ 修改上一篇投稿
+            </button>
+            <button
+              type="button"
+              onClick={beginNewSubmission}
+              className="relative z-10 mt-3 w-full rounded-2xl border border-[#b9cec0] bg-white px-4 py-4 text-[1rem] font-semibold text-[#248a3d] touch-manipulation"
+            >
+              ＋ 新增投稿
             </button>
           </section>
         </div>
@@ -571,11 +602,30 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
             <p className="text-[0.8125rem] font-semibold uppercase tracking-wide text-[#77a183]">{event.name}</p>
             <h1 className="mt-3 text-[1.75rem] font-semibold leading-tight text-[#1d1d1f]">✅ 投稿完成</h1>
             <p className="mt-3 text-[0.9375rem] leading-relaxed text-[#6f7d73]">
-              你的表揚資料已送出，可以關閉此頁面。
+              你的表揚資料已送出。截止前仍可以修改內容，也可以繼續新增其他表揚名單。
             </p>
-            <p className="mt-2 text-[0.8125rem] leading-relaxed text-[#6f7d73]">
-              截止前若需要修改，請再次開啟同一投稿連結。
-            </p>
+            {existingSummary ? (
+              <>
+                <button
+                  type="button"
+                  onClick={beginEditExisting}
+                  className="relative z-10 mt-6 w-full rounded-2xl bg-[#1d1d1f] px-4 py-4 text-[1rem] font-semibold text-white touch-manipulation"
+                >
+                  ✏️ 修改上一篇投稿
+                </button>
+                <button
+                  type="button"
+                  onClick={beginNewSubmission}
+                  className="relative z-10 mt-3 w-full rounded-2xl border border-[#b9cec0] bg-white px-4 py-4 text-[1rem] font-semibold text-[#248a3d] touch-manipulation"
+                >
+                  ＋ 新增投稿
+                </button>
+              </>
+            ) : (
+              <p className="mt-2 text-[0.8125rem] leading-relaxed text-[#6f7d73]">
+                截止前若需要修改，請再次開啟同一投稿連結。
+              </p>
+            )}
           </section>
         </div>
       </div>
@@ -605,7 +655,10 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
           {reviewIssues.map((issue) => {
             const entry = entries.find((item) => item.id === issue.entryId);
             const primaryCode = issue.codes[0] ?? "other";
+            const multiConfirmed = Boolean(entry?.keepMultiPerson)
+              && issue.codes.includes("multi_person");
             const canConfirmMulti = issue.codes.includes("multi_person")
+              && !multiConfirmed
               && !issue.codes.includes("no_person")
               && !issue.codes.includes("uncertain_person")
               && !issue.codes.includes("low_resolution");
@@ -613,12 +666,25 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
               <section key={issue.entryId} className="rounded-[2rem] border border-[#d9e2dc] bg-white p-5">
                 <h2 className="text-[1.125rem] font-semibold text-[#1d1d1f]">{issue.name || "未填姓名"}</h2>
                 <p className="mt-1 text-[0.8125rem] text-[#6f7d73]">{issue.awardName}</p>
-                <p className="mt-3 text-[0.9375rem] font-semibold text-[#1d1d1f]">
-                  ⚠️ {plainIssueTitle(primaryCode)}
-                </p>
-                <p className="mt-2 text-[0.875rem] leading-relaxed text-[#6f7d73]">
-                  {plainIssueHint(primaryCode, issue.messages[0] ?? "請修正後再送出。")}
-                </p>
+                {multiConfirmed ? (
+                  <>
+                    <p className="mt-3 text-[0.9375rem] font-semibold text-[#248a3d]">
+                      ✓ 已確認，可以使用此照片
+                    </p>
+                    <p className="mt-2 text-[0.875rem] leading-relaxed text-[#6f7d73]">
+                      請按下方「重新檢查並送出」完成投稿。
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-3 text-[0.9375rem] font-semibold text-[#1d1d1f]">
+                      ⚠️ {plainIssueTitle(primaryCode)}
+                    </p>
+                    <p className="mt-2 text-[0.875rem] leading-relaxed text-[#6f7d73]">
+                      {plainIssueHint(primaryCode, issue.messages[0] ?? "請修正後再送出。")}
+                    </p>
+                  </>
+                )}
 
                 {entry?.previewUrl ? (
                   <div className="mt-4 max-w-[12rem]">
@@ -626,16 +692,25 @@ export function RecognitionPublicCollectionPage({ token }: { token: string }) {
                   </div>
                 ) : null}
 
-                <div className="mt-4 flex flex-col gap-2">
+                <div className="relative z-10 mt-4 flex flex-col gap-2">
                   {canConfirmMulti && (
                     <button
                       type="button"
                       disabled={submitting}
-                      className="w-full rounded-2xl bg-[#248a3d] px-4 py-3 text-[0.9375rem] font-semibold text-white disabled:opacity-60"
-                      onClick={() => handleConfirmMultiPerson(issue.entryId)}
+                      className="relative z-10 w-full rounded-2xl bg-[#248a3d] px-4 py-3 text-[0.9375rem] font-semibold text-white touch-manipulation disabled:opacity-60"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleConfirmMultiPerson(issue.entryId);
+                      }}
                     >
                       ✓ 確認照片沒問題
                     </button>
+                  )}
+                  {multiConfirmed && (
+                    <p className="rounded-2xl bg-[#eef8f1] px-4 py-3 text-center text-[0.9375rem] font-semibold text-[#248a3d]">
+                      ✓ 已確認此照片
+                    </p>
                   )}
                   {entry && (
                     <PhotoUploadButton
