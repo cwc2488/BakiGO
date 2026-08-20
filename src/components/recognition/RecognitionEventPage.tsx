@@ -299,11 +299,11 @@ function EventOpsDashboard({ eventId, eventName }: { eventId: string; eventName:
           </div>
           <div className="rounded-2xl bg-[#e8f8ed] p-3">
             <p className="text-[1.25rem] font-semibold text-[#248a3d]">{dashboard.pptReadyCount}</p>
-            <p className="text-[0.75rem] text-[#248a3d]">可直接產 PPT</p>
+            <p className="text-[0.75rem] text-[#248a3d]">可產 PPT</p>
           </div>
           <div className="rounded-2xl bg-[#fff8e5] p-3">
             <p className="text-[1.25rem] font-semibold text-[#1d1d1f]">{exceptionCount}</p>
-            <p className="text-[0.75rem] text-[#86868b]">待處理</p>
+            <p className="text-[0.75rem] text-[#86868b]">需要我決定</p>
           </div>
           <div className="rounded-2xl bg-[#f5f5f7] p-3">
             <p className="text-[1.25rem] font-semibold text-[#1d1d1f]">{dashboard.effectiveAwardCount}</p>
@@ -312,8 +312,8 @@ function EventOpsDashboard({ eventId, eventName }: { eventId: string; eventName:
         </div>
       )}
       {dashboard && (
-        <p className="mt-3 text-[0.8125rem] text-[#86868b]">
-          PASS {dashboard.passCount} · WARNING {dashboard.warningCount} · BLOCKED {dashboard.blockedCount} · OVERRIDE {dashboard.adminOverrideCount} · EXCLUDED {dashboard.excludedCount}
+        <p className="mt-3 text-[0.75rem] text-[#aeaeb2]">
+          系統狀態（除錯）：PASS {dashboard.passCount} · WARNING {dashboard.warningCount} · BLOCKED {dashboard.blockedCount} · OVERRIDE {dashboard.adminOverrideCount} · EXCLUDED {dashboard.excludedCount}
         </p>
       )}
       <div className="mt-4 flex flex-col gap-2">
@@ -321,7 +321,7 @@ function EventOpsDashboard({ eventId, eventName }: { eventId: string; eventName:
           href={`/recognition/events/${eventId}/exceptions`}
           className="rounded-2xl border border-[var(--brand-border)] px-4 py-3 text-center text-[0.9375rem] font-semibold text-[#1d1d1f]"
         >
-          {exceptionCount > 0 ? `處理 ${exceptionCount} 筆例外` : "例外處理"}
+          {exceptionCount > 0 ? `處理 ${exceptionCount} 筆需要決定的項目` : "例外處理"}
         </Link>
         <button
           type="button"
@@ -331,6 +331,15 @@ function EventOpsDashboard({ eventId, eventName }: { eventId: string; eventName:
         >
           {generating ? "產生中…" : "產生表揚 PPT"}
         </button>
+        {!canGenerate && dashboard && (
+          <p className="text-[0.8125rem] text-[#86868b]">
+            {dashboard.pptReadyCount === 0
+              ? "目前還沒有可產簡報的名單。請等投稿者完成修正，或先處理例外。"
+              : exceptionCount > 0
+                ? "還有項目需要你決定，處理後即可產 PPT。"
+                : "目前還不能產生簡報。"}
+          </p>
+        )}
         {generateError && <p className="text-[0.875rem] text-[#ff375f]">{generateError}</p>}
       </div>
     </BrandCard>

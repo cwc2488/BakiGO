@@ -201,15 +201,23 @@ describe("Recognition public domain", () => {
     expect(migration).not.toContain("approved");
   });
 
-  it("public collection UX does not require organization", () => {
+  it("public collection UX does not require organization and defers photo checks", () => {
     const page = readFileSync(
       resolve(process.cwd(), "src/components/recognition/RecognitionPublicCollectionPage.tsx"),
       "utf8",
     );
     expect(page).not.toContain("組織 / 團隊名稱");
     expect(page).not.toContain("A 組");
-    expect(page).toContain("PresentationCropEditor");
-    expect(page).toContain("投稿尚未完成");
-    expect(page).toContain("保持原照片");
+    expect(page).not.toContain("PresentationCropEditor");
+    expect(page).not.toContain("縮放");
+    expect(page).toContain("檢查並送出");
+    expect(page).toContain("📷 上傳照片");
+    expect(page).toContain("🔄 更換照片");
+    expect(page).toContain("還有");
+    expect(page).toContain("確認照片沒問題");
+    expect(page).toContain("✅ 投稿完成");
+    expect(page).not.toContain("回到投稿表單");
+    expect(page).not.toContain("確認這張夠清楚");
+    expect(page).toContain("sr-only");
   });
 });

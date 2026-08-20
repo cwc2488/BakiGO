@@ -78,7 +78,7 @@ describe("Recognition self-service validation", () => {
     expect(invalidRef.hasTechnicalBlocker).toBe(true);
   });
 
-  it("5. multi-person detected is WARNING, not BLOCKED", () => {
+  it("5. multi-person detected is WARNING, not BLOCKED; submitter must resolve", () => {
     const result = evaluateRecognitionEntryValidation({
       submittedName: "王小明、李小華",
       award: PHOTO_AWARD,
@@ -93,7 +93,9 @@ describe("Recognition self-service validation", () => {
     );
     expect(result.hasTechnicalBlocker).toBe(false);
     expect(result.exception).toBe(false);
-    expect(result.submissionComplete).toBe(true);
+    expect(result.canAdminOverride).toBe(false);
+    expect(result.submissionComplete).toBe(false);
+    expect(result.pptReady).toBe(false);
   });
 
   it("6. submitter confirming multi-person photo makes the row ready", () => {
@@ -107,7 +109,23 @@ describe("Recognition self-service validation", () => {
     });
     expect(result.status).toBe("PASS");
     expect(result.pptReady).toBe(true);
+    expect(result.submissionComplete).toBe(true);
     expect(result.issues.some((issue) => issue.code === "multi_person")).toBe(false);
+  });
+
+  it("6b. low_resolution cannot be confirmed away; must re-upload", () => {
+    const result = evaluateRecognitionEntryValidation({
+      submittedName: "王小明",
+      award: PHOTO_AWARD,
+      photoStoragePath: JPEG_PATH,
+      photoMimeType: "image/jpeg",
+      imageInspect: LOW_RES,
+      confirmedWarnings: ["low_resolution"],
+    });
+    expect(result.status).toBe("WARNING");
+    expect(result.issues.some((issue) => issue.code === "low_resolution")).toBe(true);
+    expect(result.pptReady).toBe(false);
+    expect(result.submissionComplete).toBe(false);
   });
 
   it("7. recrop updates the current crop used for PPT", () => {
@@ -186,7 +204,7 @@ describe("Recognition self-service validation", () => {
     expect(result.exception).toBe(true);
   });
 
-  it("12. eligible WARNING can be Admin Override", () => {
+  it("12. photo WARNING is submitter-owned; Admin Override still works as escape hatch", () => {
     const result = evaluateRecognitionEntryValidation({
       submittedName: "王小明",
       award: PHOTO_AWARD,
@@ -195,7 +213,8 @@ describe("Recognition self-service validation", () => {
       imageInspect: LANDSCAPE,
     });
     expect(result.status).toBe("WARNING");
-    expect(result.canAdminOverride).toBe(true);
+    expect(result.canAdminOverride).toBe(false);
+    expect(result.pptReady).toBe(false);
 
     const overridden = evaluateRecognitionEntryValidation({
       submittedName: "王小明",
@@ -212,6 +231,7 @@ describe("Recognition self-service validation", () => {
       },
     });
     expect(overridden.status).toBe("ADMIN_OVERRIDE");
+    expect(overridden.pptReady).toBe(true);
   });
 
   it("13. ADMIN_OVERRIDE is PPT ready", () => {
@@ -268,8 +288,8 @@ describe("Recognition self-service validation", () => {
     expect(result.submissionComplete).toBe(true);
 
     const completion = summarizeRecognitionSubmissionCompletion([
-      { status: "PASS" },
-      { status: "EXCLUDED" },
+      { status: "PASS", pptReady: true, submissionComplete: true },
+      { status: "EXCLUDED", pptReady: false, submissionComplete: true },
     ]);
     expect(completion.complete).toBe(true);
     expect(completion.blockedCount).toBe(0);
@@ -299,17 +319,23 @@ describe("Recognition self-service validation", () => {
     expect(data.awards).toHaveLength(0);
   });
 
-  it("submission complete requires zero BLOCKED; WARNING does not block", () => {
+  it("submission complete requires submitter-owned issues resolved", () => {
     const incomplete = summarizeRecognitionSubmissionCompletion([
-      { status: "PASS" },
-      { status: "BLOCKED" },
+      { status: "PASS", pptReady: true, submissionComplete: true },
+      { status: "BLOCKED", pptReady: false, submissionComplete: false },
     ]);
     expect(incomplete.complete).toBe(false);
     expect(incomplete.blockedCount).toBe(1);
 
+    const waitingOnSubmitter = summarizeRecognitionSubmissionCompletion([
+      { status: "PASS", pptReady: true, submissionComplete: true },
+      { status: "WARNING", pptReady: false, submissionComplete: false },
+    ]);
+    expect(waitingOnSubmitter.complete).toBe(false);
+
     const complete = summarizeRecognitionSubmissionCompletion([
-      { status: "PASS" },
-      { status: "WARNING" },
+      { status: "PASS", pptReady: true, submissionComplete: true },
+      { status: "WARNING", pptReady: true, submissionComplete: true },
     ]);
     expect(complete.complete).toBe(true);
   });
@@ -364,10 +390,11 @@ describe("Recognition self-service validation", () => {
       { ...warning, eventAwardId: "award-photo" },
     ]);
     expect(warning.status).toBe("WARNING");
+    expect(warning.pptReady).toBe(false);
     expect(dashboard.blockedCount).toBe(1);
     expect(dashboard.exceptionCount).toBe(1);
     expect(dashboard.warningCount).toBe(1);
-    expect(dashboard.pptReadyCount).toBe(1);
+    expect(dashboard.pptReadyCount).toBe(0);
     expect(dashboard.pptReady).toBe(false);
   });
 });

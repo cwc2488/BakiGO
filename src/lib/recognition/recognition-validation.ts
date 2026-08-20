@@ -27,7 +27,7 @@ import type {
 } from "@/types/recognition";
 
 export const RECOGNITION_MULTI_PERSON_WARNING =
-  "照片中似乎有多位人物。如果本次為夫妻／共同受獎，可以直接使用。如果只有其中一位受表揚，建議調整照片。";
+  "照片中可能有多位人物。如果照片中的人物都是本次一起受表揚者，可以繼續使用。如果不是，請重新上傳適合的照片。";
 
 export const RECOGNITION_TECHNICAL_OVERRIDE_BLOCKED =
   "此筆有技術問題，無法強制通過。請修正照片，或取消此筆表揚。";
@@ -84,13 +84,13 @@ const ISSUE = {
   multiPerson: (): RecognitionValidationIssue => ({
     code: "multi_person",
     severity: "warning",
-    message: RECOGNITION_MULTI_PERSON_WARNING,
+    message: "照片中可能有多位人物。如果照片中的人物都是本次一起受表揚者，可以繼續使用。如果不是，請重新上傳適合的照片。",
     overridable: true,
   }),
   lowResolution: (): RecognitionValidationIssue => ({
     code: "low_resolution",
     severity: "warning",
-    message: "圖片解析度偏低，投影時可能模糊。",
+    message: "這張照片製作成表揚簡報後可能會模糊，請換一張較清楚的照片。",
     overridable: true,
   }),
   duplicateName: (): RecognitionValidationIssue => ({
@@ -210,6 +210,7 @@ export function collectRecognitionEntryIssues(
     }) && !confirmed.has("multi_person")) {
       issues.push(ISSUE.multiPerson());
     }
+    // Low resolution is a technical quality gate — submitter must re-upload, cannot confirm away.
     if (recognitionHasLowResolutionWarning({
       originalWidth: inspect.width,
       originalHeight: inspect.height,
@@ -254,7 +255,12 @@ export function evaluateRecognitionEntryValidation(
   const hasTechnicalBlocker = issues.some((issue) => issue.severity === "technical");
   const hasBlocked = issues.some((issue) => issue.severity === "blocked" || issue.severity === "technical");
   const hasWarning = issues.some((issue) => issue.severity === "warning");
-  const canAdminOverride = !hasTechnicalBlocker
+  const submitterMustResolve = issues.some(
+    (issue) => issue.code === "multi_person" || issue.code === "low_resolution",
+  );
+  // Photo quality / multi-person are submitter-owned. Manager override is for true BLOCKED business exceptions.
+  const canAdminOverride = hasBlocked
+    && !hasTechnicalBlocker
     && issues.every((issue) => issue.overridable || issue.severity === "warning");
 
   if (input.adminOverride && !hasTechnicalBlocker) {
@@ -274,15 +280,15 @@ export function evaluateRecognitionEntryValidation(
   else if (hasWarning) status = "WARNING";
   else status = "PASS";
 
-  const pptReady = !hasTechnicalBlocker && status !== "BLOCKED";
+  const pptReady = !hasTechnicalBlocker && !hasBlocked && !submitterMustResolve;
 
   return {
     status,
     issues,
     pptReady,
-    submissionComplete: status !== "BLOCKED",
+    submissionComplete: status !== "BLOCKED" && !submitterMustResolve,
     hasTechnicalBlocker,
-    canAdminOverride: status !== "PASS" && canAdminOverride && !hasTechnicalBlocker,
+    canAdminOverride: status === "BLOCKED" && canAdminOverride,
     exception: status === "BLOCKED",
   };
 }
@@ -335,7 +341,7 @@ export function aggregateRecognitionEventDashboardCounts(
 }
 
 export function summarizeRecognitionSubmissionCompletion(
-  entries: Array<Pick<RecognitionEntryValidationResult, "status">>,
+  entries: Array<Pick<RecognitionEntryValidationResult, "status" | "pptReady" | "submissionComplete">>,
 ): RecognitionSubmissionCompletion {
   const total = entries.length;
   let readyCount = 0;
@@ -347,9 +353,9 @@ export function summarizeRecognitionSubmissionCompletion(
       excludedCount += 1;
       continue;
     }
-    if (entry.status === "BLOCKED") blockedCount += 1;
+    if (!entry.submissionComplete) blockedCount += 1;
     if (entry.status === "WARNING") warningCount += 1;
-    if (isRecognitionPptReadyStatus(entry.status) || entry.status === "PASS") readyCount += 1;
+    if (entry.pptReady) readyCount += 1;
   }
   return {
     complete: blockedCount === 0 && total - excludedCount > 0,
