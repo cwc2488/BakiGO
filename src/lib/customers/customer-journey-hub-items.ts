@@ -11,9 +11,16 @@ export type CustomerJourneyHubItem = {
   comingSoon?: boolean;
   locked?: boolean;
   lockLabel?: string;
+  waitingBadge?: boolean;
 };
 
-/** Main hub IA — P0/P1 converged entries only. */
+/**
+ * Main hub IA — P0/P1 converged entries only.
+ *
+ * Canonical logged-in Partner Quiz Hub is `/quiz/21d` (21 天名單 / 我的分享 / 我的成效).
+ * Public consumer Quiz (`/quiz/fat-loss`, `/q/{code}`) is a separate experience.
+ * Do not replace the Partner Hub with the older simple `/quiz/hub` shell during baseline recovery.
+ */
 export const CUSTOMER_JOURNEY_HUB_ITEMS: CustomerJourneyHubItem[] = [
   {
     href: "/radar",
@@ -28,10 +35,11 @@ export const CUSTOMER_JOURNEY_HUB_ITEMS: CustomerJourneyHubItem[] = [
     iconHref: "/retail-pipeline",
   },
   {
-    href: "/quiz/hub",
+    href: "/quiz/21d",
     title: "心理測驗",
-    desc: "分享測驗・開啟需求對話",
+    desc: "分享測驗，聯絡想了解 21 天的人",
     iconHref: "/quiz/hub",
+    waitingBadge: true,
   },
   {
     href: "/customers/list",

@@ -269,4 +269,14 @@ describe("BAKIGO-REGRESSION-FIXPACK-01", () => {
     expect(DEFAULT_ALLOCATION_RULES.minimum_qualified_score).toBe(40);
     expect(DEFAULT_ALLOCATION_RULES.daily_recommendation_cap).toBe(20);
   });
+
+  it("canonical Partner Quiz Hub remains at /quiz/21d (not obsolete /quiz/hub)", async () => {
+    const { CUSTOMER_JOURNEY_HUB_ITEMS } = await import(
+      "@/lib/customers/customer-journey-hub-items"
+    );
+    const quiz = CUSTOMER_JOURNEY_HUB_ITEMS.find((item) => item.title === "心理測驗");
+    expect(quiz?.href).toBe("/quiz/21d");
+    expect(quiz?.href).not.toBe("/quiz/hub");
+    expect(quiz?.waitingBadge).toBe(true);
+  });
 });

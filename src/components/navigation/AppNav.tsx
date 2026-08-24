@@ -10,6 +10,7 @@ import { NAV_ICONS, ROUTE_ICON_COMPONENTS, type NavHref, type QuickLinkHref } fr
 import { getMemberAvatarUrl, getMemberDisplayName } from "@/lib/mission-control/format";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { SIDE_NAV_EXTRA_LINKS } from "@/lib/ui/work-hub-links";
+import { QuizPartnerNavBadge } from "@/components/quiz/QuizPartnerNavBadge";
 
 /** UX-1：我的｜顧客｜行事曆 */
 const NAV_ITEMS = [
@@ -103,11 +104,13 @@ function SideExtraLink({
   title,
   icon,
   pathname,
+  waitingBadge,
 }: {
   href: string;
   title: string;
   icon: AppIconName;
   pathname: string;
+  waitingBadge?: boolean;
 }) {
   const active = isActive(pathname, href) || pathname === href || pathname.startsWith(`${href}/`);
   const RouteIcon = ROUTE_ICON_COMPONENTS[href as QuickLinkHref];
@@ -122,8 +125,18 @@ function SideExtraLink({
       href={href}
       title={title}
     >
-      {RouteIcon ? <RouteIcon size={24} /> : <AppIcon name={icon} size={24} />}
-      <span className="hidden text-[0.875rem] font-semibold lg:inline">{title}</span>
+      <span className="relative">
+        {RouteIcon ? <RouteIcon size={24} /> : <AppIcon name={icon} size={24} />}
+        {waitingBadge ? (
+          <span className="absolute -right-2 -top-2 lg:hidden">
+            <QuizPartnerNavBadge />
+          </span>
+        ) : null}
+      </span>
+      <span className="hidden min-w-0 items-center gap-2 lg:inline-flex">
+        <span className="text-[0.875rem] font-semibold">{title}</span>
+        {waitingBadge ? <QuizPartnerNavBadge /> : null}
+      </span>
     </Link>
   );
 }
@@ -165,6 +178,7 @@ export function AppSideNav() {
             icon={item.icon}
             pathname={pathname}
             title={item.title}
+            waitingBadge={"waitingBadge" in item ? item.waitingBadge : false}
           />
         ))}
       </nav>

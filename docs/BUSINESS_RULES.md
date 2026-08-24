@@ -35,6 +35,273 @@ The following remain optional / future KPIs:
 
 Activity, MAP, VP qualification, President tree, and Super League targets are defined below.
 
+## Recognition Center
+
+Recognition Center（表揚中心）是 Baki GO 的**組織營運模組**，負責固定、重複性的表揚收件、去重、審核、歷史查詢與 4:3 表揚簡報資料準備。
+
+### Scope boundary
+
+Recognition Center **不是**：
+
+- career rank / promotion engine
+- GAME_DESIGN 成就系統
+- `/leaderboard` 排行
+- `/events` 個人活動紀錄
+- 完整月會 PPT 自動化
+
+以下需求不屬於 Recognition Center V1：
+
+- 培訓時間
+- 活動宣傳文宣
+- 總裁組勉勵內容
+- 當月特殊簡報
+- 完整月會 PPT 自動化
+
+### Recognition Event rules
+
+`Recognition Event` 是表揚中心的主要業務實體。`year` / `month` 是其屬性，不是唯一識別。
+
+Frozen rules:
+
+- 同一個年月 **可以有多個** Recognition Event
+- 不得將 `(year, month)` 視為唯一業務鍵
+- 公開收件必須同時滿足：
+  - `status = collecting`
+  - current time 位於 `collect_starts_at` / `collect_ends_at`
+- `closed` event 可由 Recognition Admin 重新開回 `collecting`
+- 重新開啟後仍必須遵守原本的收件時間窗判定
+- 旋轉 public collection token 時，舊 token **立即失效**
+
+### Recognition Admin rules
+
+BakiGO 唯一 Super Admin 為會員編號 `20699471`。
+
+Canonical source: `src/lib/auth/super-admin.ts` (`SUPER_ADMIN_MEMBER_NUMBERS` / `isSuperAdmin` / `resolveIsSuperAdmin`).
+
+Frozen rules:
+
+- 管理中心（`/admin`）僅 Super Admin 可進入
+- 表揚中心（Recognition Center）是管理中心的一個功能，不是管理中心的替代品
+- Recognition Center 僅 Super Admin 可進入、建立、更新、刪除表揚活動
+- 權限**不得**由 rank 推論
+- President rank **不會**自動擁有 Super Admin / Recognition Admin 權限
+- 不得把 Super Admin 會員編號散落 hard-code 在 component / route
+- 一般會員既有功能（含 `/leaderboard`、夥伴關懷、組織圖）不因此改變
+- `recognition_admin_members` 表不得單獨授權；server/API 必須走同一 Super Admin 判斷
+
+### Recognition Event delete rules
+
+- 只有 Super Admin 可以刪除表揚活動
+- UI 必須二次確認，並清楚顯示活動名稱
+- 不允許單擊直接永久刪除
+- 刪除必須在同一交易內處理 dependent records（活動獎項、收件、名單、審核、簡報稽核）與該活動的 `recognition-photos` 物件
+- 失敗時不得留下半刪除狀態；成功後列表立即不再顯示該活動
+
+### Recognition Event Template compatibility
+
+Recognition Center 架構必須保留未來 `Recognition Event Template` 概念：
+
+Template
+→ default award set
+→ default award ordering
+→ default PPT theme
+→ create Recognition Event
+→ event-specific customization
+
+Template 例子可能包括：
+
+- 月會
+- STS
+- 世界組大學
+- 特別活動
+
+`Copy Previous Month Settings` 必須保留，但不得成為唯一可重用機制。
+
+### Submission evidence rule
+
+公開 submission 仍是**原始證據**，必須保留；不得 hard delete。
+
+新流程不再把「人工逐筆審核」當成正常資料的必經關卡：
+
+- 投稿者負責把資料整理到可直接進 PPT
+- 系統即時驗證、自動 PASS、自動排版
+- Super Admin 只處理截止後仍未解決的 exception
+- raw submissions / raw entries 必須保留
+
+### Organization field rule
+
+所有投稿者屬於同一個大組織。Recognition Center **不得**要求填寫：
+
+- 所屬組織
+- 組織名稱
+- A 組 / B 組
+- organization completion / grouping
+
+`submitter_organization` 可保留為 legacy DB 欄位，預設空字串。不得成為必要資料，也不得作為 dashboard 分組依據。
+
+核心關係：
+
+Recognition Event → Award Category → Submission / Entry
+
+### Duplicate / consolidation rules
+
+同一活動 + 同一表揚項目 + 同一 normalized name：
+
+- 可以整併為同一 candidate
+- 但必須保留所有來源與 submitted_by
+
+同一活動 + 不同表揚項目 + 同一 normalized name：
+
+- 只作為 **warning**
+- 不得自動 merge
+- 不得自動 reject
+- 不得自動 delete
+- 不得阻止 PPT generation
+
+Name normalization frozen rule:
+
+- 不得自動移除稱謂 / 頭銜，例如 `老師`、`督導`、`先生`、`組`
+- 帶稱謂但相似的名字可列為 suspected duplicate
+- 但不得靜默合併
+
+### Entry validation state rules
+
+投稿 entry 的驗證狀態：
+
+- `PASS` — 系統判定資料完整，可直接進 PPT；AUTO PASS，不需 Admin 逐筆核准
+- `WARNING` — 可能需要注意，但技術上可產 PPT；不阻擋投稿完成
+- `BLOCKED` — 必要資料不完整或技術上無法可靠產 PPT；必須修正
+- `ADMIN_OVERRIDE` — Super Admin 明確確認後強制通過；PPT 視為可使用
+- `EXCLUDED` — 本次不進入 PPT；不阻擋活動 PPT readiness；保留 audit
+
+Rules:
+
+- 「資料已送出」不等於「投稿完成」
+- 只有所有 entry 都沒有 `BLOCKED` 才顯示投稿完成
+- `WARNING` 不阻擋完成
+- 正常 `PASS` 不得成為 Admin 主要待辦
+- 截止前投稿者可自行修改；每次修改後立即重新驗證；符合條件即 AUTO PASS
+- 不得以 Email 作為主要補件流程
+
+### Zero-recipient award rules
+
+Award Definition 永久保留。某場活動若某項目**有效投稿數 = 0**：
+
+- Admin 主要畫面自動隱藏
+- PPT readiness 不要求它
+- PPT 不產生空白 slide
+- 不需要 Admin 每月手動 enable / disable
+- 不得刪除 Award Definition
+
+### Exception Center rules
+
+Super Admin 管理畫面預設不列出所有正常投稿。
+
+Dashboard 優先顯示：投稿人數、PASS / WARNING / BLOCKED / ADMIN_OVERRIDE / EXCLUDED、有效表揚項目、PPT readiness。
+
+Dashboard 的狀態計數與「可直接產 PPT」必須來自同一套 live validation 結果（`evaluateRecognitionEntryValidation`）。不得用過期的 stored `validation_status` 覆蓋 live 判定，否則會出現「可直接產 PPT」與 BLOCKED 同時成立的矛盾。
+
+Exception Center 主要顯示：
+
+- 截止後仍 `BLOCKED`
+- 系統無法可靠判斷、需要 Admin 最終決定的資料
+
+唯一 Super Admin（會員編號 `20699471`，canonical source: `src/lib/auth/super-admin.ts`）可：
+
+- 「確認無誤・強制通過」→ `ADMIN_OVERRIDE`，記錄 original issue / original status / overridden_by / overridden_at / optional reason
+- 「取消此筆表揚」→ `EXCLUDED`，不 hard delete
+
+Override 安全底線：
+
+- Business / quality warning 可以 override
+- Technical impossibility（image missing / corrupted / unreadable / required binary 不存在 / renderer 無法讀取）**不得** unsafe override
+- Technical blocker 只能：修正 或 取消此筆表揚
+
+一般會員不得進入 Exception Center，也不得 Admin Override。
+
+### Photo rules
+
+Photo awards 必須遵守：
+
+- 原始圖片必須保留
+- presentation crop / processed image 與原圖分離
+- 簡報卡片人像裁切比例 V1 使用 `3:4`（寬:高），與 PPT 投影片 `4:3` 不同
+- **投稿者**負責上傳、裁切、確認照片；Admin 不再負責正常照片裁切
+- 重新上傳 / 重新裁切後，current confirmed image/crop 是 PPT 唯一權威版本
+- AI **不得**從多人照片中自動選定受表揚者
+- 偵測到可能多人照片時 **只能 WARNING，不得自動 BLOCK / 退件**
+- 投稿者確認「保持原照片」（例如夫妻／共同受獎）後，不再因同一個多人 warning 阻擋，也不需 Admin 再審
+
+### Presentation rules
+
+Recognition Center presentation 規則：
+
+- 目標比例：`4:3`
+- 支援：
+  - 純姓名版型
+  - 12 人照片版型（4×3）
+  - 少人 hero 版型（1–3 人）
+  - 百萬終生成就獎 premium 版型
+- 照片超過 12 人自動分頁
+- theme 與 roster data 必須分離
+- 某 award 無有效 recipients 時，必須完全省略，不得產生空白頁
+- PPT 可使用：`PASS`、`ADMIN_OVERRIDE`，以及投稿者已確認且無 technical blocker 的 `WARNING`
+- PPT 排除：`EXCLUDED`
+- PPT 阻擋：真正 technical `BLOCKED`
+- PPT pipeline 只讀 current confirmed image/crop
+
+Frozen rule:
+
+- 純姓名每頁人數在 Phase 2 仍保持 **configurable / unresolved**
+- 不得在此階段硬寫成永久產品規則
+
+### Birthday scope
+
+Recognition Center V1：
+
+- 不將 birthday slide 視為 PPT generation 範圍
+- 保留未來月會模板可由 event month 推導 `X月壽星` 的概念
+- 自動壽星姓名填入仍不在範圍內
+
+### Default Recognition award catalog (27 items)
+
+> These awards are **Recognition Center catalog entries**, not career-rank keys, promotion rules, or mission rules.
+
+| # | Award | Photo required |
+|---|---|---|
+| 1 | MAP 第一個月 | No |
+| 2 | MAP 第二個月 | No |
+| 3 | MAP 第三個月 | Yes |
+| 4 | 新科督導 | Yes |
+| 5 | 世界組第一個月 | No |
+| 6 | 世界組第二個月 | No |
+| 7 | 世界組第三個月 | No |
+| 8 | 新科世界組（第四個月過關） | Yes |
+| 9 | 1%世界組 | Yes |
+| 10 | 5K俱樂部 | Yes |
+| 11 | 萬點高手 | Yes |
+| 12 | 推廣組第一個月 | No |
+| 13 | 推廣組第二個月 | No |
+| 14 | 新科推廣組 | Yes |
+| 15 | RO2500推廣組第一個月 | No |
+| 16 | RO2500推廣組第二個月 | No |
+| 17 | 新科RO2500推廣組 | Yes |
+| 18 | 富豪組第一個月 | No |
+| 19 | 富豪組第二個月 | No |
+| 20 | 新科富豪組 | Yes |
+| 21 | RO7500富豪組第一個月 | No |
+| 22 | RO7500富豪組第二個月 | No |
+| 23 | RO7500富豪組 | Yes |
+| 24 | 總裁組第一個月 | No |
+| 25 | 總裁組第二個月 | No |
+| 26 | 新科總裁組 | Yes |
+| 27 | 百萬終生成就獎 | Yes |
+
+Future rule:
+
+- Catalog must be extensible by admin configuration
+- V1 default 27 項不是永久封閉列表
+
 ## Monthly Activity
 
 Every member should maintain monthly field activity — **either** criterion satisfies the month:
@@ -369,6 +636,16 @@ Decision Tree segment after Phase 1 body measurement. All step payloads live in 
 - Paused status keeps existing pause semantics (not rewritten here).
 - Coach may edit start / planned end; Attention dense calendars must clamp to this window without changing Phase 3 precedence.
 
+### 21-day experience start (21D-START-01)
+
+- Reuses the same `coaching_enrollments` row. Not a second coaching product.
+- Partner marks Lead `joined` first. That status change does **not** create a Customer or enrollment.
+- Partner then creates/selects an owned Customer and chooses **product received date**.
+- **Day 1** = the Asia/Taipei calendar day after product received. **Day 21** = inclusive last day = Day 1 + 20 calendar days.
+- Example: received 2026-08-17 → Day 1 2026-08-18 → Day 21 2026-09-07. `planned_end_at` is that inclusive Day 21 (not start+21 exclusive).
+- One active enrollment per customer+coach remains the duplicate lock. After Day 21 (today > `planned_end_at`) a 21-day experience completes; no auto-renewal, no long-term plan.
+- Instagram is not a Customer column — do not invent a field. Prefill only `display_name` / `phone` / `line_id`.
+
 ### Coach Directive × Meal Vision (V1)
 
 - Directive = what customer should do (slot + text + effective window + customer_visible).
@@ -542,5 +819,7 @@ Each Partner sets their own preferred development region. Nearer *qualified* can
 | 2026-08 | Coaching Phase 4f — Growth share tokens + A→B attribution + Referral Center | — |
 | 2026-08 | UX-1.2 — Referral Center = all Customers; Growth = timing evidence; Coach UI humanization | — |
 | 2026-08 | Coaching Product Correction P0/P1 — enrollment window, portal Home, directives, bowel signal, Hub IA | — |
+| 2026-08 | Recognition Center Phase 2 — domain rules freeze, admin allowlist, multi-event month support, 27-award default catalog | — |
+| 2026-08 | Recognition Center — self-service validation, AUTO PASS, Exception-only Admin, submitter crop | — |
 | 2026-08-24 | RADAR-SEMANTIC-01 — candidate understanding, language eligibility, next-day region preference | — |
 | 2026-08-24 | RADAR-FEEDBACK-01 — member 👍/👎 evaluation evidence; no auto-learning | — |
