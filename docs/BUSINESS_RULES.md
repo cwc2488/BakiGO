@@ -505,6 +505,18 @@ Customer (Referral Center parent set)
 
 Document any intentional exceptions to the rules above in this section.
 
+## Radar FEEDBACK-01 — human evaluation evidence
+
+Partners may mark each of today's recommendations 👍 值得開發 or 👎 不值得開發.
+
+This is **evaluation evidence only**. Feedback must never auto-learn, rescore, rerank, exclude, change allocation, change the semantic prompt, or alter another member's Top20.
+
+👎 requires a compact reason. Only「其他」may include an optional short note.
+
+Feedback is member-specific: Member A 👍 and Member B 👎 on the same candidate is valid. One member's 👎 must not globally blacklist the candidate.
+
+Each evaluation freezes recommendation-time context (score, shown reason, prompt/semantic version, understanding fields). Later reanalyze/rescore must not rewrite that historical context. Changing 👍/👎 must not rebuild today's `member_daily_top20`.
+
 ## Radar SEMANTIC-01 — candidate understanding
 
 Radar identifies people worth starting a conversation with. Topic keywords alone are not a strong recommendation.
@@ -531,3 +543,4 @@ Each Partner sets their own preferred development region. Nearer *qualified* can
 | 2026-08 | UX-1.2 — Referral Center = all Customers; Growth = timing evidence; Coach UI humanization | — |
 | 2026-08 | Coaching Product Correction P0/P1 — enrollment window, portal Home, directives, bowel signal, Hub IA | — |
 | 2026-08-24 | RADAR-SEMANTIC-01 — candidate understanding, language eligibility, next-day region preference | — |
+| 2026-08-24 | RADAR-FEEDBACK-01 — member 👍/👎 evaluation evidence; no auto-learning | — |

@@ -244,6 +244,8 @@ Member (coach)
 
 **RADAR-SEMANTIC-01 (`049_radar_semantic_region_preference.sql`):** Additive `member_radar_region_preferences` (one row per member). Stores `current_*` development region plus `pending_*` / `pending_effective_date` so a same-day change cannot rewrite today's Top20. RLS enabled; `anon` / `authenticated` have no grants; `service_role` only. Does not mutate historical Radar snapshots, analysis JSON, or pipeline runs. Candidate understanding lives in existing extraction JSON (`candidate_understanding`, optional/backward compatible).
 
+**RADAR-FEEDBACK-01 (`050_radar_member_recommendation_feedback.sql`):** Additive `member_radar_recommendation_feedback` (unique `member_id + candidate_id + recommendation_date`). Stores 👍/👎, optional rejection reason/note, and immutable `evaluation_context` JSON for future quality reports. RLS enabled; `anon` / `authenticated` have no grants; `service_role` only. Does not mutate scores, Top20, allocation, or exclusion.
+
 ## Migrations
 
 - All schema changes go through versioned migrations.

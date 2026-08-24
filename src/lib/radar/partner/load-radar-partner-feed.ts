@@ -43,6 +43,13 @@ export async function loadRadarPartnerFeed(input: {
     member_id: input.member_id,
     snapshot_date,
   });
+  const ownFeedback = await input.repo.listMemberRadarRecommendationFeedback({
+    member_id: input.member_id,
+    recommendation_date: snapshot_date,
+  });
+  const feedbackByCandidate = new Map(
+    ownFeedback.map((row) => [row.candidate_id, row] as const),
+  );
   const cards = [];
 
   for (const ranked of visible) {
@@ -57,17 +64,19 @@ export async function loadRadarPartnerFeed(input: {
       input.repo.getCandidate(ranked.candidateId),
       input.repo.getRefreshState(ranked.candidateId),
     ]);
-    cards.push(
-      buildRadarPartnerCard({
-        ranked,
-        candidate,
-        extraction: analysis?.status === "succeeded" ? analysis.extraction_json : null,
-        corpus,
-        refresh,
-        now,
-        source_freshness_window_days: config.source_freshness_window_days,
-      }),
-    );
+    const card = buildRadarPartnerCard({
+      ranked,
+      candidate,
+      extraction: analysis?.status === "succeeded" ? analysis.extraction_json : null,
+      corpus,
+      refresh,
+      now,
+      source_freshness_window_days: config.source_freshness_window_days,
+    });
+    cards.push({
+      ...card,
+      feedback: feedbackByCandidate.get(ranked.candidateId) ?? null,
+    });
   }
 
   return buildRadarPartnerFeed({

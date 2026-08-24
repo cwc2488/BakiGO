@@ -8,6 +8,7 @@ import {
   mapRawSnapshotRow,
   mapRefreshStateRow,
 } from "./supabase-mappers";
+import type { MemberRadarRecommendationFeedback } from "../feedback/types";
 import type { MemberRadarRegionPreference } from "../semantics/region-preference";
 import type { CandidateDevelopmentClaimRecord, RadarRepository } from "./types";
 
@@ -21,6 +22,23 @@ function mapClaimRow(row: Record<string, unknown>): CandidateDevelopmentClaimRec
     released_at: row.released_at ? String(row.released_at) : null,
     release_reason: (row.release_reason ??
       null) as CandidateDevelopmentClaimRecord["release_reason"],
+  };
+}
+
+function mapFeedbackRow(row: Record<string, unknown>): MemberRadarRecommendationFeedback {
+  return {
+    id: String(row.id),
+    member_id: String(row.member_id),
+    candidate_id: String(row.candidate_id),
+    recommendation_date: String(row.recommendation_date),
+    feedback: row.feedback as MemberRadarRecommendationFeedback["feedback"],
+    rejection_reason: (row.rejection_reason ??
+      null) as MemberRadarRecommendationFeedback["rejection_reason"],
+    optional_note: row.optional_note ? String(row.optional_note) : null,
+    evaluation_context: (row.evaluation_context ??
+      {}) as MemberRadarRecommendationFeedback["evaluation_context"],
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
   };
 }
 
@@ -668,6 +686,72 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
     return preference;
   }
 
+  override async getMemberRadarRecommendationFeedback(input: {
+    member_id: string;
+    candidate_id: string;
+    recommendation_date: string;
+  }) {
+    const { data, error } = await this.client
+      .from("member_radar_recommendation_feedback")
+      .select(
+        "id, member_id, candidate_id, recommendation_date, feedback, rejection_reason, optional_note, evaluation_context, created_at, updated_at",
+      )
+      .eq("member_id", input.member_id)
+      .eq("candidate_id", input.candidate_id)
+      .eq("recommendation_date", input.recommendation_date)
+      .maybeSingle();
+    if (error) {
+      if (error.code === "PGRST205" || error.message.includes("does not exist")) {
+        return null;
+      }
+      throw new Error(error.message);
+    }
+    if (!data) return null;
+    return mapFeedbackRow(data);
+  }
+
+  override async listMemberRadarRecommendationFeedback(input: {
+    member_id: string;
+    recommendation_date: string;
+  }) {
+    const { data, error } = await this.client
+      .from("member_radar_recommendation_feedback")
+      .select(
+        "id, member_id, candidate_id, recommendation_date, feedback, rejection_reason, optional_note, evaluation_context, created_at, updated_at",
+      )
+      .eq("member_id", input.member_id)
+      .eq("recommendation_date", input.recommendation_date);
+    if (error) {
+      if (error.code === "PGRST205" || error.message.includes("does not exist")) {
+        return [];
+      }
+      throw new Error(error.message);
+    }
+    return (data ?? []).map(mapFeedbackRow);
+  }
+
+  override async upsertMemberRadarRecommendationFeedback(
+    feedback: import("../feedback/types").MemberRadarRecommendationFeedback,
+  ) {
+    const { error } = await this.client.from("member_radar_recommendation_feedback").upsert(
+      {
+        id: feedback.id,
+        member_id: feedback.member_id,
+        candidate_id: feedback.candidate_id,
+        recommendation_date: feedback.recommendation_date,
+        feedback: feedback.feedback,
+        rejection_reason: feedback.rejection_reason,
+        optional_note: feedback.optional_note,
+        evaluation_context: feedback.evaluation_context,
+        created_at: feedback.created_at,
+        updated_at: feedback.updated_at,
+      },
+      { onConflict: "member_id,candidate_id,recommendation_date" },
+    );
+    if (error) throw new Error(error.message);
+    return feedback;
+  }
+
   override async getMemberDevelopmentAreas(member_id: string) {
     const { data, error } = await this.client
       .from("member_development_areas")
@@ -872,6 +956,7 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
     return matched.map((row) => {
       const snapshot = (row.extraction_snapshot as {
         result?: import("../scoring/types").OverallScoreResult;
+        location_level?: unknown;
       } | null) ?? {};
       const candidateId = String(row.candidate_id_text ?? "");
       return {
@@ -880,6 +965,7 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
         result: snapshot.result as never,
         analysis_run_id: String(row.analysis_run_id ?? ""),
         display_name: names.get(candidateId) ?? null,
+        location_level: typeof snapshot.location_level === "string" ? snapshot.location_level : null,
       };
     });
   }

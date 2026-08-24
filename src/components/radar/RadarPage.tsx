@@ -16,6 +16,7 @@ import {
   type RadarPartnerNotice,
 } from "@/lib/radar/partner/radar-partner-presentation";
 import { RadarRegionPreference } from "@/components/radar/RadarRegionPreference";
+import { RadarFeedbackControls } from "@/components/radar/RadarFeedbackControls";
 
 const NOTICE_COPY: Record<RadarPartnerNotice, string> = {
   no_public_posts: "公開貼文很少，資訊有限",
@@ -149,6 +150,12 @@ function RadarCard({
       ) : (
         <p className="mt-3 text-[0.8125rem] text-[#86868b]">目前沒有可打開的公開連結。</p>
       )}
+
+      <RadarFeedbackControls
+        candidateId={card.candidate_id}
+        initial={card.feedback}
+        disabled={busy}
+      />
 
       <div className="mt-4 grid grid-cols-1 gap-2">
         <button

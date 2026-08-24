@@ -1,4 +1,5 @@
 import type { AllocatableAt } from "../allocation/allocation-rules";
+import type { MemberRadarRecommendationFeedback } from "../feedback/types";
 import type { MemberRadarRegionPreference } from "../semantics/region-preference";
 import type { GlobalCandidateLifecycleState, MemberDevelopmentState } from "../jobs/constants";
 import type { CandidateContentCorpus } from "../normalization/schema";
@@ -251,6 +252,21 @@ export interface RadarRepository {
     preference: MemberRadarRegionPreference,
   ): Promise<MemberRadarRegionPreference>;
 
+  getMemberRadarRecommendationFeedback(input: {
+    member_id: string;
+    candidate_id: string;
+    recommendation_date: string;
+  }): Promise<MemberRadarRecommendationFeedback | null>;
+
+  listMemberRadarRecommendationFeedback(input: {
+    member_id: string;
+    recommendation_date: string;
+  }): Promise<MemberRadarRecommendationFeedback[]>;
+
+  upsertMemberRadarRecommendationFeedback(
+    feedback: MemberRadarRecommendationFeedback,
+  ): Promise<MemberRadarRecommendationFeedback>;
+
   getMemberCandidateState(
     member_id: string,
     candidate_id: string,
@@ -374,6 +390,7 @@ export interface RadarRepository {
       result: OverallScoreResult;
       analysis_run_id: string;
       display_name: string | null;
+      location_level: string | null;
     }>
   >;
 

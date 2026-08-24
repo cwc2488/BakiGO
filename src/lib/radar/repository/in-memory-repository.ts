@@ -3,6 +3,7 @@ import type { CandidateContentCorpus } from "../normalization/schema";
 import type { RankedCandidate } from "../scoring/types";
 import { parseAllocatableAt, serializeAllocatableAt } from "../allocation/allocation-rules";
 import type { AllocatableAt } from "../allocation/allocation-rules";
+import type { MemberRadarRecommendationFeedback } from "../feedback/types";
 import type { MemberRadarRegionPreference } from "../semantics/region-preference";
 import type {
   AnalysisRunRecord,
@@ -28,6 +29,7 @@ export class InMemoryRadarRepository implements RadarRepository {
   members: Array<{ member_id: string }> = [];
   developmentAreas = new Map<string, MemberDevelopmentArea[]>();
   regionPreferences = new Map<string, MemberRadarRegionPreference>();
+  recommendationFeedback = new Map<string, MemberRadarRecommendationFeedback>();
   memberCandidateStates = new Map<string, MemberCandidateStateRecord>();
   candidateClaims = new Map<string, CandidateDevelopmentClaimRecord>();
   candidateClaimEvents: Array<{
@@ -308,6 +310,40 @@ export class InMemoryRadarRepository implements RadarRepository {
   async upsertMemberRadarRegionPreference(preference: MemberRadarRegionPreference) {
     this.regionPreferences.set(preference.member_id, preference);
     return preference;
+  }
+
+  private feedbackKey(member_id: string, candidate_id: string, recommendation_date: string) {
+    return `${member_id}:${candidate_id}:${recommendation_date}`;
+  }
+
+  async getMemberRadarRecommendationFeedback(input: {
+    member_id: string;
+    candidate_id: string;
+    recommendation_date: string;
+  }) {
+    return (
+      this.recommendationFeedback.get(
+        this.feedbackKey(input.member_id, input.candidate_id, input.recommendation_date),
+      ) ?? null
+    );
+  }
+
+  async listMemberRadarRecommendationFeedback(input: {
+    member_id: string;
+    recommendation_date: string;
+  }) {
+    return [...this.recommendationFeedback.values()].filter(
+      (row) =>
+        row.member_id === input.member_id && row.recommendation_date === input.recommendation_date,
+    );
+  }
+
+  async upsertMemberRadarRecommendationFeedback(feedback: MemberRadarRecommendationFeedback) {
+    this.recommendationFeedback.set(
+      this.feedbackKey(feedback.member_id, feedback.candidate_id, feedback.recommendation_date),
+      feedback,
+    );
+    return feedback;
   }
 
   async getMemberCandidateState(member_id: string, candidate_id: string) {
@@ -592,6 +628,7 @@ export class InMemoryRadarRepository implements RadarRepository {
       result: row.result as never,
       analysis_run_id: String(row.analysis_run_id),
       display_name: (this.candidates.get(String(row.candidate_id))?.display_name ?? null) as string | null,
+      location_level: typeof row.location_level === "string" ? row.location_level : null,
     }));
   }
 

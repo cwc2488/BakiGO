@@ -2,6 +2,7 @@ import { isSourceFresh } from "../analysis/fingerprint";
 import type { AiRadarExtractionV1 } from "../extraction/schema";
 import { NEED_TYPE_DEFINITIONS, isNeedTypeSlug } from "../fit-policy/need-types";
 import { pickPartnerWhyLines } from "../semantics/recommendation-reason";
+import type { MemberRadarRecommendationFeedback } from "../feedback/types";
 import type { CandidateContentCorpus } from "../normalization/schema";
 import type {
   CandidateRecord,
@@ -36,6 +37,8 @@ export type RadarPartnerCard = {
   evidence: RadarPartnerEvidence[];
   freshness: RadarPartnerFreshness;
   notices: RadarPartnerNotice[];
+  /** This member's own evaluation for today's recommendation; never another member's. */
+  feedback: MemberRadarRecommendationFeedback | null;
 };
 
 /**
@@ -274,6 +277,7 @@ export function buildRadarPartnerCard(input: {
       : [],
     freshness,
     notices: [...new Set(notices)],
+    feedback: null,
   };
 }
 
