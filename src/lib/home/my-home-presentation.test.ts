@@ -176,6 +176,7 @@ describe("MY home UX presentation", () => {
         "/pre-meeting-graphic",
       ]),
     );
+    expect(moreHrefs).not.toContain("/radar");
     const home = readFileSync(resolve(process.cwd(), "src/components/home/HomePage.tsx"), "utf8");
     expect(home).toContain("moreOpen");
     expect(home).toContain("更多");

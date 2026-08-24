@@ -31,4 +31,16 @@ describe("CustomerJourneyHub IA", () => {
     expect(quiz?.locked).toBeFalsy();
     expect(quiz?.href).toBeTruthy();
   });
+
+  it("connects AI Radar on the 顧客 hub to /radar (not comingSoon)", () => {
+    const radar = CUSTOMER_JOURNEY_HUB_ITEMS.find((item) => item.title === "AI Radar");
+    expect(radar).toMatchObject({
+      href: "/radar",
+      title: "AI Radar",
+      desc: "尋找新名單",
+    });
+    expect(radar?.comingSoon).toBeFalsy();
+    expect(radar?.locked).toBeFalsy();
+    expect(radar?.href).toBe("/radar");
+  });
 });

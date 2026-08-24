@@ -16,10 +16,10 @@ export type CustomerJourneyHubItem = {
 /** Main hub IA — P0/P1 converged entries only. */
 export const CUSTOMER_JOURNEY_HUB_ITEMS: CustomerJourneyHubItem[] = [
   {
+    href: "/radar",
     title: "AI Radar",
-    desc: "智慧找人（開發中）",
+    desc: "尋找新名單",
     iconName: APP_ICON.section.aiAnalysis,
-    comingSoon: true,
   },
   {
     href: "/retail-pipeline",

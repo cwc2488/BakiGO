@@ -253,7 +253,6 @@ export type HomeMoreEntry = {
 };
 
 export const MY_HOME_MORE_ENTRIES: HomeMoreEntry[] = [
-  { href: "/radar", title: "今日推薦" },
   { href: "/daily-action", title: "今日行動" },
   { href: "/president-road", title: "晉升之路" },
   { href: "/members", title: "夥伴關懷" },
