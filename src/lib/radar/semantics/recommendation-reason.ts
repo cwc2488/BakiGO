@@ -78,7 +78,6 @@ export function pickPartnerWhyLines(input: {
 
   const preferred = input.recommendation_reason_zh?.trim();
   if (preferred && looksTraditionalChinese(preferred) && !isGenericTopicReason(preferred)) {
-    if (input.need_owner === "third_party") return [];
     return [preferred];
   }
 

@@ -45,10 +45,12 @@ export function resolveEffectiveRadarRegion(
     };
   }
 
+  const pendingDate = preference.pending_effective_date;
   const pendingDue =
     Boolean(preference.pending_city) &&
-    Boolean(preference.pending_effective_date) &&
-    preference.pending_effective_date <= runDate;
+    Boolean(pendingDate) &&
+    pendingDate !== null &&
+    pendingDate <= runDate;
 
   if (pendingDue) {
     return {

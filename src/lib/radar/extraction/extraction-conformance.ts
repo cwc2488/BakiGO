@@ -6,7 +6,13 @@ import {
 } from "../fit-policy";
 import type { NeedRelevanceLevel } from "../fit-policy/need-types";
 import type { CandidateContentCorpus } from "../normalization/schema";
-import { emptyUnderstanding } from "../semantics/candidate-understanding";
+import {
+  emptyUnderstanding,
+  MARKET_ROLES,
+  NEED_CATEGORIES,
+  NEED_OWNERS,
+  NEED_STATES,
+} from "../semantics/candidate-understanding";
 import { classifyCorpusLanguage } from "../semantics/language-eligibility";
 import { buildRecommendationReasonZh } from "../semantics/recommendation-reason";
 import { CORE_TRAIT_IDS } from "./constants";
@@ -54,6 +60,16 @@ type Rec = Record<string, unknown>;
 
 function isRec(value: unknown): value is Rec {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function pickEnum<T extends readonly string[]>(
+  value: unknown,
+  allowed: T,
+  fallback: T[number],
+): T[number] {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value)
+    ? (value as T[number])
+    : fallback;
 }
 
 function asArray(value: unknown): unknown[] {
@@ -383,11 +399,10 @@ function conformUnderstanding(
 
   const reason = buildRecommendationReasonZh({
     ...emptyUnderstanding(),
-    need_owner: typeof owner === "string" ? owner : "unknown",
-    need_state: typeof state === "string" ? state : "unknown",
-    market_role: typeof role === "string" ? role : "unknown",
-    need_category:
-      typeof understanding.need_category === "string" ? understanding.need_category : "none",
+    need_owner: pickEnum(owner, NEED_OWNERS, "unknown"),
+    need_state: pickEnum(state, NEED_STATES, "unknown"),
+    market_role: pickEnum(role, MARKET_ROLES, "unknown"),
+    need_category: pickEnum(understanding.need_category, NEED_CATEGORIES, "none"),
     pain_points: asArray(understanding.pain_points).filter(
       (item): item is string => typeof item === "string",
     ),
