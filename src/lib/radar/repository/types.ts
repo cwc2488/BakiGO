@@ -1,3 +1,4 @@
+import type { AllocatableAt } from "../allocation/allocation-rules";
 import type { GlobalCandidateLifecycleState, MemberDevelopmentState } from "../jobs/constants";
 import type { CandidateContentCorpus } from "../normalization/schema";
 import type { AiRadarExtractionV1 } from "../extraction/schema";
@@ -60,6 +61,24 @@ export type MemberCandidateStateRecord = {
   candidate_id: string;
   development_state: MemberDevelopmentState | null;
   excluded_from_recommendations: boolean;
+  exclusion_reason_code?: string | null;
+  /** 略過 cooldown expiry. NULL = no timed skip (我認識他 is permanent). */
+  skip_expires_at?: string | null;
+};
+
+/**
+ * Current allocation lock for a candidate (`candidate_development_claims`).
+ * Time-boxed allocation, never ownership. `allocatable_at` may be the Postgres
+ * literal `infinity` for a candidate that became a Customer.
+ */
+export type CandidateDevelopmentClaimRecord = {
+  candidate_id: string;
+  member_id: string;
+  claimed_at: string;
+  expires_at: string;
+  allocatable_at: string;
+  released_at: string | null;
+  release_reason: "failed" | "gave_up" | "converted" | null;
 };
 
 export type Top20SnapshotRecord = {
@@ -75,6 +94,8 @@ export type Top20SnapshotRecord = {
 export type PipelineConfig = {
   source_freshness_window_days: number;
   worker: Record<string, unknown>;
+  /** Operator overrides for the allocation rules; empty = TS defaults. */
+  allocation: Record<string, unknown>;
 };
 
 export interface RadarRepository {
@@ -234,6 +255,46 @@ export interface RadarRepository {
     development_state: MemberDevelopmentState;
   }): Promise<void>;
 
+  setMemberCandidateState(input: {
+    member_id: string;
+    candidate_id: string;
+    development_state: MemberDevelopmentState | null;
+    excluded_from_recommendations: boolean;
+    exclusion_reason_code?: string | null;
+    skip_expires_at?: Date | null;
+  }): Promise<void>;
+
+  listCandidateDevelopmentClaims(
+    candidate_ids: string[],
+  ): Promise<CandidateDevelopmentClaimRecord[]>;
+
+  getCandidateDevelopmentClaim(
+    candidate_id: string,
+  ): Promise<CandidateDevelopmentClaimRecord | null>;
+
+  /**
+   * Atomic first-writer-wins claim. Resolves to the holder's row, or `null` when
+   * another member holds the candidate or the global cooldown is still running.
+   * A `null` result must never be turned into anything the caller can attribute.
+   */
+  claimCandidateDevelopment(input: {
+    candidate_id: string;
+    member_id: string;
+    expires_at: Date;
+    allocatable_at: AllocatableAt;
+    rules_version: string;
+    now: Date;
+  }): Promise<CandidateDevelopmentClaimRecord | null>;
+
+  /** Explicit early release (failed / gave_up / converted). Never a natural expiry. */
+  releaseCandidateDevelopmentClaim(input: {
+    candidate_id: string;
+    member_id: string;
+    released_at: Date;
+    release_reason: "failed" | "gave_up" | "converted";
+    allocatable_at: AllocatableAt;
+  }): Promise<CandidateDevelopmentClaimRecord | null>;
+
   initMemberScoreProgress(input: {
     pipeline_run_id: string;
     member_id: string;
@@ -255,8 +316,13 @@ export interface RadarRepository {
     member_id: string;
   }): Promise<boolean>;
 
-  insertMemberDailyTop20(input: {
-    id: string;
+  /**
+   * One logical snapshot per member per day. A re-run replaces the content of
+   * the existing row and keeps its `id`, because
+   * `member_recommendation_occurrences.member_daily_top20_id` points at it and
+   * would lose its lineage if the row were recreated.
+   */
+  upsertMemberDailyTop20(input: {
     member_id: string;
     pipeline_run_id: string;
     snapshot_date: string;
@@ -264,6 +330,17 @@ export interface RadarRepository {
     items: RankedCandidate[];
   }): Promise<Top20SnapshotRecord>;
 
+  /** Candidates already recommended to this member on this date. */
+  listRecommendedCandidateIds(input: {
+    member_id: string;
+    snapshot_date: string;
+  }): Promise<string[]>;
+
+  /**
+   * Append-only audit. A candidate already recorded for this member and day is
+   * skipped, so a re-run cannot inflate the trail; a genuine same-day
+   * re-recommendation still appends because it carries a reason.
+   */
   appendRecommendationOccurrences(input: {
     member_id: string;
     member_daily_top20_id: string;
@@ -271,7 +348,7 @@ export interface RadarRepository {
     items: RankedCandidate[];
     analysis_run_ids: Record<string, string>;
     re_recommendation?: Record<string, { reason: string; trigger: string } | undefined>;
-  }): Promise<void>;
+  }): Promise<{ appended: number; skipped_existing: number }>;
 
   getMemberDailyTop20(
     member_id: string,

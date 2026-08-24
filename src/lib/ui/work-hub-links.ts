@@ -36,6 +36,7 @@ export const WORK_HUB_LINKS = MY_WORLD_SECONDARY_LINKS;
 
 /** Desktop side nav extras — align with three-world IA (customer + my tools). */
 export const SIDE_NAV_EXTRA_LINKS = [
+  { href: "/radar", title: "今日推薦", icon: APP_ICON.hub.pipeline },
   { href: "/coaching", title: "陪跑", icon: APP_ICON.hub.pipeline },
   { href: "/retail-pipeline", title: "名單", icon: APP_ICON.hub.pipeline },
   { href: "/goals", title: "目標", icon: APP_ICON.hub.goals },

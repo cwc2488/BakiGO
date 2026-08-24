@@ -3,10 +3,11 @@ import { MY_WORLD_SECONDARY_LINKS, SIDE_NAV_EXTRA_LINKS } from "@/lib/ui/work-hu
 import { MY_HOME_BUSINESS_ENTRIES } from "@/lib/home/my-home-presentation";
 
 describe("three-world work links", () => {
-  it("keeps Meta Review and Radar out of my-world secondary links", () => {
+  it("keeps Meta Review out of my-world secondary links and exposes Radar", () => {
     const serialized = JSON.stringify({ MY_WORLD_SECONDARY_LINKS, SIDE_NAV_EXTRA_LINKS });
     expect(serialized).not.toContain("/meta-review");
-    expect(serialized).not.toContain("/radar");
+    expect(SIDE_NAV_EXTRA_LINKS.some((link) => link.href === "/radar")).toBe(true);
+    expect(MY_WORLD_SECONDARY_LINKS.some((link) => link.href === "/radar")).toBe(true);
   });
 
   it("places guided consultation in customer journey, not my-world secondary", () => {

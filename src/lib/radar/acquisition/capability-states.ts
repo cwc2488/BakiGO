@@ -23,3 +23,11 @@ export type PlatformCapabilityOutcome = {
 export function isEnrichmentBlocked(state: MetaCapabilityState): boolean {
   return state === "permission_required" || state === "rate_limited" || state === "source_unavailable";
 }
+
+/** Map a Meta Graph error to a capability state without inventing content. */
+export function capabilityStateFromMetaError(message: string): MetaCapabilityState {
+  if (/1,?000 or more followers/i.test(message)) {
+    return "below_threads_profile_threshold";
+  }
+  return "source_unavailable";
+}

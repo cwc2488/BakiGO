@@ -1,4 +1,6 @@
 export {
+  analyzableContentFromCorpus,
+  buildCanonicalFingerprints,
   computeCorpusFingerprint,
   computeAnalysisInputFingerprint,
   fingerprintsMatch,
@@ -6,5 +8,7 @@ export {
   isSourceFresh,
   qualifiesForTop20Analysis,
   type AnalysisFingerprintInput,
+  type CanonicalFingerprintCorpus,
+  type CanonicalFingerprints,
   type CorpusFingerprintInput,
 } from "./fingerprint";

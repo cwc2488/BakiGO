@@ -276,8 +276,7 @@ describe("radar pipeline chain integration", () => {
 
   it("intraday development read-filter removes candidate without modifying snapshot", async () => {
     const { repo, now } = createHarness();
-    const snapshot = await repo.insertMemberDailyTop20({
-      id: "top20-1",
+    const snapshot = await repo.upsertMemberDailyTop20({
       member_id: "member-a",
       pipeline_run_id: "run-1",
       snapshot_date: "2026-08-09",

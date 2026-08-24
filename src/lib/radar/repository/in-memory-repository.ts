@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { CandidateContentCorpus } from "../normalization/schema";
 import type { RankedCandidate } from "../scoring/types";
+import { parseAllocatableAt, serializeAllocatableAt } from "../allocation/allocation-rules";
+import type { AllocatableAt } from "../allocation/allocation-rules";
 import type {
   AnalysisRunRecord,
+  CandidateDevelopmentClaimRecord,
   CandidateRecord,
   MemberCandidateStateRecord,
   MemberDevelopmentArea,
@@ -24,6 +27,13 @@ export class InMemoryRadarRepository implements RadarRepository {
   members: Array<{ member_id: string }> = [];
   developmentAreas = new Map<string, MemberDevelopmentArea[]>();
   memberCandidateStates = new Map<string, MemberCandidateStateRecord>();
+  candidateClaims = new Map<string, CandidateDevelopmentClaimRecord>();
+  candidateClaimEvents: Array<{
+    candidate_id: string;
+    member_id: string;
+    event: "claimed" | "released" | "superseded";
+    reason: string | null;
+  }> = [];
   scoreProgress = new Map<string, Record<string, unknown>>();
   top20 = new Map<string, Top20SnapshotRecord>();
   recommendationOccurrences: Array<Record<string, unknown>> = [];
@@ -32,6 +42,7 @@ export class InMemoryRadarRepository implements RadarRepository {
   pipelineConfig: import("./types").PipelineConfig = {
     source_freshness_window_days: 7,
     worker: { cooling_refresh_interval_days: 14 },
+    allocation: {},
   };
 
   async upsertCandidate(input: {
@@ -301,12 +312,127 @@ export class InMemoryRadarRepository implements RadarRepository {
     candidate_id: string;
     development_state: MemberCandidateStateRecord["development_state"];
   }) {
-    this.memberCandidateStates.set(`${input.member_id}:${input.candidate_id}`, {
+    await this.setMemberCandidateState({
       member_id: input.member_id,
       candidate_id: input.candidate_id,
       development_state: input.development_state,
       excluded_from_recommendations: true,
+      exclusion_reason_code: null,
     });
+  }
+
+  async setMemberCandidateState(input: {
+    member_id: string;
+    candidate_id: string;
+    development_state: MemberCandidateStateRecord["development_state"];
+    excluded_from_recommendations: boolean;
+    exclusion_reason_code?: string | null;
+    skip_expires_at?: Date | null;
+  }) {
+    this.memberCandidateStates.set(`${input.member_id}:${input.candidate_id}`, {
+      member_id: input.member_id,
+      candidate_id: input.candidate_id,
+      development_state: input.development_state,
+      excluded_from_recommendations: input.excluded_from_recommendations,
+      exclusion_reason_code: input.exclusion_reason_code ?? null,
+      skip_expires_at: input.skip_expires_at ? input.skip_expires_at.toISOString() : null,
+    });
+  }
+
+  async listCandidateDevelopmentClaims(candidate_ids: string[]) {
+    const wanted = new Set(candidate_ids);
+    return [...this.candidateClaims.values()].filter((claim) => wanted.has(claim.candidate_id));
+  }
+
+  async getCandidateDevelopmentClaim(candidate_id: string) {
+    return this.candidateClaims.get(candidate_id) ?? null;
+  }
+
+  /**
+   * Mirrors `claim_candidate_development()` in 047: a claim only lands when the
+   * previous lock is past its `allocatable_at`, or when the same member is
+   * retrying their own live claim — in which case the dates are left untouched.
+   */
+  async claimCandidateDevelopment(input: {
+    candidate_id: string;
+    member_id: string;
+    expires_at: Date;
+    allocatable_at: AllocatableAt;
+    rules_version: string;
+    now: Date;
+  }) {
+    const existing = this.candidateClaims.get(input.candidate_id);
+    const fresh: CandidateDevelopmentClaimRecord = {
+      candidate_id: input.candidate_id,
+      member_id: input.member_id,
+      claimed_at: input.now.toISOString(),
+      expires_at: input.expires_at.toISOString(),
+      allocatable_at: serializeAllocatableAt(input.allocatable_at),
+      released_at: null,
+      release_reason: null,
+    };
+
+    if (!existing) {
+      this.candidateClaims.set(input.candidate_id, fresh);
+      this.candidateClaimEvents.push({
+        candidate_id: fresh.candidate_id,
+        member_id: fresh.member_id,
+        event: "claimed",
+        reason: null,
+      });
+      return fresh;
+    }
+
+    const holderRetry =
+      existing.member_id === input.member_id &&
+      !existing.released_at &&
+      new Date(existing.expires_at).getTime() > input.now.getTime();
+    const allocatable = parseAllocatableAt(existing.allocatable_at);
+    const cooldownOver =
+      allocatable.kind === "at" && allocatable.at.getTime() <= input.now.getTime();
+    if (!holderRetry && !cooldownOver) return null;
+
+    if (holderRetry) return existing;
+
+    this.candidateClaimEvents.push({
+      candidate_id: existing.candidate_id,
+      member_id: existing.member_id,
+      event: "superseded",
+      reason: existing.release_reason ?? "expired",
+    });
+    this.candidateClaims.set(input.candidate_id, fresh);
+    this.candidateClaimEvents.push({
+      candidate_id: fresh.candidate_id,
+      member_id: fresh.member_id,
+      event: "claimed",
+      reason: null,
+    });
+    return fresh;
+  }
+
+  async releaseCandidateDevelopmentClaim(input: {
+    candidate_id: string;
+    member_id: string;
+    released_at: Date;
+    release_reason: "failed" | "gave_up" | "converted";
+    allocatable_at: AllocatableAt;
+  }) {
+    const existing = this.candidateClaims.get(input.candidate_id);
+    if (!existing || existing.member_id !== input.member_id || existing.released_at) return null;
+    const released: CandidateDevelopmentClaimRecord = {
+      ...existing,
+      released_at: input.released_at.toISOString(),
+      release_reason: input.release_reason,
+      allocatable_at: serializeAllocatableAt(input.allocatable_at),
+    };
+    this.candidateClaims.set(input.candidate_id, released);
+    this.candidateClaimEvents.push({
+      candidate_id: released.candidate_id,
+      member_id: released.member_id,
+      event: "released",
+      reason: input.release_reason,
+    });
+    return released;
   }
 
   private scoreProgressKey(pipeline_run_id: string, member_id: string) {
@@ -356,16 +482,18 @@ export class InMemoryRadarRepository implements RadarRepository {
     return Number(row.terminal_score_jobs) >= Number(row.expected_score_jobs);
   }
 
-  async insertMemberDailyTop20(input: {
-    id: string;
+  async upsertMemberDailyTop20(input: {
     member_id: string;
     pipeline_run_id: string;
     snapshot_date: string;
     generated_at: Date;
     items: RankedCandidate[];
   }) {
+    const key = `${input.member_id}:${input.snapshot_date}`;
+    const existing = this.top20.get(key);
     const record: Top20SnapshotRecord = {
-      id: input.id,
+      // Identity belongs to the member-day, not to the run that filled it.
+      id: existing?.id ?? randomUUID(),
       member_id: input.member_id,
       pipeline_run_id: input.pipeline_run_id,
       snapshot_date: input.snapshot_date,
@@ -373,8 +501,21 @@ export class InMemoryRadarRepository implements RadarRepository {
       item_count: input.items.length,
       items: input.items,
     };
-    this.top20.set(`${input.member_id}:${input.snapshot_date}`, record);
+    this.top20.set(key, record);
     return record;
+  }
+
+  async listRecommendedCandidateIds(input: { member_id: string; snapshot_date: string }) {
+    return [
+      ...new Set(
+        this.recommendationOccurrences
+          .filter(
+            (row) =>
+              row.member_id === input.member_id && row.snapshot_date === input.snapshot_date,
+          )
+          .map((row) => String(row.candidate_id)),
+      ),
+    ];
   }
 
   async appendRecommendationOccurrences(input: {
@@ -385,7 +526,23 @@ export class InMemoryRadarRepository implements RadarRepository {
     analysis_run_ids: Record<string, string>;
     re_recommendation?: Record<string, { reason: string; trigger: string } | undefined>;
   }) {
+    const alreadyRecorded = new Set(
+      this.recommendationOccurrences
+        .filter(
+          (row) =>
+            row.member_id === input.member_id && row.snapshot_date === input.snapshot_date,
+        )
+        .map((row) => String(row.candidate_id)),
+    );
+
+    let appended = 0;
+    let skipped_existing = 0;
     for (const item of input.items) {
+      const reRecommendation = input.re_recommendation?.[item.candidateId];
+      if (alreadyRecorded.has(item.candidateId) && !reRecommendation) {
+        skipped_existing += 1;
+        continue;
+      }
       this.recommendationOccurrences.push({
         id: randomUUID(),
         member_id: input.member_id,
@@ -395,26 +552,36 @@ export class InMemoryRadarRepository implements RadarRepository {
         rank: item.rank,
         recommendation_score: item.overall_score,
         analysis_run_id: input.analysis_run_ids[item.candidateId],
-        re_recommendation_reason: input.re_recommendation?.[item.candidateId]?.reason ?? null,
-        re_recommendation_trigger: input.re_recommendation?.[item.candidateId]?.trigger ?? null,
+        re_recommendation_reason: reRecommendation?.reason ?? null,
+        re_recommendation_trigger: reRecommendation?.trigger ?? null,
       });
+      appended += 1;
     }
+    return { appended, skipped_existing };
   }
 
   async getMemberDailyTop20(member_id: string, snapshot_date: string) {
     return this.top20.get(`${member_id}:${snapshot_date}`) ?? null;
   }
 
+  /**
+   * Score snapshots stay append-only history, so a same-day re-score leaves
+   * more than one row per candidate. Ranking needs one: the newest wins,
+   * otherwise a re-run would rank the same person twice.
+   */
   async listMemberScoreSnapshots(input: { member_id: string; snapshot_date: string }) {
-    return this.memberScores
-      .filter((row) => row.member_id === input.member_id && row.snapshot_date === input.snapshot_date)
-      .map((row) => ({
-        candidate_id: String(row.candidate_id),
-        overall_score: Number(row.overall_score),
-        result: row.result as never,
-        analysis_run_id: String(row.analysis_run_id),
-        display_name: (this.candidates.get(String(row.candidate_id))?.display_name ?? null) as string | null,
-      }));
+    const latestByCandidate = new Map<string, Record<string, unknown>>();
+    for (const row of this.memberScores) {
+      if (row.member_id !== input.member_id || row.snapshot_date !== input.snapshot_date) continue;
+      latestByCandidate.set(String(row.candidate_id), row);
+    }
+    return [...latestByCandidate.values()].map((row) => ({
+      candidate_id: String(row.candidate_id),
+      overall_score: Number(row.overall_score),
+      result: row.result as never,
+      analysis_run_id: String(row.analysis_run_id),
+      display_name: (this.candidates.get(String(row.candidate_id))?.display_name ?? null) as string | null,
+    }));
   }
 
   async getPipelineConfig() {

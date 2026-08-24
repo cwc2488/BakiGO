@@ -22,6 +22,7 @@ export type WorkerContext = {
   pipelineStore?: PipelineStore & { trackJob?: (pipeline_run_id: string, job: RadarJobRecord) => void };
   llm?: AiRadarLlmProvider;
   now?: Date;
+  scoreMemberIds?: string[];
 };
 
 export type WorkerResult = {
@@ -251,7 +252,18 @@ export function newAnalysisRunId(): string {
 export async function runWorkerBatch(ctx: WorkerContext, limit = 25): Promise<number> {
   const jobs = await ctx.queue.claim({ limit, now: ctx.now });
   for (const job of jobs) {
-    await processClaimedJob(ctx, job);
+    try {
+      await processClaimedJob(ctx, job);
+    } catch (error) {
+      const now = ctx.now ?? new Date();
+      await ctx.queue.fail({
+        job_id: job.id,
+        error_code: "WORKER_UNCAUGHT",
+        error_message: error instanceof Error ? error.message : "worker threw",
+        retryable: true,
+        now,
+      });
+    }
   }
   return jobs.length;
 }

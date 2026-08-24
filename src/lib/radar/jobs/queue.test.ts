@@ -166,6 +166,34 @@ describe("RadarJobQueue", () => {
     expect(retryClaim.id).toBe(job.id);
   });
 
+  it("does not claim succeeded or dead_letter jobs", async () => {
+    const store = new InMemoryRadarJobQueueStore();
+    const queue = new RadarJobQueue(store);
+    const now = new Date("2026-08-09T03:00:00.000Z");
+
+    const { job: done } = await queue.enqueue(
+      { job_type: "score", idempotency_key: "score:done" },
+      now,
+    );
+    await queue.claim({ limit: 1, now });
+    await queue.complete({ job_id: done.id }, now);
+
+    const { job: dead } = await queue.enqueue(
+      { job_type: "score", idempotency_key: "score:dead", max_attempts: 1 },
+      now,
+    );
+    await queue.claim({ limit: 1, now });
+    await queue.fail({
+      job_id: dead.id,
+      error_code: "SCHEMA_VALIDATION",
+      error_message: "invalid",
+      retryable: false,
+      now,
+    });
+
+    expect(await queue.claim({ limit: 5, now })).toHaveLength(0);
+  });
+
   it("prevents double worker ownership while job is running", async () => {
     const store = new InMemoryRadarJobQueueStore();
     const queue = new RadarJobQueue(store);

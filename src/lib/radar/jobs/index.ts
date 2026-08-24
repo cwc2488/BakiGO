@@ -37,6 +37,14 @@ export {
 export { pipelineJobKey, assertArtifactPresent, validateUpstreamArtifact } from "./chain";
 export { runWorkerBatch, processClaimedJob, dispatchRadarJob } from "./workers/dispatch";
 export type { WorkerContext, WorkerResult } from "./workers/dispatch";
+export {
+  RADAR_PROCESS_CLAIM_LIMIT,
+  RADAR_PROCESS_BUDGET_MS,
+  RADAR_ABANDONED_RECLAIM_MINUTES,
+  parseRadarProcessMode,
+  nextRadarDrainAction,
+  runWorkerUntilBudget,
+} from "./auto-drain";
 export type {
   RadarJobRecord,
   PipelineJobRunRecord,

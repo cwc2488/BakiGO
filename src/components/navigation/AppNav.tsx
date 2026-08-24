@@ -43,7 +43,8 @@ function isActive(pathname: string, href: string): boolean {
       pathname.startsWith("/coaching") ||
       pathname.startsWith("/retail-pipeline") ||
       pathname.startsWith("/quiz") ||
-      pathname.startsWith("/consultation")
+      pathname.startsWith("/consultation") ||
+      pathname.startsWith("/radar")
     );
   }
   return pathname === href || pathname.startsWith(`${href}/`);

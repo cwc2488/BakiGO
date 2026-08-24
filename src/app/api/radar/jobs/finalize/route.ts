@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { noStoreJson } from "@/lib/radar/jobs/auto-drain";
 import { runPipelineFinalizer } from "@/lib/radar/pipeline/run-finalizer";
 import { SupabasePipelineStore } from "@/lib/radar/pipeline/supabase-pipeline-store";
 import { resolveDailyPipelineRunDate } from "@/lib/radar/pipeline/run-date";
@@ -9,6 +9,7 @@ import {
 } from "@/lib/supabase/service-client";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type FinalizeBody = {
   pipeline_run_id?: string;
@@ -17,10 +18,10 @@ type FinalizeBody = {
 
 export async function POST(request: Request) {
   if (!isRadarCronAuthorized(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return noStoreJson({ error: "Unauthorized" }, { status: 401 });
   }
   if (!isSupabaseServiceConfigured()) {
-    return NextResponse.json({ error: "Supabase service role is not configured" }, { status: 503 });
+    return noStoreJson({ error: "Supabase service role is not configured" }, { status: 503 });
   }
 
   let body: FinalizeBody = {};
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
       body = (await request.json()) as FinalizeBody;
     }
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return noStoreJson({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   try {
@@ -49,13 +50,13 @@ export async function POST(request: Request) {
     }
 
     if (!pipeline_run_id) {
-      return NextResponse.json({ error: "pipeline_run_id or run_date required" }, { status: 400 });
+      return noStoreJson({ error: "pipeline_run_id or run_date required" }, { status: 400 });
     }
 
     const result = await runPipelineFinalizer(store, { pipeline_run_id });
-    return NextResponse.json({ ok: true, ...result });
+    return noStoreJson({ ok: true, ...result });
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : "Pipeline finalizer failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return noStoreJson({ error: message }, { status: 500 });
   }
 }
