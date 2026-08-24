@@ -3,6 +3,7 @@
 import { formatShortDate } from "@/lib/mission-control/format";
 import { computeAgeFromCustomerProfile, computeBmi } from "@/lib/customers/body-metrics";
 import {
+  bodyRecordToFormValues,
   emptyCustomerBodyForm,
   parseCustomerBodyNumber,
   type CustomerBodyFormValues,
@@ -44,16 +45,22 @@ export function CustomerBodySection({
   birthDate,
   heightCm,
   onCreate,
+  onUpdate,
+  onDelete,
 }: {
   records: BodyCompositionRecord[];
   today: string;
   birthYear?: number;
   birthDate?: string;
   heightCm?: number;
-  onCreate: (values: CustomerBodyFormValues) => void;
+  onCreate: (values: CustomerBodyFormValues) => void | Promise<void>;
+  onUpdate: (recordId: string, values: CustomerBodyFormValues) => void | Promise<void>;
+  onDelete: (recordId: string) => void | Promise<void>;
 }) {
   const [showForm, setShowForm] = useState(records.length === 0);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<CustomerBodyFormValues>(() => emptyForm(today));
+  const [busy, setBusy] = useState(false);
 
   const suggestedAge = useMemo(
     () => computeAgeFromCustomerProfile({ birthDate, birthYear }, form.recordDate),
@@ -83,11 +90,58 @@ export function CustomerBodySection({
     setForm((current) => ({ ...current, bmi: String(autoBmi) }));
   }, [autoBmi]);
 
-  const handleSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    onCreate(form);
-    setForm(emptyForm(today));
+  const closeForm = () => {
     setShowForm(false);
+    setEditingId(null);
+    setForm(emptyForm(today));
+  };
+
+  const openCreate = () => {
+    setEditingId(null);
+    setForm(emptyForm(today));
+    setShowForm(true);
+  };
+
+  const openEdit = (record: BodyCompositionRecord) => {
+    setEditingId(record.id);
+    setForm(bodyRecordToFormValues(record));
+    setShowForm(true);
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      if (editingId) {
+        await onUpdate(editingId, form);
+      } else {
+        await onCreate(form);
+      }
+      closeForm();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async (recordId: string) => {
+    if (busy) {
+      return;
+    }
+    if (!window.confirm("確定要刪除這筆量測？刪除後無法復原。")) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await onDelete(recordId);
+      if (editingId === recordId) {
+        closeForm();
+      }
+    } finally {
+      setBusy(false);
+    }
   };
 
   const updateField = (field: keyof CustomerBodyFormValues, value: string) => {
@@ -113,9 +167,15 @@ export function CustomerBodySection({
           </p>
         </div>
         <ImageUploadSectionButton
-          active={showForm}
+          active={showForm && !editingId}
           inactiveLabel={records.length === 0 ? "記錄量測" : "新增量測"}
-          onClick={() => setShowForm((current) => !current)}
+          onClick={() => {
+            if (showForm && !editingId) {
+              closeForm();
+            } else {
+              openCreate();
+            }
+          }}
         />
       </div>
 
@@ -126,7 +186,10 @@ export function CustomerBodySection({
       ) : null}
 
       {showForm ? (
-        <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
+        <form className="mt-4 space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+          <p className="text-[0.8125rem] font-semibold text-[#636366]">
+            {editingId ? "編輯量測" : "新增量測"}
+          </p>
           <CrmInput
             label="量測日期"
             onChange={(event) => updateField("recordDate", event.target.value)}
@@ -201,7 +264,19 @@ export function CustomerBodySection({
             onChange={(event) => updateField("note", event.target.value)}
             value={form.note}
           />
-          <CrmButton type="submit">儲存量測</CrmButton>
+          <div className="flex flex-wrap gap-2">
+            <CrmButton disabled={busy} type="submit">
+              {editingId ? "儲存修改" : "儲存量測"}
+            </CrmButton>
+            <button
+              className="rounded-2xl border border-[var(--brand-border)] px-4 py-2.5 text-[0.875rem] font-semibold text-[#636366]"
+              disabled={busy}
+              onClick={closeForm}
+              type="button"
+            >
+              取消
+            </button>
+          </div>
         </form>
       ) : null}
 
@@ -246,6 +321,24 @@ export function CustomerBodySection({
               {record.note ? (
                 <p className="mt-2 text-[0.875rem] text-[#86868b]">{record.note}</p>
               ) : null}
+              <div className="mt-3 flex gap-2">
+                <button
+                  className="rounded-xl border border-[var(--brand-border)] bg-white px-3 py-2 text-[0.8125rem] font-semibold text-[#1d1d1f]"
+                  disabled={busy}
+                  onClick={() => openEdit(record)}
+                  type="button"
+                >
+                  編輯量測
+                </button>
+                <button
+                  className="rounded-xl border border-[#ff375f]/40 bg-white px-3 py-2 text-[0.8125rem] font-semibold text-[#ff375f]"
+                  disabled={busy}
+                  onClick={() => void handleDelete(record.id)}
+                  type="button"
+                >
+                  刪除量測
+                </button>
+              </div>
             </article>
           ))
         ) : (

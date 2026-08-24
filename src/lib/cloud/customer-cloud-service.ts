@@ -13,6 +13,11 @@ import {
   readCustomerDeletionTombstones,
   readCustomerDeletionTombstoneIds,
 } from "@/lib/customers/customer-deletion-tombstones";
+import {
+  clearBodyRecordDeletionTombstones,
+  readBodyRecordDeletionTombstones,
+  readBodyRecordDeletionTombstoneIds,
+} from "@/lib/customers/body-record-deletion-tombstones";
 import { todayISODate } from "@/lib/config/app-config";
 import type {
   BodyCompositionRecord,
@@ -317,21 +322,43 @@ export async function fetchCloudReceiptPhotos(
 export async function deleteCustomersFromCloud(
   ownerMemberId: EntityId,
   customerIds: EntityId[],
-): Promise<void> {
+): Promise<EntityId[]> {
   if (!isSupabaseConfigured() || !isCloudDatabaseMemberId(ownerMemberId) || customerIds.length === 0) {
-    return;
+    return [];
   }
 
   const supabase = createSupabaseBrowserClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("customers")
     .delete()
     .eq("owner_member_id", ownerMemberId)
-    .in("id", customerIds);
+    .in("id", customerIds)
+    .select("id");
 
   if (error) {
     throw new Error(error.message);
   }
+
+  return (data ?? []).map((row) => row.id as EntityId);
+}
+
+export async function deleteBodyRecordsFromCloud(recordIds: EntityId[]): Promise<EntityId[]> {
+  if (!isSupabaseConfigured() || recordIds.length === 0) {
+    return [];
+  }
+
+  const supabase = createSupabaseBrowserClient();
+  const { data, error } = await supabase
+    .from("body_composition_records")
+    .delete()
+    .in("id", recordIds)
+    .select("id");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).map((row) => row.id as EntityId);
 }
 
 async function pushPendingCustomerDeletionsToCloud(
@@ -344,8 +371,36 @@ async function pushPendingCustomerDeletionsToCloud(
   }
 
   const customerIds = tombstones.map((tombstone) => tombstone.customerId);
+  if (!isSupabaseConfigured() || !isCloudDatabaseMemberId(ownerMemberId)) {
+    clearCustomerDeletionTombstones(storage, customerIds);
+    return;
+  }
+
   await deleteCustomersFromCloud(ownerMemberId, customerIds);
-  clearCustomerDeletionTombstones(storage, customerIds);
+  const cloudCustomers = await fetchCloudCustomers(ownerMemberId);
+  const stillPresent = new Set(cloudCustomers.map((customer) => customer.id));
+  const confirmedGone = customerIds.filter((customerId) => !stillPresent.has(customerId));
+  clearCustomerDeletionTombstones(storage, confirmedGone);
+}
+
+async function pushPendingBodyRecordDeletionsToCloud(storage: StorageAdapter): Promise<void> {
+  const tombstones = readBodyRecordDeletionTombstones(storage);
+  if (tombstones.length === 0) {
+    return;
+  }
+
+  const recordIds = tombstones.map((tombstone) => tombstone.recordId);
+  if (!isSupabaseConfigured()) {
+    clearBodyRecordDeletionTombstones(storage, recordIds);
+    return;
+  }
+
+  const deletedIds = await deleteBodyRecordsFromCloud(recordIds);
+  // If select returns nothing (already gone / RLS), still clear — local delete is authoritative.
+  clearBodyRecordDeletionTombstones(
+    storage,
+    deletedIds.length > 0 ? deletedIds : recordIds,
+  );
 }
 
 export async function pushCustomersToCloud(
@@ -464,6 +519,7 @@ export async function syncCustomersOnLogin(
   try {
     const repo = createCustomerRepository(storage);
     await pushPendingCustomerDeletionsToCloud(storage, ownerMemberId);
+    await pushPendingBodyRecordDeletionsToCloud(storage);
 
     const cloudCustomers = await fetchCloudCustomers(ownerMemberId);
     const cloudHasData = cloudCustomers.length > 0;
@@ -492,7 +548,9 @@ export async function syncCustomersOnLogin(
       const localRecords = repo
         .getAllBodyRecords()
         .filter((record) => customerIds.includes(record.customerId));
-      const mergedRecords = mergeById(localRecords, cloudRecords);
+      const bodyTombstoneIds = readBodyRecordDeletionTombstoneIds(storage);
+      const filteredCloudRecords = cloudRecords.filter((record) => !bodyTombstoneIds.has(record.id));
+      const mergedRecords = mergeById(localRecords, filteredCloudRecords);
       storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(mergedRecords));
 
       const cloudPhotos = await fetchCloudProgressPhotos(customerIds);
@@ -533,6 +591,7 @@ export async function pushLocalCustomersToCloud(storage: StorageAdapter): Promis
   }
 
   await pushPendingCustomerDeletionsToCloud(storage, memberId);
+  await pushPendingBodyRecordDeletionsToCloud(storage);
 
   const repo = createCustomerRepository(storage);
   await pushCustomersToCloud(

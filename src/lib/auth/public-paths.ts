@@ -16,7 +16,8 @@ export function isOpenPublicPath(pathname: string): boolean {
     normalized.startsWith("/quiz/fat-loss") ||
     normalized === "/quiz" ||
     normalized.startsWith("/q/") ||
-    normalized.startsWith("/r/")
+    normalized.startsWith("/r/") ||
+    normalized.startsWith("/recognition/p/")
   );
 }
 

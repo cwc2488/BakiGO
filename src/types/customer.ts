@@ -108,6 +108,8 @@ export interface BodyCompositionRecordCreateInput {
   note?: string;
 }
 
+export type BodyCompositionRecordUpdateInput = BodyCompositionRecordCreateInput;
+
 export interface CustomerProgressPhoto extends StoredEntity {
   customerId: EntityId;
   phase: CustomerPhotoPhase;

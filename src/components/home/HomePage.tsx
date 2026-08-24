@@ -27,6 +27,8 @@ import {
   MY_HOME_MORE_ENTRIES,
   type HomeTodayPriorityCard,
 } from "@/lib/home/my-home-presentation";
+import { homeMoreEntriesForViewer } from "@/lib/auth/admin-access";
+import { useSuperAdmin } from "@/lib/auth/use-super-admin";
 import { APP_ICON } from "@/lib/ui/app-icons";
 
 type LoadState = "loading" | "ready" | "error";
@@ -78,6 +80,8 @@ function BusinessHomeView({ metrics }: { metrics: MemberComputedMetrics }) {
   );
   const daily = useMemo(() => buildDailyActionSnapshot(metrics, storage), [metrics, storage]);
   const progress = useMemo(() => buildHomeProgressView(metrics, daily), [metrics, daily]);
+  const { isAdmin } = useSuperAdmin();
+  const moreEntries = homeMoreEntriesForViewer(MY_HOME_MORE_ENTRIES, isAdmin === true);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const partnerHint =
@@ -200,7 +204,7 @@ function BusinessHomeView({ metrics }: { metrics: MemberComputedMetrics }) {
         </button>
         {moreOpen ? (
           <div className="space-y-1.5 rounded-2xl bg-[var(--brand-bg)] px-2 py-2">
-            {MY_HOME_MORE_ENTRIES.map((entry) => (
+            {moreEntries.map((entry) => (
               <Link
                 key={entry.href}
                 href={entry.href}

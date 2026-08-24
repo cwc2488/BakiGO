@@ -201,6 +201,50 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
     }
   };
 
+  const handleUpdateRecord = async (recordId: string, values: CustomerBodyFormValues) => {
+    const currentCustomer = repo.getCustomerById(customerId);
+    const weightKg = parseCustomerBodyNumber(values.weightKg);
+    const bmi =
+      parseCustomerBodyNumber(values.bmi) ??
+      computeBmi(weightKg, currentCustomer?.heightCm ?? null);
+    const age =
+      parseCustomerBodyNumber(values.age) ??
+      computeAgeFromCustomerProfile(
+        { birthDate: currentCustomer?.birthDate, birthYear: currentCustomer?.birthYear },
+        values.recordDate,
+      );
+
+    repo.updateBodyRecord(recordId, {
+      customerId,
+      recordDate: values.recordDate,
+      age,
+      weightKg,
+      skeletalMuscleKg: parseCustomerBodyNumber(values.skeletalMuscleKg),
+      bmi,
+      bodyFatPercent: parseCustomerBodyNumber(values.bodyFatPercent),
+      visceralFatLevel: parseCustomerBodyNumber(values.visceralFatLevel),
+      basalMetabolicRate: parseCustomerBodyNumber(values.basalMetabolicRate),
+      bodyAge: parseCustomerBodyNumber(values.bodyAge),
+      note: values.note,
+    });
+    reload();
+    try {
+      await flushCustomerCloudPushAsync();
+    } catch {
+      // local update already applied
+    }
+  };
+
+  const handleDeleteRecord = async (recordId: string) => {
+    repo.deleteBodyRecord(recordId);
+    reload();
+    try {
+      await flushCustomerCloudPushAsync();
+    } catch {
+      // tombstone retained for retry
+    }
+  };
+
   const handleCreatePhoto = (values: CustomerProgressPhotoFormValues) => {
     repo.createProgressPhoto({
       customerId,
@@ -379,6 +423,13 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
         await revokeCustomerPortalToken(customerId).catch(() => undefined);
       }
       repo.deleteCustomer(customerId);
+      try {
+        await flushCustomerCloudPushAsync();
+      } catch (error) {
+        setDeleteError(error instanceof Error ? error.message : "雲端刪除尚未完成，請稍後再試");
+        setDeleteBusy(false);
+        return;
+      }
       router.push("/customers/list");
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "無法刪除顧客");
@@ -434,6 +485,8 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
         birthDate={customer.birthDate}
         heightCm={customer.heightCm}
         onCreate={handleCreateRecord}
+        onDelete={handleDeleteRecord}
+        onUpdate={handleUpdateRecord}
         records={records}
         today={today}
       />

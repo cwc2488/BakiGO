@@ -17,6 +17,7 @@ interface PortalRecord {
   bodyAge: number | null;
   basalMetabolicRate: number | null;
   bmi: number | null;
+  skeletalMuscleKg: number | null;
 }
 
 interface PortalPhoto {
@@ -153,12 +154,30 @@ export default function CustomerPortalPage({ token }: { token: string }) {
                   <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">
                     {record.weightKg !== null ? `${record.weightKg} kg` : "體組成紀錄"}
                     {record.bodyFatPercent !== null ? ` · 體脂 ${record.bodyFatPercent}%` : ""}
+                    {record.skeletalMuscleKg !== null
+                      ? ` · 肌肉量 ${record.skeletalMuscleKg} kg`
+                      : ""}
                     {record.bmi !== null ? ` · BMI ${record.bmi}` : ""}
                   </p>
                   <time className="text-[0.8125rem] text-[#86868b]">
                     {formatShortDate(record.recordDate)}
                   </time>
                 </div>
+                {record.basalMetabolicRate !== null || record.visceralFatLevel !== null || record.bodyAge !== null ? (
+                  <p className="mt-2 text-[0.8125rem] text-[#636366]">
+                    {[
+                      record.basalMetabolicRate !== null
+                        ? `基礎代謝 ${record.basalMetabolicRate}`
+                        : null,
+                      record.visceralFatLevel !== null
+                        ? `內臟脂肪 ${record.visceralFatLevel}`
+                        : null,
+                      record.bodyAge !== null ? `身體年齡 ${record.bodyAge}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                ) : null}
               </article>
             ))
           ) : (
