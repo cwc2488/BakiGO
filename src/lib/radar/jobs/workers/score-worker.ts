@@ -5,6 +5,10 @@ import {
   memberAreasToLocationContext,
   resolveMemberLocationLevel,
 } from "../../scoring/compute-member-score";
+import {
+  promoteDueRegionPreference,
+  resolveEffectiveRadarRegion,
+} from "../../semantics/region-preference";
 import { validateUpstreamArtifact } from "../chain";
 import type { RadarJobRecord } from "../types";
 import {
@@ -74,7 +78,23 @@ export async function runScoreWorker(
     };
   }
 
-  const areas = await ctx.repo.getMemberDevelopmentAreas(member_id);
+  const preference = await ctx.repo.getMemberRadarRegionPreference(member_id);
+  const promoted = preference ? promoteDueRegionPreference(preference, run_date) : null;
+  if (promoted && preference && promoted !== preference) {
+    await ctx.repo.upsertMemberRadarRegionPreference(promoted);
+  }
+  const effective = resolveEffectiveRadarRegion(promoted ?? preference, run_date);
+  const areas = effective.city
+    ? [
+        {
+          member_id,
+          area_role: "primary" as const,
+          normalized_city: effective.city,
+          normalized_district: effective.district,
+          sort_order: 0,
+        },
+      ]
+    : await ctx.repo.getMemberDevelopmentAreas(member_id);
   const memberLocationContext = memberAreasToLocationContext(areas);
   const result = computeMemberOverlayScore({
     extraction: analysisRun.extraction_json,

@@ -1,4 +1,5 @@
 import type { AllocatableAt } from "../allocation/allocation-rules";
+import type { MemberRadarRegionPreference } from "../semantics/region-preference";
 import type { GlobalCandidateLifecycleState, MemberDevelopmentState } from "../jobs/constants";
 import type { CandidateContentCorpus } from "../normalization/schema";
 import type { AiRadarExtractionV1 } from "../extraction/schema";
@@ -241,6 +242,14 @@ export interface RadarRepository {
   listActiveMembers(): Promise<Array<{ member_id: string }>>;
 
   getMemberDevelopmentAreas(member_id: string): Promise<MemberDevelopmentArea[]>;
+
+  getMemberRadarRegionPreference(
+    member_id: string,
+  ): Promise<MemberRadarRegionPreference | null>;
+
+  upsertMemberRadarRegionPreference(
+    preference: MemberRadarRegionPreference,
+  ): Promise<MemberRadarRegionPreference>;
 
   getMemberCandidateState(
     member_id: string,

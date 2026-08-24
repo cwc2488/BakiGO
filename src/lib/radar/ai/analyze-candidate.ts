@@ -19,6 +19,11 @@ import {
   type LlmAnalyzeResult,
   type LlmUsage,
 } from "./provider";
+import {
+  classifyCorpusLanguage,
+  shouldSkipExpensiveAnalysis,
+} from "../semantics/language-eligibility";
+import { buildLanguageSkipExtraction } from "../semantics/language-skip-extraction";
 import { AI_RADAR_MODEL_ID, AI_RADAR_PROMPT_VERSION } from "./prompt";
 
 /** A forbidden score/rank field is a policy breach, not a shape slip: never re-ask. */
@@ -114,6 +119,49 @@ export async function runCandidateAnalysis(input: {
     const cached = await input.repo.getAnalysisRun(decision.cached_analysis_run_id);
     if (!cached) throw new Error("Cached analysis run missing");
     return { kind: "cache_hit" as const, analysis_run: cached, decision, telemetry: null };
+  }
+
+  const language = classifyCorpusLanguage(input.corpus);
+  if (shouldSkipExpensiveAnalysis(language)) {
+    const analysis_run_id = randomUUID();
+    const extraction = buildLanguageSkipExtraction({
+      candidate_id: input.corpus.candidate_id,
+      analysis_run_id,
+      language,
+    });
+    const analysisRun = await input.repo.insertAnalysisRun({
+      id: analysis_run_id,
+      candidate_id: input.corpus.candidate_id,
+      status: "succeeded",
+      analysis_input_fingerprint: decision.analysis_input_fingerprint,
+      corpus_fingerprint: decision.corpus_fingerprint,
+      profile_semantic_hash: null,
+      normalization_run_id: input.normalization_run_id,
+      extraction_json: extraction,
+      prompt_version: AI_RADAR_PROMPT_VERSION,
+      model_id: "language_gate_v1",
+    });
+    await input.repo.updateRefreshStateAfterNormalize({
+      candidate_id: input.corpus.candidate_id,
+      corpus_fingerprint: decision.corpus_fingerprint,
+      profile_semantic_hash: null,
+      data_completeness: input.corpus.data_completeness,
+      current_analysis_run_id: analysisRun.id,
+      validated_extraction_fingerprint: decision.analysis_input_fingerprint,
+      now: input.referenceDate ?? new Date(),
+    });
+    return {
+      kind: "analyzed" as const,
+      analysis_run: analysisRun,
+      decision,
+      telemetry: {
+        openai_calls: 0,
+        repair_attempted: false,
+        repair_succeeded: false,
+        conformance_actions: ["understanding_language_aligned"],
+        usage: [],
+      },
+    };
   }
 
   let llm;

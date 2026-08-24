@@ -6,6 +6,9 @@ import {
 } from "../fit-policy";
 import type { NeedRelevanceLevel } from "../fit-policy/need-types";
 import type { CandidateContentCorpus } from "../normalization/schema";
+import { emptyUnderstanding } from "../semantics/candidate-understanding";
+import { classifyCorpusLanguage } from "../semantics/language-eligibility";
+import { buildRecommendationReasonZh } from "../semantics/recommendation-reason";
 import { CORE_TRAIT_IDS } from "./constants";
 
 /**
@@ -28,6 +31,9 @@ export const CONFORMANCE_ACTIONS = [
   "umbrella_need_moved_to_advisory",
   "need_relevance_clamped_to_ceiling",
   "location_downgraded_to_unknown",
+  "understanding_language_aligned",
+  "understanding_reason_filled",
+  "understanding_third_party_downgraded",
 ] as const;
 
 export type ConformanceAction = (typeof CONFORMANCE_ACTIONS)[number];
@@ -317,5 +323,86 @@ export function applyExtractionConformance(
   conformNeeds(root, allowed, actions);
   conformLocation(root, allowed, actions);
   conformCoreTraits(root, allowed, actions);
+  conformUnderstanding(root, options.corpus, allowed, actions);
+
   return { data: root, actions: [...new Set(actions)] };
+}
+
+function conformUnderstanding(
+  root: Rec,
+  corpus: CandidateContentCorpus | undefined,
+  allowed: Set<string> | null,
+  actions: ConformanceAction[],
+): void {
+  if (!isRec(root.candidate_understanding)) return;
+  const understanding = root.candidate_understanding;
+  pruneSourceRefs(understanding, allowed, actions);
+
+  if (corpus) {
+    const language = classifyCorpusLanguage(corpus);
+    if (language.confidence === "high") {
+      if (understanding.primary_language !== language.primary_language) {
+        understanding.primary_language = language.primary_language;
+        actions.push("understanding_language_aligned");
+      }
+      understanding.traditional_chinese_usable = language.traditional_chinese_usable;
+    }
+  }
+
+  const owner = understanding.need_owner;
+  const state = understanding.need_state;
+  const role = understanding.market_role;
+  const noPersonalNeed =
+    owner === "third_party" ||
+    owner === "general" ||
+    state === "resolved" ||
+    (role === "provider" &&
+      !(owner === "self" && (state === "unresolved" || state === "in_progress_with_gap")));
+
+  if (noPersonalNeed) {
+    if (isRec(root.change_window) && isRec(root.change_window.change_intent)) {
+      const intent = root.change_window.change_intent;
+      if (intent.availability === "available" && intent.level !== "none") {
+        intent.level = "none";
+        actions.push("understanding_third_party_downgraded");
+      }
+    }
+    if (state === "resolved" && isRec(root.change_window) && isRec(root.change_window.solution_gap)) {
+      const gap = root.change_window.solution_gap;
+      if (gap.availability === "available") gap.level = "closed";
+    }
+    if (isRec(root.needs) && root.needs.availability === "available") {
+      root.needs = {
+        availability: "unknown",
+        reasoning: "personal need not evidenced after ownership/state/role review",
+      };
+      actions.push("understanding_third_party_downgraded");
+    }
+    understanding.recommendation_reason_zh = null;
+  }
+
+  const reason = buildRecommendationReasonZh({
+    ...emptyUnderstanding(),
+    need_owner: typeof owner === "string" ? owner : "unknown",
+    need_state: typeof state === "string" ? state : "unknown",
+    market_role: typeof role === "string" ? role : "unknown",
+    need_category:
+      typeof understanding.need_category === "string" ? understanding.need_category : "none",
+    pain_points: asArray(understanding.pain_points).filter(
+      (item): item is string => typeof item === "string",
+    ),
+    attempts: asArray(understanding.attempts).filter(
+      (item): item is string => typeof item === "string",
+    ),
+    unresolved_gap:
+      typeof understanding.unresolved_gap === "string" ? understanding.unresolved_gap : null,
+    recommendation_reason_zh:
+      typeof understanding.recommendation_reason_zh === "string"
+        ? understanding.recommendation_reason_zh
+        : null,
+  });
+  if (reason && understanding.recommendation_reason_zh !== reason) {
+    understanding.recommendation_reason_zh = reason;
+    actions.push("understanding_reason_filled");
+  }
 }

@@ -1,6 +1,7 @@
 import { isSourceFresh, qualifiesForTop20Analysis } from "../../analysis/fingerprint";
 import { allocationBlockFor } from "../../allocation/allocation-eligibility";
 import { capDailyRecommendations, parseAllocationRules } from "../../allocation/allocation-rules";
+import { evaluateSemanticEligibility } from "../../semantics/candidate-understanding";
 import { rankCandidates } from "../../scoring/rank-candidates";
 import type { RadarJobRecord } from "../types";
 import { enrichPayload, type WorkerContext, type WorkerResult } from "./dispatch";
@@ -30,6 +31,7 @@ export async function runRankWorker(
   let skipped_member_handled = 0;
   let skipped_allocation_locked = 0;
   let skipped_below_minimum_score = 0;
+  let skipped_semantic = 0;
   for (const entry of scored) {
     const state = await ctx.repo.getMemberCandidateState(member_id, entry.candidate_id);
     const block = allocationBlockFor({
@@ -71,6 +73,12 @@ export async function runRankWorker(
     });
     if (!analysisEligible) {
       skipped_freshness_or_analysis += 1;
+      continue;
+    }
+
+    const semantic = evaluateSemanticEligibility(analysis?.extraction_json?.candidate_understanding);
+    if (!semantic.eligible) {
+      skipped_semantic += 1;
       continue;
     }
 
@@ -123,6 +131,7 @@ export async function runRankWorker(
       skipped_member_handled,
       skipped_allocation_locked,
       skipped_below_minimum_score,
+      skipped_semantic,
       full_precision_top_score: ranked[0]?.overall_score ?? null,
       snapshot_id: snapshot.id,
       occurrences_appended: occurrences.appended,

@@ -505,6 +505,16 @@ Customer (Referral Center parent set)
 
 Document any intentional exceptions to the rules above in this section.
 
+## Radar SEMANTIC-01 — candidate understanding
+
+Radar identifies people worth starting a conversation with. Topic keywords alone are not a strong recommendation.
+
+New analyses (prompt `ai_radar_extraction_v1.2`) write `candidate_understanding.recommendation_reason_zh` in Traditional Chinese. The card prefers that line. Historical cards may still show the model's original `reasoning` language; do not spend new AI calls only to translate completed recommendations.
+
+Each Partner sets their own preferred development region. Nearer *qualified* candidates rank higher via the existing location score (max 5). Unknown candidate location stays eligible with no proximity boost. Changing region after a current value exists becomes effective the next Asia/Taipei calendar day and must not rewrite today's Top20.
+
+`minimum_qualified_score` stays 40. Daily cap 20 is a ceiling, not a quota to fill.
+
 ## Change Log
 
 | Date | Change | Author |
@@ -520,3 +530,4 @@ Document any intentional exceptions to the rules above in this section.
 | 2026-08 | Coaching Phase 4f — Growth share tokens + A→B attribution + Referral Center | — |
 | 2026-08 | UX-1.2 — Referral Center = all Customers; Growth = timing evidence; Coach UI humanization | — |
 | 2026-08 | Coaching Product Correction P0/P1 — enrollment window, portal Home, directives, bowel signal, Hub IA | — |
+| 2026-08-24 | RADAR-SEMANTIC-01 — candidate understanding, language eligibility, next-day region preference | — |

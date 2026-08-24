@@ -7,7 +7,7 @@ import { NEED_TYPE_DEFINITIONS, NEED_TYPE_SLUGS, UMBRELLA_NEED_TYPE } from "../f
  * Schema v1 and the scoring policy are unchanged; only the instructions the
  * model receives are aligned with them.
  */
-export const AI_RADAR_PROMPT_VERSION = "ai_radar_extraction_v1.1" as const;
+export const AI_RADAR_PROMPT_VERSION = "ai_radar_extraction_v1.2" as const;
 export const AI_RADAR_MODEL_ID = "gpt-4.1-mini" as const;
 
 function buildFitPolicyTable(): string {
@@ -33,6 +33,18 @@ HOW TO JUDGE:
 - Contactability: natural entry and interaction openness from public expression, not popularity.
 - Core traits: evidence events from candidate-authored content only. Follower count and social attractiveness are not trait evidence.
 - Location: normalize city/district only when the public content supports it. Do not invent a home address.
+
+CANDIDATE UNDERSTANDING (required on new extractions):
+- need_owner: self / third_party / general / unknown. Client results, celebrity routines, family members' goals are third_party. Topic education is general.
+- need_state: unresolved / in_progress_with_gap / resolved / none / unknown. Someone already acting but stuck is in_progress_with_gap, not resolved. Goal-achieved success stories are resolved.
+- market_role: consumer / provider / mixed / unknown. Coaches, trainers, nutrition educators posting client or teaching content are provider. A provider who also states a genuine SELF unresolved need is mixed — keep the personal need.
+- need_category, pain_points, attempts, unresolved_gap, urgency, help_seeking, evidence_confidence: from the corpus trajectory, not a single post.
+- primary_language and traditional_chinese_usable: from the whole recent corpus. Occasional foreign phrases, hashtags, names, emojis or song titles do not make a Traditional-Chinese account ineligible.
+- recommendation_reason_zh: one Traditional Chinese sentence explaining the candidate's OWN unresolved need and why a conversation may be timely. Never write English. Never attribute third-party results to the candidate. Never write generic "mentions fitness and health".
+
+TEMPORAL:
+- If older posts show intent and newer posts show frustration/stagnation, that is in_progress_with_gap.
+- If older posts show a goal and newer posts show the goal achieved, that is resolved.
 
 NEEDS / FIT POLICY RELEVANCE CEILINGS (fit_policy_v1):
 ${buildFitPolicyTable()}

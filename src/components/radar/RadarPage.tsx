@@ -15,6 +15,7 @@ import {
   type RadarPartnerFeed,
   type RadarPartnerNotice,
 } from "@/lib/radar/partner/radar-partner-presentation";
+import { RadarRegionPreference } from "@/components/radar/RadarRegionPreference";
 
 const NOTICE_COPY: Record<RadarPartnerNotice, string> = {
   no_public_posts: "公開貼文很少，資訊有限",
@@ -307,6 +308,7 @@ export function RadarPage() {
         </section>
       ) : null}
       {feed && !loading ? <MyDevelopmentSection items={feed.my_development} /> : null}
+      {feed && !loading ? <RadarRegionPreference /> : null}
     </PageShell>
   );
 }

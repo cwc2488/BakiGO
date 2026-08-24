@@ -1,6 +1,7 @@
 import { isSourceFresh } from "../analysis/fingerprint";
 import type { AiRadarExtractionV1 } from "../extraction/schema";
 import { NEED_TYPE_DEFINITIONS, isNeedTypeSlug } from "../fit-policy/need-types";
+import { pickPartnerWhyLines } from "../semantics/recommendation-reason";
 import type { CandidateContentCorpus } from "../normalization/schema";
 import type {
   CandidateRecord,
@@ -171,22 +172,25 @@ function changeSignalLabel(extraction: AiRadarExtractionV1): string | null {
 }
 
 function whyFromExtraction(extraction: AiRadarExtractionV1): string[] {
-  const lines: string[] = [];
+  const understanding = extraction.candidate_understanding;
+  const fallback: string[] = [];
   const intent = extraction.change_window.change_intent;
   if (intent.availability === "available" && hasRefs(intent.source_refs) && intent.reasoning.trim()) {
-    lines.push(clipSentence(intent.reasoning));
+    fallback.push(clipSentence(intent.reasoning));
   }
   if (extraction.needs.availability === "available") {
     const evidenced = extraction.needs.items.find(
       (item) => item.strength !== "none" && hasRefs(item.source_refs) && item.reasoning.trim(),
     );
-    if (evidenced) lines.push(clipSentence(evidenced.reasoning));
+    if (evidenced) fallback.push(clipSentence(evidenced.reasoning));
   }
-  const advisory = extraction.advisory?.recommendation_reasons ?? [];
-  for (const reason of advisory) {
-    if (reason.trim()) lines.push(clipSentence(reason));
-  }
-  return lines.slice(0, 2);
+
+  return pickPartnerWhyLines({
+    recommendation_reason_zh: understanding?.recommendation_reason_zh ?? null,
+    advisory_reasons: extraction.advisory?.recommendation_reasons,
+    fallback_reasons: fallback,
+    need_owner: understanding?.need_owner,
+  }).map(clipSentence);
 }
 
 function evidenceFromCorpus(input: {

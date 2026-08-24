@@ -219,8 +219,7 @@ describe("Radar Partner card copy", () => {
   });
 
   it("never cuts a why line in the middle of a word", () => {
-    const reasoning =
-      "The candidate expresses clear change intent related to body composition and muscle gain across several recent public posts.";
+    const reasoning = "近期多次提到已持續飲食控制與運動但是體重仍然停滯並且表達明顯挫折感".repeat(3);
     const card = cardFor(
       buildValidExtractionFixture({
         change_window: {
@@ -240,7 +239,6 @@ describe("Radar Partner card copy", () => {
     expect(line.endsWith("…")).toBe(true);
     const kept = line.slice(0, -1);
     expect(reasoning.startsWith(kept)).toBe(true);
-    expect(reasoning[kept.length]).toBe(" ");
   });
 
   it("labels a small solution gap instead of dropping the change signal", () => {
@@ -271,7 +269,7 @@ describe("Radar Partner card copy", () => {
             level: "clear",
             source_refs: [{ platform: "threads", content_id: FIXTURE_NORMALIZED_CONTENT_ID }],
             reasoning:
-              "Wants to change body composition. This second sentence pushes the reasoning past the single line budget.",
+              "近期多次表達本人體重上升且飲控無效，屬於尚未解決的減脂需求。這第二句要把整段開發理由拉得遠遠超過一行手機預算所以後面這些字只是在把長度堆上去不應該被當成同一句留下。",
           },
           behavioral_change: { availability: "unknown", reasoning: "沒有可歸因的行動" },
           solution_gap: { availability: "unknown", reasoning: "看不出解法缺口" },
@@ -279,7 +277,7 @@ describe("Radar Partner card copy", () => {
       }),
     );
 
-    expect(card.why[0]).toBe("Wants to change body composition.");
+    expect(card.why[0]).toBe("近期多次表達本人體重上升且飲控無效，屬於尚未解決的減脂需求。");
   });
 });
 

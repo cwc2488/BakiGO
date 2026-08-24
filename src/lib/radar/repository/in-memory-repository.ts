@@ -3,6 +3,7 @@ import type { CandidateContentCorpus } from "../normalization/schema";
 import type { RankedCandidate } from "../scoring/types";
 import { parseAllocatableAt, serializeAllocatableAt } from "../allocation/allocation-rules";
 import type { AllocatableAt } from "../allocation/allocation-rules";
+import type { MemberRadarRegionPreference } from "../semantics/region-preference";
 import type {
   AnalysisRunRecord,
   CandidateDevelopmentClaimRecord,
@@ -26,6 +27,7 @@ export class InMemoryRadarRepository implements RadarRepository {
   memberScores: Array<Record<string, unknown>> = [];
   members: Array<{ member_id: string }> = [];
   developmentAreas = new Map<string, MemberDevelopmentArea[]>();
+  regionPreferences = new Map<string, MemberRadarRegionPreference>();
   memberCandidateStates = new Map<string, MemberCandidateStateRecord>();
   candidateClaims = new Map<string, CandidateDevelopmentClaimRecord>();
   candidateClaimEvents: Array<{
@@ -297,6 +299,15 @@ export class InMemoryRadarRepository implements RadarRepository {
 
   async getMemberDevelopmentAreas(member_id: string) {
     return this.developmentAreas.get(member_id) ?? [];
+  }
+
+  async getMemberRadarRegionPreference(member_id: string) {
+    return this.regionPreferences.get(member_id) ?? null;
+  }
+
+  async upsertMemberRadarRegionPreference(preference: MemberRadarRegionPreference) {
+    this.regionPreferences.set(preference.member_id, preference);
+    return preference;
   }
 
   async getMemberCandidateState(member_id: string, candidate_id: string) {

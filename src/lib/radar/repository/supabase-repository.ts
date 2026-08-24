@@ -8,6 +8,7 @@ import {
   mapRawSnapshotRow,
   mapRefreshStateRow,
 } from "./supabase-mappers";
+import type { MemberRadarRegionPreference } from "../semantics/region-preference";
 import type { CandidateDevelopmentClaimRecord, RadarRepository } from "./types";
 
 function mapClaimRow(row: Record<string, unknown>): CandidateDevelopmentClaimRecord {
@@ -618,6 +619,53 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
       },
     });
     if (error) throw new Error(error.message);
+  }
+
+  override async getMemberRadarRegionPreference(member_id: string) {
+    const { data, error } = await this.client
+      .from("member_radar_region_preferences")
+      .select(
+        "member_id, current_city, current_district, pending_city, pending_district, pending_effective_date, updated_at",
+      )
+      .eq("member_id", member_id)
+      .maybeSingle();
+    if (error) {
+      if (error.code === "PGRST205" || error.message.includes("does not exist")) {
+        return null;
+      }
+      throw new Error(error.message);
+    }
+    if (!data) return null;
+    return {
+      member_id: String(data.member_id),
+      current_city: data.current_city ? String(data.current_city) : null,
+      current_district: data.current_district ? String(data.current_district) : null,
+      pending_city: data.pending_city ? String(data.pending_city) : null,
+      pending_district: data.pending_district ? String(data.pending_district) : null,
+      pending_effective_date: data.pending_effective_date
+        ? String(data.pending_effective_date)
+        : null,
+      updated_at: String(data.updated_at),
+    };
+  }
+
+  override async upsertMemberRadarRegionPreference(
+    preference: MemberRadarRegionPreference,
+  ) {
+    const { error } = await this.client.from("member_radar_region_preferences").upsert(
+      {
+        member_id: preference.member_id,
+        current_city: preference.current_city,
+        current_district: preference.current_district,
+        pending_city: preference.pending_city,
+        pending_district: preference.pending_district,
+        pending_effective_date: preference.pending_effective_date,
+        updated_at: preference.updated_at,
+      },
+      { onConflict: "member_id" },
+    );
+    if (error) throw new Error(error.message);
+    return preference;
   }
 
   override async getMemberDevelopmentAreas(member_id: string) {

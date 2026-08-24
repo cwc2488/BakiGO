@@ -38,6 +38,10 @@ describe("AI Radar prompt vs structured output", () => {
       expect(system).toContain(traitId);
     }
     expect(system).toContain("allowed_source_ref_content_ids");
+    expect(system).toContain("need_owner");
+    expect(system).toContain("need_state");
+    expect(system).toContain("market_role");
+    expect(system).toContain("recommendation_reason_zh");
   });
 
   it("passes the corpus ids the model may cite", () => {
