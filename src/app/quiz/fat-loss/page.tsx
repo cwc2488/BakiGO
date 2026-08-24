@@ -1,9 +1,9 @@
 import { Suspense } from "react";
-import { ResetLandingPage } from "@/components/reset/ResetLandingPage";
+import { FatLossQuizLandingPage } from "@/components/quiz/FatLossQuizLandingPage";
 
 function LandingFallback() {
   return (
-    <div className="flex min-h-full items-center justify-center bg-[#fff9f5] text-[#75686d]">
+    <div className="flex min-h-full items-center justify-center bg-[#faf6f1] text-[#8b7d74]">
       載入中…
     </div>
   );
@@ -12,7 +12,7 @@ function LandingFallback() {
 export default function FatLossQuizLandingRoute() {
   return (
     <Suspense fallback={<LandingFallback />}>
-      <ResetLandingPage />
+      <FatLossQuizLandingPage />
     </Suspense>
   );
 }
