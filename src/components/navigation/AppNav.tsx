@@ -178,7 +178,7 @@ export function AppBottomNav() {
   return (
     <nav
       aria-label="主要功能"
-      className="fixed inset-x-0 bottom-0 z-[100] border-t border-[var(--brand-border)] bg-[var(--brand-surface)]/98 backdrop-blur-md supports-[padding:max(0px)]:pb-[max(0px,env(safe-area-inset-bottom))] md:hidden"
+      className="fixed inset-x-0 bottom-0 z-[100] w-full border-t border-[var(--brand-border)] bg-[var(--brand-surface)]/98 backdrop-blur-md pb-[env(safe-area-inset-bottom,0px)] md:hidden"
     >
       <div className="mx-auto grid max-w-lg grid-cols-3">
         {NAV_ITEMS.map((item) => (

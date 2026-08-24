@@ -28,13 +28,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div
           className={
             showNav
-              ? "min-w-0 md:ml-[5.75rem] lg:ml-[15rem] pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-0"
+              ? "min-w-0 md:ml-[5.75rem] lg:ml-[15rem]"
               : undefined
           }
         >
-          {children}
-          {showNav ? <AppBottomNav /> : null}
+          <div
+            className={
+              showNav
+                ? "pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-0"
+                : undefined
+            }
+          >
+            {children}
+          </div>
         </div>
+        {/* Keep bottom nav outside the padded page column so fixed anchoring
+            matches short pages (顧客 / 心理測驗) on long scroll pages (/radar). */}
+        {showNav ? <AppBottomNav /> : null}
       </div>
     </>
   );
