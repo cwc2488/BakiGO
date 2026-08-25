@@ -181,7 +181,8 @@ describe("RESET-QUIZ-V2 structural scoring", () => {
     const landing = src("src/components/reset/ResetExperienceViews.tsx").split("export function ResetQuizView")[0]!;
     expect(landing).toContain("/reset/landing-final.png");
     expect(landing).toContain("rx-kv-hit");
-    expect(landing).toContain('aria-label="開始測驗"');
+    expect(landing).toContain("開始測驗");
+    expect(landing).toContain("準備測驗中…");
     expect(landing).not.toContain("rx-land-cta");
     expect(landing).not.toMatch(/characters\/[A-F]\.png/);
   });

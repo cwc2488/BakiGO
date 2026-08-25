@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { ResetLandingView } from "@/components/reset/ResetExperienceViews";
 import { getShareParams, saveFatLossQuizAttribution } from "@/lib/quiz/fat-loss/session-storage";
 
@@ -11,6 +12,8 @@ export function ResetLandingPage() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const landingBeaconSent = useRef(false);
+  /** Sync lock: one in-flight start per tap sequence (before React re-renders). */
+  const startInFlight = useRef(false);
 
   useEffect(() => {
     const share = getShareParams(searchParams);
@@ -35,8 +38,13 @@ export function ResetLandingPage() {
   }, [searchParams]);
 
   async function handleStart() {
-    setStarting(true);
-    setError(null);
+    if (startInFlight.current) return;
+    startInFlight.current = true;
+    // Paint busy CTA in this same tap before awaiting the network.
+    flushSync(() => {
+      setStarting(true);
+      setError(null);
+    });
     const share = getShareParams(searchParams);
     saveFatLossQuizAttribution({
       referralShareToken: share.referralShareToken,
@@ -61,6 +69,7 @@ export function ResetLandingPage() {
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : "無法開始");
       setStarting(false);
+      startInFlight.current = false;
     }
   }
 
