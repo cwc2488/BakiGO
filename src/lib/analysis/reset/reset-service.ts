@@ -2,9 +2,18 @@ import { after } from "next/server";
 import { logLlmCall } from "@/lib/ai/llm-telemetry";
 import {
   AnalysisSessionError,
-  createNativeAnalysisSession,
   requireAnalysisSessionRowByToken,
 } from "@/lib/analysis/analysis-session-service";
+import {
+  ANALYSIS_SESSION_TTL_DAYS,
+  resolveAnalysisAttribution,
+} from "@/lib/analysis/analysis-attribution";
+import {
+  generateAnalysisSessionToken,
+  hashAnalysisSessionToken,
+} from "@/lib/analysis/analysis-session-token";
+import { resolveValidatedGrowthShareId } from "@/lib/analysis/resolve-growth-share";
+import { NATIVE_V1_SEED_KEY } from "@/lib/analysis/native-entry";
 import {
   animalCopyFor,
   compactQuizBackground,
@@ -44,6 +53,9 @@ import {
   createSupabaseServiceClient,
   isSupabaseServiceConfigured,
 } from "@/lib/supabase/service-client";
+import { getFatLossQuizIdCached, resolveReferrerFromShare } from "@/lib/quiz/quiz-service";
+import { resolveActiveResultShare } from "@/lib/quiz/viral/quiz-result-share-lookup";
+import type { PersonalityType } from "@/lib/quiz/fat-loss/types";
 
 function requireService() {
   if (!isSupabaseServiceConfigured()) {
@@ -56,6 +68,12 @@ function requirePreview() {
   if (!isResetPreviewAllowed()) {
     throw new AnalysisSessionError("not_found", 404, "not_found");
   }
+}
+
+function addDaysIso(from: Date, days: number): string {
+  const d = new Date(from.getTime());
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString();
 }
 
 async function persist(sessionId: string, session: ResetSession, extra?: Record<string, unknown>) {
@@ -134,19 +152,119 @@ export async function createResetPreviewSession(input: {
   resultShareCode?: string | null;
 }) {
   requirePreview();
-  const created = await createNativeAnalysisSession({
-    referralShareToken: input.referralShareToken,
-    radarCandidateId: input.radarCandidateId,
-    shareCode: input.shareCode,
-    resultShareCode: input.resultShareCode,
+  const timings: Record<string, number> = {};
+  const mark = (key: string, startedAt: number) => {
+    timings[key] = Date.now() - startedAt;
+  };
+
+  const totalStarted = Date.now();
+  const supabase = requireService();
+
+  // Attribution lookups are independent; null inputs return immediately.
+  let stage = Date.now();
+  const [quizId, referrer, growthShareId, resultShare] = await Promise.all([
+    getFatLossQuizIdCached(),
+    resolveReferrerFromShare({ shareCode: input.shareCode }),
+    resolveValidatedGrowthShareId(input.referralShareToken),
+    resolveActiveResultShare(input.resultShareCode),
+  ]);
+  mark("attribution", stage);
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const emptyScores = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 } as Record<PersonalityType, number>;
+
+  // Required seed rows: one completed response + one placeholder result (FK).
+  // No separate UPDATE after insert; no reload + rate-limit round trips.
+  stage = Date.now();
+  const { data: response, error: responseError } = await supabase
+    .from("quiz_responses")
+    .insert({
+      quiz_id: quizId,
+      respondent_name: "你",
+      referrer_member_id: referrer.referrerMemberId,
+      share_code: referrer.shareCode,
+      growth_share_id: growthShareId,
+      answers_json: { [NATIVE_V1_SEED_KEY]: true },
+      completed_at: nowIso,
+    })
+    .select("id")
+    .single();
+  if (responseError || !response) {
+    throw new AnalysisSessionError(responseError?.message || "Failed to seed quiz response.", 500, "seed_response_failed");
+  }
+  mark("insert_response", stage);
+
+  stage = Date.now();
+  const { data: result, error: resultError } = await supabase
+    .from("quiz_results")
+    .insert({
+      response_id: response.id,
+      primary_type: "A",
+      secondary_type: "A",
+      personality_scores_json: emptyScores,
+      urgency: "low",
+      readiness: "low",
+      action_history_json: [],
+      primary_goal: "unspecified",
+      interaction_priority: "low",
+    })
+    .select("id")
+    .single();
+  if (resultError || !result) {
+    throw new AnalysisSessionError(resultError?.message || "Failed to seed quiz result.", 500, "seed_result_failed");
+  }
+  mark("insert_result", stage);
+
+  const attribution = resolveAnalysisAttribution({
+    growthShareId,
+    quizShareCode: referrer.shareCode,
+    referrerMemberId: referrer.referrerMemberId,
+    radarCandidateId: input.radarCandidateId ?? null,
+    resultShareId: resultShare?.id ?? null,
   });
-  const session = createInitialResetSession();
-  await persist(created.session.id, session);
+  const resetSession = createInitialResetSession();
+  const plaintextToken = generateAnalysisSessionToken();
+  const tokenHash = hashAnalysisSessionToken(plaintextToken);
+  const expiresAt = addDaysIso(now, ANALYSIS_SESSION_TTL_DAYS);
+
+  stage = Date.now();
+  const { data: sessionRow, error: sessionError } = await supabase
+    .from("analysis_sessions")
+    .insert({
+      token_hash: tokenHash,
+      quiz_result_id: result.id,
+      source_type: attribution.sourceType,
+      growth_share_id: attribution.growthShareId,
+      quiz_share_code: attribution.quizShareCode,
+      referrer_member_id: attribution.referrerMemberId,
+      radar_candidate_id: attribution.radarCandidateId,
+      radar_source_meta: attribution.radarSourceMeta,
+      result_share_id: attribution.resultShareId,
+      status: "active",
+      analysis_state: "questions_in_progress",
+      report_id: null,
+      created_at: nowIso,
+      expires_at: expiresAt,
+      last_activity_at: nowIso,
+      answers_json: packResetSession(resetSession),
+      current_question_id: resetSession.quiz.currentQuestionId,
+      intake_schema_version: RESET_SCHEMA_VERSION,
+    })
+    .select("expires_at")
+    .single();
+  if (sessionError || !sessionRow) {
+    throw new AnalysisSessionError(sessionError?.message || "Failed to create analysis session.", 500, "create_failed");
+  }
+  mark("insert_session", stage);
+  mark("total", totalStarted);
+
   return {
-    token: created.plaintextToken,
-    expiresAt: created.session.expiresAt,
+    token: plaintextToken,
+    expiresAt: String(sessionRow.expires_at),
     entry: RESET_ENTRY,
-    experience: toPublicView(session),
+    experience: toPublicView(resetSession),
+    timings,
   };
 }
 

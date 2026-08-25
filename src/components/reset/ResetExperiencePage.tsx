@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnalysisFlowPage } from "@/components/analysis/AnalysisFlowPage";
 import {
   ResetConversationView,
@@ -9,6 +9,7 @@ import {
   ResetRevealView,
 } from "@/components/reset/ResetExperienceViews";
 import { ResetShell } from "@/components/reset/ResetShell";
+import { takeResetBootExperience } from "@/lib/analysis/reset/reset-boot-cache";
 import { RESET_THINKING_LINES } from "@/lib/analysis/reset/reset-animals";
 import type { Experience21dConsumerChannel } from "@/lib/analysis/handoff/experience-21d-contact";
 import type { ResetPublicView } from "@/lib/analysis/reset/reset-contract";
@@ -17,6 +18,7 @@ export function AnalysisExperienceSwitch({ token }: { token: string }) {
   const [mode, setMode] = useState<"loading" | "reset" | "legacy">("loading");
   const [experience, setExperience] = useState<ResetPublicView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const bootResolved = useRef(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/analysis/reset/${encodeURIComponent(token)}`);
@@ -35,9 +37,22 @@ export function AnalysisExperienceSwitch({ token }: { token: string }) {
     setMode("reset");
   }, [token]);
 
+  // Prefer stashed create-session experience so Q1 paints without a second network round trip.
+  useLayoutEffect(() => {
+    if (bootResolved.current) return;
+    bootResolved.current = true;
+    const boot = takeResetBootExperience(token);
+    if (boot) {
+      setExperience(boot);
+      setMode("reset");
+    }
+  }, [token]);
+
   useEffect(() => {
+    if (!bootResolved.current) return;
+    if (mode !== "loading") return;
     void load().catch((err) => setError(err instanceof Error ? err.message : "無法載入"));
-  }, [load]);
+  }, [mode, load]);
 
   if (error) {
     return (

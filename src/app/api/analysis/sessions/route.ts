@@ -45,13 +45,22 @@ export async function POST(request: Request) {
         shareCode: body.shareCode,
         resultShareCode: body.resultShareCode,
       });
-      return NextResponse.json({
-        ok: true,
-        token: created.token,
-        expiresAt: created.expiresAt,
-        analysisState: "questions_in_progress",
-        entry: "reset_v1",
-      });
+      const timingParts = Object.entries(created.timings ?? {})
+        .map(([name, dur]) => `${name};dur=${dur}`)
+        .join(", ");
+      return NextResponse.json(
+        {
+          ok: true,
+          token: created.token,
+          expiresAt: created.expiresAt,
+          analysisState: "questions_in_progress",
+          entry: "reset_v1",
+          experience: created.experience,
+        },
+        timingParts
+          ? { headers: { "Server-Timing": timingParts } }
+          : undefined,
+      );
     }
 
     if (body.entry === "native_v1") {
