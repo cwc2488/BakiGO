@@ -23,6 +23,15 @@ export function AdminCenterPage() {
             </p>
           </BrandCard>
         </Link>
+        <Link href="/admin/recruitment" className="block">
+          <BrandCard variant="bordered" className="transition-shadow hover:shadow-md active:scale-[0.99]">
+            <p className="text-[0.8125rem] font-medium text-[#248a3d]">招募漏斗</p>
+            <h3 className="mt-1 text-[1.0625rem] font-semibold text-[#1d1d1f]">招募名單（全組織）</h3>
+            <p className="mt-1 text-[0.875rem] leading-relaxed text-[#86868b]">
+              查看所有 Partner 的招募名單、聯絡方式與廣告來源。
+            </p>
+          </BrandCard>
+        </Link>
       </section>
 
       <section className="space-y-3">

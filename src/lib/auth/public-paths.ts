@@ -20,7 +20,8 @@ export function isOpenPublicPath(pathname: string): boolean {
     normalized.startsWith("/s/") ||
     normalized.startsWith("/r/") ||
     normalized.startsWith("/recognition/p/") ||
-    normalized.startsWith("/analysis/")
+    normalized.startsWith("/analysis/") ||
+    normalized.startsWith("/join/")
   );
 }
 
