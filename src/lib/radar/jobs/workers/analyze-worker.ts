@@ -49,10 +49,11 @@ export async function runAnalyzeWorker(
   });
 
   if (outcome.kind === "failed") {
+    const error_code = outcome.analysis_run.error_code ?? "SCHEMA_VALIDATION";
     return {
       job_id: job.id,
       status: "failed",
-      error_code: "SCHEMA_VALIDATION",
+      error_code,
       error_message: outcome.analysis_run.error_message ?? "invalid extraction",
       metrics: outcome.telemetry
         ? {

@@ -119,6 +119,7 @@ export class InMemoryRadarJobQueueStore implements RadarJobQueueStore {
     error_message: string;
     available_at: Date | null;
     finished_at: Date;
+    max_attempts?: number;
   }): Promise<RadarJobRecord | null> {
     const job = this.jobs.get(input.job_id);
     if (!job) return null;
@@ -127,6 +128,7 @@ export class InMemoryRadarJobQueueStore implements RadarJobQueueStore {
       status: input.status,
       error_code: input.error_code,
       error_message: input.error_message,
+      max_attempts: input.max_attempts ?? job.max_attempts,
       available_at: input.available_at ? iso(input.available_at) : job.available_at,
       finished_at: input.status === "dead_letter" ? iso(input.finished_at) : job.finished_at,
       updated_at: iso(input.finished_at),

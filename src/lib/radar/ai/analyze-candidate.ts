@@ -25,10 +25,28 @@ import {
 } from "../semantics/language-eligibility";
 import { buildLanguageSkipExtraction } from "../semantics/language-skip-extraction";
 import { AI_RADAR_MODEL_ID, AI_RADAR_PROMPT_VERSION } from "./prompt";
+import { isRadarLlmRequestError } from "./llm-request-error";
 
 /** A forbidden score/rank field is a policy breach, not a shape slip: never re-ask. */
 function isRepairable(issues: ValidationIssue[]): boolean {
   return issues.every((issue) => issue.code !== "FORBIDDEN_SCORE_FIELD");
+}
+
+function classifyAnalyzeUpstreamErrorCode(error: unknown): string {
+  if (isRadarLlmRequestError(error)) {
+    return error.code;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("OPENAI_STRUCTURED_OUTPUTS_UNSUPPORTED")) {
+    return "STRUCTURED_OUTPUTS_UNSUPPORTED";
+  }
+  if (/rate limit|tokens per min|TPM/i.test(message)) {
+    return "RATE_LIMIT";
+  }
+  if (/fetch failed|network|ECONNRESET|ETIMEDOUT/i.test(message)) {
+    return "NETWORK";
+  }
+  return "LLM_UPSTREAM";
 }
 
 function conformAndValidate(
@@ -172,6 +190,7 @@ export async function runCandidateAnalysis(input: {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "LLM analyze failed";
+    const error_code = classifyAnalyzeUpstreamErrorCode(error);
     const failed = await input.repo.insertAnalysisRun({
       id: randomUUID(),
       candidate_id: input.corpus.candidate_id,
@@ -183,9 +202,7 @@ export async function runCandidateAnalysis(input: {
       extraction_json: null,
       prompt_version: AI_RADAR_PROMPT_VERSION,
       model_id: AI_RADAR_MODEL_ID,
-      error_code: message.includes("OPENAI_STRUCTURED_OUTPUTS_UNSUPPORTED")
-        ? "STRUCTURED_OUTPUTS_UNSUPPORTED"
-        : "LLM_UPSTREAM",
+      error_code,
       error_message: message,
     });
     return { kind: "failed" as const, analysis_run: failed, decision, telemetry: null };
@@ -243,7 +260,9 @@ export async function runCandidateAnalysis(input: {
       prompt_version: llm.prompt_version,
       model_id: llm.model_id,
       error_code: "SCHEMA_VALIDATION",
-      error_message: validated.issues.map((issue) => issue.message).join("; "),
+      error_message: validated.issues
+        .map((issue) => `${issue.path}: ${issue.message}`)
+        .join("; "),
     });
     return { kind: "failed" as const, analysis_run: failed, decision, telemetry };
   }

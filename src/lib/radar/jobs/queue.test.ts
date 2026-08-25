@@ -21,7 +21,13 @@ describe("retry policy", () => {
 
   it("applies exponential backoff for rate limits", () => {
     const policy = resolveRetryPolicy("RATE_LIMIT");
-    expect(computeBackoffMs(policy, 2)).toBe(60_000);
+    expect(computeBackoffMs(policy, 2, () => 0)).toBe(60_000);
+  });
+
+  it("treats NETWORK and MISSING_ARTIFACT with correct retryability", () => {
+    expect(resolveRetryPolicy("NETWORK").retryable).toBe(true);
+    expect(resolveRetryPolicy("MISSING_ARTIFACT").retryable).toBe(false);
+    expect(resolveRetryPolicy("SCHEMA_INVALID").retryable).toBe(false);
   });
 });
 
@@ -161,7 +167,8 @@ describe("RadarJobQueue", () => {
     const earlyClaim = await queue.claim({ limit: 1, now: tooEarly });
     expect(earlyClaim).toHaveLength(0);
 
-    const afterBackoff = new Date(now.getTime() + 30_000);
+    // Exponential base (30s) + up to 25% jitter — wait past the ceiling.
+    const afterBackoff = new Date(now.getTime() + 45_000);
     const [retryClaim] = await queue.claim({ limit: 1, now: afterBackoff });
     expect(retryClaim.id).toBe(job.id);
   });

@@ -206,20 +206,82 @@ export function buildOpenAiExtractionResponseFormat(options?: {
 
 /**
  * OpenAI strict mode encodes omitted optionals as JSON null.
- * Zod v1 treats those fields as optional (absent), not nullable.
- * This is a wire-format mapping, not content repair.
+ * Zod `.optional()` treats absence as OK; `.nullable()` requires the key with null.
+ *
+ * Blind null-stripping dropped required-nullable SEMANTIC fields
+ * (`recommendation_reason_zh`, `unresolved_gap`, `candidate_region`, …) and
+ * produced SCHEMA_VALIDATION messages like "Required; Required; Required".
+ *
+ * Schema-aware mapping:
+ * - optional + null → omit (Zod optional absence)
+ * - required nullable + null → keep null (do not invent values)
+ * - never fabricates semantic eligibility evidence
  */
 export function omitJsonNulls(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(omitJsonNulls);
-  if (value && typeof value === "object") {
+  return mapOpenAiExtractionWireFormat(value, aiRadarExtractionV1Schema);
+}
+
+function mapWireValue(value: unknown, schema: ZodTypeAny): unknown {
+  const unwrapped = unwrap(schema);
+  const def = defOf(unwrapped.schema);
+
+  if (value === null) {
+    if (unwrapped.optional) return undefined;
+    if (unwrapped.nullable) return null;
+    return null;
+  }
+
+  if (def.typeName === ZodFirstPartyTypeKind.ZodObject) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+    const shape = def.shape ? def.shape() : {};
     const output: Record<string, unknown> = {};
-    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-      if (nested === null) continue;
-      output[key] = omitJsonNulls(nested);
+    for (const [key, nestedSchema] of Object.entries(shape)) {
+      if (!(key in (value as Record<string, unknown>))) continue;
+      const mapped = mapWireValue((value as Record<string, unknown>)[key], nestedSchema);
+      if (mapped === undefined) continue;
+      output[key] = mapped;
     }
     return output;
   }
+
+  if (def.typeName === ZodFirstPartyTypeKind.ZodArray) {
+    if (!Array.isArray(value)) return value;
+    const itemSchema = def.type as ZodTypeAny;
+    return value.map((item) => mapWireValue(item, itemSchema));
+  }
+
+  if (
+    def.typeName === ZodFirstPartyTypeKind.ZodUnion ||
+    def.typeName === ZodFirstPartyTypeKind.ZodDiscriminatedUnion
+  ) {
+    const options = def.options ?? [];
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      const matched =
+        options.find((option) => {
+          const optionDef = defOf(unwrap(option).schema);
+          if (optionDef.typeName !== ZodFirstPartyTypeKind.ZodObject) return false;
+          const shape = optionDef.shape ? optionDef.shape() : {};
+          if (!("availability" in shape) || !("availability" in record)) return false;
+          const availabilitySchema = unwrap(shape.availability).schema;
+          const availabilityDef = defOf(availabilitySchema);
+          if (availabilityDef.typeName !== ZodFirstPartyTypeKind.ZodLiteral) return false;
+          return availabilityDef.value === record.availability;
+        }) ?? options[0];
+      if (matched) return mapWireValue(value, matched);
+    }
+    return value;
+  }
+
   return value;
+}
+
+/** Wire-format adapter from OpenAI strict JSON → Zod Extraction v1. Not content repair. */
+export function mapOpenAiExtractionWireFormat(
+  value: unknown,
+  schema: ZodTypeAny = aiRadarExtractionV1Schema,
+): unknown {
+  return mapWireValue(value, schema);
 }
 
 export function assertOpenAiStrictObjectGraph(node: JsonSchema, path = "$"): void {

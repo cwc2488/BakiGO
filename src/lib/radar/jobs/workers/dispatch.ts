@@ -8,6 +8,7 @@ import type { SourceAdapterRegistry } from "../../sources/registry";
 import type { PipelineStore } from "../../pipeline/store";
 import { maybeFinalizePipelineRun } from "../../pipeline/run-finalizer";
 import type { AiRadarLlmProvider } from "../../ai/provider";
+import { resolveRetryPolicy } from "../retry-policy";
 import { runDiscoverWorker } from "./discover-worker";
 import { runEnrichWorker } from "./enrich-worker";
 import { runNormalizeWorker } from "./normalize-worker";
@@ -71,11 +72,12 @@ export async function processClaimedJob(ctx: WorkerContext, job: RadarJobRecord)
   if (result.status === "succeeded") {
     await ctx.queue.complete({ job_id: job.id, metrics: result.metrics }, now);
   } else {
+    const error_code = result.error_code ?? "WORKER_FAILED";
     await ctx.queue.fail({
       job_id: job.id,
-      error_code: result.error_code ?? "WORKER_FAILED",
+      error_code,
       error_message: result.error_message ?? "worker failed",
-      retryable: result.error_code !== "SCHEMA_VALIDATION",
+      retryable: resolveRetryPolicy(error_code).retryable,
       now,
     });
   }
@@ -161,6 +163,8 @@ export async function enqueueAnalyzeAfterNormalize(
         },
       },
       priority: input.priority ?? 0,
+      // Transient LLM rate-limit / network retries need headroom beyond UNKNOWN=3.
+      max_attempts: 5,
     },
     ctx.now,
   );

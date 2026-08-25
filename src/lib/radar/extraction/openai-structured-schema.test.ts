@@ -12,6 +12,7 @@ import {
   buildAiRadarExtractionOpenAiJsonSchema,
   omitJsonNulls,
 } from "./openai-structured-schema";
+import { emptyUnderstanding } from "../semantics/candidate-understanding";
 
 describe("OpenAI structured schema from Extraction v1", () => {
   const schema = buildAiRadarExtractionOpenAiJsonSchema();
@@ -60,6 +61,38 @@ describe("OpenAI structured schema from Extraction v1", () => {
       },
     };
     const mapped = omitJsonNulls(withNulls);
+    const result = validateAiRadarExtraction(mapped);
+    expect(result.success).toBe(true);
+  });
+
+  it("keeps required-nullable SEMANTIC fields as null instead of stripping keys", () => {
+    const fixture = buildValidExtractionFixture();
+    const withNullUnderstanding = {
+      ...fixture,
+      candidate_understanding: {
+        ...emptyUnderstanding({
+          need_owner: "self",
+          need_state: "unresolved",
+          market_role: "consumer",
+          need_category: "fat_loss",
+          primary_language: "zh-Hant",
+          traditional_chinese_usable: "true",
+        }),
+        unresolved_gap: null,
+        candidate_region: null,
+        region_evidence: null,
+        recommendation_reason_zh: null,
+        source_refs: [],
+      },
+    };
+    const mapped = omitJsonNulls(withNullUnderstanding) as typeof withNullUnderstanding;
+    expect(mapped.candidate_understanding).toMatchObject({
+      unresolved_gap: null,
+      candidate_region: null,
+      region_evidence: null,
+      recommendation_reason_zh: null,
+      need_owner: "self",
+    });
     const result = validateAiRadarExtraction(mapped);
     expect(result.success).toBe(true);
   });

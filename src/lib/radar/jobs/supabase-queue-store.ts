@@ -129,6 +129,7 @@ export class SupabaseRadarJobQueueStore implements RadarJobQueueStore {
     error_message: string;
     available_at: Date | null;
     finished_at: Date;
+    max_attempts?: number;
   }): Promise<RadarJobRecord | null> {
     const patch: Record<string, unknown> = {
       status: input.status,
@@ -138,6 +139,9 @@ export class SupabaseRadarJobQueueStore implements RadarJobQueueStore {
     };
     if (input.available_at) {
       patch.available_at = input.available_at.toISOString();
+    }
+    if (typeof input.max_attempts === "number") {
+      patch.max_attempts = input.max_attempts;
     }
     if (input.status === "dead_letter") {
       patch.finished_at = input.finished_at.toISOString();
