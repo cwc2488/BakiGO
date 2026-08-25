@@ -11,6 +11,23 @@ import { isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 
 export const runtime = "nodejs";
 
+/** Warm the serverless + quiz definition cache before paid-traffic taps. No session writes. */
+export async function GET() {
+  if (!isSupabaseServiceConfigured()) {
+    return NextResponse.json({ error: "Analysis service unavailable." }, { status: 503 });
+  }
+  try {
+    const { getFatLossQuizIdCached } = await import("@/lib/quiz/quiz-service");
+    const quizId = await getFatLossQuizIdCached();
+    return NextResponse.json({ ok: true, warm: true, quizReady: Boolean(quizId) });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Warm failed." },
+      { status: 500 },
+    );
+  }
+}
+
 export async function POST(request: Request) {
   if (!isSupabaseServiceConfigured()) {
     return NextResponse.json({ error: "Analysis service unavailable." }, { status: 503 });

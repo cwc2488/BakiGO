@@ -65,11 +65,12 @@ describe("PUBLIC-QUIZ-START-FEEDBACK-01", () => {
     expect(landing).toContain('import { flushSync } from "react-dom"');
     expect(landing).toContain("flushSync(() => {");
     expect(landing).toContain("setStarting(true)");
-    // flushSync must precede the network call
-    const flushAt = landing.indexOf("flushSync(() => {");
-    const fetchAt = landing.indexOf('fetch("/api/analysis/sessions"');
+    const startFn = landing.slice(landing.indexOf("async function handleStart"));
+    const flushAt = startFn.indexOf("flushSync(() => {");
+    const sessionPostAt = startFn.indexOf('fetch("/api/analysis/sessions"');
     expect(flushAt).toBeGreaterThan(-1);
-    expect(fetchAt).toBeGreaterThan(flushAt);
+    expect(sessionPostAt).toBeGreaterThan(flushAt);
+    expect(startFn.indexOf('entry: "reset_v1"')).toBeGreaterThan(flushAt);
   });
 
   it("guards double-submit with a sync in-flight lock and restores on failure", () => {

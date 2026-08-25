@@ -18,6 +18,11 @@ export function ResetLandingPage() {
   const startInFlight = useRef(false);
 
   useEffect(() => {
+    // Prime serverless + quiz id cache while the user reads the landing (no session write).
+    void fetch("/api/analysis/sessions", { method: "GET", cache: "no-store" }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     const share = getShareParams(searchParams);
     if (landingBeaconSent.current) return;
     if (!share.shareCode && !share.resultShareCode) return;

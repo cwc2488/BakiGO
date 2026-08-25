@@ -78,6 +78,15 @@ describe("PUBLIC-QUIZ-SESSION-PERF-01", () => {
     expect(takeResetBootExperience(token)).toBeNull();
   });
 
+  it("warms sessions route on landing without creating a session", () => {
+    const route = src("src/app/api/analysis/sessions/route.ts");
+    expect(route).toContain("export async function GET");
+    expect(route).toContain("getFatLossQuizIdCached");
+    expect(route).toContain("warm: true");
+    const landing = src("src/components/reset/ResetLandingPage.tsx");
+    expect(landing).toContain('fetch("/api/analysis/sessions", { method: "GET"');
+  });
+
   it("keeps immediate busy feedback and attribution payload", () => {
     const landing = src("src/components/reset/ResetLandingPage.tsx");
     expect(landing).toContain("flushSync");
