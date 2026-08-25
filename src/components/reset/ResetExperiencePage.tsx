@@ -18,7 +18,6 @@ export function AnalysisExperienceSwitch({ token }: { token: string }) {
   const [mode, setMode] = useState<"loading" | "reset" | "legacy">("loading");
   const [experience, setExperience] = useState<ResetPublicView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const bootResolved = useRef(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/analysis/reset/${encodeURIComponent(token)}`);
@@ -37,22 +36,25 @@ export function AnalysisExperienceSwitch({ token }: { token: string }) {
     setMode("reset");
   }, [token]);
 
-  // Prefer stashed create-session experience so Q1 paints without a second network round trip.
+  // Boot from create-session stash before paint; only network-load when stash miss.
   useLayoutEffect(() => {
-    if (bootResolved.current) return;
-    bootResolved.current = true;
+    let cancelled = false;
     const boot = takeResetBootExperience(token);
     if (boot) {
       setExperience(boot);
       setMode("reset");
+      return () => {
+        cancelled = true;
+      };
     }
-  }, [token]);
-
-  useEffect(() => {
-    if (!bootResolved.current) return;
-    if (mode !== "loading") return;
-    void load().catch((err) => setError(err instanceof Error ? err.message : "無法載入"));
-  }, [mode, load]);
+    void load()
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "無法載入");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, load]);
 
   if (error) {
     return (
