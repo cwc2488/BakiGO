@@ -368,12 +368,13 @@ function conformUnderstanding(
   const owner = understanding.need_owner;
   const state = understanding.need_state;
   const role = understanding.market_role;
+  // Peer/provider activity blocks prospecting even with a genuine SELF need.
   const noPersonalNeed =
     owner === "third_party" ||
     owner === "general" ||
     state === "resolved" ||
-    (role === "provider" &&
-      !(owner === "self" && (state === "unresolved" || state === "in_progress_with_gap")));
+    role === "provider" ||
+    role === "mixed";
 
   if (noPersonalNeed) {
     if (isRec(root.change_window) && isRec(root.change_window.change_intent)) {

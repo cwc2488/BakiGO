@@ -77,6 +77,8 @@ export type SemanticEligibilityReason =
   | "resolved_success"
   | "no_personal_need"
   | "provider_without_self_need"
+  | "known_provider"
+  | "known_mixed_provider"
   | "low_confidence";
 
 export type SemanticEligibility = {
@@ -106,8 +108,11 @@ export function hasPersonalConsumerNeed(understanding: CandidateUnderstanding): 
 }
 
 /**
- * Provider status is not a permanent exclusion: a coach with a genuine SELF
- * unresolved need remains eligible (market_role = mixed).
+ * Radar prospects consumers with an unresolved self need — not industry peers.
+ *
+ * Known provider / materially mixed provider-service activity is ineligible even
+ * when the person also has a genuine personal weight/fitness goal. Unknown role
+ * is not auto-excluded; consumer follows normal need/state evaluation.
  */
 export function evaluateSemanticEligibility(
   understanding: CandidateUnderstanding | null | undefined,
@@ -172,15 +177,19 @@ export function evaluateSemanticEligibility(
     };
   }
 
-  if (
-    understanding.market_role === "provider" &&
-    !(understanding.need_owner === "self" &&
-      (understanding.need_state === "unresolved" ||
-        understanding.need_state === "in_progress_with_gap"))
-  ) {
+  // RADAR-PEER-QUALITY-02: peer/provider status wins over personal self-need.
+  if (understanding.market_role === "provider") {
     return {
       eligible: false,
-      reason: "provider_without_self_need",
+      reason: "known_provider",
+      language_eligible: true,
+      personal_need: false,
+    };
+  }
+  if (understanding.market_role === "mixed") {
+    return {
+      eligible: false,
+      reason: "known_mixed_provider",
       language_eligible: true,
       personal_need: false,
     };

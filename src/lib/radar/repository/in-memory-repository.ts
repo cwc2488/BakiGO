@@ -94,6 +94,15 @@ export class InMemoryRadarRepository implements RadarRepository {
     return this.candidates.get(candidate_id) ?? null;
   }
 
+  async listCandidatesByIds(candidate_ids: string[]): Promise<CandidateRecord[]> {
+    const out: CandidateRecord[] = [];
+    for (const id of candidate_ids) {
+      const row = this.candidates.get(id);
+      if (row) out.push(row);
+    }
+    return out;
+  }
+
   async recordDiscovery(input: {
     member_id: string;
     candidate_id: string;
@@ -220,6 +229,15 @@ export class InMemoryRadarRepository implements RadarRepository {
     return this.refreshState.get(candidate_id) ?? null;
   }
 
+  async listRefreshStatesByIds(candidate_ids: string[]): Promise<RefreshStateRecord[]> {
+    const out: RefreshStateRecord[] = [];
+    for (const id of candidate_ids) {
+      const row = this.refreshState.get(id);
+      if (row) out.push(row);
+    }
+    return out;
+  }
+
   async persistNormalizationRun(corpus: CandidateContentCorpus): Promise<void> {
     this.normalizationRuns.set(corpus.normalization_run_id, corpus);
   }
@@ -233,6 +251,17 @@ export class InMemoryRadarRepository implements RadarRepository {
       .filter((run) => run.candidate_id === candidate_id)
       .sort((a, b) => b.normalized_at.localeCompare(a.normalized_at));
     return runs[0] ?? null;
+  }
+
+  async listThinCorporaByNormalizationRunIds(
+    normalization_run_ids: string[],
+  ): Promise<CandidateContentCorpus[]> {
+    const out: CandidateContentCorpus[] = [];
+    for (const id of normalization_run_ids) {
+      const corpus = this.normalizationRuns.get(id);
+      if (corpus) out.push(corpus);
+    }
+    return out;
   }
 
   async findSuccessfulAnalysisByFingerprint(input: {
@@ -277,6 +306,15 @@ export class InMemoryRadarRepository implements RadarRepository {
 
   async getAnalysisRun(analysis_run_id: string): Promise<AnalysisRunRecord | null> {
     return this.analysisRuns.get(analysis_run_id) ?? null;
+  }
+
+  async listAnalysisRunsByIds(analysis_run_ids: string[]): Promise<AnalysisRunRecord[]> {
+    const out: AnalysisRunRecord[] = [];
+    for (const id of analysis_run_ids) {
+      const row = this.analysisRuns.get(id);
+      if (row) out.push(row);
+    }
+    return out;
   }
 
   async insertBaselineScoreSnapshot(input: {
@@ -616,11 +654,18 @@ export class InMemoryRadarRepository implements RadarRepository {
    * more than one row per candidate. Ranking needs one: the newest wins,
    * otherwise a re-run would rank the same person twice.
    */
-  async listMemberScoreSnapshots(input: { member_id: string; snapshot_date: string }) {
+  async listMemberScoreSnapshots(input: {
+    member_id: string;
+    snapshot_date: string;
+    candidate_ids?: string[];
+  }) {
+    const allow = input.candidate_ids ? new Set(input.candidate_ids) : null;
     const latestByCandidate = new Map<string, Record<string, unknown>>();
     for (const row of this.memberScores) {
       if (row.member_id !== input.member_id || row.snapshot_date !== input.snapshot_date) continue;
-      latestByCandidate.set(String(row.candidate_id), row);
+      const candidateId = String(row.candidate_id);
+      if (allow && !allow.has(candidateId)) continue;
+      latestByCandidate.set(candidateId, row);
     }
     return [...latestByCandidate.values()].map((row) => ({
       candidate_id: String(row.candidate_id),

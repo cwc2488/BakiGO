@@ -113,6 +113,9 @@ export interface RadarRepository {
 
   getCandidate(candidate_id: string): Promise<CandidateRecord | null>;
 
+  /** Batch candidate_pool reads for partner feed (RADAR-PAGE-PERF-02). */
+  listCandidatesByIds(candidate_ids: string[]): Promise<CandidateRecord[]>;
+
   recordDiscovery(input: {
     member_id: string;
     candidate_id: string;
@@ -190,11 +193,22 @@ export interface RadarRepository {
 
   getRefreshState(candidate_id: string): Promise<RefreshStateRecord | null>;
 
+  /** Batch refresh-state reads for partner feed (RADAR-PAGE-PERF-02). */
+  listRefreshStatesByIds(candidate_ids: string[]): Promise<RefreshStateRecord[]>;
+
   persistNormalizationRun(corpus: CandidateContentCorpus): Promise<void>;
 
   getNormalizationRun(normalization_run_id: string): Promise<CandidateContentCorpus | null>;
 
   getLatestNormalizationRun(candidate_id: string): Promise<CandidateContentCorpus | null>;
+
+  /**
+   * Thin partner-card corpora: run metadata + evidence columns only
+   * (not SELECT * on full normalization corpus). RADAR-PAGE-PERF-02.
+   */
+  listThinCorporaByNormalizationRunIds(
+    normalization_run_ids: string[],
+  ): Promise<CandidateContentCorpus[]>;
 
   findSuccessfulAnalysisByFingerprint(input: {
     candidate_id: string;
@@ -217,6 +231,9 @@ export interface RadarRepository {
   }): Promise<AnalysisRunRecord>;
 
   getAnalysisRun(analysis_run_id: string): Promise<AnalysisRunRecord | null>;
+
+  /** Batch analysis runs for partner feed (RADAR-PAGE-PERF-02). */
+  listAnalysisRunsByIds(analysis_run_ids: string[]): Promise<AnalysisRunRecord[]>;
 
   insertBaselineScoreSnapshot(input: {
     id: string;
@@ -383,6 +400,8 @@ export interface RadarRepository {
   listMemberScoreSnapshots(input: {
     member_id: string;
     snapshot_date: string;
+    /** When set, only fetch these candidates (avoids full member score history). */
+    candidate_ids?: string[];
   }): Promise<
     Array<{
       candidate_id: string;

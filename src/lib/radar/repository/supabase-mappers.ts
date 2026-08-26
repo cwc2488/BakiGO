@@ -110,6 +110,55 @@ export function assembleCorpusFromRows(
   });
 }
 
+/** Columns required for partner-card evidence (RADAR-PAGE-PERF-02). */
+export const THIN_NORMALIZED_ITEM_SELECT =
+  "normalized_content_id, candidate_id, platform, external_content_id, raw_snapshot_id, adapter_version, fetched_at, published_at, content_type, content_relationship, text, candidate_commentary_text, permalink, is_candidate_originated, has_meaningful_expression, is_analyzable, content_dedup_key, duplicate_of, dedup_class, exclusion_reason, content_hash";
+
+/**
+ * Partner-feed corpus: preserves stored run counts (for freshness notices)
+ * while loading only evidence-relevant item columns — not SELECT *.
+ */
+export function assembleThinPartnerCorpusFromRows(
+  run: Record<string, unknown>,
+  itemRows: Record<string, unknown>[],
+): CandidateContentCorpus {
+  const items = itemRows.map((row) =>
+    mapNormalizedItemRow({
+      ...row,
+      quoted_content: null,
+      media: [],
+      normalization_notes: [],
+    }),
+  );
+  const stored = (run.counts as CandidateContentCorpus["counts"] | null) ?? null;
+  const normalizedAt = toIso(run.normalized_at);
+  const windowEnd = toIso(run.window_end_at ?? run.normalized_at);
+  const windowStart = toIso(run.window_start_at ?? run.normalized_at);
+  const platforms = [...new Set(items.map((item) => item.platform))];
+
+  return {
+    candidate_id: String(run.candidate_id),
+    normalization_run_id: String(run.normalization_run_id),
+    normalization_policy_version: CONTENT_NORMALIZATION_POLICY_ID,
+    normalized_at: normalizedAt,
+    platforms_included: platforms,
+    data_completeness: run.data_completeness as "full" | "partial",
+    items,
+    analysis_window_days: Number(run.analysis_window_days ?? 90),
+    window_start_at: windowStart,
+    window_end_at: windowEnd,
+    analyzable_items: [],
+    last_meaningful_activity_at: null,
+    counts: {
+      raw_item_count: Number(stored?.raw_item_count ?? items.length),
+      normalized_item_count: Number(stored?.normalized_item_count ?? items.length),
+      // Prefer stored analyzable count so thin item projection cannot undercount notices.
+      analyzable_item_count: Number(stored?.analyzable_item_count ?? 0),
+      excluded_by_reason: stored?.excluded_by_reason ?? {},
+    },
+  };
+}
+
 export function mapAnalysisRunRow(row: Record<string, unknown>): AnalysisRunRecord {
   return {
     id: String(row.id),

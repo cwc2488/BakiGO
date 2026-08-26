@@ -22,10 +22,13 @@ export async function filterAllocatableForMember(input: {
     input.items.map((item) => item.candidateId),
   );
   const claimByCandidate = new Map(claims.map((claim) => [claim.candidate_id, claim]));
+  // One member-scoped list replaces per-item getMemberCandidateState (N+1).
+  const states = await input.repo.listMemberCandidateStates(input.member_id);
+  const stateByCandidate = new Map(states.map((state) => [state.candidate_id, state]));
 
   const visible: RankedCandidate[] = [];
   for (const item of input.items) {
-    const state = await input.repo.getMemberCandidateState(input.member_id, item.candidateId);
+    const state = stateByCandidate.get(item.candidateId) ?? null;
     if (
       isVisibleInFeed({
         member_id: input.member_id,

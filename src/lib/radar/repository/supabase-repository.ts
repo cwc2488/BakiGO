@@ -3,10 +3,12 @@ import { serializeAllocatableAt } from "../allocation/allocation-rules";
 import { InMemoryRadarRepository } from "./in-memory-repository";
 import {
   assembleCorpusFromRows,
+  assembleThinPartnerCorpusFromRows,
   isUuid,
   mapAnalysisRunRow,
   mapRawSnapshotRow,
   mapRefreshStateRow,
+  THIN_NORMALIZED_ITEM_SELECT,
 } from "./supabase-mappers";
 import type { MemberRadarRecommendationFeedback } from "../feedback/types";
 import type { MemberRadarRegionPreference } from "../semantics/region-preference";
@@ -289,7 +291,9 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
   override async getCandidate(candidate_id: string) {
     const { data, error } = await this.client
       .from("candidate_pool")
-      .select("*")
+      .select(
+        "id, display_name, primary_platform, lifecycle_state, profile_semantic_hash, normalized_username, acquisition_source",
+      )
       .eq("id", candidate_id)
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -303,6 +307,28 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
       normalized_username: data.normalized_username ? String(data.normalized_username) : null,
       acquisition_source: (data.acquisition_source as "system_discovery" | "member_provided") ?? "system_discovery",
     };
+  }
+
+  override async listCandidatesByIds(candidate_ids: string[]) {
+    const ids = [...new Set(candidate_ids.filter(Boolean))];
+    if (ids.length === 0) return [];
+    const { data, error } = await this.client
+      .from("candidate_pool")
+      .select(
+        "id, display_name, primary_platform, lifecycle_state, profile_semantic_hash, normalized_username, acquisition_source",
+      )
+      .in("id", ids);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row) => ({
+      id: String(row.id),
+      display_name: row.display_name ? String(row.display_name) : null,
+      primary_platform: row.primary_platform as "threads" | "instagram" | null,
+      lifecycle_state: row.lifecycle_state as import("../jobs/constants").GlobalCandidateLifecycleState,
+      profile_semantic_hash: row.profile_semantic_hash ? String(row.profile_semantic_hash) : null,
+      normalized_username: row.normalized_username ? String(row.normalized_username) : null,
+      acquisition_source:
+        (row.acquisition_source as "system_discovery" | "member_provided") ?? "system_discovery",
+    }));
   }
 
   override async recordDiscovery(input: Parameters<RadarRepository["recordDiscovery"]>[0]) {
@@ -545,6 +571,17 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
     return mapRefreshStateRow(data);
   }
 
+  override async listRefreshStatesByIds(candidate_ids: string[]) {
+    const ids = [...new Set(candidate_ids.filter(Boolean))];
+    if (ids.length === 0) return [];
+    const { data, error } = await this.client
+      .from("candidate_refresh_state")
+      .select("*")
+      .in("candidate_id", ids);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row) => mapRefreshStateRow(row as Record<string, unknown>));
+  }
+
   override async getNormalizationRun(normalization_run_id: string) {
     const { data: run, error: runError } = await this.client
       .from("candidate_normalization_runs")
@@ -559,6 +596,41 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
       .eq("normalization_run_id", normalization_run_id);
     if (itemsError) throw new Error(itemsError.message);
     return assembleCorpusFromRows(run, items ?? []);
+  }
+
+  override async listThinCorporaByNormalizationRunIds(normalization_run_ids: string[]) {
+    const ids = [...new Set(normalization_run_ids.filter(Boolean))];
+    if (ids.length === 0) return [];
+    const { data: runs, error: runError } = await this.client
+      .from("candidate_normalization_runs")
+      .select(
+        "normalization_run_id, candidate_id, normalized_at, data_completeness, counts, analysis_window_days, window_start_at, window_end_at",
+      )
+      .in("normalization_run_id", ids);
+    if (runError) throw new Error(runError.message);
+    if (!runs?.length) return [];
+
+    const { data: items, error: itemsError } = await this.client
+      .from("candidate_content_normalized")
+      .select(`${THIN_NORMALIZED_ITEM_SELECT}, normalization_run_id`)
+      .in("normalization_run_id", ids);
+    if (itemsError) throw new Error(itemsError.message);
+
+    const itemsByRun = new Map<string, Record<string, unknown>[]>();
+    for (const row of items ?? []) {
+      const runId = String((row as { normalization_run_id?: unknown }).normalization_run_id ?? "");
+      if (!runId) continue;
+      const bucket = itemsByRun.get(runId) ?? [];
+      bucket.push(row as Record<string, unknown>);
+      itemsByRun.set(runId, bucket);
+    }
+
+    return runs.map((run) =>
+      assembleThinPartnerCorpusFromRows(
+        run as Record<string, unknown>,
+        itemsByRun.get(String(run.normalization_run_id)) ?? [],
+      ),
+    );
   }
 
   override async getLatestNormalizationRun(candidate_id: string) {
@@ -601,6 +673,17 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
     if (error) throw new Error(error.message);
     if (!data) return null;
     return mapAnalysisRunRow(data);
+  }
+
+  override async listAnalysisRunsByIds(analysis_run_ids: string[]) {
+    const ids = [...new Set(analysis_run_ids.filter(Boolean))];
+    if (ids.length === 0) return [];
+    const { data, error } = await this.client
+      .from("candidate_analysis_runs")
+      .select("*")
+      .in("id", ids);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row) => mapAnalysisRunRow(row as Record<string, unknown>));
   }
 
   override async insertBaselineScoreSnapshot(
@@ -915,11 +998,19 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
   override async listMemberScoreSnapshots(input: {
     member_id: string;
     snapshot_date: string;
+    candidate_ids?: string[];
   }) {
-    const { data, error } = await this.client
+    // Restrict to today's visible IDs when provided — avoids full member score history.
+    let query = this.client
       .from("radar_candidate_score_snapshots")
-      .select("*")
+      .select(
+        "candidate_id_text, overall_score, analysis_run_id, analyzed_at, created_at, extraction_snapshot",
+      )
       .eq("member_id", input.member_id);
+    if (input.candidate_ids && input.candidate_ids.length > 0) {
+      query = query.in("candidate_id_text", [...new Set(input.candidate_ids)]);
+    }
+    const { data, error } = await query;
     if (error) throw new Error(error.message);
     const sameDay = (data ?? []).filter((row) => {
       const snapshot = row.extraction_snapshot as { snapshot_date?: unknown } | null;
