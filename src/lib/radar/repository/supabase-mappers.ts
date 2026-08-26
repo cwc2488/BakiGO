@@ -144,7 +144,7 @@ export function assembleThinPartnerCorpusFromRows(
     platforms_included: platforms,
     data_completeness: run.data_completeness as "full" | "partial",
     items,
-    analysis_window_days: Number(run.analysis_window_days ?? 90),
+    analysis_window_days: 90,
     window_start_at: windowStart,
     window_end_at: windowEnd,
     analyzable_items: [],
