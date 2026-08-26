@@ -253,24 +253,13 @@ describe("RADAR-PAGE-PERF-02 feed logical equivalence", () => {
           ],
           reasoning: "偵測到一項主要需求。",
         },
-        candidate_understanding: {
-          need_owner: "self",
-          need_state: "unresolved",
-          market_role: "consumer",
-          need_category: "fat_loss",
-          pain_points: ["體態"],
-          attempts: [],
-          unresolved_gap: "還在卡關",
-          urgency: "medium",
-          help_seeking: "implicit",
-          evidence_confidence: 0.8,
-          primary_language: "zh-Hant",
-          traditional_chinese_usable: "true",
-          recommendation_reason_zh: `想改善體態 ${i}`,
-          region_label: null,
-          region_confidence: "unknown",
-        },
       });
+      if (extraction.candidate_understanding) {
+        extraction.candidate_understanding.recommendation_reason_zh = `想改善體態 ${i}`;
+        extraction.candidate_understanding.source_refs = [
+          { content_id: analyzableId, platform: "threads" },
+        ];
+      }
       const analysisId = `11111111-1111-4111-8111-11111111111${i}`;
       await repo.insertAnalysisRun({
         id: analysisId,
