@@ -42,10 +42,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {children}
           </div>
         </div>
-        {/* Keep bottom nav outside the padded page column so fixed anchoring
-            matches short pages (顧客 / 心理測驗) on long scroll pages (/radar). */}
-        {showNav ? <AppBottomNav /> : null}
       </div>
+      {/* Viewport-fixed bottom nav must not sit inside max-w / page chrome
+          wrappers — those can become fixed containing blocks on mobile WebKit
+          during long Calendar/Radar scrolls (RADAR-BOTTOM-NAV-FIX-01). */}
+      {showNav ? <AppBottomNav /> : null}
     </>
   );
 }
