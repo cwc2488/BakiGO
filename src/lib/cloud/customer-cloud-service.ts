@@ -18,6 +18,11 @@ import {
   readBodyRecordDeletionTombstones,
   readBodyRecordDeletionTombstoneIds,
 } from "@/lib/customers/body-record-deletion-tombstones";
+import {
+  filterCustomersNotDeleted,
+  mergeActiveCustomersById,
+  purgeLocalCustomersByIds,
+} from "@/lib/customers/customer-durable-delete";
 import { todayISODate } from "@/lib/config/app-config";
 import type {
   BodyCompositionRecord,
@@ -249,6 +254,7 @@ export async function fetchCloudCustomers(ownerMemberId: EntityId): Promise<Cust
     .from("customers")
     .select("*")
     .eq("owner_member_id", ownerMemberId)
+    .is("deleted_at", null)
     .order("updated_at", { ascending: false });
 
   if (error) {
@@ -256,6 +262,26 @@ export async function fetchCloudCustomers(ownerMemberId: EntityId): Promise<Cust
   }
 
   return (data ?? []).map((row) => mapCustomer(row as CustomerDbRow));
+}
+
+/** Soft-deleted customer ids for this owner (server authority). */
+export async function fetchCloudDeletedCustomerIds(ownerMemberId: EntityId): Promise<EntityId[]> {
+  if (!isSupabaseConfigured() || !isCloudDatabaseMemberId(ownerMemberId)) {
+    return [];
+  }
+
+  const supabase = createSupabaseBrowserClient();
+  const { data, error } = await supabase
+    .from("customers")
+    .select("id")
+    .eq("owner_member_id", ownerMemberId)
+    .not("deleted_at", "is", null);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).map((row) => row.id as EntityId);
 }
 
 export async function fetchCloudBodyRecords(customerIds: EntityId[]): Promise<BodyCompositionRecord[]> {
@@ -319,6 +345,7 @@ export async function fetchCloudReceiptPhotos(
   return (data ?? []).map((row) => mapReceiptPhoto(row as ReceiptPhotoDbRow));
 }
 
+/** Soft-delete on server. Does not hard-delete rows or cascade related records. */
 export async function deleteCustomersFromCloud(
   ownerMemberId: EntityId,
   customerIds: EntityId[],
@@ -328,11 +355,13 @@ export async function deleteCustomersFromCloud(
   }
 
   const supabase = createSupabaseBrowserClient();
+  const deletedAt = new Date().toISOString();
   const { data, error } = await supabase
     .from("customers")
-    .delete()
+    .update({ deleted_at: deletedAt, updated_at: deletedAt })
     .eq("owner_member_id", ownerMemberId)
     .in("id", customerIds)
+    .is("deleted_at", null)
     .select("id");
 
   if (error) {
@@ -415,7 +444,12 @@ export async function pushCustomersToCloud(
   }
 
   const supabase = createSupabaseBrowserClient();
-  const ownedCustomers = customers.filter((customer) => customer.ownerMemberId === ownerMemberId);
+  const serverDeletedIds = new Set(await fetchCloudDeletedCustomerIds(ownerMemberId));
+  // Never upsert soft-deleted ids. Payload also omits deleted_at; DB trigger is the backstop.
+  const ownedCustomers = filterCustomersNotDeleted(
+    customers.filter((customer) => customer.ownerMemberId === ownerMemberId),
+    serverDeletedIds,
+  );
 
   if (ownedCustomers.length > 0) {
     const { error: customerError } = await supabase
@@ -521,11 +555,19 @@ export async function syncCustomersOnLogin(
     await pushPendingCustomerDeletionsToCloud(storage, ownerMemberId);
     await pushPendingBodyRecordDeletionsToCloud(storage);
 
-    const cloudCustomers = await fetchCloudCustomers(ownerMemberId);
-    const cloudHasData = cloudCustomers.length > 0;
+    const [cloudCustomers, serverDeletedIdsList] = await Promise.all([
+      fetchCloudCustomers(ownerMemberId),
+      fetchCloudDeletedCustomerIds(ownerMemberId),
+    ]);
+    const serverDeletedIds = new Set(serverDeletedIdsList);
+    purgeLocalCustomersByIds(storage, serverDeletedIdsList);
+
+    const cloudHasActive = cloudCustomers.length > 0;
+    const cloudHasHistory = cloudHasActive || serverDeletedIds.size > 0;
     const localHasData = localHasCustomerData(storage);
 
-    if (!cloudHasData && localHasData) {
+    // First-time cloud upload only when server has never seen customers for this owner.
+    if (!cloudHasHistory && localHasData) {
       await pushCustomersToCloud(
         ownerMemberId,
         repo.getAllCustomers(),
@@ -536,49 +578,55 @@ export async function syncCustomersOnLogin(
       return;
     }
 
-    if (cloudHasData) {
-      const localCustomers = repo.getCustomersByOwner(ownerMemberId);
-      const tombstoneIds = readCustomerDeletionTombstoneIds(storage);
-      const filteredCloudCustomers = cloudCustomers.filter((customer) => !tombstoneIds.has(customer.id));
-      const mergedCustomers = mergeById(localCustomers, filteredCloudCustomers);
-      storage.setItem(STORAGE_KEYS.customers, JSON.stringify(mergedCustomers));
-
-      const customerIds = mergedCustomers.map((customer) => customer.id);
-      const cloudRecords = await fetchCloudBodyRecords(customerIds);
-      const localRecords = repo
-        .getAllBodyRecords()
-        .filter((record) => customerIds.includes(record.customerId));
-      const bodyTombstoneIds = readBodyRecordDeletionTombstoneIds(storage);
-      const filteredCloudRecords = cloudRecords.filter((record) => !bodyTombstoneIds.has(record.id));
-      const mergedRecords = mergeById(localRecords, filteredCloudRecords);
-      storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(mergedRecords));
-
-      const cloudPhotos = await fetchCloudProgressPhotos(customerIds);
-      const localPhotos = repo
-        .getAllProgressPhotos()
-        .filter((photo) => customerIds.includes(photo.customerId));
-      const mergedPhotos = mergeById(localPhotos, cloudPhotos);
-      storage.setItem(STORAGE_KEYS.customerProgressPhotos, JSON.stringify(mergedPhotos));
-
-      const cloudReceipts = await fetchCloudReceiptPhotos(customerIds);
-      const localReceipts = repo
-        .getAllReceiptPhotos()
-        .filter((receipt) => customerIds.includes(receipt.customerId));
-      const mergedReceipts = mergeById(localReceipts, cloudReceipts);
-      storage.setItem(STORAGE_KEYS.customerReceiptPhotos, JSON.stringify(mergedReceipts));
-
-      if (localHasData) {
-        await pushCustomersToCloud(
-          ownerMemberId,
-          mergedCustomers,
-          mergedRecords,
-          mergedPhotos,
-          mergedReceipts,
-        );
-      }
-
-      repo.purgeExpiredReceiptPhotos();
+    if (!cloudHasHistory) {
+      return;
     }
+
+    const localCustomers = repo.getCustomersByOwner(ownerMemberId);
+    const tombstoneIds = readCustomerDeletionTombstoneIds(storage);
+    const mergedCustomers = mergeActiveCustomersById(
+      localCustomers,
+      cloudCustomers,
+      tombstoneIds,
+      serverDeletedIds,
+    );
+    storage.setItem(STORAGE_KEYS.customers, JSON.stringify(mergedCustomers));
+
+    const customerIds = mergedCustomers.map((customer) => customer.id);
+    const cloudRecords = await fetchCloudBodyRecords(customerIds);
+    const localRecords = repo
+      .getAllBodyRecords()
+      .filter((record) => customerIds.includes(record.customerId));
+    const bodyTombstoneIds = readBodyRecordDeletionTombstoneIds(storage);
+    const filteredCloudRecords = cloudRecords.filter((record) => !bodyTombstoneIds.has(record.id));
+    const mergedRecords = mergeById(localRecords, filteredCloudRecords);
+    storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(mergedRecords));
+
+    const cloudPhotos = await fetchCloudProgressPhotos(customerIds);
+    const localPhotos = repo
+      .getAllProgressPhotos()
+      .filter((photo) => customerIds.includes(photo.customerId));
+    const mergedPhotos = mergeById(localPhotos, cloudPhotos);
+    storage.setItem(STORAGE_KEYS.customerProgressPhotos, JSON.stringify(mergedPhotos));
+
+    const cloudReceipts = await fetchCloudReceiptPhotos(customerIds);
+    const localReceipts = repo
+      .getAllReceiptPhotos()
+      .filter((receipt) => customerIds.includes(receipt.customerId));
+    const mergedReceipts = mergeById(localReceipts, cloudReceipts);
+    storage.setItem(STORAGE_KEYS.customerReceiptPhotos, JSON.stringify(mergedReceipts));
+
+    if (localHasData || mergedCustomers.length > 0) {
+      await pushCustomersToCloud(
+        ownerMemberId,
+        mergedCustomers,
+        mergedRecords,
+        mergedPhotos,
+        mergedReceipts,
+      );
+    }
+
+    repo.purgeExpiredReceiptPhotos();
   } finally {
     setCloudSyncPaused(false);
   }

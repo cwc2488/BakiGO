@@ -36,6 +36,8 @@ See migrations `001_cloud_foundation.sql`, `004_member_app_data.sql`.
 
 Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `occupation`. Migration `025_customers_sex.sql` adds nullable `sex` with enum check. When a full birthday is captured, persist `birth_date` and derive `birth_year` for legacy compatibility.
 
+Migration `061_customers_soft_delete.sql` adds nullable `deleted_at`. Active CRM rows have `deleted_at IS NULL`. Coach delete is a soft delete (`deleted_at = now()`); a BEFORE UPDATE trigger preserves `deleted_at` once set so stale client upserts cannot resurrect. Child tables (measurements, photos, coaching FKs) are not cascade-deleted.
+
 ### Quiz icebreaker (`021_quiz_icebreaker_v1.sql`+)
 
 | Table | Purpose |
