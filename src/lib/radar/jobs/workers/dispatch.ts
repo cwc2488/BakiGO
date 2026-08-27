@@ -180,18 +180,8 @@ export async function enqueueScoreJobsForMembers(
     member_ids: string[];
   },
 ) {
-  if (input.pipeline_run_id) {
-    for (const member_id of input.member_ids) {
-      await ctx.repo.initMemberScoreProgress({
-        pipeline_run_id: input.pipeline_run_id,
-        member_id,
-        expected_score_jobs: 1,
-      });
-    }
-  }
-
   for (const member_id of input.member_ids) {
-    await ctx.queue.enqueue(
+    const { created } = await ctx.queue.enqueue(
       {
         pipeline_run_id: input.pipeline_run_id,
         job_type: "score",
@@ -212,6 +202,15 @@ export async function enqueueScoreJobsForMembers(
       },
       ctx.now,
     );
+    // Only count newly created score jobs toward expected progress. Re-enqueue
+    // of an existing idempotency key must not inflate expected (GAP-01).
+    if (created && input.pipeline_run_id) {
+      await ctx.repo.initMemberScoreProgress({
+        pipeline_run_id: input.pipeline_run_id,
+        member_id,
+        expected_score_jobs: 1,
+      });
+    }
   }
 }
 

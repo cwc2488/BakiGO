@@ -58,6 +58,19 @@ export async function runScoreWorker(
       excluded_from_recommendations: memberState.excluded_from_recommendations,
     })
   ) {
+    // Excluded is a terminal score outcome for this (member, candidate) job.
+    // Progress must still advance or rank never enqueues (RADAR-MEMBER-SNAPSHOT-GAP-01).
+    if (job.pipeline_run_id) {
+      await ctx.repo.incrementMemberScoreProgress({
+        pipeline_run_id: job.pipeline_run_id,
+        member_id,
+      });
+      await maybeEnqueueRank(ctx, {
+        pipeline_run_id: job.pipeline_run_id,
+        run_date,
+        member_id,
+      });
+    }
     return {
       job_id: job.id,
       status: "succeeded",
