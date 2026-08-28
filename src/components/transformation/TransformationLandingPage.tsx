@@ -39,35 +39,42 @@ const FIELD_BY_CODE: Record<string, FieldKey> = {
   consent_required: "consent",
 };
 
-function YellowCtaButton({
+const V2_SCREENS = {
+  hero: "/transform/v2/screen-1-hero.jpg",
+  benefits: "/transform/v2/screen-2-benefits.jpg",
+  who: "/transform/v2/screen-3-who.jpg",
+  process: "/transform/v2/screen-4-process.jpg",
+} as const;
+
+/** Screen 4 bottom edge — form section background. */
+const FORM_PAGE_BG = "#fbf7f4";
+
+function VisualScreen({
+  src,
+  alt,
   children,
-  type = "button",
-  onClick,
-  disabled,
 }: {
-  children: React.ReactNode;
-  type?: "button" | "submit";
-  onClick?: () => void;
-  disabled?: boolean;
+  src: string;
+  alt: string;
+  children?: React.ReactNode;
 }) {
   return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className="flex w-full min-h-14 items-center justify-between rounded-full bg-[#FFD700] px-5 text-left text-[1.0625rem] font-bold text-black transition active:scale-[0.99] disabled:opacity-60"
-    >
-      <span>{children}</span>
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EE0000] text-white">
-        ›
-      </span>
-    </button>
+    <div className="relative w-full">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className="block h-auto w-full m-0 p-0 align-top"
+        decoding="async"
+      />
+      {children}
+    </div>
   );
 }
 
-function RedCircleIcon({ children }: { children: React.ReactNode }) {
+function FormFieldIcon({ children }: { children: React.ReactNode }) {
   return (
-    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#EE0000] text-white">
+    <span className="pointer-events-none absolute left-4 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center text-[#EE0000]">
       {children}
     </span>
   );
@@ -96,6 +103,13 @@ export function TransformationLandingPage({ code }: { code: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    const visualPreview =
+      process.env.NODE_ENV === "development" &&
+      new URLSearchParams(window.location.search).get("visual") === "1";
+    if (visualPreview) {
+      setResolve({ status: "ready", shareCode: code.toUpperCase() });
+      return;
+    }
     void (async () => {
       try {
         const response = await fetch(`/api/transformation/public/resolve/${encodeURIComponent(code)}`);
@@ -243,161 +257,60 @@ export function TransformationLandingPage({ code }: { code: string }) {
     );
   }
 
+  const inputClass =
+    "w-full min-h-[3.25rem] rounded-2xl border border-[#e8e2da] bg-white pl-12 pr-4 text-[0.9375rem] text-black shadow-[0_2px_8px_rgba(0,0,0,0.04)] outline-none focus:border-[#EE0000]/40";
+  const textareaClass =
+    "w-full min-h-[6.5rem] rounded-2xl border border-[#e8e2da] bg-white pl-12 pr-4 py-3 text-[0.9375rem] text-black shadow-[0_2px_8px_rgba(0,0,0,0.04)] outline-none focus:border-[#EE0000]/40";
+
   return (
-    <div className="bg-black text-white">
-      {/* Hero */}
-      <section className="relative overflow-hidden bg-black px-4 pb-8 pt-6">
-        <div
-          className="pointer-events-none absolute -right-8 top-24 h-64 w-64 rotate-12 bg-[#FFD700]/30 blur-2xl"
-          aria-hidden
-        />
-        <div className="relative mx-auto max-w-lg">
-          <span className="inline-flex items-center gap-1 rounded-md bg-[#FFD700] px-2.5 py-1 text-[0.75rem] font-bold text-black">
-            📍 板橋・土城限定
-          </span>
+    <div className="overflow-x-hidden text-black" style={{ backgroundColor: FORM_PAGE_BG }}>
+      <div className="mx-auto w-full max-w-[473px] text-[0] leading-[0] [&>div+div]:-mt-px">
+        {/* Screen 1 — Hero */}
+        <VisualScreen src={V2_SCREENS.hero} alt="徵求 5 位體態改造模特兒">
+          <button
+            type="button"
+            onClick={scrollToForm}
+            className="absolute bottom-[4.5%] left-[6%] right-[6%] z-10 h-[9%] cursor-pointer border-0 bg-transparent p-0 text-transparent shadow-none"
+            aria-label="看看我適不適合"
+          />
+        </VisualScreen>
 
-          <div className="mt-6 flex items-start justify-between gap-3">
-            <div className="flex-1">
-              <p className="text-[0.9375rem] font-medium text-white/90">運動教室 擴大經營</p>
-              <h1 className="mt-2 text-[1.75rem] font-black leading-tight">
-                徵求{" "}
-                <span className="text-[2.5rem] text-[#EE0000]">5</span>
-                位
-              </h1>
-              <p className="text-[1.5rem] font-black leading-tight">體態改造模特兒</p>
-              <p className="mt-2 text-[1.25rem] font-bold text-[#FFD700]">減重・減脂・雕塑</p>
-              <p className="mt-3 text-[0.875rem] text-white/80">找 5 位願意一起改變的你！</p>
-            </div>
-            <div className="flex h-28 w-24 shrink-0 flex-col items-center justify-center rounded-2xl bg-gradient-to-b from-[#333] to-[#111]">
-              <div className="h-10 w-10 rounded-full bg-[#555]" />
-              <div className="mt-1 h-8 w-8 rounded-full bg-[#555]" />
-            </div>
-          </div>
+        {/* Screen 2 — 你會獲得 */}
+        <VisualScreen src={V2_SCREENS.benefits} alt="你會獲得 4 大專屬好處" />
 
-          <div className="absolute right-4 top-32 flex h-20 w-20 flex-col items-center justify-center rounded-full bg-[#FFD700] text-center text-[0.625rem] font-bold leading-tight text-black">
-            名額僅有
-            <span className="text-[1.25rem] text-[#EE0000]">5</span>位
-          </div>
+        {/* Screen 3 — 我們正在找這樣的你 */}
+        <VisualScreen src={V2_SCREENS.who} alt="我們正在找這樣的你" />
 
-          <div className="mt-8 grid grid-cols-4 gap-2 text-center">
-            {[
-              { icon: "🏋", label: "專業教練指導" },
-              { icon: "📋", label: "客製化體態計畫" },
-              { icon: "📊", label: "定期評估與回饋" },
-              { icon: "📷", label: "紀錄每一步進步" },
-            ].map((item) => (
-              <div key={item.label} className="flex flex-col items-center gap-1">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/30 text-lg">
-                  {item.icon}
-                </span>
-                <span className="text-[0.625rem] leading-tight text-white/80">{item.label}</span>
-              </div>
-            ))}
-          </div>
+        {/* Screen 4 — 計畫進行流程 */}
+        <VisualScreen src={V2_SCREENS.process} alt="計畫進行流程">
+          <button
+            type="button"
+            onClick={scrollToForm}
+            className="absolute bottom-[18%] left-[5%] right-[5%] z-10 h-[12%] cursor-pointer border-0 bg-transparent p-0 text-transparent shadow-none"
+            aria-label="想知道自己適不適合？立即填寫申請表"
+          />
+        </VisualScreen>
+      </div>
 
-          <div className="mt-8">
-            <YellowCtaButton onClick={scrollToForm}>看看我適不適合</YellowCtaButton>
-          </div>
-        </div>
-      </section>
-
-      {/* Benefits */}
-      <section className="bg-white px-4 py-10 text-black">
-        <h2 className="text-center text-[1.375rem] font-black">你會獲得</h2>
-        <div className="mx-auto mt-8 grid max-w-lg grid-cols-2 gap-6">
-          {[
-            { title: "教練指導", desc: "專業教練全程指導與陪伴" },
-            { title: "個人化計畫", desc: "客製化體態計畫，依實際狀況調整" },
-            { title: "定期評估", desc: "定期評估身體狀況與計畫執行進度" },
-            { title: "紀錄進步", desc: "紀錄每一步改變，看見自己的進步" },
-          ].map((item, index) => (
-            <div key={item.title} className="flex flex-col items-center text-center">
-              <RedCircleIcon>
-                <span className="text-lg">{["🏋", "📋", "📊", "📷"][index]}</span>
-              </RedCircleIcon>
-              <h3 className="mt-3 text-[0.9375rem] font-bold">{item.title}</h3>
-              <p className="mt-1 text-[0.75rem] leading-5 text-[#636366]">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Who we want */}
-      <section className="bg-[#f5f0ea] px-4 py-10 text-black">
-        <div className="mx-auto flex max-w-lg flex-col gap-6 sm:flex-row sm:items-start">
-          <div className="mx-auto h-48 w-36 shrink-0 rounded-2xl bg-gradient-to-b from-[#ccc] to-[#999] sm:mx-0" />
-          <div className="flex-1">
-            <h2 className="text-[1.25rem] font-black">我們正在找這樣的你</h2>
-            <ul className="mt-4 space-y-3">
-              {[
-                "年滿 18 歲",
-                "有減重、減脂、雕塑等體態改善需求",
-                "對改變有決心，願意認真執行",
-                "願意配合計畫與紀錄",
-                "板橋・土城地區，方便參與實體服務",
-              ].map((item) => (
-                <li key={item} className="flex items-start gap-3 text-[0.875rem] leading-6">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#EE0000] text-[0.625rem] text-white">
-                    ✓
-                  </span>
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-        <div className="mx-auto mt-6 flex max-w-lg items-center gap-3 rounded-lg bg-[#EE0000] px-4 py-3 text-white">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#EE0000] font-bold">
-            !
-          </span>
-          <p className="text-[0.8125rem] font-semibold leading-5">
-            這不是抽獎活動，我們希望找到真的想改變的人！
-          </p>
-        </div>
-      </section>
-
-      {/* Process */}
-      <section className="bg-[#f8f8f8] px-4 py-10 text-black">
-        <h2 className="text-center text-[1.375rem] font-black">計畫進行流程</h2>
-        <div className="mx-auto mt-8 grid max-w-lg grid-cols-2 gap-4 sm:grid-cols-4">
-          {[
-            { step: "1", title: "填寫申請", desc: "留下基本資料進行申請" },
-            { step: "2", title: "工作人員聯絡", desc: "由真人聯絡了解你的需求" },
-            { step: "3", title: "了解目標", desc: "深入了解你的目標與目前狀況" },
-            { step: "4", title: "安排體驗／到店", desc: "安排體驗或到店諮詢，開始你的改變之旅" },
-          ].map((item) => (
-            <div key={item.step} className="flex flex-col items-center text-center">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#FFD700] text-[1.125rem] font-black text-black">
-                {item.step}
-              </span>
-              <h3 className="mt-2 text-[0.8125rem] font-bold">{item.title}</h3>
-              <p className="mt-1 text-[0.6875rem] leading-4 text-[#636366]">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Form */}
-      <section ref={formRef} id="application" className="bg-[#6b1a1a] px-4 py-10">
+      {/* Screen 5 — 真實 HTML 申請表單 */}
+      <section
+        ref={formRef}
+        id="application"
+        className="px-4 pb-10 pt-4"
+        style={{ backgroundColor: FORM_PAGE_BG }}
+      >
         <div className="mx-auto max-w-lg">
-          <h2 className="text-[1.5rem] font-black leading-tight text-[#FFD700]">
-            想知道自己
-            <br />
-            適不適合？
-          </h2>
-          <p className="mt-3 text-[0.875rem] leading-6 text-white/90">
-            先留下簡單資料，
-            <br />
-            我們會由真人與你聯絡，
-            <br />
-            了解你的需求並安排諮詢。
+          <p className="text-center text-[0.875rem] font-semibold text-black/70">
+            <span className="text-[#FFD700]">—</span> 想知道自己適不適合？{" "}
+            <span className="text-[#FFD700]">—</span>
           </p>
-
-          <div className="mt-4 rounded-xl bg-black/40 px-4 py-3">
-            <p className="text-[0.8125rem] font-semibold text-[#FFD700]">
-              ★ 優秀成果有機會參與後續成果分享／合作
-            </p>
-          </div>
+          <h2 className="mt-3 text-center text-[1.625rem] font-black leading-tight">
+            立即申請
+            <span className="text-[#EE0000]">體態改造計畫</span>
+          </h2>
+          <p className="mt-2 text-center text-[0.875rem] font-semibold text-black/75">
+            名額有限，先申請先保留！
+          </p>
 
           <form
             id={formId}
@@ -407,136 +320,206 @@ export function TransformationLandingPage({ code }: { code: string }) {
             onChange={handleFormInteraction}
           >
             <label className="block">
-              <span className="text-[0.875rem] font-semibold text-white">
-                姓名／稱呼 <span className="text-[#EE0000]">*</span>
+              <span className="text-[0.875rem] font-bold text-black">
+                姓名 <span className="text-[#EE0000]">*</span>
               </span>
-              <input
-                className="mt-1.5 w-full min-h-12 rounded-xl border-0 bg-white px-4 text-[0.9375rem] text-black outline-none"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoComplete="name"
-                required
-              />
-              {fieldErrors.name ? <p className="mt-1 text-[0.8125rem] text-[#FFD700]">{fieldErrors.name}</p> : null}
+              <div className="relative mt-1.5">
+                <FormFieldIcon>
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.75">
+                    <circle cx="12" cy="8" r="3.5" />
+                    <path d="M5 20c1.5-3.5 3.8-5 7-5s5.5 1.5 7 5" />
+                  </svg>
+                </FormFieldIcon>
+                <input
+                  className={inputClass}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  autoComplete="name"
+                  placeholder="請輸入您的姓名"
+                  required
+                />
+              </div>
+              {fieldErrors.name ? <p className="mt-1 text-[0.8125rem] text-[#EE0000]">{fieldErrors.name}</p> : null}
             </label>
 
             <label className="block">
-              <span className="text-[0.875rem] font-semibold text-white">
+              <span className="text-[0.875rem] font-bold text-black">
                 手機號碼 <span className="text-[#EE0000]">*</span>
               </span>
-              <input
-                className="mt-1.5 w-full min-h-12 rounded-xl border-0 bg-white px-4 text-[0.9375rem] text-black outline-none"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                inputMode="tel"
-                autoComplete="tel"
-                placeholder="0912345678"
-                required
-              />
-              {fieldErrors.phone ? <p className="mt-1 text-[0.8125rem] text-[#FFD700]">{fieldErrors.phone}</p> : null}
+              <div className="relative mt-1.5">
+                <FormFieldIcon>
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.75">
+                    <path d="M6.5 4h11l1 3v13l-1 1h-11l-1-1V7z" />
+                    <circle cx="12" cy="17" r="1" />
+                  </svg>
+                </FormFieldIcon>
+                <input
+                  className={inputClass}
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="09XXXXXXXX"
+                  required
+                />
+              </div>
+              {fieldErrors.phone ? <p className="mt-1 text-[0.8125rem] text-[#EE0000]">{fieldErrors.phone}</p> : null}
             </label>
 
             <label className="block">
-              <span className="text-[0.875rem] font-semibold text-white">LINE ID / IG（擇一填寫）</span>
-              <input
-                className="mt-1.5 w-full min-h-12 rounded-xl border-0 bg-white px-4 text-[0.9375rem] text-black outline-none"
-                value={socialContact}
-                onChange={(e) => setSocialContact(e.target.value)}
-              />
+              <span className="text-[0.875rem] font-bold text-black">LINE ID / IG（擇一填寫）</span>
+              <div className="relative mt-1.5">
+                <FormFieldIcon>
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.75">
+                    <path d="M5 9.5c0-2.5 3-4.5 7-4.5s7 2 7 4.5c0 2.2-2.2 4-5 4.6L12 19l-2-5.9C7.2 13.5 5 11.7 5 9.5z" />
+                  </svg>
+                </FormFieldIcon>
+                <input
+                  className={inputClass}
+                  value={socialContact}
+                  onChange={(e) => setSocialContact(e.target.value)}
+                  placeholder="請輸入您的 LINE ID 或 IG 帳號"
+                />
+              </div>
             </label>
 
             <label className="block">
-              <span className="text-[0.875rem] font-semibold text-white">
+              <span className="text-[0.875rem] font-bold text-black">
                 希望改善什麼？ <span className="text-[#EE0000]">*</span>
               </span>
-              <select
-                className="mt-1.5 w-full min-h-12 rounded-xl border-0 bg-white px-4 text-[0.9375rem] text-black outline-none"
-                value={goal}
-                onChange={(e) => setGoal(e.target.value)}
-                required
-              >
-                <option value="">請選擇</option>
-                {TRANSFORMATION_GOALS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.goal ? <p className="mt-1 text-[0.8125rem] text-[#FFD700]">{fieldErrors.goal}</p> : null}
+              <div className="relative mt-1.5">
+                <FormFieldIcon>
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.75">
+                    <rect x="4" y="5" width="16" height="16" rx="2" />
+                    <path d="M8 3v4M16 3v4M4 10h16" />
+                  </svg>
+                </FormFieldIcon>
+                <select
+                  className={`${inputClass} appearance-none`}
+                  value={goal}
+                  onChange={(e) => setGoal(e.target.value)}
+                  required
+                >
+                  <option value="">請選擇</option>
+                  {TRANSFORMATION_GOALS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {fieldErrors.goal ? <p className="mt-1 text-[0.8125rem] text-[#EE0000]">{fieldErrors.goal}</p> : null}
             </label>
 
             <label className="block">
-              <span className="text-[0.875rem] font-semibold text-white">
-                最想改善的部位或問題是？ <span className="text-[#EE0000]">*</span>
+              <span className="text-[0.875rem] font-bold text-black">
+                目前最想改善的部位或問題？ <span className="text-[#EE0000]">*</span>
               </span>
-              <textarea
-                className="mt-1.5 w-full min-h-24 rounded-xl border-0 bg-white px-4 py-3 text-[0.9375rem] text-black outline-none"
-                value={targetAreaOrProblem}
-                onChange={(e) => setTargetAreaOrProblem(e.target.value)}
-                placeholder="例如：腹部、大腿、整體體態…"
-                required
-              />
+              <div className="relative mt-1.5">
+                <span className="pointer-events-none absolute left-4 top-4 flex h-5 w-5 items-center justify-center text-[#EE0000]">
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.75">
+                    <path d="M4 20l7-7 3 3 6-8" />
+                    <path d="M14 6h6v6" />
+                  </svg>
+                </span>
+                <textarea
+                  className={textareaClass}
+                  value={targetAreaOrProblem}
+                  onChange={(e) => setTargetAreaOrProblem(e.target.value)}
+                  placeholder="例如：腹部、大腿、手臂、腰圍、體脂肪…"
+                  required
+                />
+                <p className="mt-1 text-right text-[0.75rem] text-black/45">
+                  {targetAreaOrProblem.length}/500
+                </p>
+              </div>
               {fieldErrors.targetAreaOrProblem ? (
-                <p className="mt-1 text-[0.8125rem] text-[#FFD700]">{fieldErrors.targetAreaOrProblem}</p>
+                <p className="mt-1 text-[0.8125rem] text-[#EE0000]">{fieldErrors.targetAreaOrProblem}</p>
               ) : null}
             </label>
 
             <label className="block">
-              <span className="text-[0.875rem] font-semibold text-white">
+              <span className="text-[0.875rem] font-bold text-black">
                 目前最困擾你的原因是？ <span className="text-[#EE0000]">*</span>
               </span>
-              <select
-                className="mt-1.5 w-full min-h-12 rounded-xl border-0 bg-white px-4 text-[0.9375rem] text-black outline-none"
-                value={painPoint}
-                onChange={(e) => setPainPoint(e.target.value)}
-                required
-              >
-                <option value="">請選擇</option>
-                {TRANSFORMATION_PAIN_POINTS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
+              <div className="relative mt-1.5">
+                <FormFieldIcon>
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.75">
+                    <path d="M12 20s-6.5-4.5-6.5-9a6.5 6.5 0 1 1 13 0c0 4.5-6.5 9-6.5 9z" />
+                  </svg>
+                </FormFieldIcon>
+                <select
+                  className={`${inputClass} appearance-none`}
+                  value={painPoint}
+                  onChange={(e) => setPainPoint(e.target.value)}
+                  required
+                >
+                  <option value="">請選擇</option>
+                  {TRANSFORMATION_PAIN_POINTS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
               {fieldErrors.painPoint ? (
-                <p className="mt-1 text-[0.8125rem] text-[#FFD700]">{fieldErrors.painPoint}</p>
+                <p className="mt-1 text-[0.8125rem] text-[#EE0000]">{fieldErrors.painPoint}</p>
               ) : null}
             </label>
 
-            <label className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                className="mt-1 h-5 w-5 shrink-0 rounded border-white/30"
-                checked={consentAccepted}
-                onChange={(e) => setConsentAccepted(e.target.checked)}
-                required
-              />
-              <span className="text-[0.8125rem] leading-5 text-white/90">
-                我同意提供以上資料供工作人員聯絡及安排體態改造計畫相關諮詢。
-              </span>
-            </label>
-            {fieldErrors.consent ? (
-              <p className="text-[0.8125rem] text-[#FFD700]">{fieldErrors.consent}</p>
-            ) : null}
+            <div className="rounded-2xl border border-[#f0e4b8] bg-[#fff9e8] px-4 py-3">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-5 w-5 shrink-0 rounded border-[#d4c89a] accent-[#EE0000]"
+                  checked={consentAccepted}
+                  onChange={(e) => setConsentAccepted(e.target.checked)}
+                  required
+                />
+                <span className="text-[0.8125rem] leading-5 text-black/85">
+                  我同意提供以上資料供工作人員聯絡及安排體態改造計畫相關諮詢，了解並同意
+                  <Link href="/privacy" className="font-semibold text-[#EE0000] underline">
+                    隱私政策
+                  </Link>
+                  。
+                </span>
+              </label>
+              {fieldErrors.consent ? (
+                <p className="mt-2 text-[0.8125rem] text-[#EE0000]">{fieldErrors.consent}</p>
+              ) : null}
+            </div>
 
-            {formError ? <p className="text-[0.875rem] text-[#FFD700]">{formError}</p> : null}
+            <p className="flex items-start gap-2 text-[0.75rem] leading-5 text-black/55">
+              <svg viewBox="0 0 24 24" className="mt-0.5 h-4 w-4 shrink-0 text-[#EE0000]" fill="currentColor" aria-hidden>
+                <path d="M12 2l2.4 4.8L20 8l-4 3.9.9 5.6L12 15.8 7.1 17.5 8 11.9 4 8l5.6-1.2z" />
+              </svg>
+              您的資料將被妥善保護，僅用於聯絡與協助安排體驗。
+            </p>
 
-            <YellowCtaButton type="submit" disabled={busy}>
-              {busy ? "送出中…" : "申請體態改造計畫"}
-            </YellowCtaButton>
+            {formError ? <p className="text-[0.875rem] text-[#EE0000]">{formError}</p> : null}
 
-            <p className="text-center text-[0.6875rem] leading-4 text-white/50">
-              點擊送出即表示您同意
-              <Link href="/privacy" className="underline">
-                《隱私權政策》
-              </Link>
-              並同意我們與您聯絡。
+            <button
+              type="submit"
+              disabled={busy}
+              className="flex w-full min-h-14 items-center justify-center gap-2 rounded-full bg-[#EE0000] px-5 text-[1.0625rem] font-bold text-white shadow-[0_6px_20px_rgba(238,0,0,0.35)] transition active:scale-[0.99] disabled:opacity-60"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 12l16-7-7 16-2-7z" />
+              </svg>
+              {busy ? "送出中…" : "送出申請，保留名額"}
+            </button>
+
+            <p className="flex items-center justify-center gap-1.5 text-center text-[0.75rem] text-black/50">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="5" y="11" width="14" height="10" rx="2" />
+                <path d="M8 11V8a4 4 0 1 1 8 0v3" />
+              </svg>
+              提交後將有專人與您聯繫
             </p>
           </form>
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="bg-black px-4 py-6 text-center">
         <p className="text-[0.8125rem] text-white/70">IG : Omtcsh</p>
       </footer>
