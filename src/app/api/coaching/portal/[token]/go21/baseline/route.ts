@@ -82,15 +82,21 @@ export async function POST(
     };
 
     if (existingBody?.id) {
-      await supabase.from("body_composition_records").update(bodyPayload).eq("id", existingBody.id);
+      const { error: updateError } = await supabase
+        .from("body_composition_records")
+        .update(bodyPayload)
+        .eq("id", existingBody.id)
+        .eq("customer_id", portal.customerId);
+      if (updateError) throw new CoachingServiceError(updateError.message, 500);
     } else {
-      await supabase.from("body_composition_records").insert({
+      const { error: insertError } = await supabase.from("body_composition_records").insert({
         id: crypto.randomUUID(),
         customer_id: portal.customerId,
         record_date: today,
         ...bodyPayload,
         created_at: new Date().toISOString(),
       });
+      if (insertError) throw new CoachingServiceError(insertError.message, 500);
     }
 
     return NextResponse.json({ ok: true, recordDate: today });
