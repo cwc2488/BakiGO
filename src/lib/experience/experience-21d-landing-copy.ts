@@ -1,6 +1,6 @@
 /** Copy source of truth for the public 21-day Experience landing (mission V1). */
 
-export const EXPERIENCE_21D_LANDING_VERSION = "experience_21d_v1" as const;
+export const EXPERIENCE_21D_LANDING_VERSION = "experience_21d_v2" as const;
 
 export const EXPERIENCE_21D_CONSULTATION_PREFERENCES = ["text", "phone", "in_person"] as const;
 export type Experience21dConsultationPreference =
