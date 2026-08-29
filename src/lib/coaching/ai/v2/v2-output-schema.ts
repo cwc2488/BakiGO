@@ -8,6 +8,10 @@ import {
   type CoachingAiV2Intention,
   type CoachingAiV2LifecycleStage,
 } from "@/types/coaching-ai-v2";
+import {
+  logCoachingAiV2MoveNormalized,
+  normalizeCoachingAiV2Intention,
+} from "@/lib/coaching/ai/v2/intention-normalize";
 
 const memoryWriteSchema = z.object({
   category: z.enum(COACHING_AI_V2_MEMORY_CATEGORIES),
@@ -80,10 +84,14 @@ const day21Schema = z
   })
   .nullable();
 
+/**
+ * Intention is accepted as a free string at the boundary, then normalized to
+ * COACHING_AI_V2_INTENTIONS. A mismatched move must not discard a valid reply.
+ */
 export const coachingAiV2GenerationSchema = z.object({
   coach_message: z.string().min(1).max(4000),
   meta: z.object({
-    intention: z.enum(COACHING_AI_V2_INTENTIONS),
+    intention: z.union([z.string().min(1).max(80), z.null()]).optional(),
     lifecycle_day: z.number().int().min(1).max(21).nullable(),
     lifecycle_stage: z.enum(COACHING_AI_V2_LIFECYCLE_STAGES),
     memory_writes: z.array(memoryWriteSchema).max(4).default([]),
@@ -105,8 +113,27 @@ export function parseCoachingAiV2Generation(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.message };
   }
+
+  const coachMessage = parsed.data.coach_message.trim();
+  if (!coachMessage) {
+    return { ok: false, error: "coach_message empty after trim" };
+  }
+
+  const move = normalizeCoachingAiV2Intention({
+    raw: parsed.data.meta.intention,
+    safetyTriggered: parsed.data.meta.safety_triggered,
+    escalationSuggested: parsed.data.meta.escalation_suggested,
+  });
+  if (move.normalized) {
+    logCoachingAiV2MoveNormalized({
+      raw: move.raw,
+      intention: move.intention,
+      reason: move.reason,
+    });
+  }
+
   const meta: CoachingAiV2GenerationMeta = {
-    intention: parsed.data.meta.intention as CoachingAiV2Intention,
+    intention: move.intention as CoachingAiV2Intention,
     lifecycleDay: parsed.data.meta.lifecycle_day,
     lifecycleStage: parsed.data.meta.lifecycle_stage as CoachingAiV2LifecycleStage,
     memoryWrites: parsed.data.meta.memory_writes.map((w) => ({
@@ -125,13 +152,13 @@ export function parseCoachingAiV2Generation(
   return {
     ok: true,
     data: {
-      coachMessage: parsed.data.coach_message.trim(),
+      coachMessage,
       meta,
     },
   };
 }
 
-/** OpenAI Structured Outputs schema for V2 freeform generation. */
+/** OpenAI Structured Outputs schema for V2/V3 freeform generation. */
 export const coachingAiV2OpenAiJsonSchema = {
   type: "object",
   additionalProperties: false,
@@ -154,7 +181,8 @@ export const coachingAiV2OpenAiJsonSchema = {
         "day21_reflection",
       ],
       properties: {
-        intention: { type: "string", enum: [...COACHING_AI_V2_INTENTIONS] },
+        // Free string at provider boundary; app normalizes to COACHING_AI_V2_INTENTIONS.
+        intention: { type: "string", minLength: 1, maxLength: 80 },
         lifecycle_day: { anyOf: [{ type: "integer", minimum: 1, maximum: 21 }, { type: "null" }] },
         lifecycle_stage: { type: "string", enum: [...COACHING_AI_V2_LIFECYCLE_STAGES] },
         memory_writes: {
@@ -247,3 +275,6 @@ export const coachingAiV2OpenAiJsonSchema = {
     },
   },
 } as const;
+
+/** Re-export canonical list for single-source consumers/tests. */
+export { COACHING_AI_V2_INTENTIONS };
