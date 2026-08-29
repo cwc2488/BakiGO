@@ -115,22 +115,24 @@ describe("Go21 schema move compatibility — parse boundary", () => {
     expect(parsed.data.coachMessage).toContain("白話");
   });
 
-  it("TEST 5 — malformed critical output still rejected", () => {
+  it("TEST 5 — malformed critical output still rejected; soft meta does not kill reply", () => {
     expect(parseCoachingAiV2Generation({ coach_message: "", meta: validMeta() }).ok).toBe(false);
-    expect(
-      parseCoachingAiV2Generation({
-        coach_message: "ok",
-        meta: validMeta({ lifecycle_stage: "not_a_real_stage" }),
-      }).ok,
-    ).toBe(false);
-    expect(
-      parseCoachingAiV2Generation({
+    // Invalid lifecycle / memory category are noncritical — reply preserved when message valid
+    const soft = parseCoachingAiV2Generation(
+      {
         coach_message: "ok",
         meta: validMeta({
+          lifecycle_stage: "not_a_real_stage",
           memory_writes: [{ category: "not_a_category", content: "x" }],
         }),
-      }).ok,
-    ).toBe(false);
+      },
+      { lifecycleDay: 2, lifecycleStage: "understand" },
+    );
+    expect(soft.ok).toBe(true);
+    if (soft.ok) {
+      expect(soft.data.meta.lifecycleStage).toBe("understand");
+      expect(soft.data.meta.memoryWrites).toHaveLength(0);
+    }
   });
 
   it("does not emit schema_invalid for unknown safe move", () => {

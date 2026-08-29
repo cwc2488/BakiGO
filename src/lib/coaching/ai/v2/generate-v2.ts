@@ -188,7 +188,10 @@ export async function generateCoachingAiV2(
       throw new Error("OpenAI V2 coach returned non-JSON content");
     }
 
-    const parsed = parseCoachingAiV2Generation(parsedJson);
+    const parsed = parseCoachingAiV2Generation(parsedJson, {
+      lifecycleDay: input.memory.lifecycle.dayNumber,
+      lifecycleStage: input.memory.lifecycle.stage,
+    });
     if (!parsed.ok) {
       throw new Error(`OpenAI V2 coach schema invalid: ${parsed.error}`);
     }
