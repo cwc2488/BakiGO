@@ -33,7 +33,19 @@ export const GO21_REMINDER_COOLDOWN_HOURS = 4 as const;
 /** Days of inactivity before re-engagement reminder. */
 export const GO21_REENGAGEMENT_IDLE_DAYS = 2 as const;
 
-export type Go21RelevanceClass = "in_scope" | "contextually_relevant" | "out_of_scope";
+export type Go21RelevanceClass =
+  | "in_scope"
+  | "contextually_relevant"
+  | "out_of_scope"
+  | "safety";
+
+export type Go21HydrationQuality = "low" | "high" | null;
+
+export type Go21CorrectionOp = {
+  kind: "event_date" | "meal_slot" | "weight_kg";
+  from: string | number | null;
+  to: string | number | null;
+};
 
 export type Go21ExtractedEvent = {
   eventDate: string | null;
@@ -45,11 +57,16 @@ export type Go21ExtractedEvent = {
   skeletalMuscleKg: number | null;
   visceralFatLevel: number | null;
   basalMetabolicRate: number | null;
+  /** Numeric water only when customer supplied a defensible quantity. */
   waterMl: number | null;
+  /** Qualitative hydration signal — never invents ml. */
+  hydrationQuality: Go21HydrationQuality;
+  hydrationNote: string | null;
   exerciseNote: string | null;
   hungerMentioned: boolean;
   confidence: "high" | "medium" | "low";
   unresolvedQuestions: string[];
+  corrections: Go21CorrectionOp[];
 };
 
 export type Go21ChatTurnView = {

@@ -174,6 +174,7 @@ export function Go21App({ token }: { token: string }) {
     setError(null);
     setPendingUser(text || (photoFile ? "📷 照片" : null));
     setDraft("");
+    let photoUploaded = false;
     try {
       let mealSlotHint: "breakfast" | "lunch" | "dinner" | null = null;
       if (/午餐|中餐|中午/.test(text)) mealSlotHint = "lunch";
@@ -184,10 +185,14 @@ export function Go21App({ token }: { token: string }) {
         const form = new FormData();
         form.append("photo", photoFile);
         form.append("logDate", new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" }));
-        await fetch(
+        const upload = await fetch(
           `/api/coaching/portal/${encodeURIComponent(token)}/meals/${mealSlotHint}/photo`,
           { method: "POST", body: form },
         );
+        photoUploaded = upload.ok;
+        if (!upload.ok) {
+          throw new Error("照片上傳失敗，請重試");
+        }
       }
 
       const response = await fetch(`/api/coaching/portal/${encodeURIComponent(token)}/go21/chat`, {
@@ -196,6 +201,7 @@ export function Go21App({ token }: { token: string }) {
         body: JSON.stringify({
           message: text || undefined,
           hasPhoto: Boolean(photoFile),
+          photoUploaded,
           mealSlotHint,
         }),
       });

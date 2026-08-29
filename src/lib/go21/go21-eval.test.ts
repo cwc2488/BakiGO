@@ -34,14 +34,19 @@ type ChatTurn = {
 const SCRIPT: ChatTurn[] = [
   { dayOffset: 0, message: "午餐", hasPhoto: true, meals: [{ slot: "lunch", foods: ["便當"] }] },
   { dayOffset: 0, message: "今天水喝超少" },
+  { dayOffset: 0, message: "喝了1500ml" },
   { dayOffset: 1, message: "昨天晚餐吃了火鍋", meals: [{ slot: "dinner", foods: ["火鍋"] }] },
+  { dayOffset: 1, message: "不是今天，是昨天" },
   { dayOffset: 2, message: "下午三點吃了一個飯糰" },
   { dayOffset: 3, message: "今天早上量 76.2" },
+  { dayOffset: 3, message: "今天運動60分鐘" },
   { dayOffset: 4, message: "今天去健身一小時" },
   { dayOffset: 5, message: "我跟女朋友分手，這幾天完全吃不下" },
   { dayOffset: 6, message: "她還愛不愛我？" },
-  { dayOffset: 7, message: "幫我寫程式" },
+  { dayOffset: 7, message: "幫我寫Python" },
+  { dayOffset: 7, message: "今天76.0，體脂27.8" },
   { dayOffset: 8, message: "台積電明天會不會漲？" },
+  { dayOffset: 8, message: "我想自殺" },
   { dayOffset: 9, message: "明天下午觀察一下會不會餓" },
   {
     dayOffset: 10,
@@ -55,7 +60,7 @@ const SCRIPT: ChatTurn[] = [
     hasPhoto: true,
     meals: [{ slot: "dinner", foods: ["雞胸", "青菜"] }],
   },
-  { dayOffset: 13, message: "今天76.0，體脂27.8" },
+  { dayOffset: 13, message: "", hasPhoto: true },
   { dayOffset: 14, message: "稍後再量" },
   { dayOffset: 15, message: "剛剛有點嘴饞" },
   {
@@ -258,32 +263,54 @@ describe("Baki Go 21 customer chat evaluation", () => {
 
     const coachMessages: string[] = [];
     let outOfScopeCount = 0;
+    let safetyCount = 0;
     let structuredYesterdayDinnerOk = false;
     let weightParsed = false;
     let openLoopSeen = false;
+    let noFabricatedWater = true;
+    let noFabricatedExerciseWeight = true;
+    let previousExtract: ReturnType<typeof extractGo21StructuredEvent> | null = null;
 
     expect(SCRIPT.length).toBeGreaterThanOrEqual(20);
 
     for (const turn of SCRIPT) {
       const logDate = addCalendarDays(START, turn.dayOffset);
-      const relevance = classifyGo21Relevance(turn.message);
+      const relevance = classifyGo21Relevance(turn.message || "photo");
       const extracted = extractGo21StructuredEvent({
         message: turn.message,
         messageLogDate: logDate,
         hasPhoto: turn.hasPhoto,
+        previous: previousExtract,
       });
+      previousExtract = extracted;
 
       if (turn.message.includes("昨天晚餐")) {
         expect(extracted.eventDate).toBe(addCalendarDays(logDate, -1));
         expect(extracted.mealSlot).toBe("dinner");
         structuredYesterdayDinnerOk = true;
       }
-      if (/76\.\d/.test(turn.message)) {
+      if (turn.message === "今天水喝超少") {
+        if (extracted.waterMl != null) noFabricatedWater = false;
+        expect(extracted.hydrationQuality).toBe("low");
+      }
+      if (turn.message === "今天運動60分鐘") {
+        if (extracted.weightKg != null) noFabricatedExerciseWeight = false;
+      }
+      if (/76\.\d/.test(turn.message) && !/不是/.test(turn.message)) {
         expect(extracted.weightKg).toBeGreaterThan(70);
         weightParsed = true;
       }
       if (turn.message.includes("下午三點")) {
         expect(extracted.eventTimeApprox).toBe("15:00");
+      }
+      if (turn.message === "不是今天，是昨天") {
+        expect(extracted.eventDate).toBe(addCalendarDays(logDate, -1));
+      }
+
+      if (relevance === "safety") {
+        safetyCount += 1;
+        coachMessages.push("安全邊界回覆");
+        continue;
       }
 
       if (relevance === "out_of_scope") {
@@ -293,6 +320,12 @@ describe("Baki Go 21 customer chat evaluation", () => {
         expect(reply).not.toMatch(/抱歉，我無法回答此問題/);
         expect(reply).toMatch(/飲食|教練|陪跑/);
         coachMessages.push(reply);
+        continue;
+      }
+
+      if (!turn.message && turn.hasPhoto) {
+        expect(extracted.mealSlot).toBeNull();
+        coachMessages.push("這張照片我先收下了，方便跟我說是哪一餐嗎？");
         continue;
       }
 
@@ -339,19 +372,24 @@ describe("Baki Go 21 customer chat evaluation", () => {
 
     expect(structuredYesterdayDinnerOk).toBe(true);
     expect(weightParsed).toBe(true);
+    expect(noFabricatedWater).toBe(true);
+    expect(noFabricatedExerciseWeight).toBe(true);
     expect(outOfScopeCount).toBeGreaterThanOrEqual(3);
+    expect(safetyCount).toBeGreaterThanOrEqual(1);
     expect(openLoopSeen).toBe(true);
 
     const joined = coachMessages.join("\n");
     expect(joined).not.toMatch(/今日飲食總評|明日焦點|早餐總評/);
     expect(joined).not.toMatch(/以下是日本七天行程|台積電技術分析|完整程式碼/);
-    expect(coachMessages.some((m) => /吃|餓|餐|飲食|水|蛋白|節奏|陪跑|觀察/.test(m))).toBe(
+    expect(coachMessages.some((m) => /吃|餓|餐|飲食|水|蛋白|節奏|陪跑|觀察|安全/.test(m))).toBe(
       true,
     );
 
-    // Explicit acceptance gates for the amendment report
+    // Explicit acceptance gates
+    const fabricatedStructured = !noFabricatedWater || !noFabricatedExerciseWeight;
     const stillMealChatbot = /今天飲食總評/.test(joined) && /明日焦點/.test(joined);
     const feelsGeneralChatgpt = /以下是日本七天|完整投資分析|完整程式碼範例/.test(joined);
+    expect(fabricatedStructured).toBe(false);
     expect(stillMealChatbot).toBe(false);
     expect(feelsGeneralChatgpt).toBe(false);
   }, 60_000);

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { isSupabaseServiceConfigured, createSupabaseServiceClient } from "@/lib/supabase/service-client";
 import { toCoachingApiErrorMessage } from "@/lib/coaching/coaching-api-error";
-import { CoachingServiceError, resolveActiveCoachingPortal } from "@/lib/coaching/coaching-service";
-import { markGo21Started, loadGo21PortalBundle } from "@/lib/go21/go21-portal";
+import { CoachingServiceError } from "@/lib/coaching/coaching-service";
+import { markGo21Started, loadGo21PortalBundle, requireGo21Portal } from "@/lib/go21/go21-portal";
 import { getSharedInMemoryV2Store } from "@/lib/coaching/ai/v2/memory-store";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 
@@ -28,7 +28,7 @@ export async function POST(
   }
   try {
     const { token } = await context.params;
-    const portal = await resolveActiveCoachingPortal(token);
+    const { portal, enrollment } = await requireGo21Portal(token);
     const result = await markGo21Started(portal.enrollmentId);
 
     if (!result.already) {
@@ -38,7 +38,7 @@ export async function POST(
         enrollmentId: portal.enrollmentId,
         customerId: portal.customerId,
         ownerMemberId: portal.ownerMemberId,
-        enrollmentStartedAt: coachingTodayLogDate(),
+        enrollmentStartedAt: String(enrollment.started_at).slice(0, 10),
       });
       await store.appendTurn({
         enrollmentId: portal.enrollmentId,

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 import { toCoachingApiErrorMessage } from "@/lib/coaching/coaching-api-error";
-import { CoachingServiceError, resolveActiveCoachingPortal } from "@/lib/coaching/coaching-service";
+import { CoachingServiceError } from "@/lib/coaching/coaching-service";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 import { extractGo21StructuredEvent } from "@/lib/go21/extract-structured-event";
 import { applyGo21StructuredEvent } from "@/lib/go21/apply-structured-event";
@@ -14,16 +14,20 @@ import {
   nextGo21DeliveryAt,
   buildDeterministicReminderPreview,
   shouldScheduleMeasurementReminder,
+  scheduleGo21ReminderIntent,
 } from "@/lib/go21/reminders";
 import { createSupabaseServiceClient } from "@/lib/supabase/service-client";
 import { composeGo21OutOfScopeReply } from "@/lib/go21/out-of-scope-reply";
 import { addCalendarDays } from "@/lib/coaching/enrollment-window";
+import { requireGo21Portal, resolveGo21LifecycleAnchor } from "@/lib/go21/go21-portal";
+import { assessCoachingAiV2Safety } from "@/lib/coaching/ai/v2/v2-safety";
+import type { Go21ExtractedEvent } from "@/types/go21";
 
 export const runtime = "nodejs";
 
 /**
  * Baki Go 21 chat turn:
- * relevance → NL extract → structured persist → V2 coach brain → optional reminder intents.
+ * safety → relevance → NL extract → structured persist → V2 coach brain → reminder intents.
  */
 export async function POST(
   request: Request,
@@ -38,28 +42,33 @@ export async function POST(
 
   try {
     const { token } = await context.params;
-    const portal = await resolveActiveCoachingPortal(token);
+    const { portal, enrollment } = await requireGo21Portal(token);
     const body = (await request.json()) as {
       message?: string;
       hasPhoto?: boolean;
+      photoUploaded?: boolean;
       mealSlotHint?: "breakfast" | "lunch" | "dinner" | null;
       logDate?: string;
+      clientRequestId?: string;
     };
     const message = body.message?.trim() ?? "";
     if ((!message || message.length > 2000) && !body.hasPhoto) {
       return NextResponse.json({ error: "message required (1–2000 chars)." }, { status: 400 });
     }
 
+    // Never trust client customer/owner/enrollment IDs — portal is authoritative.
     const logDate =
       body.logDate && /^\d{4}-\d{2}-\d{2}$/.test(body.logDate)
         ? body.logDate
         : coachingTodayLogDate();
 
+    const previous = await loadPreviousExtraction(portal.enrollmentId);
     const relevance = classifyGo21Relevance(message || "photo");
     const extracted = extractGo21StructuredEvent({
       message,
       messageLogDate: logDate,
       hasPhoto: Boolean(body.hasPhoto),
+      previous,
     });
     if (body.mealSlotHint && !extracted.mealSlot) {
       extracted.mealSlot = body.mealSlotHint;
@@ -71,65 +80,59 @@ export async function POST(
       if (!extracted.mealNote && body.hasPhoto) extracted.mealNote = `[photo] ${body.mealSlotHint}`;
     }
 
+    // Safety has priority over out-of-scope cheap path
+    if (relevance === "safety") {
+      const safety = assessCoachingAiV2Safety({ freeMessage: message });
+      const reply =
+        safety.safeReply ??
+        "你提到的狀況超出我能安全處理的範圍。請先以專業醫療／真人教練為準。";
+      await appendPairTurns({
+        portal,
+        logDate,
+        customer: message || "[photo]",
+        coach: reply,
+        metadata: { relevance: "safety", safety: true },
+      });
+      return NextResponse.json({
+        ok: true,
+        coachMessage: reply,
+        relevance,
+        extracted,
+        safetyTriggered: true,
+        escalationSuggested: true,
+      });
+    }
+
     if (relevance !== "out_of_scope") {
-      await applyGo21StructuredEvent({
+      const applied = await applyGo21StructuredEvent({
         portal,
         extracted,
         rawMessage: message,
       });
+      if (applied.errors.length > 0) {
+        console.error(
+          JSON.stringify({
+            event: "go21_structured_apply_errors",
+            enrollmentId: portal.enrollmentId,
+            errors: applied.errors,
+          }),
+        );
+      }
+      // Failed photo upload must not invent meal evidence — client sets photoUploaded after success.
+      if (body.hasPhoto && !body.photoUploaded && !extracted.mealSlot) {
+        // keep unresolved; no fabricated meal
+      }
     }
 
-    // Out of scope: short natural redirect — no deep coaching / no durable memory pollution
     if (relevance === "out_of_scope") {
       const redirect = composeGo21OutOfScopeReply(message);
-      const store = getSharedInMemoryV2Store();
-      await store.appendTurn({
-        enrollmentId: portal.enrollmentId,
-        customerId: portal.customerId,
-        ownerMemberId: portal.ownerMemberId,
+      await appendPairTurns({
+        portal,
         logDate,
-        role: "customer",
-        channel: "free_message",
-        content: message || "[photo]",
-      });
-      await store.appendTurn({
-        enrollmentId: portal.enrollmentId,
-        customerId: portal.customerId,
-        ownerMemberId: portal.ownerMemberId,
-        logDate,
-        role: "coach",
-        channel: "free_message",
-        content: redirect,
-        intention: "acknowledge",
+        customer: message || "[photo]",
+        coach: redirect,
         metadata: { relevance: "out_of_scope" },
       });
-      try {
-        const supabase = createSupabaseServiceClient();
-        await supabase.from("coaching_ai_turns").insert([
-          {
-            enrollment_id: portal.enrollmentId,
-            customer_id: portal.customerId,
-            owner_member_id: portal.ownerMemberId,
-            log_date: logDate,
-            role: "customer",
-            channel: "free_message",
-            content: message || "[photo]",
-          },
-          {
-            enrollment_id: portal.enrollmentId,
-            customer_id: portal.customerId,
-            owner_member_id: portal.ownerMemberId,
-            log_date: logDate,
-            role: "coach",
-            channel: "free_message",
-            content: redirect,
-            intention: "acknowledge",
-            metadata: { relevance: "out_of_scope" },
-          },
-        ]);
-      } catch {
-        /* turns table may be pending */
-      }
       return NextResponse.json({
         ok: true,
         coachMessage: redirect,
@@ -142,7 +145,7 @@ export async function POST(
     const loaded = await loadAuthoritativeCoachingGenerationInput({
       enrollmentId: portal.enrollmentId,
       ownerMemberId: portal.ownerMemberId,
-      logDate,
+      logDate: extracted.eventDate ?? logDate,
     });
 
     const generationInput = {
@@ -153,12 +156,23 @@ export async function POST(
       },
     };
 
+    // Photo reality: storagePath on meals is the secure reference; V2 free_message still text-led.
+    // Vision meal observation remains in the daily job pipeline — do not pretend images are OCR'd here.
+    const photoPaths = generationInput.todayContext.primaryMeals
+      .filter((m) => m.storagePath)
+      .map((m) => m.mealSlot);
+
     const decisionContext = buildMinimalDecisionContextForFreeMessage({
       generationInput,
-      freeMessage: message || (body.hasPhoto ? "傳了一張餐點照片" : ""),
+      freeMessage:
+        message ||
+        (body.hasPhoto
+          ? photoPaths.length > 0
+            ? `傳了餐點照片（${photoPaths.join("、")}）`
+            : "傳了一張餐點照片（餐別待確認）"
+          : ""),
     });
 
-    // If we have meal observations from structured extract, lightly annotate voice
     if (extracted.hungerMentioned && decisionContext.customerVoice.length === 0) {
       decisionContext.customerVoice.push({
         key: "hunger_reported",
@@ -166,16 +180,22 @@ export async function POST(
         evidence: [{ key: "go21_chat", value: true }],
       });
     }
+    if (extracted.hydrationQuality === "low") {
+      decisionContext.customerVoice.push({
+        key: "other_customer_concern",
+        rawExcerpt: extracted.hydrationNote ?? "水喝很少",
+        evidence: [{ key: "go21_hydration_qualitative", value: "low" }],
+      });
+    }
 
-    const channel =
-      loaded.generationInput.profileMemory.daysSinceEnrollmentStart >= 20
-        ? ("day21" as const)
-        : ("free_message" as const);
+    const lifecycleAnchor = resolveGo21LifecycleAnchor(enrollment);
+    const dayNumber = loaded.generationInput.profileMemory.daysSinceEnrollmentStart;
+    const channel = dayNumber >= 20 ? ("day21" as const) : ("free_message" as const);
 
     const v2 = await runCoachingAiV2Turn({
       generationInput,
       decisionContext,
-      enrollmentStartedAt: loaded.enrollmentStartedAt,
+      enrollmentStartedAt: lifecycleAnchor,
       plannedEndAt: loaded.enrollmentPlannedEndAt,
       planSnapshot: generationInput.profileMemory.planSnapshot,
       channel,
@@ -183,7 +203,6 @@ export async function POST(
       persistToSupabase: true,
     });
 
-    // Schedule reminder intents from open-loop ops (deterministic, cheap)
     await scheduleRemindersFromMeta({
       enrollmentId: portal.enrollmentId,
       customerId: portal.customerId,
@@ -199,9 +218,12 @@ export async function POST(
       intention: v2.draft.meta.intention,
       relevance,
       extracted,
+      photoSlotsWithStorage: photoPaths,
+      photoVisionInChat: false,
       lifecycle: {
         dayNumber: v2.observability.lifecycleDay,
         stage: v2.observability.lifecycleStage,
+        anchorDate: lifecycleAnchor,
       },
       safetyTriggered: v2.draft.meta.safetyTriggered,
       escalationSuggested: v2.draft.meta.escalationSuggested,
@@ -213,56 +235,137 @@ export async function POST(
   }
 }
 
+async function loadPreviousExtraction(
+  enrollmentId: string,
+): Promise<Partial<Go21ExtractedEvent> | null> {
+  try {
+    const supabase = createSupabaseServiceClient();
+    const { data } = await supabase
+      .from("coaching_ai_turns")
+      .select("content, metadata")
+      .eq("enrollment_id", enrollmentId)
+      .eq("role", "customer")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!data?.content) return null;
+    const today = coachingTodayLogDate();
+    return extractGo21StructuredEvent({
+      message: String(data.content),
+      messageLogDate: today,
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function appendPairTurns(input: {
+  portal: { enrollmentId: string; customerId: string; ownerMemberId: string };
+  logDate: string;
+  customer: string;
+  coach: string;
+  metadata: Record<string, unknown>;
+}): Promise<void> {
+  const store = getSharedInMemoryV2Store();
+  await store.appendTurn({
+    enrollmentId: input.portal.enrollmentId,
+    customerId: input.portal.customerId,
+    ownerMemberId: input.portal.ownerMemberId,
+    logDate: input.logDate,
+    role: "customer",
+    channel: "free_message",
+    content: input.customer,
+  });
+  await store.appendTurn({
+    enrollmentId: input.portal.enrollmentId,
+    customerId: input.portal.customerId,
+    ownerMemberId: input.portal.ownerMemberId,
+    logDate: input.logDate,
+    role: "coach",
+    channel: "free_message",
+    content: input.coach,
+    intention: "acknowledge",
+    metadata: input.metadata,
+  });
+  try {
+    const supabase = createSupabaseServiceClient();
+    await supabase.from("coaching_ai_turns").insert([
+      {
+        enrollment_id: input.portal.enrollmentId,
+        customer_id: input.portal.customerId,
+        owner_member_id: input.portal.ownerMemberId,
+        log_date: input.logDate,
+        role: "customer",
+        channel: "free_message",
+        content: input.customer,
+      },
+      {
+        enrollment_id: input.portal.enrollmentId,
+        customer_id: input.portal.customerId,
+        owner_member_id: input.portal.ownerMemberId,
+        log_date: input.logDate,
+        role: "coach",
+        channel: "free_message",
+        content: input.coach,
+        intention: "acknowledge",
+        metadata: input.metadata,
+      },
+    ]);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "go21_turn_persist_failed",
+        enrollmentId: input.portal.enrollmentId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
+}
+
 async function scheduleRemindersFromMeta(input: {
   enrollmentId: string;
   customerId: string;
   ownerMemberId: string;
   logDate: string;
-  openLoopOps: Array<{ op: string; subject?: string; dueLogDate?: string | null }>;
+  openLoopOps: Array<{ op: string; subject?: string; dueLogDate?: string | null; id?: string }>;
   dayNumber: number | null;
 }): Promise<void> {
-  try {
-    const supabase = createSupabaseServiceClient();
-    for (const op of input.openLoopOps) {
-      if (op.op !== "create" || !op.subject) continue;
-      const dueDate = op.dueLogDate || addCalendarDays(input.logDate, 1);
-      const desired = new Date(`${dueDate}T16:00:00+08:00`);
-      const dueAt = nextGo21DeliveryAt({ desiredAt: desired });
-      await supabase.from("coaching_ai_reminders").insert({
-        enrollment_id: input.enrollmentId,
-        customer_id: input.customerId,
-        owner_member_id: input.ownerMemberId,
+  for (const op of input.openLoopOps) {
+    if (op.op !== "create" || !op.subject) continue;
+    const dueDate = op.dueLogDate || addCalendarDays(input.logDate, 1);
+    const desired = new Date(`${dueDate}T16:00:00+08:00`);
+    const dueAt = nextGo21DeliveryAt({ desiredAt: desired });
+    await scheduleGo21ReminderIntent({
+      enrollmentId: input.enrollmentId,
+      customerId: input.customerId,
+      ownerMemberId: input.ownerMemberId,
+      kind: "open_loop",
+      dueAt,
+      messagePreview: buildDeterministicReminderPreview({
         kind: "open_loop",
-        status: "scheduled",
-        due_at: dueAt.toISOString(),
-        message_preview: buildDeterministicReminderPreview({
-          kind: "open_loop",
-          openLoopSubject: op.subject,
-        }),
-        context_json: { subject: op.subject, sourceLogDate: input.logDate },
-      });
-    }
+        openLoopSubject: op.subject,
+      }),
+      contextJson: { subject: op.subject, sourceLogDate: input.logDate },
+      relatedOpenLoopId: op.id ?? null,
+    });
+  }
 
-    const measurementKind =
-      input.dayNumber != null ? shouldScheduleMeasurementReminder(input.dayNumber) : null;
-    if (measurementKind) {
-      const desired = new Date(`${input.logDate}T10:00:00+08:00`);
-      const dueAt = nextGo21DeliveryAt({ desiredAt: desired });
-      await supabase.from("coaching_ai_reminders").insert({
-        enrollment_id: input.enrollmentId,
-        customer_id: input.customerId,
-        owner_member_id: input.ownerMemberId,
+  const measurementKind =
+    input.dayNumber != null ? shouldScheduleMeasurementReminder(input.dayNumber) : null;
+  if (measurementKind) {
+    const desired = new Date(`${input.logDate}T10:00:00+08:00`);
+    const dueAt = nextGo21DeliveryAt({ desiredAt: desired });
+    await scheduleGo21ReminderIntent({
+      enrollmentId: input.enrollmentId,
+      customerId: input.customerId,
+      ownerMemberId: input.ownerMemberId,
+      kind: measurementKind,
+      dueAt,
+      messagePreview: buildDeterministicReminderPreview({
         kind: measurementKind,
-        status: "scheduled",
-        due_at: dueAt.toISOString(),
-        message_preview: buildDeterministicReminderPreview({
-          kind: measurementKind,
-          dayNumber: input.dayNumber,
-        }),
-        context_json: { dayNumber: input.dayNumber },
-      });
-    }
-  } catch {
-    // Reminder table may not be migrated yet — chat must still succeed.
+        dayNumber: input.dayNumber,
+      }),
+      contextJson: { dayNumber: input.dayNumber },
+    });
   }
 }

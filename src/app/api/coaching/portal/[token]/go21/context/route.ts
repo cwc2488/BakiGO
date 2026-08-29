@@ -5,10 +5,7 @@ import { CoachingServiceError } from "@/lib/coaching/coaching-service";
 import { loadGo21PortalBundle } from "@/lib/go21/go21-portal";
 import { getSharedInMemoryV2Store } from "@/lib/coaching/ai/v2/memory-store";
 import { createSupabaseServiceClient } from "@/lib/supabase/service-client";
-import {
-  buildDeterministicReminderPreview,
-  isReengagementDue,
-} from "@/lib/go21/reminders";
+import { isReengagementDue } from "@/lib/go21/reminders";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 
 export const runtime = "nodejs";
@@ -22,9 +19,9 @@ export async function GET(
   }
   try {
     const { token } = await context.params;
+    // loadGo21PortalBundle enforces eligibility + delivers due reminders into turns
     const bundle = await loadGo21PortalBundle(token);
 
-    // Recent turns: prefer DB, fall back to in-memory store
     let turns: Array<{
       id: string;
       role: string;
@@ -37,7 +34,7 @@ export async function GET(
       const supabase = createSupabaseServiceClient();
       const { data } = await supabase
         .from("coaching_ai_turns")
-        .select("id, role, content, created_at, channel")
+        .select("id, role, content, created_at, channel, metadata")
         .eq("enrollment_id", bundle.enrollmentId)
         .order("created_at", { ascending: true })
         .limit(80);
@@ -64,49 +61,12 @@ export async function GET(
       }));
     }
 
-    // In-app due reminders (deterministic preview)
-    const reminders: Array<{ id: string; kind: string; message: string; dueAt: string }> = [];
-    try {
-      const supabase = createSupabaseServiceClient();
-      const { data } = await supabase
-        .from("coaching_ai_reminders")
-        .select("id, kind, due_at, message_preview, context_json, status")
-        .eq("enrollment_id", bundle.enrollmentId)
-        .eq("status", "scheduled")
-        .lte("due_at", new Date().toISOString())
-        .order("due_at", { ascending: true })
-        .limit(3);
-      for (const row of data ?? []) {
-        reminders.push({
-          id: String(row.id),
-          kind: String(row.kind),
-          message:
-            (row.message_preview as string | null) ||
-            buildDeterministicReminderPreview({ kind: row.kind as never }),
-          dueAt: String(row.due_at),
-        });
-      }
-      // Mark delivered in-app so we do not re-spam the same due reminders.
-      if ((data ?? []).length > 0) {
-        await supabase
-          .from("coaching_ai_reminders")
-          .update({
-            status: "delivered",
-            delivered_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .in(
-            "id",
-            (data ?? []).map((row) => row.id),
-          );
-      }
-    } catch {
-      // table may not exist yet
-    }
-
     const lastCustomerTurn = [...turns].reverse().find((t) => t.role === "customer");
     const lastActiveDate = lastCustomerTurn?.createdAt?.slice(0, 10) ?? null;
     const suggestReengagement = isReengagementDue(lastActiveDate);
+
+    // Surface recently delivered reminder turns as coach-initiated messages (already in thread)
+    const reminderTurns = turns.filter((t) => t.channel === "system").slice(-3);
 
     return NextResponse.json({
       ok: true,
@@ -117,13 +77,19 @@ export async function GET(
         go21StartedAt: bundle.go21StartedAt,
         dayNumber: bundle.dayNumber,
         dayTotal: bundle.dayTotal,
+        lifecycleAnchorDate: bundle.lifecycleAnchorDate,
         lifecycleStage: bundle.lifecycleStage,
         milestones: bundle.milestones,
         customerProfile: bundle.customerProfile,
         latestBody: bundle.latestBody,
         needsBaseline: bundle.needsBaseline,
         turns,
-        reminders,
+        reminders: reminderTurns.map((t) => ({
+          id: t.id,
+          kind: "in_app",
+          message: t.content,
+          dueAt: t.createdAt,
+        })),
         suggestReengagement,
       },
     });

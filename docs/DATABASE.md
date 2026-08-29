@@ -846,16 +846,20 @@ Member (coach)
 
 Customer-facing freeform message lives in `coaching_ai_outputs.output_json.customer.coach_message` when V2 is enabled.
 
-### Baki Go 21 — customer chat surface (`065_coaching_go21.sql`)
+### Baki Go 21 — customer chat surface (`065_coaching_go21.sql`, `066_go21_reminder_uniqueness.sql`)
 
 | Change | Purpose |
 |--------|---------|
 | `coaching_ai_reminders` | Reminder intents (daily / open-loop / measurement / experiment / reengagement). Delivery channel separate; in-app first. |
 | `coaching_enrollments.go21_started_at` | Idempotent customer “開始我的 21 天陪跑” marker |
+| `066` uniqueness | Measurement/daily kinds: one per Taipei day; open_loop allows multiple via `related_open_loop_id` |
 
-**Security:** Customer entry via existing opaque `customer_portal_tokens` at `/c/{token}/go21`. No guessable customer IDs in URLs.
+**Security:** Customer entry via existing opaque `customer_portal_tokens` at `/c/{token}/go21`. Go21 routes enforce experience-21d eligibility. No guessable customer IDs in URLs.
+
+**Delivery:** `POST/GET /api/coaching/go21/reminders/process` (cron secret) + on-open delivery in Go21 context.
 
 **Docs:** `docs/GO21.md`
+
 
 
 **Status:** Applied migration `031_coaching_coach_actions.sql`. Coach-only internal memory.
