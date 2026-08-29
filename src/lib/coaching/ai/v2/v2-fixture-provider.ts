@@ -393,10 +393,14 @@ function buildDay21Draft(input: GenerateCoachingAiV2Input): CoachingAiV2Generati
         ? hyp.slice(0, 2)
         : ["回報節奏有建立，但飲食型態證據仍有限"];
 
+  const goalWish =
+    input.go21Goal?.originalPersonalGoal ||
+    input.go21Goal?.personalGoal ||
+    input.generationInput.profileMemory.goal ||
+    "減脂／調整生活節奏";
+
   const reflection = {
-    startingSituation:
-      statements[0] ??
-      `開始時目標是${input.generationInput.profileMemory.goal ?? "減脂／調整生活節奏"}`,
+    startingSituation: statements[0] ?? `21 天前，你希望：${goalWish}`,
     majorPatterns,
     meaningfulChanges:
       worked.length > 0 ? worked.slice(0, 3) : ["持續回報本身是可觀察到的改變"],

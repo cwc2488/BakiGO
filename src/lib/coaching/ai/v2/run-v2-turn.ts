@@ -31,6 +31,15 @@ export type RunCoachingAiV2TurnInput = {
   store?: CoachingAiV2MemoryStore;
   /** When true, also attempt Supabase persistence (service role). */
   persistToSupabase?: boolean;
+  go21Goal?: {
+    primaryDirection: string;
+    primaryDirectionLabel: string;
+    personalGoal: string;
+    targetWeightKg: number | null;
+    originalPersonalGoal: string | null;
+    wasRefined: boolean;
+    guidance: string;
+  } | null;
 };
 
 export type RunCoachingAiV2TurnResult = {
@@ -122,6 +131,7 @@ export async function runCoachingAiV2Turn(
     memory: memoryAfterCustomer,
     channel,
     freeMessage: input.freeMessage,
+    go21Goal: input.go21Goal,
   });
 
   let memoryUpdateOutcome: CoachingAiV2Observability["memoryUpdateOutcome"] = "applied";

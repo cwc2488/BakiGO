@@ -30,6 +30,15 @@ export type GenerateCoachingAiV2Input = {
   memory: CoachingAiV2MemoryBundle;
   channel?: "daily_log" | "free_message" | "day21";
   freeMessage?: string | null;
+  go21Goal?: {
+    primaryDirection: string;
+    primaryDirectionLabel: string;
+    personalGoal: string;
+    targetWeightKg: number | null;
+    originalPersonalGoal: string | null;
+    wasRefined: boolean;
+    guidance: string;
+  } | null;
 };
 
 export type GenerateCoachingAiV2Result = {
@@ -148,6 +157,7 @@ export async function generateCoachingAiV2(
               memory: input.memory,
               channel,
               freeMessage: input.freeMessage,
+              go21Goal: input.go21Goal,
             }),
           },
         ],

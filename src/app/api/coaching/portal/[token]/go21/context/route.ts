@@ -122,6 +122,8 @@ export async function GET(
         customerProfile: bundle.customerProfile,
         latestBody: bundle.latestBody,
         needsBaseline: bundle.needsBaseline,
+        needsGoal: bundle.needsGoal,
+        goal: bundle.goal,
         turns: turns.map(({ photoStoragePath: _p, ...rest }) => rest),
         reminders: reminderTurns.map((t) => ({
           id: t.id,

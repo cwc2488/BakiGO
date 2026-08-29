@@ -11,11 +11,17 @@ import {
   GO21_BRAND_NAME,
   GO21_BRAND_SUBTITLE,
   GO21_CYCLE_DAYS,
+  type Go21GoalPublicView,
   type Go21ProgressMilestone,
 } from "@/types/go21";
 import { getSharedInMemoryV2Store } from "@/lib/coaching/ai/v2/memory-store";
 import { buildLifecycleSnapshot } from "@/lib/coaching/ai/v2/lifecycle";
 import { deliverDueGo21RemindersForEnrollment } from "@/lib/go21/reminders";
+import {
+  enrollmentNeedsGo21Goal,
+  parseGo21GoalRecord,
+  toGo21GoalPublicView,
+} from "@/lib/go21/goal";
 
 export type Go21PortalBundle = {
   brandName: typeof GO21_BRAND_NAME;
@@ -49,6 +55,8 @@ export type Go21PortalBundle = {
     basalMetabolicRate: number | null;
   } | null;
   needsBaseline: boolean;
+  needsGoal: boolean;
+  goal: Go21GoalPublicView | null;
 };
 
 type EnrollmentRow = {
@@ -60,6 +68,7 @@ type EnrollmentRow = {
   plan_snapshot_json: unknown;
   onboarding_completed_at: string | null;
   go21_started_at?: string | null;
+  go21_goal_json?: unknown;
   customer_id: string;
   owner_member_id: string;
 };
@@ -274,6 +283,11 @@ export async function loadGo21PortalBundle(token: string): Promise<Go21PortalBun
         }
       : null,
     needsBaseline,
+    needsGoal: enrollmentNeedsGo21Goal({
+      go21GoalJson: enrollment.go21_goal_json,
+      goal: enrollment.goal,
+    }),
+    goal: toGo21GoalPublicView(parseGo21GoalRecord(enrollment.go21_goal_json)),
   };
 }
 
@@ -294,10 +308,31 @@ async function loadEnrollment(enrollmentId: string): Promise<EnrollmentRow | nul
   const primary = await supabase
     .from("coaching_enrollments")
     .select(
-      "id, goal, status, started_at, planned_end_at, plan_snapshot_json, onboarding_completed_at, go21_started_at, customer_id, owner_member_id",
+      "id, goal, status, started_at, planned_end_at, plan_snapshot_json, onboarding_completed_at, go21_started_at, go21_goal_json, customer_id, owner_member_id",
     )
     .eq("id", enrollmentId)
     .maybeSingle();
+
+  if (primary.error && /go21_goal_json/.test(primary.error.message)) {
+    const withoutGoal = await supabase
+      .from("coaching_enrollments")
+      .select(
+        "id, goal, status, started_at, planned_end_at, plan_snapshot_json, onboarding_completed_at, go21_started_at, customer_id, owner_member_id",
+      )
+      .eq("id", enrollmentId)
+      .maybeSingle();
+    if (withoutGoal.error && /go21_started_at/.test(withoutGoal.error.message)) {
+      const fallback = await supabase
+        .from("coaching_enrollments")
+        .select(
+          "id, goal, status, started_at, planned_end_at, plan_snapshot_json, onboarding_completed_at, customer_id, owner_member_id",
+        )
+        .eq("id", enrollmentId)
+        .maybeSingle();
+      return (fallback.data as EnrollmentRow | null) ?? null;
+    }
+    return (withoutGoal.data as EnrollmentRow | null) ?? null;
+  }
 
   if (primary.error && /go21_started_at/.test(primary.error.message)) {
     const fallback = await supabase

@@ -26,6 +26,12 @@ import {
   composeGo21VisionFreeMessage,
   type Go21RealtimeVisionResult,
 } from "@/lib/go21/realtime-vision";
+import {
+  buildGo21GoalSnapshot,
+  compactGo21GoalForAi,
+  loadGo21GoalRecord,
+  saveGo21Goal,
+} from "@/lib/go21/goal";
 import type { Go21ExtractedEvent } from "@/types/go21";
 import type { CoachingMealSlot } from "@/types/coaching";
 
@@ -211,9 +217,80 @@ export async function POST(
       vision,
     });
 
+    // Goal refinement: high-confidence updates; otherwise ask naturally via V2.
+    let goalConfirmHint: string | null = null;
+    let go21Goal: ReturnType<typeof compactGo21GoalForAi> = null;
+    try {
+      const refinement = extracted.goalRefinement;
+      const targetFromExtract = extracted.targetWeightKg;
+      let goalRecord = await loadGo21GoalRecord(portal.enrollmentId);
+
+      if (refinement && refinement.confidence === "high" && !refinement.needsConfirmation) {
+        const nextPersonal =
+          refinement.personalGoal?.trim() || goalRecord?.current.personalGoal || "";
+        const nextDirection =
+          refinement.primaryDirection ?? goalRecord?.current.primaryDirection ?? "other";
+        const nextTarget = refinement.clearTargetWeight
+          ? null
+          : refinement.targetWeightKg ??
+            targetFromExtract ??
+            goalRecord?.current.targetWeightKg ??
+            null;
+        if (nextPersonal) {
+          const snapshot = buildGo21GoalSnapshot({
+            primaryDirection: nextDirection,
+            personalGoal: nextPersonal,
+            targetWeightKg: nextTarget,
+            source: "chat_confirmed",
+          });
+          const saved = await saveGo21Goal({
+            enrollmentId: portal.enrollmentId,
+            customerId: portal.customerId,
+            ownerMemberId: portal.ownerMemberId,
+            snapshot,
+            reason: "chat_high_confidence",
+          });
+          goalRecord = saved.record;
+          if (saved.safety.message) goalConfirmHint = saved.safety.message;
+        }
+      } else if (targetFromExtract != null && goalRecord) {
+        const snapshot = buildGo21GoalSnapshot({
+          primaryDirection: goalRecord.current.primaryDirection,
+          personalGoal: goalRecord.current.personalGoal,
+          targetWeightKg: targetFromExtract,
+          source: "chat_confirmed",
+        });
+        const saved = await saveGo21Goal({
+          enrollmentId: portal.enrollmentId,
+          customerId: portal.customerId,
+          ownerMemberId: portal.ownerMemberId,
+          snapshot,
+          reason: "target_weight_update",
+        });
+        goalRecord = saved.record;
+      } else if (refinement?.needsConfirmation) {
+        goalConfirmHint =
+          "顧客可能在調整 21 天方向；若語意夠明確可自然確認後再改，不要默默覆寫。";
+      }
+
+      go21Goal = compactGo21GoalForAi(goalRecord);
+    } catch (goalError) {
+      console.error(
+        JSON.stringify({
+          event: "go21_goal_chat_path_failed",
+          enrollmentId: portal.enrollmentId,
+          error: goalError instanceof Error ? goalError.message : String(goalError),
+        }),
+      );
+    }
+
+    const enrichedFreeMessage = goalConfirmHint
+      ? `${freeMessage}\n\n[系統｜目標]\n${goalConfirmHint}`
+      : freeMessage;
+
     const decisionContext = buildMinimalDecisionContextForFreeMessage({
       generationInput,
-      freeMessage,
+      freeMessage: enrichedFreeMessage,
       mealObservations: vision.observations,
     });
 
@@ -236,12 +313,6 @@ export async function POST(
     const dayNumber = loaded.generationInput.profileMemory.daysSinceEnrollmentStart;
     const channel = dayNumber >= 20 ? ("day21" as const) : ("free_message" as const);
 
-    // Graceful degradation when vision fails: still coach with photo received note.
-    let coachOverride: string | null = null;
-    if (vision.failed && body.hasPhoto) {
-      coachOverride = null; // let V2 respond with the system note in freeMessage
-    }
-
     const v2 = await runCoachingAiV2Turn({
       generationInput,
       decisionContext,
@@ -249,11 +320,12 @@ export async function POST(
       plannedEndAt: loaded.enrollmentPlannedEndAt,
       planSnapshot: generationInput.profileMemory.planSnapshot,
       channel,
-      freeMessage,
+      freeMessage: enrichedFreeMessage,
       persistToSupabase: true,
+      go21Goal,
     });
 
-    const coachMessage = coachOverride ?? v2.draft.coachMessage;
+    const coachMessage = v2.draft.coachMessage;
 
     // Attach photo path on the latest customer turn metadata (path only — signed URL at read time)
     if (vision.storagePath) {

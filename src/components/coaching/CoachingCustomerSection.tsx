@@ -232,7 +232,10 @@ export function CoachingCustomerSection({
       {enrollment ? (
         <div className="space-y-3">
           <CrmField label="狀態" value={COACHING_STATUS_LABELS[enrollment.status]} />
-          <CrmField label="目標" value={enrollment.goal} />
+          <CrmField
+            label={isGo21 ? "21 天目標" : "目標"}
+            value={enrollment.goal || "—"}
+          />
           <CrmField
             label="開跑設定"
             value={enrollment.onboardingCompletedAt ? "已完成" : "尚未完成"}

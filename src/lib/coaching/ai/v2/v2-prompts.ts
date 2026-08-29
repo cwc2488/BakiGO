@@ -21,6 +21,12 @@ export function buildCoachingAiV2SystemPrompt(): string {
     "- 不要每餐都算巨量營養素；不要把食物簡單標成好／壞；不要把體脂機當醫療級儀器；不要鼓吹極端節食。",
     "- 短期體重波動（水腫、醣原、腸胃內容物、鈉、測量誤差）不要貼上失敗標籤。",
     "",
+    "- 你會收到顧客的 21 天目標（方向＋本人原話＋可選數字目標）。把它當靜默教練錨點：用來判斷今天什麼最有用。",
+    "- 不要每則都重述「你的目標是…」。只在真正有幫助（例如 Day 7/14 反思、Day 21 收束、或顧客主動談目標）時自然提到。",
+    "- 禁止捏造相對目標的進展；沒有證據就不要假裝有進步。",
+    "- 禁止把模糊「我想瘦」製造成精確目標體重；數字目標只有顧客明確說過才算。",
+    "- 若目標看起來不安全（極端減重／危險限制），不要當成優化標的；改以安全、可延續的方向陪跑。",
+    "",
     "最高原則：STRUCTURED INTERNALLY. FREE EXTERNALLY.",
     "- 你會收到結構化的身份、生命週期、記憶、開放線程、假設、安全邊界與系統證據。",
     "- 對顧客說話時，不要被模板綁住。不要每則都「肯定 → 分析 → 建議 → 鼓勵」。",
@@ -69,6 +75,15 @@ export function buildCoachingAiV2UserPrompt(input: {
   memory: CoachingAiV2MemoryBundle;
   channel: "daily_log" | "free_message" | "day21";
   freeMessage?: string | null;
+  go21Goal?: {
+    primaryDirection: string;
+    primaryDirectionLabel: string;
+    personalGoal: string;
+    targetWeightKg: number | null;
+    originalPersonalGoal: string | null;
+    wasRefined: boolean;
+    guidance: string;
+  } | null;
 }): string {
   const { generationInput, decisionContext, memory, channel } = input;
   const reportDayRelation = relativeCoachingDayKey(generationInput.logDate) ?? "historical";
@@ -142,6 +157,7 @@ export function buildCoachingAiV2UserPrompt(input: {
       goal: generationInput.profileMemory.goal,
       daysSinceEnrollmentStart: generationInput.profileMemory.daysSinceEnrollmentStart,
     },
+    go21Goal: input.go21Goal ?? null,
     today: compactToday,
     decisionContext: compactDecision,
     rollingPatterns: generationInput.rollingMemory.recurringPatterns.slice(0, 6),
@@ -176,9 +192,11 @@ export function buildCoachingAiV2UserPrompt(input: {
     instructions: [
       "寫出這一輪最有用的自然回應到 coach_message。",
       "若 openLoops 與今天輸入相關，自然接續；不要假裝記得沒有證據的事。",
-      "若階段是 day21_ending，coach_message 必須是個人化反思，並填 meta.day21Reflection。",
+      "若階段是 day21_ending，coach_message 必須是個人化反思，並填 meta.day21Reflection：對照 21 天前的願望／原目標 → 實際發生（有證據才寫）→ 接下來值得延續的 2–3 件事。不要分數卡、不要保證習慣養成。",
+      "若階段接近 Day 7 / Day 14，可用目標當進展錨點做輕量反思，但禁止捏造進展。",
       "meta.memoryWrites / openLoopOps / hypothesisOps 只在真正有價值時填，可為空陣列。",
       "不要輸出固定段落標題；不要每則都給改善建議。",
+      "不要每則重述 go21Goal；把它當內部導航。",
     ],
   };
 

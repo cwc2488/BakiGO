@@ -1,6 +1,7 @@
 import { addCalendarDays } from "@/lib/coaching/enrollment-window";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 import type { Go21CorrectionOp, Go21ExtractedEvent } from "@/types/go21";
+import { enrichExtractedEventWithGoalFields } from "@/lib/go21/goal-extract";
 
 const MEAL_PATTERNS: Array<{
   slot: Go21ExtractedEvent["mealSlot"];
@@ -34,6 +35,7 @@ export function extractGo21StructuredEvent(input: {
     mealSlot: null,
     mealNote: null,
     weightKg: null,
+    targetWeightKg: null,
     bodyFatPercent: null,
     skeletalMuscleKg: null,
     visceralFatLevel: null,
@@ -46,6 +48,7 @@ export function extractGo21StructuredEvent(input: {
     confidence: "low",
     unresolvedQuestions: [],
     corrections: [],
+    goalRefinement: null,
   };
 
   if (!text && input.hasPhoto) {
@@ -109,6 +112,9 @@ export function extractGo21StructuredEvent(input: {
   base.skeletalMuscleKg = extractMuscleKg(text);
   base.visceralFatLevel = extractVisceral(text);
   base.basalMetabolicRate = extractBmr(text);
+
+  // Current vs target weight + goal refinement (never fabricate targets)
+  enrichExtractedEventWithGoalFields(base, text);
 
   // Water: numeric only when quantity given; qualitative never invents ml
   const water = extractHydration(text);
@@ -377,11 +383,26 @@ function detectCorrections(
   const weightCorr = text.match(
     /(?:不是|打錯|更正).*?(\d{2,3}(?:\.\d{1,2})?).*?(?:是|改|成)\s*(\d{2,3}(?:\.\d{1,2})?)/,
   );
-  if (weightCorr) {
+  if (weightCorr && !/目標|希望|先到/.test(text)) {
     const to = Number(weightCorr[2]);
     if (Number.isFinite(to) && to >= 35 && to <= 200) {
       ops.push({ kind: "weight_kg", from: previous?.weightKg ?? Number(weightCorr[1]), to });
       weightKg = to;
+    }
+  }
+
+  // Target weight correction: 目標不是68是69 / 68先不要…69
+  const targetCorr = text.match(
+    /(?:目標|希望).*?(?:不是|先不要)\s*(\d{2,3}(?:\.\d{1,2})?).*?(?:是|改|成|覺得)?\s*(\d{2,3}(?:\.\d{1,2})?)/,
+  );
+  if (targetCorr) {
+    const to = Number(targetCorr[2]);
+    if (Number.isFinite(to) && to >= 35 && to <= 200) {
+      ops.push({
+        kind: "target_weight_kg",
+        from: previous?.targetWeightKg ?? Number(targetCorr[1]),
+        to,
+      });
     }
   }
 

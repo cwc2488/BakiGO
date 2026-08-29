@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import type { Go21ProgressMilestone } from "@/types/go21";
+import { GO21_PRIMARY_DIRECTION_LABELS, GO21_PRIMARY_DIRECTIONS } from "@/types/go21";
 import "./go21.css";
 
 type Go21Turn = {
@@ -37,6 +38,16 @@ type Go21ContextPayload = {
     basalMetabolicRate: number | null;
   } | null;
   needsBaseline: boolean;
+  needsGoal: boolean;
+  goal: {
+    primaryDirection: string;
+    primaryDirectionLabel: string;
+    personalGoal: string;
+    targetWeightKg: number | null;
+    originalPersonalGoal: string | null;
+    wasRefined: boolean;
+    setAt: string;
+  } | null;
   turns: Go21Turn[];
   reminders: Array<{ id: string; kind: string; message: string; dueAt: string }>;
 };
@@ -45,7 +56,7 @@ export function Go21App({ token }: { token: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ctx, setCtx] = useState<Go21ContextPayload | null>(null);
-  const [view, setView] = useState<"baseline" | "start" | "chat" | "progress">("chat");
+  const [view, setView] = useState<"baseline" | "goal" | "start" | "chat" | "progress">("chat");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingUser, setPendingUser] = useState<string | null>(null);
@@ -66,6 +77,8 @@ export function Go21App({ token }: { token: string }) {
     setCtx(payload.go21);
     if (payload.go21.needsBaseline && !payload.go21.go21StartedAt) {
       setView("baseline");
+    } else if (payload.go21.needsGoal) {
+      setView("goal");
     } else if (!payload.go21.go21StartedAt) {
       setView("start");
     } else {
@@ -136,9 +149,44 @@ export function Go21App({ token }: { token: string }) {
       });
       const payload = (await response.json()) as { ok?: boolean; error?: string };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "儲存失敗");
-      setView("start");
       await reload();
-      setView("start");
+      // After baseline, goal screen if needed (reload sets view)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "儲存失敗");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveGoal(form: {
+    primaryDirection: string;
+    personalGoal: string;
+    targetWeightKg: string;
+  }) {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/coaching/portal/${encodeURIComponent(token)}/go21/goal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          primaryDirection: form.primaryDirection,
+          personalGoal: form.personalGoal,
+          targetWeightKg: form.targetWeightKg ? Number(form.targetWeightKg) : null,
+          source: "onboarding",
+        }),
+      });
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        safety?: { message?: string | null; caution?: boolean };
+      };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? payload.safety?.message ?? "儲存失敗");
+      }
+      await reload();
+      if (!ctx?.go21StartedAt) setView("start");
+      else setView("chat");
     } catch (e) {
       setError(e instanceof Error ? e.message : "儲存失敗");
     } finally {
@@ -277,6 +325,15 @@ export function Go21App({ token }: { token: string }) {
         />
       ) : null}
 
+      {view === "goal" ? (
+        <GoalForm
+          busy={busy}
+          currentWeightKg={ctx.latestBody?.weightKg ?? null}
+          existing={ctx.goal}
+          onSubmit={saveGoal}
+        />
+      ) : null}
+
       {view === "start" ? (
         <div className="go21-start">
           <div className="go21-teach">
@@ -302,12 +359,27 @@ export function Go21App({ token }: { token: string }) {
               </li>
             ))}
           </ul>
-          {ctx.latestBody ? (
-            <div className="go21-data">
-              <h3>我的數據</h3>
-              <p>體重：{ctx.latestBody.weightKg ?? "—"} kg</p>
-              <p>體脂：{ctx.latestBody.bodyFatPercent ?? "—"} %</p>
-              <p>肌肉：{ctx.latestBody.skeletalMuscleKg ?? "—"} kg</p>
+          {ctx.goal ? (
+            <div className="go21-data" style={{ marginTop: "1rem" }}>
+              <h3>我的 21 天方向</h3>
+              <p>{ctx.goal.primaryDirectionLabel}</p>
+              <p>{ctx.goal.personalGoal}</p>
+              {ctx.goal.targetWeightKg != null ? (
+                <p>
+                  目標體重：{ctx.goal.targetWeightKg} kg
+                  {ctx.latestBody?.weightKg != null
+                    ? `（目前 ${ctx.latestBody.weightKg} kg）`
+                    : ""}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                className="go21-linkish"
+                style={{ marginTop: "0.5rem" }}
+                onClick={() => setView("goal")}
+              >
+                調整方向
+              </button>
             </div>
           ) : null}
         </div>
@@ -415,6 +487,105 @@ function resolveGo21ClientLogDate(text: string): string {
   if (/前天/.test(text)) return shift(-2);
   if (/昨天|昨日/.test(text)) return shift(-1);
   return today;
+}
+
+function GoalForm({
+  busy,
+  currentWeightKg,
+  existing,
+  onSubmit,
+}: {
+  busy: boolean;
+  currentWeightKg: number | null;
+  existing: Go21ContextPayload["goal"];
+  onSubmit: (form: {
+    primaryDirection: string;
+    personalGoal: string;
+    targetWeightKg: string;
+  }) => void;
+}) {
+  const [primaryDirection, setPrimaryDirection] = useState(
+    existing?.primaryDirection ?? "",
+  );
+  const [personalGoal, setPersonalGoal] = useState(existing?.personalGoal ?? "");
+  const [targetWeightKg, setTargetWeightKg] = useState(
+    existing?.targetWeightKg != null ? String(existing.targetWeightKg) : "",
+  );
+  const [showTarget, setShowTarget] = useState(existing?.targetWeightKg != null);
+
+  return (
+    <form
+      className="go21-start go21-goal"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit({
+          primaryDirection,
+          personalGoal,
+          targetWeightKg: showTarget ? targetWeightKg : "",
+        });
+      }}
+    >
+      <h2 className="go21-goal-hero">這 21 天，你最想改變什麼？</h2>
+      <p className="go21-muted" style={{ marginTop: 0 }}>
+        選一個方向就好，之後還可以調整。
+      </p>
+      <div className="go21-goal-options" role="radiogroup" aria-label="主要方向">
+        {GO21_PRIMARY_DIRECTIONS.map((key) => (
+          <button
+            key={key}
+            type="button"
+            className={
+              primaryDirection === key ? "go21-goal-option is-selected" : "go21-goal-option"
+            }
+            onClick={() => setPrimaryDirection(key)}
+          >
+            {GO21_PRIMARY_DIRECTION_LABELS[key]}
+          </button>
+        ))}
+      </div>
+      <label className="go21-field">
+        <span>21 天後，你最希望自己有什麼改變？</span>
+        <textarea
+          required
+          rows={3}
+          value={personalGoal}
+          onChange={(e) => setPersonalGoal(e.target.value)}
+          placeholder="例如：希望晚餐不要再一直失控"
+          maxLength={400}
+        />
+      </label>
+      {!showTarget ? (
+        <button
+          type="button"
+          className="go21-linkish"
+          style={{ width: "100%", marginBottom: "0.75rem" }}
+          onClick={() => setShowTarget(true)}
+        >
+          想加一個體重目標？（選填）
+        </button>
+      ) : (
+        <label className="go21-field">
+          <span>
+            目標體重 kg（選填）
+            {currentWeightKg != null ? ` · 目前 ${currentWeightKg}` : ""}
+          </span>
+          <input
+            inputMode="decimal"
+            value={targetWeightKg}
+            onChange={(e) => setTargetWeightKg(e.target.value)}
+            placeholder="例如 68"
+          />
+        </label>
+      )}
+      <button
+        type="submit"
+        className="go21-cta"
+        disabled={busy || !primaryDirection || personalGoal.trim().length < 2}
+      >
+        接著開始
+      </button>
+    </form>
+  );
 }
 
 function BaselineForm({

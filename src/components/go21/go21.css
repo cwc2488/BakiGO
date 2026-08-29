@@ -146,6 +146,43 @@
   border-radius: 0.75rem;
   margin-bottom: 0.5rem;
 }
+.go21-goal-hero {
+  font-size: 1.5rem;
+  line-height: 1.35;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+  letter-spacing: 0.01em;
+}
+.go21-goal-options {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1rem 0 1.25rem;
+}
+.go21-goal-option {
+  border: 1px solid #d7e4cc;
+  background: #fff;
+  border-radius: 1rem;
+  padding: 0.95rem 1rem;
+  text-align: left;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1d1d1f;
+  min-height: 3rem;
+}
+.go21-goal-option.is-selected {
+  border-color: #77b539;
+  background: #eaf4e0;
+  color: #2f5a14;
+}
+.go21-field textarea {
+  width: 100%;
+  border: 1px solid #e5e5ea;
+  border-radius: 1rem;
+  padding: 0.85rem 1rem;
+  font: inherit;
+  resize: vertical;
+  min-height: 5rem;
+}
 .go21-start,
 .go21-progress {
   padding: 1.5rem 1.25rem;
