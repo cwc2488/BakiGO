@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import type { Go21ProgressMilestone } from "@/types/go21";
 import { GO21_PRIMARY_DIRECTION_LABELS, GO21_PRIMARY_DIRECTIONS } from "@/types/go21";
+import { isChatNearBottom } from "@/lib/go21/coach-context";
+import { nextClientRequestId, type Go21SendStatus } from "@/lib/go21/conversation-quality";
 import "./go21.css";
 
 type Go21Turn = {
@@ -59,14 +61,26 @@ export function Go21App({ token }: { token: string }) {
   const [view, setView] = useState<"baseline" | "goal" | "start" | "chat" | "progress">("chat");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sendStatus, setSendStatus] = useState<Go21SendStatus>("idle");
   const [pendingUser, setPendingUser] = useState<string | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
   const [sendLock, setSendLock] = useState(false);
+  const [showJumpLatest, setShowJumpLatest] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
+  const stickToBottomRef = useRef(true);
+  const inFlightRequestIdRef = useRef<string | null>(null);
+  const failedPayloadRef = useRef<{
+    text: string;
+    photoFile: File | null;
+    clientRequestId: string;
+    photoUploaded: boolean;
+    mealSlotHint: "breakfast" | "lunch" | "dinner" | null;
+    logDate: string;
+  } | null>(null);
   const [, startTransition] = useTransition();
 
   const reload = useCallback(async () => {
@@ -105,8 +119,47 @@ export function Go21App({ token }: { token: string }) {
   }, [reload]);
 
   useEffect(() => {
-    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" });
-  }, [ctx?.turns.length, pendingUser, busy]);
+    const el = threadRef.current;
+    if (!el) return;
+    if (!stickToBottomRef.current) {
+      setShowJumpLatest(true);
+      return;
+    }
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    setShowJumpLatest(false);
+  }, [ctx?.turns.length, pendingUser, busy, sendStatus]);
+
+  useEffect(() => {
+    const el = threadRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (!stickToBottomRef.current) return;
+      el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [view]);
+
+  function onThreadScroll() {
+    const el = threadRef.current;
+    if (!el) return;
+    const near = isChatNearBottom({
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    });
+    stickToBottomRef.current = near;
+    if (near) setShowJumpLatest(false);
+  }
+
+  function jumpToLatest() {
+    stickToBottomRef.current = true;
+    setShowJumpLatest(false);
+    threadRef.current?.scrollTo({
+      top: threadRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }
 
   useEffect(() => {
     // Inject Go21-scoped manifest for installable customer experience
@@ -217,29 +270,45 @@ export function Go21App({ token }: { token: string }) {
     }
   }
 
-  async function sendMessage() {
+  async function sendMessage(options?: { retry?: boolean }) {
     if (sendLock || busy) return;
-    const text = draft.trim();
-    if (!text && !photoFile) return;
+
+    const retrying = Boolean(options?.retry && failedPayloadRef.current);
+    const failed = failedPayloadRef.current;
+
+    const text = retrying ? failed!.text : draft.trim();
+    const activePhoto = retrying ? failed!.photoFile : photoFile;
+    if (!text && !activePhoto) return;
+
+    const mealSlotHint = retrying
+      ? failed!.mealSlotHint
+      : /午餐|中餐|中午/.test(text)
+        ? ("lunch" as const)
+        : /早餐|早上/.test(text)
+          ? ("breakfast" as const)
+          : /晚餐|晚上/.test(text)
+            ? ("dinner" as const)
+            : null;
+    const logDate = retrying ? failed!.logDate : resolveGo21ClientLogDate(text);
+    const clientRequestId = nextClientRequestId(
+      retrying ? failed!.clientRequestId : inFlightRequestIdRef.current,
+    );
+    inFlightRequestIdRef.current = clientRequestId;
+
     setSendLock(true);
     setBusy(true);
+    setSendStatus("sending");
     setError(null);
-    setPendingUser(text || (photoFile ? "📷 照片" : null));
-    setDraft("");
-    let photoUploaded = false;
+    setPendingUser(text || (activePhoto ? "📷 照片" : null));
+    // Keep draft until authoritative acceptance — restore certainty for the user.
+    if (!retrying) setDraft("");
+
+    let photoUploaded = retrying ? failed!.photoUploaded : false;
     try {
-      let mealSlotHint: "breakfast" | "lunch" | "dinner" | null = null;
-      if (/午餐|中餐|中午/.test(text)) mealSlotHint = "lunch";
-      else if (/早餐|早上/.test(text)) mealSlotHint = "breakfast";
-      else if (/晚餐|晚上/.test(text)) mealSlotHint = "dinner";
-
-      const logDate = resolveGo21ClientLogDate(text);
-
-      // Always upload when a photo is attached. Unknown meal → snacks (not invented dinner/lunch).
-      if (photoFile) {
+      if (activePhoto && !photoUploaded) {
         const uploadSlot = mealSlotHint ?? "snacks";
         const form = new FormData();
-        form.append("photo", photoFile);
+        form.append("photo", activePhoto);
         form.append("logDate", logDate);
         const upload = await fetch(
           `/api/coaching/portal/${encodeURIComponent(token)}/meals/${uploadSlot}/photo`,
@@ -251,38 +320,62 @@ export function Go21App({ token }: { token: string }) {
         }
       }
 
-      const clientRequestId =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `go21-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 45000);
+      let response: Response;
+      try {
+        response = await fetch(`/api/coaching/portal/${encodeURIComponent(token)}/go21/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            message: text || undefined,
+            hasPhoto: Boolean(activePhoto),
+            photoUploaded,
+            mealSlotHint,
+            logDate,
+            clientRequestId,
+          }),
+        });
+      } finally {
+        window.clearTimeout(timeout);
+      }
 
-      const response = await fetch(`/api/coaching/portal/${encodeURIComponent(token)}/go21/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text || undefined,
-          hasPhoto: Boolean(photoFile),
-          photoUploaded,
-          mealSlotHint,
-          logDate,
-          clientRequestId,
-        }),
-      });
       const payload = (await response.json()) as { ok?: boolean; error?: string; coachMessage?: string };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "送出失敗");
+
+      failedPayloadRef.current = null;
+      inFlightRequestIdRef.current = null;
       setPhotoFile(null);
       if (photoPreview) URL.revokeObjectURL(photoPreview);
       setPhotoPreview(null);
       setPhotoMenuOpen(false);
-      // Keep pending bubble until durable reload returns the customer turn.
+      setDraft("");
+      stickToBottomRef.current = true;
       await reload();
       startTransition(() => {
         setPendingUser(null);
+        setSendStatus("idle");
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "送出失敗");
+      const message =
+        e instanceof Error
+          ? e.name === "AbortError"
+            ? "連線逾時，請重試"
+            : e.message
+          : "送出失敗";
+      failedPayloadRef.current = {
+        text,
+        photoFile: activePhoto,
+        clientRequestId,
+        photoUploaded,
+        mealSlotHint,
+        logDate,
+      };
+      setError(message);
       setDraft(text);
-      setPendingUser(null);
+      setSendStatus("failed");
+      // Keep pending bubble so the user sees what they tried to send.
     } finally {
       setBusy(false);
       setSendLock(false);
@@ -294,6 +387,12 @@ export function Go21App({ token }: { token: string }) {
     if (photoPreview) URL.revokeObjectURL(photoPreview);
     setPhotoPreview(file ? URL.createObjectURL(file) : null);
     setPhotoMenuOpen(false);
+    if (sendStatus === "failed") {
+      setSendStatus("idle");
+      setError(null);
+      failedPayloadRef.current = null;
+      inFlightRequestIdRef.current = null;
+    }
   }
 
   if (loading) {
@@ -415,7 +514,7 @@ export function Go21App({ token }: { token: string }) {
               {ctx.reminders[0]!.message}
             </div>
           ) : null}
-          <div ref={threadRef} className="go21-thread">
+          <div ref={threadRef} className="go21-thread" onScroll={onThreadScroll}>
             {ctx.turns.map((turn) => (
               <div
                 key={turn.id}
@@ -437,8 +536,23 @@ export function Go21App({ token }: { token: string }) {
                 {pendingUser}
               </div>
             ) : null}
-            {busy ? <div className="go21-thinking">教練正在回覆…</div> : null}
+            {sendStatus === "sending" || busy ? (
+              <div className="go21-thinking">教練正在回覆…</div>
+            ) : null}
+            {sendStatus === "failed" ? (
+              <div className="go21-send-failed">
+                <p>還沒送出成功</p>
+                <button type="button" onClick={() => void sendMessage({ retry: true })}>
+                  重試
+                </button>
+              </div>
+            ) : null}
           </div>
+          {showJumpLatest ? (
+            <button type="button" className="go21-jump-latest" onClick={jumpToLatest}>
+              最新訊息 ↓
+            </button>
+          ) : null}
           <form
             className="go21-composer"
             onSubmit={(event: FormEvent) => {

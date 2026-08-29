@@ -229,9 +229,9 @@ describe("Go21 conversation quality — idempotency + policy", () => {
       go21Goal: compactGo21GoalForAi(record),
     });
     expect(prompt).toContain("改善晚上容易失控吃宵夜");
-    expect(prompt).toContain("silent coaching anchor");
+    expect(prompt).toMatch(/currentPersonalGoal|Silent understanding/);
     const sys = buildCoachingAiV2SystemPrompt();
-    expect(sys).toMatch(/靜默|不要每則都重述/);
+    expect(sys).toMatch(/記得，但別背誦|不要每則重述目標/);
   });
 
   it("TEST J — photo input supports camera AND library (no forced capture-only)", () => {

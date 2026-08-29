@@ -1,6 +1,6 @@
 /**
- * Go21 conversation-quality helpers: disengagement, display content,
- * idempotency metadata, and short-coach policy signals for prompts/tests.
+ * Go21 conversation helpers: disengagement, display content,
+ * Brain V3 prompt signals, chat near-bottom detection re-exports.
  */
 
 export type Go21DisengagementAssessment = {
@@ -88,8 +88,9 @@ export function enrichTurnContentForAi(input: {
 
 export function extractVisionFoodsHint(evidenceSummary: string | null | undefined): string | null {
   if (!evidenceSummary?.trim()) return null;
-  // Prefer short food phrases from evidence summaries like "看起來像紅茶"
-  const m = evidenceSummary.match(/(?:像|為|是)?\s*([\u4e00-\u9fffA-Za-z0-9]{1,12}(?:茶|飯|麵|湯|蛋|肉|菜|果|奶|水|咖啡)?)/);
+  const m = evidenceSummary.match(
+    /(?:像|為|是)?\s*([\u4e00-\u9fffA-Za-z0-9]{1,12}(?:茶|飯|麵|湯|蛋|肉|菜|果|奶|水|咖啡)?)/,
+  );
   return m?.[1]?.trim() ?? evidenceSummary.trim().slice(0, 40);
 }
 
@@ -111,31 +112,47 @@ export function detectPhotoFoodCorrection(message: string): string | null {
   return null;
 }
 
-/** Policy flags used in prompts and tests — not hard truncation. */
-export const GO21_SHORT_RESPONSE_POLICY = {
-  defaultCharHint: "30–80 個繁體中文字為常見長度；必要時可更短或稍長。",
-  principles: [
-    "SHORT FIRST：每一次只做當下最有價值的一件事。",
-    "預設 1–3 短句；有時一句就夠。",
-    "不要每則都「肯定→科普→建議→總結→追問」。",
-    "不要為了顯得專業而解釋營養科學，除非此刻真正有用。",
-    "問題不是每則必備：只有答案會改變下一步教練決策時才問。",
-    "禁止每則結尾塞「你覺得怎麼樣／隨時跟我分享」等套話。",
-    "安全與明確停跑意圖優先於簡短。",
-  ],
-} as const;
+/** Brain V3 principles — economy without a hard character quota. */
+export const GO21_BRAIN_V3_PRINCIPLES = [
+  "先理解",
+  "記得，但別背誦",
+  "自然回應",
+  "有用才介入",
+] as const;
 
 export function go21SystemPromptIncludesShortPolicy(systemPrompt: string): boolean {
+  // V3: conversational economy via principles — not a 30–80 character script.
   return (
-    /SHORT FIRST|短句|不要每則都/.test(systemPrompt) &&
-    /問題不是每則必備|不要.*追問/.test(systemPrompt)
+    /有用才介入|自然回應/.test(systemPrompt) &&
+    !/30–80/.test(systemPrompt) &&
+    !/肯定\s*→\s*分析\s*→\s*建議/.test(systemPrompt)
   );
 }
 
 export function go21SystemPromptAllowsNoQuestion(systemPrompt: string): boolean {
-  return /問題不是每則必備|可以沒有問題|不必.*問句/.test(systemPrompt);
+  return /沒有固定順序|不必立刻|沒有.*必問|幾乎什麼都不說/.test(systemPrompt);
 }
 
 export function go21SystemPromptHandlesDisengagement(systemPrompt: string): boolean {
-  return /沒信心|想結束|不要激勵長文|不要挽留/.test(systemPrompt);
+  return /停跑|沒信心|不要硬留|不要激勵長文/.test(systemPrompt);
+}
+
+export function go21SystemPromptAllowsFoodLogRestraint(systemPrompt: string): boolean {
+  return /報一餐|有用才介入|每餐碎念/.test(systemPrompt);
+}
+
+export function go21SystemPromptAllowsOffTopicHuman(systemPrompt: string): boolean {
+  return /離題人情|當人聊/.test(systemPrompt);
+}
+
+export function go21SystemPromptAllowsMetaFeedback(systemPrompt: string): boolean {
+  return /像機器人/.test(systemPrompt) && /不要辯護/.test(systemPrompt);
+}
+
+export type Go21SendStatus = "idle" | "sending" | "failed";
+
+export function nextClientRequestId(existing?: string | null): string {
+  if (existing?.trim()) return existing.trim();
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return `go21-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }

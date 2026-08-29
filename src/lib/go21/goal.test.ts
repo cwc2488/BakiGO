@@ -183,7 +183,7 @@ describe("Go21 goal authorization contract", () => {
 describe("Go21 goal AI context", () => {
   it("system prompt tells model not to repeat goal every turn", () => {
     const sys = buildCoachingAiV2SystemPrompt();
-    expect(sys).toMatch(/靜默教練錨點|不要每則都重述/);
+    expect(sys).toMatch(/記得，但別背誦|不要每則重述目標/);
   });
 
   it("user prompt includes go21Goal compact block", () => {
@@ -207,7 +207,7 @@ describe("Go21 goal AI context", () => {
       go21Goal: compactGo21GoalForAi(record),
     });
     expect(prompt).toContain("晚上不要亂吃");
-    expect(prompt).toContain("silent coaching anchor");
+    expect(prompt).toMatch(/currentPersonalGoal|Silent understanding/);
   });
 
   it("Day 7/14/21 guidance references goal without inventing progress", () => {

@@ -308,6 +308,6 @@ export function compactGo21GoalForAi(record: Go21GoalRecord | null): {
     originalPersonalGoal: view.originalPersonalGoal,
     wasRefined: view.wasRefined,
     guidance:
-      "Use this 21-day goal as a silent coaching anchor. Do NOT repeat the goal every turn. Prefer useful next steps aligned with it. Never invent progress. Never fabricate numeric targets. On Day 7/14 reflect against the goal with real evidence only. On Day 21 close the loop: original wish → what actually happened → what to continue.",
+      "Silent understanding only. current personalGoal is the live coaching anchor; originalPersonalGoal is history. Do not recite the goal. Use it when the moment is relevant (e.g. late-night craving). Never invent progress.",
   };
 }

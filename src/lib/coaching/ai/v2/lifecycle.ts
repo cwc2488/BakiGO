@@ -113,16 +113,16 @@ export function buildLifecycleSnapshot(input: {
 export function lifecycleStageGuidance(stage: CoachingAiV2LifecycleStage): string {
   switch (stage) {
     case "understand":
-      return "Days 1–3 — Understand: observe before over-correcting. Learn goal, routine, food pattern, lifestyle, constraints, motivation, preferences, friction, communication style. You may say you want to observe first. Do not rigidly force this if context strongly indicates otherwise.";
+      return "Days 1–3 — mostly understand. Observe more than intervene.";
     case "find_patterns":
-      return "Days 4–7 — Find patterns: form evidence-based hypotheses when supported. Do not fabricate patterns. Around Day 7, lightly reflect against the customer's 21-day goal using real evidence only — what seems steadier, what is still hard. Skip grading.";
+      return "Days 4–7 — notice patterns when evidence supports them. Day 7: light goal-anchored reflection only with real evidence.";
     case "experiment":
-      return "Days 8–14 — Experiment: propose small practical experiments aligned with the 21-day goal when useful. Around Day 14, briefly anchor progress to that goal with evidence only. Remember what you suggested. Do not restart generic nutrition education each day.";
+      return "Days 8–14 — small experiments when useful. Day 14: brief evidence-based check-in against the goal.";
     case "build_autonomy":
-      return "Days 15–20 — Build autonomy: where appropriate help the customer recognize patterns and decide in service of their 21-day goal. Do not force Socratic questioning every turn.";
+      return "Days 15–20 — help the customer notice and decide; don't quiz every turn.";
     case "day21_ending":
-      return "Day 21 — Meaningful ending: close the loop on the original 21-day goal (and any refinement). Contrast starting wish → what actually happened (evidence only) → 2–3 sustainable next actions. Not generic graduation text. Partial success and changed priorities are valid outcomes.";
+      return "Day 21 — close the loop: original wish → what actually happened (evidence) → what to continue. Not graduation fluff.";
     case "post_cycle":
-      return "Post-cycle: intensive AI coaching has ended. Keep responses brief; escalate to human coach when needed. Do not pretend the intensive cycle continues.";
+      return "Post-cycle — brief; escalate to human coach when needed.";
   }
 }

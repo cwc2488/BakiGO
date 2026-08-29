@@ -30,6 +30,23 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
+  // Meta feedback about the AI — acknowledge, don't defend
+  if (freeMessage && /機器人|很AI|很制式|像客服|營養課本/.test(freeMessage)) {
+    return {
+      coachMessage: "被你抓到了 😂 我剛剛講得太像腳本，這句當沒看到，我們照平常聊天。",
+      meta: emptyMeta("casual", day, stage),
+    };
+  }
+
+  // Explicit information request — longer answer OK
+  if (freeMessage && /為什麼|怎麼幫|有什麼幫助|原理/.test(freeMessage) && /蛋白|減脂|熱量|代謝/.test(freeMessage)) {
+    return {
+      coachMessage:
+        "簡單說：蛋白質比較能讓你有飽足感，也比較能保住肌肉。減脂時如果只狂砍熱量、蛋白質又很少，人容易餓、肌肉也比較容易掉，後面更難維持。不是魔法，是讓過程比較穩。",
+      meta: emptyMeta("educate", day, stage),
+    };
+  }
+
   // Vision recall — use recent observations / turn memory (no new vision call)
   const visionRecall = matchVisionRecall(input);
   if (visionRecall) {
@@ -39,20 +56,53 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
-  // Photo / vision observation in this turn — short coach, no lecture
+  // Photo / vision observation — acknowledge, don't lecture
   if (freeMessage && /\[影像觀察/.test(freeMessage)) {
     const food = extractVisionFoodLabel(freeMessage);
     return {
-      coachMessage: food
-        ? `看到啦，是${food} 👀\n這就是這餐的全部，還是其他東西還沒拍？`
-        : "照片收到了 👀\n這就是這餐的全部，還是其他東西還沒拍？",
+      coachMessage: food ? `看到啦，是${food} 👀` : "照片收到了 👀",
+      meta: emptyMeta("observe", day, stage),
+    };
+  }
+
+  // Simple food log — acknowledge only (no nutrition correction obligation)
+  const simpleFood = matchSimpleFoodLog(freeMessage);
+  if (simpleFood) {
+    return {
+      coachMessage: `收到，${simpleFood} 👌`,
+      meta: emptyMeta("acknowledge", day, stage),
+    };
+  }
+
+  // Goal-relevant late craving — use goal silently (no verbatim recitation)
+  if (
+    freeMessage &&
+    /突然.*想吃|超想吃|宵夜|十一點|23:|晚上.*想吃/.test(freeMessage) &&
+    input.go21Goal?.personalGoal &&
+    /宵夜|晚上|失控|亂吃/.test(input.go21Goal.personalGoal)
+  ) {
+    return {
+      coachMessage: "欸，這就是晚上那關 👀\n你現在是肚子真的餓，還是嘴巴很想吃？",
+      meta: emptyMeta("investigate", day, stage),
+    };
+  }
+
+  // Pattern: repeated afternoon skip / evening hunger
+  if (
+    freeMessage &&
+    /晚上又餓|又餓爆|又超餓/.test(freeMessage) &&
+    looksLikeEveningOvereatPattern(decisionContext, memory)
+  ) {
+    return {
+      coachMessage:
+        "我發現一件事：比較像下午空太久，晚上才一次餓爆。我反而想先看下午那段。",
       meta: emptyMeta("observe", day, stage),
     };
   }
 
   if (freeMessage?.trim() && !hasMealEvidence(decisionContext)) {
     return {
-      coachMessage: buildCasualReply(freeMessage, memory),
+      coachMessage: buildCasualReply(freeMessage, memory, input),
       meta: emptyMeta("casual", day, stage),
     };
   }
@@ -311,24 +361,51 @@ function buildUnderstandReply(
   return "這幾天我想先了解你的作息跟吃法，先觀察、少糾正。你有想讓我先知道的限制或偏好也可以直接講。";
 }
 
-function buildCasualReply(freeMessage: string, memory: CoachingAiV2MemoryBundle): string {
+function buildCasualReply(
+  freeMessage: string,
+  memory: CoachingAiV2MemoryBundle,
+  input: GenerateCoachingAiV2Input,
+): string {
+  if (/女朋友|男友|不理我|分手|吵架/.test(freeMessage)) {
+    return "靠，這聽起來比晚餐還煩 😅 她最近一直都這樣嗎？";
+  }
   if (/加班|工作|開會/.test(freeMessage)) {
     const prior = memory.durableMemory.find((m) => /工作|加班|忙/.test(m.content));
-    if (prior) {
-      return "又是工作把節奏打亂？今天先撐住最基本的就好。";
-    }
-    return "工作日這樣很常見。飲食有需要再一起想簡單做法。";
+    if (prior) return "又是工作把節奏打亂？今天先撐住最基本的就好。";
+    return "工作日這樣很常見。";
   }
   if (/睡|失眠|熬夜/.test(freeMessage)) {
     return "睡眠差真的會讓後面更好餓。今天先不硬撐完美。";
   }
   if (/嘴饞|想吃|宵夜|十一點|突然很想吃/.test(freeMessage)) {
-    return "這種時候最容易晃。你是真的餓，還是嘴巴想吃？";
+    const goal = input.go21Goal?.personalGoal ?? "";
+    if (/宵夜|晚上|失控|亂吃/.test(goal)) {
+      return "欸，這就是晚上那關 👀\n你現在是肚子真的餓，還是嘴巴很想吃？";
+    }
+    return "突然想吃很常見。你是真的餓，還是嘴饞？";
   }
   if (/還可以|沒事|先這樣|謝謝|哈哈/.test(freeMessage)) {
     return "好，我知道了。";
   }
-  return `嗯，我聽到了。${freeMessage.slice(0, 20)}${freeMessage.length > 20 ? "…" : ""}`;
+  if (/累|疲/.test(freeMessage)) {
+    return "難怪，今天感覺真的被榨乾了 😵‍💫";
+  }
+  return `嗯，${freeMessage.slice(0, 18)}${freeMessage.length > 18 ? "…" : ""}`;
+}
+
+function matchSimpleFoodLog(freeMessage: string | null | undefined): string | null {
+  if (!freeMessage?.trim()) return null;
+  const text = freeMessage.trim();
+  // Avoid matching vision-enriched or question messages
+  if (/\[影像觀察|為什麼|怎麼|？|\?/.test(text)) return null;
+  const m = text.match(
+    /(?:晚餐|午餐|早餐|宵夜|剛剛)?(?:吃了|吃|喝了|喝)?\s*([^\n。！？]{1,20}(?:飯|麵|漢堡|奶茶|紅茶|咖啡|雞胸|泡麵|蛋糕|滷肉|沙拉|便當|壽司))/,
+  );
+  if (m?.[1]) return m[1].trim();
+  if (/^(?:晚餐|午餐|早餐).{0,12}$/.test(text) && /飯|麵|堡|茶|肉/.test(text)) {
+    return text.replace(/^(?:晚餐|午餐|早餐)(?:吃了|吃)?/, "").trim() || text;
+  }
+  return null;
 }
 
 function matchVisionRecall(input: GenerateCoachingAiV2Input): string | null {

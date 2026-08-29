@@ -28,10 +28,10 @@ import {
 } from "@/lib/go21/realtime-vision";
 import {
   buildGo21GoalSnapshot,
-  compactGo21GoalForAi,
   loadGo21GoalRecord,
   saveGo21Goal,
 } from "@/lib/go21/goal";
+import { buildGo21CoachGenerationContext } from "@/lib/go21/coach-context";
 import {
   assessGo21Disengagement,
   buildGo21CustomerDisplayContent,
@@ -285,7 +285,7 @@ export async function POST(
     ].slice(0, 3);
 
     let goalConfirmHint: string | null = null;
-    let go21Goal: ReturnType<typeof compactGo21GoalForAi> = null;
+    let go21Goal: ReturnType<typeof buildGo21CoachGenerationContext>["go21Goal"] = null;
     try {
       const refinement = extracted.goalRefinement;
       const targetFromExtract = extracted.targetWeightKg;
@@ -339,7 +339,8 @@ export async function POST(
           "顧客可能在調整 21 天方向；若語意夠明確可自然確認後再改，不要默默覆寫。";
       }
 
-      go21Goal = compactGo21GoalForAi(goalRecord);
+      const coachCtx = buildGo21CoachGenerationContext({ goalRecord });
+      go21Goal = coachCtx.go21Goal;
     } catch (goalError) {
       console.error(
         JSON.stringify({
