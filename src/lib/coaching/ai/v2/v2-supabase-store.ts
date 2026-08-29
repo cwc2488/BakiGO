@@ -1,12 +1,26 @@
 import { createSupabaseServiceClient, isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 import { resolveAiV2CycleWindow } from "@/lib/coaching/ai/v2/lifecycle";
 import type { CoachingPlanSnapshot } from "@/types/coaching";
-import type { CoachingAiV2GenerationDraft, CoachingAiV2Day21ReflectionJson } from "@/types/coaching-ai-v2";
+import type {
+  CoachingAiV2GenerationDraft,
+  CoachingAiV2Day21ReflectionJson,
+  CoachingAiV2TurnChannel,
+} from "@/types/coaching-ai-v2";
+import type { CoachingAiV2MemoryStore } from "@/lib/coaching/ai/v2/memory-store";
+import { enrichTurnContentForAi } from "@/lib/go21/conversation-quality";
+
+export type PersistV2MemoryResult = {
+  ok: boolean;
+  duplicate: boolean;
+  customerTurnId: string | null;
+  coachTurnId: string | null;
+  coachMessage: string | null;
+};
 
 /**
  * Best-effort Supabase persistence for V2 memory.
+ * Persists BOTH customer + coach turns (authoritative conversation history).
  * Safe no-op when service client unavailable or tables not yet migrated.
- * Never throws to callers — logs and returns false.
  */
 export async function persistV2MemoryFromSupabaseIfConfigured(input: {
   enrollmentId: string;
@@ -21,8 +35,15 @@ export async function persistV2MemoryFromSupabaseIfConfigured(input: {
   enrollmentStartedAt?: string | null;
   plannedEndAt?: string | null;
   planSnapshot?: CoachingPlanSnapshot | null;
-}): Promise<boolean> {
-  if (!isSupabaseServiceConfigured()) return false;
+  /** Customer-facing text/photo placeholder — never vision system blobs. */
+  customerDisplayContent?: string | null;
+  customerChannel?: CoachingAiV2TurnChannel;
+  customerMetadata?: Record<string, unknown>;
+  clientRequestId?: string | null;
+}): Promise<PersistV2MemoryResult> {
+  if (!isSupabaseServiceConfigured()) {
+    return { ok: false, duplicate: false, customerTurnId: null, coachTurnId: null, coachMessage: null };
+  }
 
   try {
     const supabase = createSupabaseServiceClient();
@@ -36,7 +57,27 @@ export async function persistV2MemoryFromSupabaseIfConfigured(input: {
         .eq("id", input.enrollmentId)
         .maybeSingle();
       ownerMemberId = (enrollment?.owner_member_id as string | undefined) ?? "";
-      if (!ownerMemberId) return false;
+      if (!ownerMemberId) {
+        return { ok: false, duplicate: false, customerTurnId: null, coachTurnId: null, coachMessage: null };
+      }
+    }
+
+    // Idempotency: one clientRequestId → one customer + one coach turn
+    if (input.clientRequestId?.trim()) {
+      const existing = await findTurnByClientRequestId({
+        enrollmentId: input.enrollmentId,
+        clientRequestId: input.clientRequestId.trim(),
+        role: "coach",
+      });
+      if (existing) {
+        return {
+          ok: true,
+          duplicate: true,
+          customerTurnId: null,
+          coachTurnId: existing.id,
+          coachMessage: existing.content,
+        };
+      }
     }
 
     const window = resolveAiV2CycleWindow({
@@ -74,22 +115,70 @@ export async function persistV2MemoryFromSupabaseIfConfigured(input: {
       }
     }
 
-    // Turns
-    await supabase.from("coaching_ai_turns").insert({
-      enrollment_id: input.enrollmentId,
-      customer_id: input.customerId,
-      owner_member_id: ownerMemberId,
-      cycle_id: cycleId,
-      log_date: input.logDate,
-      role: "coach",
-      channel: input.channel === "free_message" ? "free_message" : input.channel,
-      content: input.coachMessage.slice(0, 4000),
-      intention: input.draft.meta.intention,
-      metadata: {
-        safetyTriggered: input.draft.meta.safetyTriggered,
-        escalationSuggested: input.draft.meta.escalationSuggested,
-      },
-    });
+    const turnChannel =
+      input.channel === "free_message"
+        ? "free_message"
+        : input.channel === "day21"
+          ? "day21"
+          : "daily_log";
+    const customerChannel = input.customerChannel ?? turnChannel;
+    const customerContent = (input.customerDisplayContent?.trim() || "（訊息）").slice(0, 4000);
+    const customerMeta: Record<string, unknown> = {
+      ...(input.customerMetadata ?? {}),
+      ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
+    };
+
+    let customerTurnId: string | null = null;
+    const { data: customerInserted, error: customerError } = await supabase
+      .from("coaching_ai_turns")
+      .insert({
+        enrollment_id: input.enrollmentId,
+        customer_id: input.customerId,
+        owner_member_id: ownerMemberId,
+        cycle_id: cycleId,
+        log_date: input.logDate,
+        role: "customer",
+        channel: customerChannel,
+        content: customerContent,
+        content_summary:
+          typeof customerMeta.visionEvidenceSummary === "string"
+            ? String(customerMeta.visionEvidenceSummary).slice(0, 400)
+            : null,
+        metadata: customerMeta,
+      })
+      .select("id")
+      .maybeSingle();
+    if (customerError) {
+      console.error("[coaching_ai_v2] customer turn persist failed", customerError);
+    } else {
+      customerTurnId = (customerInserted?.id as string | undefined) ?? null;
+    }
+
+    const { data: coachInserted, error: coachError } = await supabase
+      .from("coaching_ai_turns")
+      .insert({
+        enrollment_id: input.enrollmentId,
+        customer_id: input.customerId,
+        owner_member_id: ownerMemberId,
+        cycle_id: cycleId,
+        log_date: input.logDate,
+        role: "coach",
+        channel: turnChannel,
+        content: input.coachMessage.slice(0, 4000),
+        intention: input.draft.meta.intention,
+        metadata: {
+          safetyTriggered: input.draft.meta.safetyTriggered,
+          escalationSuggested: input.draft.meta.escalationSuggested,
+          ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
+          ...(customerTurnId ? { replyToCustomerTurnId: customerTurnId } : {}),
+        },
+      })
+      .select("id")
+      .maybeSingle();
+    if (coachError) {
+      console.error("[coaching_ai_v2] coach turn persist failed", coachError);
+    }
+    const coachTurnId = (coachInserted?.id as string | undefined) ?? null;
 
     for (const write of input.draft.meta.memoryWrites.slice(0, 4)) {
       await supabase.from("coaching_ai_memory").insert({
@@ -214,10 +303,281 @@ export async function persistV2MemoryFromSupabaseIfConfigured(input: {
       });
     }
 
-    return true;
+    return {
+      ok: Boolean(customerTurnId || coachTurnId),
+      duplicate: false,
+      customerTurnId,
+      coachTurnId,
+      coachMessage: input.coachMessage,
+    };
   } catch (error) {
     console.error("[coaching_ai_v2] persistV2MemoryFromSupabaseIfConfigured", error);
+    return { ok: false, duplicate: false, customerTurnId: null, coachTurnId: null, coachMessage: null };
+  }
+}
+
+export async function findTurnByClientRequestId(input: {
+  enrollmentId: string;
+  clientRequestId: string;
+  role?: "customer" | "coach";
+}): Promise<{ id: string; content: string; metadata: Record<string, unknown> } | null> {
+  if (!isSupabaseServiceConfigured()) return null;
+  try {
+    const supabase = createSupabaseServiceClient();
+    let query = supabase
+      .from("coaching_ai_turns")
+      .select("id, content, metadata, role, created_at")
+      .eq("enrollment_id", input.enrollmentId)
+      .contains("metadata", { clientRequestId: input.clientRequestId })
+      .order("created_at", { ascending: false })
+      .limit(4);
+    if (input.role) query = query.eq("role", input.role);
+    const { data } = await query;
+    const row = (data ?? [])[0];
+    if (!row?.id) return null;
+    return {
+      id: String(row.id),
+      content: String(row.content),
+      metadata:
+        row.metadata && typeof row.metadata === "object"
+          ? (row.metadata as Record<string, unknown>)
+          : {},
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hydrate process-local V2 store from durable Supabase rows so cold starts
+ * still have recent conversation + vision evidence + open loops.
+ */
+export async function hydrateV2StoreFromSupabase(input: {
+  store: CoachingAiV2MemoryStore;
+  enrollmentId: string;
+  customerId: string;
+  ownerMemberId: string;
+  logDate: string;
+}): Promise<boolean> {
+  if (!isSupabaseServiceConfigured()) return false;
+  try {
+    const supabase = createSupabaseServiceClient();
+    const [turns, memory, loops, hyps, cycle] = await Promise.all([
+      supabase
+        .from("coaching_ai_turns")
+        .select("id, role, content, channel, log_date, created_at, intention, metadata, content_summary")
+        .eq("enrollment_id", input.enrollmentId)
+        .order("created_at", { ascending: false })
+        .limit(24),
+      supabase
+        .from("coaching_ai_memory")
+        .select(
+          "id, category, content, evidence_summary, confidence, source_log_date, status, created_at, updated_at, cycle_id",
+        )
+        .eq("enrollment_id", input.enrollmentId)
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(16),
+      supabase
+        .from("coaching_ai_open_loops")
+        .select(
+          "id, subject, detail, status, due_log_date, created_log_date, resolved_log_date, resolution_note, created_at, updated_at, cycle_id",
+        )
+        .eq("enrollment_id", input.enrollmentId)
+        .in("status", ["open", "waiting"])
+        .order("updated_at", { ascending: false })
+        .limit(6),
+      supabase
+        .from("coaching_ai_hypotheses")
+        .select(
+          "id, statement, supporting_evidence, contradicting_evidence, confidence, status, created_at, updated_at, cycle_id",
+        )
+        .eq("enrollment_id", input.enrollmentId)
+        .in("status", ["active", "weakened", "confirmed"])
+        .order("updated_at", { ascending: false })
+        .limit(5),
+      supabase
+        .from("coaching_ai_cycles")
+        .select(
+          "id, cycle_index, start_date, planned_end_date, status, day21_reflection_id, completed_at, created_at, updated_at",
+        )
+        .eq("enrollment_id", input.enrollmentId)
+        .eq("status", "active")
+        .maybeSingle(),
+    ]);
+
+    if (cycle.data?.id && !input.store.cycles.has(String(cycle.data.id))) {
+      input.store.cycles.set(String(cycle.data.id), {
+        id: String(cycle.data.id),
+        enrollmentId: input.enrollmentId,
+        customerId: input.customerId,
+        ownerMemberId: input.ownerMemberId,
+        cycleIndex: Number(cycle.data.cycle_index ?? 1),
+        startDate: String(cycle.data.start_date),
+        plannedEndDate: String(cycle.data.planned_end_date),
+        status: "active",
+        day21ReflectionId: (cycle.data.day21_reflection_id as string | null) ?? null,
+        completedAt: (cycle.data.completed_at as string | null) ?? null,
+        createdAt: String(cycle.data.created_at ?? new Date().toISOString()),
+        updatedAt: String(cycle.data.updated_at ?? new Date().toISOString()),
+      });
+    }
+
+    const turnRows = [...((turns.data ?? []) as Array<Record<string, unknown>>)].reverse();
+    let turnIndex = 0;
+    for (const row of turnRows) {
+      const id = String(row.id);
+      if (input.store.turns.has(id)) continue;
+      turnIndex += 1;
+      const metadata =
+        row.metadata && typeof row.metadata === "object"
+          ? (row.metadata as Record<string, unknown>)
+          : {};
+      const display = String(row.content ?? "");
+      const vision =
+        typeof metadata.visionEvidenceSummary === "string"
+          ? metadata.visionEvidenceSummary
+          : typeof row.content_summary === "string"
+            ? row.content_summary
+            : null;
+      const correction =
+        typeof metadata.customerCorrection === "string" ? metadata.customerCorrection : null;
+      const aiContent =
+        row.role === "customer"
+          ? enrichTurnContentForAi({
+              displayContent: display,
+              visionEvidenceSummary: vision,
+              customerCorrection: correction,
+            })
+          : display;
+      input.store.turns.set(id, {
+        id,
+        enrollmentId: input.enrollmentId,
+        customerId: input.customerId,
+        ownerMemberId: input.ownerMemberId,
+        cycleId: (cycle.data?.id as string | undefined) ?? null,
+        logDate: (row.log_date as string | null) ?? input.logDate,
+        turnIndex,
+        role: row.role as "customer" | "coach" | "system",
+        channel: (row.channel as never) ?? "free_message",
+        content: aiContent.slice(0, 4000),
+        contentSummary: (row.content_summary as string | null) ?? null,
+        aiOutputId: null,
+        intention: (row.intention as string | null) ?? null,
+        metadata,
+        createdAt: String(row.created_at ?? new Date().toISOString()),
+      });
+    }
+
+    for (const row of (memory.data ?? []) as Array<Record<string, unknown>>) {
+      const id = String(row.id);
+      if (input.store.memory.has(id)) continue;
+      input.store.memory.set(id, {
+        id,
+        enrollmentId: input.enrollmentId,
+        customerId: input.customerId,
+        ownerMemberId: input.ownerMemberId,
+        cycleId: (row.cycle_id as string | null) ?? null,
+        category: row.category as never,
+        content: String(row.content),
+        evidenceSummary: (row.evidence_summary as string | null) ?? null,
+        confidence: Number(row.confidence ?? 0.6),
+        sourceLogDate: (row.source_log_date as string | null) ?? null,
+        sourceTurnId: null,
+        status: "active",
+        createdAt: String(row.created_at ?? new Date().toISOString()),
+        updatedAt: String(row.updated_at ?? new Date().toISOString()),
+      });
+    }
+
+    for (const row of (loops.data ?? []) as Array<Record<string, unknown>>) {
+      const id = String(row.id);
+      if (input.store.openLoops.has(id)) continue;
+      input.store.openLoops.set(id, {
+        id,
+        enrollmentId: input.enrollmentId,
+        customerId: input.customerId,
+        ownerMemberId: input.ownerMemberId,
+        cycleId: (row.cycle_id as string | null) ?? null,
+        subject: String(row.subject),
+        detail: String(row.detail),
+        status: row.status as never,
+        dueLogDate: (row.due_log_date as string | null) ?? null,
+        createdLogDate: String(row.created_log_date ?? input.logDate),
+        resolvedLogDate: (row.resolved_log_date as string | null) ?? null,
+        resolutionNote: (row.resolution_note as string | null) ?? null,
+        createdAt: String(row.created_at ?? new Date().toISOString()),
+        updatedAt: String(row.updated_at ?? new Date().toISOString()),
+      });
+    }
+
+    for (const row of (hyps.data ?? []) as Array<Record<string, unknown>>) {
+      const id = String(row.id);
+      if (input.store.hypotheses.has(id)) continue;
+      input.store.hypotheses.set(id, {
+        id,
+        enrollmentId: input.enrollmentId,
+        customerId: input.customerId,
+        ownerMemberId: input.ownerMemberId,
+        cycleId: (row.cycle_id as string | null) ?? null,
+        statement: String(row.statement),
+        supportingEvidence: Array.isArray(row.supporting_evidence)
+          ? (row.supporting_evidence as string[])
+          : [],
+        contradictingEvidence: Array.isArray(row.contradicting_evidence)
+          ? (row.contradicting_evidence as string[])
+          : [],
+        confidence: Number(row.confidence ?? 0.5),
+        status: row.status as never,
+        revisedIntoId: null,
+        createdAt: String(row.created_at ?? new Date().toISOString()),
+        updatedAt: String(row.updated_at ?? new Date().toISOString()),
+      });
+    }
+
+    return true;
+  } catch (error) {
+    console.error("[coaching_ai_v2] hydrateV2StoreFromSupabase", error);
     return false;
+  }
+}
+
+/** Load recent vision evidence summaries from customer turns (no new Vision call). */
+export async function loadRecentVisionEvidenceFromTurns(input: {
+  enrollmentId: string;
+  limit?: number;
+}): Promise<Array<{ summary: string; correction: string | null; createdAt: string }>> {
+  if (!isSupabaseServiceConfigured()) return [];
+  try {
+    const supabase = createSupabaseServiceClient();
+    const { data } = await supabase
+      .from("coaching_ai_turns")
+      .select("metadata, created_at, content_summary")
+      .eq("enrollment_id", input.enrollmentId)
+      .eq("role", "customer")
+      .order("created_at", { ascending: false })
+      .limit(input.limit ?? 5);
+    const out: Array<{ summary: string; correction: string | null; createdAt: string }> = [];
+    for (const row of data ?? []) {
+      const metadata =
+        row.metadata && typeof row.metadata === "object"
+          ? (row.metadata as Record<string, unknown>)
+          : {};
+      const summary =
+        (typeof metadata.visionEvidenceSummary === "string" && metadata.visionEvidenceSummary) ||
+        (typeof row.content_summary === "string" && row.content_summary) ||
+        null;
+      if (!summary?.trim()) continue;
+      out.push({
+        summary: summary.trim(),
+        correction:
+          typeof metadata.customerCorrection === "string" ? metadata.customerCorrection : null,
+        createdAt: String(row.created_at),
+      });
+    }
+    return out;
+  } catch {
+    return [];
   }
 }
 

@@ -39,6 +39,10 @@ export type GenerateCoachingAiV2Input = {
     wasRefined: boolean;
     guidance: string;
   } | null;
+  recentVisionObservations?: Array<{
+    summary: string;
+    correction: string | null;
+  }> | null;
 };
 
 export type GenerateCoachingAiV2Result = {
@@ -158,6 +162,7 @@ export async function generateCoachingAiV2(
               channel,
               freeMessage: input.freeMessage,
               go21Goal: input.go21Goal,
+              recentVisionObservations: input.recentVisionObservations,
             }),
           },
         ],

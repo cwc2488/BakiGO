@@ -21,6 +21,35 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     return buildDay21Draft(input);
   }
 
+  // Disengagement / stop — brief, never motivational essay
+  if (freeMessage && /想結束|結束這個陪跑|很沒信心|不想繼續|退出陪跑/.test(freeMessage)) {
+    return {
+      coachMessage:
+        "聽起來你今天真的有點撐不住了。是這個陪跑方式不適合你，還是最近整體壓力比較大？",
+      meta: emptyMeta("acknowledge", day, stage),
+    };
+  }
+
+  // Vision recall — use recent observations / turn memory (no new vision call)
+  const visionRecall = matchVisionRecall(input);
+  if (visionRecall) {
+    return {
+      coachMessage: visionRecall,
+      meta: emptyMeta("acknowledge", day, stage),
+    };
+  }
+
+  // Photo / vision observation in this turn — short coach, no lecture
+  if (freeMessage && /\[影像觀察/.test(freeMessage)) {
+    const food = extractVisionFoodLabel(freeMessage);
+    return {
+      coachMessage: food
+        ? `看到啦，是${food} 👀\n這就是這餐的全部，還是其他東西還沒拍？`
+        : "照片收到了 👀\n這就是這餐的全部，還是其他東西還沒拍？",
+      meta: emptyMeta("observe", day, stage),
+    };
+  }
+
   if (freeMessage?.trim() && !hasMealEvidence(decisionContext)) {
     return {
       coachMessage: buildCasualReply(freeMessage, memory),
@@ -286,14 +315,58 @@ function buildCasualReply(freeMessage: string, memory: CoachingAiV2MemoryBundle)
   if (/加班|工作|開會/.test(freeMessage)) {
     const prior = memory.durableMemory.find((m) => /工作|加班|忙/.test(m.content));
     if (prior) {
-      return "又是工作把節奏打亂？上次你也提過類似的，沒關係，今天先撐住最基本的就好。";
+      return "又是工作把節奏打亂？今天先撐住最基本的就好。";
     }
-    return "工作日這樣很常見。我先聽你說，飲食這塊有需要再一起想簡單做法。";
+    return "工作日這樣很常見。飲食有需要再一起想簡單做法。";
   }
   if (/睡|失眠|熬夜/.test(freeMessage)) {
-    return "睡眠差真的會讓後面更好餓或更想吃重的。今天先不硬撐完美。";
+    return "睡眠差真的會讓後面更好餓。今天先不硬撐完美。";
   }
-  return `嗯，我聽到了。${freeMessage.slice(0, 24)}${freeMessage.length > 24 ? "…" : ""} — 你想多聊這件事，還是只是跟我說一聲？`;
+  if (/嘴饞|想吃|宵夜|十一點|突然很想吃/.test(freeMessage)) {
+    return "這種時候最容易晃。你是真的餓，還是嘴巴想吃？";
+  }
+  if (/還可以|沒事|先這樣|謝謝|哈哈/.test(freeMessage)) {
+    return "好，我知道了。";
+  }
+  return `嗯，我聽到了。${freeMessage.slice(0, 20)}${freeMessage.length > 20 ? "…" : ""}`;
+}
+
+function matchVisionRecall(input: GenerateCoachingAiV2Input): string | null {
+  const msg = input.freeMessage ?? "";
+  if (!/剛剛拍|我拍了什麼|剛傳的|那張照片|剛剛.*什麼/.test(msg)) return null;
+
+  const fromObs = input.recentVisionObservations?.[0];
+  if (fromObs?.correction?.trim()) {
+    return `${fromObs.correction.trim()}啊 😂`;
+  }
+  if (fromObs?.summary?.trim()) {
+    const food = extractVisionFoodLabel(fromObs.summary) ?? fromObs.summary.slice(0, 12);
+    return `${food}啊 😂`;
+  }
+
+  for (const turn of [...input.memory.recentTurns].reverse()) {
+    if (turn.role !== "customer") continue;
+    const correction = turn.content.match(/\[顧客更正\]\s*([^\n]+)/)?.[1]?.trim();
+    if (correction) return `${correction}啊 😂`;
+    const vision = turn.content.match(/\[近期影像觀察[^\]]*\]\s*([^\n]+)/)?.[1]?.trim();
+    if (vision) {
+      const food = extractVisionFoodLabel(vision) ?? vision.slice(0, 12);
+      return `${food}啊 😂`;
+    }
+  }
+  return "我這邊還對不太起來上一張，你再用一句話說說看？";
+}
+
+function extractVisionFoodLabel(text: string): string | null {
+  const patterns = [
+    /(?:看起來像|像是|像|為|是)\s*([^\s，,。！？\n]{1,12})/,
+    /(無糖紅茶|紅茶|奶茶|綠茶|咖啡|白飯|麵|湯|蛋|沙拉)/,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m?.[1]) return m[1];
+  }
+  return null;
 }
 
 function buildDefaultContextualReply(

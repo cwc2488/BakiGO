@@ -62,9 +62,11 @@ export function Go21App({ token }: { token: string }) {
   const [pendingUser, setPendingUser] = useState<string | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
   const [sendLock, setSendLock] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const libraryRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [, startTransition] = useTransition();
 
   const reload = useCallback(async () => {
@@ -249,6 +251,11 @@ export function Go21App({ token }: { token: string }) {
         }
       }
 
+      const clientRequestId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `go21-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
       const response = await fetch(`/api/coaching/portal/${encodeURIComponent(token)}/go21/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -258,20 +265,25 @@ export function Go21App({ token }: { token: string }) {
           photoUploaded,
           mealSlotHint,
           logDate,
+          clientRequestId,
         }),
       });
       const payload = (await response.json()) as { ok?: boolean; error?: string; coachMessage?: string };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "送出失敗");
       setPhotoFile(null);
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
       setPhotoPreview(null);
+      setPhotoMenuOpen(false);
+      // Keep pending bubble until durable reload returns the customer turn.
+      await reload();
       startTransition(() => {
-        void reload();
+        setPendingUser(null);
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "送出失敗");
       setDraft(text);
-    } finally {
       setPendingUser(null);
+    } finally {
       setBusy(false);
       setSendLock(false);
     }
@@ -281,6 +293,7 @@ export function Go21App({ token }: { token: string }) {
     setPhotoFile(file);
     if (photoPreview) URL.revokeObjectURL(photoPreview);
     setPhotoPreview(file ? URL.createObjectURL(file) : null);
+    setPhotoMenuOpen(false);
   }
 
   if (loading) {
@@ -336,13 +349,23 @@ export function Go21App({ token }: { token: string }) {
 
       {view === "start" ? (
         <div className="go21-start">
+          <p className="go21-brand" style={{ fontSize: "1.5rem", marginBottom: "0.75rem" }}>
+            Baki Go 21
+          </p>
           <div className="go21-teach">
-            <p>📷 傳照片</p>
-            <p>💬 像聊天一樣告訴我</p>
-            <p>🤖 AI 幫你整理</p>
+            <p>
+              接下來 21 天，我會陪你一起把飲食慢慢調整好。
+              不用記熱量，也不用每天填一堆表格。
+            </p>
+            <p>吃了什麼、遇到什麼狀況，直接跟我說就好。</p>
           </div>
-          <button type="button" className="go21-cta" disabled={busy || sendLock} onClick={() => void startExperience()}>
-            開始我的 21 天陪跑
+          <button
+            type="button"
+            className="go21-cta"
+            disabled={busy || sendLock}
+            onClick={() => void startExperience()}
+          >
+            開始 Day 1
           </button>
         </div>
       ) : null}
@@ -433,19 +456,49 @@ export function Go21App({ token }: { token: string }) {
               </div>
             ) : null}
             <div className="go21-composer-bar">
-              <button
-                type="button"
-                className="go21-attach"
-                aria-label="附加照片"
-                onClick={() => fileRef.current?.click()}
-              >
-                📷
-              </button>
+              <div className="go21-attach-wrap">
+                <button
+                  type="button"
+                  className="go21-attach"
+                  aria-label="附加照片"
+                  aria-expanded={photoMenuOpen}
+                  onClick={() => setPhotoMenuOpen((open) => !open)}
+                >
+                  📷
+                </button>
+                {photoMenuOpen ? (
+                  <div className="go21-photo-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => cameraRef.current?.click()}
+                    >
+                      拍照
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => libraryRef.current?.click()}
+                    >
+                      從相簿選擇
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+              {/* Camera capture — does not remove library option */}
               <input
-                ref={fileRef}
+                ref={cameraRef}
                 type="file"
                 accept="image/*"
                 capture="environment"
+                hidden
+                onChange={(e) => onPickPhoto(e.target.files?.[0] ?? null)}
+              />
+              {/* Photo library / files — no capture attribute */}
+              <input
+                ref={libraryRef}
+                type="file"
+                accept="image/*,image/jpeg,image/png,image/webp,image/heic"
                 hidden
                 onChange={(e) => onPickPhoto(e.target.files?.[0] ?? null)}
               />
@@ -453,7 +506,7 @@ export function Go21App({ token }: { token: string }) {
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 rows={1}
-                placeholder="跟我說午餐、或傳照片…"
+                placeholder="跟我說說今天吃了什麼…"
                 disabled={busy}
                 enterKeyHint="send"
                 onKeyDown={(e) => {

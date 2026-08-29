@@ -4,6 +4,7 @@ import type { CoachingPlanSnapshot } from "@/types/coaching";
 import type {
   CoachingAiV2GenerationDraft,
   CoachingAiV2Observability,
+  CoachingAiV2TurnChannel,
 } from "@/types/coaching-ai-v2";
 import {
   CoachingAiV2MemoryStore,
@@ -11,7 +12,12 @@ import {
 } from "@/lib/coaching/ai/v2/memory-store";
 import { generateCoachingAiV2, logCoachingAiV2Observability } from "@/lib/coaching/ai/v2/generate-v2";
 import { bridgeV2DraftToDailyOutput } from "@/lib/coaching/ai/v2/v2-bridge";
-import { persistV2MemoryFromSupabaseIfConfigured } from "@/lib/coaching/ai/v2/v2-supabase-store";
+import {
+  hydrateV2StoreFromSupabase,
+  persistV2MemoryFromSupabaseIfConfigured,
+  type PersistV2MemoryResult,
+} from "@/lib/coaching/ai/v2/v2-supabase-store";
+import { enrichTurnContentForAi } from "@/lib/go21/conversation-quality";
 
 export function isCoachingAiV2Enabled(): boolean {
   const flag = process.env.COACHING_AI_V2_ENABLED?.trim().toLowerCase();
@@ -27,10 +33,19 @@ export type RunCoachingAiV2TurnInput = {
   plannedEndAt?: string | null;
   planSnapshot?: CoachingPlanSnapshot | null;
   channel?: "daily_log" | "free_message" | "day21";
+  /** Model-facing message (may include vision/system hints). */
   freeMessage?: string | null;
+  /** Customer-facing persisted text — never vision system blobs. */
+  customerDisplayContent?: string | null;
+  customerChannel?: CoachingAiV2TurnChannel;
+  customerMetadata?: Record<string, unknown>;
+  clientRequestId?: string | null;
+  ownerMemberId?: string;
   store?: CoachingAiV2MemoryStore;
   /** When true, also attempt Supabase persistence (service role). */
   persistToSupabase?: boolean;
+  /** Hydrate durable turns/memory into the process store before generate. */
+  hydrateFromSupabase?: boolean;
   go21Goal?: {
     primaryDirection: string;
     primaryDirectionLabel: string;
@@ -40,6 +55,10 @@ export type RunCoachingAiV2TurnInput = {
     wasRefined: boolean;
     guidance: string;
   } | null;
+  recentVisionObservations?: Array<{
+    summary: string;
+    correction: string | null;
+  }> | null;
 };
 
 export type RunCoachingAiV2TurnResult = {
@@ -55,6 +74,7 @@ export type RunCoachingAiV2TurnResult = {
     imageCount: number;
   };
   latencyMs: number;
+  persistResult: PersistV2MemoryResult | null;
 };
 
 /**
@@ -66,11 +86,22 @@ export async function runCoachingAiV2Turn(
   const store = input.store ?? getSharedInMemoryV2Store();
   const channel = input.channel ?? "daily_log";
   const logDate = input.generationInput.logDate;
+  const ownerMemberId = input.ownerMemberId ?? "";
+
+  if (input.hydrateFromSupabase ?? input.persistToSupabase) {
+    await hydrateV2StoreFromSupabase({
+      store,
+      enrollmentId: input.generationInput.enrollmentId,
+      customerId: input.generationInput.customerId,
+      ownerMemberId,
+      logDate,
+    });
+  }
 
   const cycle = await store.ensureActiveCycle({
     enrollmentId: input.generationInput.enrollmentId,
     customerId: input.generationInput.customerId,
-    ownerMemberId: "", // filled below if we can; in-memory tolerates empty for tests
+    ownerMemberId,
     enrollmentStartedAt:
       input.enrollmentStartedAt ??
       // Approximate from daysSinceEnrollmentStart when caller omits startedAt
@@ -87,7 +118,7 @@ export async function runCoachingAiV2Turn(
     effectiveCycle = await store.ensureActiveCycle({
       enrollmentId: input.generationInput.enrollmentId,
       customerId: input.generationInput.customerId,
-      ownerMemberId: "",
+      ownerMemberId,
       enrollmentStartedAt: start,
       plannedEndAt: input.plannedEndAt,
       planSnapshot: input.planSnapshot ?? input.generationInput.profileMemory.planSnapshot,
@@ -101,21 +132,39 @@ export async function runCoachingAiV2Turn(
     logDate,
   });
 
-  // Customer turn content
-  const customerContent =
+  const displayContent =
+    input.customerDisplayContent?.trim() ||
     input.freeMessage?.trim() ||
     summarizeCustomerDailyInput(input.generationInput) ||
     "（今日回報）";
 
+  const visionSummary =
+    typeof input.customerMetadata?.visionEvidenceSummary === "string"
+      ? input.customerMetadata.visionEvidenceSummary
+      : null;
+  const correction =
+    typeof input.customerMetadata?.customerCorrection === "string"
+      ? input.customerMetadata.customerCorrection
+      : null;
+
+  // In-memory turn for generation uses AI-enriched content; Supabase stores display content.
   await store.appendTurn({
     enrollmentId: input.generationInput.enrollmentId,
     customerId: input.generationInput.customerId,
-    ownerMemberId: "",
+    ownerMemberId,
     cycleId: effectiveCycle?.id ?? memory.lifecycle.cycle?.id ?? null,
     logDate,
     role: "customer",
-    channel: channel === "free_message" ? "free_message" : channel === "day21" ? "day21" : "daily_log",
-    content: customerContent,
+    channel:
+      input.customerChannel ??
+      (channel === "free_message" ? "free_message" : channel === "day21" ? "day21" : "daily_log"),
+    content: enrichTurnContentForAi({
+      displayContent,
+      visionEvidenceSummary: visionSummary,
+      customerCorrection: correction,
+    }),
+    contentSummary: visionSummary?.slice(0, 400) ?? null,
+    metadata: input.customerMetadata ?? {},
   });
 
   // Refresh memory after customer turn
@@ -132,6 +181,7 @@ export async function runCoachingAiV2Turn(
     channel,
     freeMessage: input.freeMessage,
     go21Goal: input.go21Goal,
+    recentVisionObservations: input.recentVisionObservations,
   });
 
   let memoryUpdateOutcome: CoachingAiV2Observability["memoryUpdateOutcome"] = "applied";
@@ -140,7 +190,7 @@ export async function runCoachingAiV2Turn(
     await store.applyMemoryWrites({
       enrollmentId: input.generationInput.enrollmentId,
       customerId: input.generationInput.customerId,
-      ownerMemberId: "",
+      ownerMemberId,
       cycleId,
       logDate,
       writes: generated.draft.meta.memoryWrites,
@@ -148,7 +198,7 @@ export async function runCoachingAiV2Turn(
     await store.applyOpenLoopOps({
       enrollmentId: input.generationInput.enrollmentId,
       customerId: input.generationInput.customerId,
-      ownerMemberId: "",
+      ownerMemberId,
       cycleId,
       logDate,
       ops: generated.draft.meta.openLoopOps,
@@ -156,7 +206,7 @@ export async function runCoachingAiV2Turn(
     await store.applyHypothesisOps({
       enrollmentId: input.generationInput.enrollmentId,
       customerId: input.generationInput.customerId,
-      ownerMemberId: "",
+      ownerMemberId,
       cycleId,
       ops: generated.draft.meta.hypothesisOps,
     });
@@ -165,7 +215,7 @@ export async function runCoachingAiV2Turn(
       await store.saveDay21Reflection({
         enrollmentId: input.generationInput.enrollmentId,
         customerId: input.generationInput.customerId,
-        ownerMemberId: "",
+        ownerMemberId,
         cycleId,
         reflectionJson: generated.draft.meta.day21Reflection,
         customerMessage: generated.draft.coachMessage,
@@ -178,28 +228,30 @@ export async function runCoachingAiV2Turn(
     await store.appendTurn({
       enrollmentId: input.generationInput.enrollmentId,
       customerId: input.generationInput.customerId,
-      ownerMemberId: "",
+      ownerMemberId,
       cycleId,
       logDate,
       role: "coach",
-      channel: channel === "day21" ? "day21" : "daily_log",
+      channel: channel === "day21" ? "day21" : channel === "free_message" ? "free_message" : "daily_log",
       content: generated.draft.coachMessage,
       intention: generated.draft.meta.intention,
       metadata: {
         safetyTriggered: generated.draft.meta.safetyTriggered,
         escalationSuggested: generated.draft.meta.escalationSuggested,
+        ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
       },
     });
   } catch {
     memoryUpdateOutcome = "failed";
   }
 
+  let persistResult: PersistV2MemoryResult | null = null;
   if (input.persistToSupabase) {
     try {
-      await persistV2MemoryFromSupabaseIfConfigured({
+      persistResult = await persistV2MemoryFromSupabaseIfConfigured({
         enrollmentId: input.generationInput.enrollmentId,
         customerId: input.generationInput.customerId,
-        // owner filled inside helper when possible
+        ownerMemberId: ownerMemberId || undefined,
         draft: generated.draft,
         logDate,
         coachMessage: generated.draft.coachMessage,
@@ -209,7 +261,14 @@ export async function runCoachingAiV2Turn(
         enrollmentStartedAt: input.enrollmentStartedAt,
         plannedEndAt: input.plannedEndAt,
         planSnapshot: input.planSnapshot ?? input.generationInput.profileMemory.planSnapshot,
+        customerDisplayContent: displayContent,
+        customerChannel:
+          input.customerChannel ??
+          (channel === "free_message" ? "free_message" : channel === "day21" ? "day21" : "daily_log"),
+        customerMetadata: input.customerMetadata,
+        clientRequestId: input.clientRequestId,
       });
+      if (!persistResult.ok) memoryUpdateOutcome = "failed";
     } catch (error) {
       console.error("[coaching_ai_v2] supabase persist failed", error);
       memoryUpdateOutcome = "failed";
@@ -240,6 +299,7 @@ export async function runCoachingAiV2Turn(
     promptVersion: generated.promptVersion,
     usage: generated.usage,
     latencyMs: generated.latencyMs,
+    persistResult,
   };
 }
 

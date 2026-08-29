@@ -8,15 +8,11 @@ import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 
 export const runtime = "nodejs";
 
-const WELCOME_MESSAGE = `歡迎開始你的 21 天 AI 飲食陪跑 👋
+const WELCOME_MESSAGE = `你好，我是你這 21 天的飲食陪跑教練。
 
-接下來你不用填一堆複雜的紀錄。
+不用記熱量，也不用填一堆表格。吃了什麼、突然嘴饞、還是今天有點撐不住，直接跟我說就好。
 
-吃飯的時候可以直接拍照傳給我，也可以跟我說「午餐」、「剛剛有點嘴饞」、「今天水喝很少」。
-
-我會幫你整理紀錄，也會慢慢了解你的生活和飲食模式。
-
-這 21 天，我們一起找出真正適合你長期維持的方法。`;
+準備好的話，先跟我說今天最近一餐吃了什麼，或傳一張照片給我。`;
 
 /** Idempotent customer start + seed welcome turn. */
 export async function POST(

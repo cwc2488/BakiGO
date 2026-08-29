@@ -32,6 +32,15 @@ import {
   loadGo21GoalRecord,
   saveGo21Goal,
 } from "@/lib/go21/goal";
+import {
+  assessGo21Disengagement,
+  buildGo21CustomerDisplayContent,
+  detectPhotoFoodCorrection,
+} from "@/lib/go21/conversation-quality";
+import {
+  findTurnByClientRequestId,
+  loadRecentVisionEvidenceFromTurns,
+} from "@/lib/coaching/ai/v2/v2-supabase-store";
 import type { Go21ExtractedEvent } from "@/types/go21";
 import type { CoachingMealSlot } from "@/types/coaching";
 
@@ -68,11 +77,33 @@ export async function POST(
       return NextResponse.json({ error: "message required (1–2000 chars)." }, { status: 400 });
     }
 
+    const clientRequestId = body.clientRequestId?.trim() || null;
+    if (clientRequestId) {
+      const prior = await findTurnByClientRequestId({
+        enrollmentId: portal.enrollmentId,
+        clientRequestId,
+        role: "coach",
+      });
+      if (prior) {
+        return NextResponse.json({
+          ok: true,
+          coachMessage: prior.content,
+          duplicate: true,
+          relevance: "in_scope",
+        });
+      }
+    }
+
     // Never trust client customer/owner/enrollment IDs — portal is authoritative.
     const logDate =
       body.logDate && /^\d{4}-\d{2}-\d{2}$/.test(body.logDate)
         ? body.logDate
         : coachingTodayLogDate();
+
+    const customerDisplayContent = buildGo21CustomerDisplayContent({
+      message,
+      hasPhoto: Boolean(body.hasPhoto),
+    });
 
     const previous = await loadPreviousExtraction(portal.enrollmentId);
     const relevance = classifyGo21Relevance(message || "photo");
@@ -101,9 +132,10 @@ export async function POST(
       await appendPairTurns({
         portal,
         logDate,
-        customer: message || "[photo]",
+        customer: customerDisplayContent,
         coach: reply,
         metadata: { relevance: "safety", safety: true },
+        clientRequestId,
       });
       return NextResponse.json({
         ok: true,
@@ -112,6 +144,30 @@ export async function POST(
         extracted,
         safetyTriggered: true,
         escalationSuggested: true,
+      });
+    }
+
+    // Disengagement: brief human reply (after safety). Do not motivational-essay.
+    const disengagement = assessGo21Disengagement(message);
+    if (disengagement.detected && disengagement.briefReply && relevance !== "out_of_scope") {
+      await appendPairTurns({
+        portal,
+        logDate,
+        customer: customerDisplayContent,
+        coach: disengagement.briefReply,
+        metadata: {
+          relevance: "in_scope",
+          disengagement: true,
+          wantsToStop: disengagement.wantsToStop,
+        },
+        clientRequestId,
+      });
+      return NextResponse.json({
+        ok: true,
+        coachMessage: disengagement.briefReply,
+        relevance: "in_scope",
+        extracted,
+        disengagement: true,
       });
     }
 
@@ -130,10 +186,6 @@ export async function POST(
           }),
         );
       }
-      // Failed photo upload must not invent meal evidence — client sets photoUploaded after success.
-      if (body.hasPhoto && !body.photoUploaded && !extracted.mealSlot) {
-        // keep unresolved; no fabricated meal
-      }
     }
 
     if (relevance === "out_of_scope") {
@@ -141,9 +193,10 @@ export async function POST(
       await appendPairTurns({
         portal,
         logDate,
-        customer: message || "[photo]",
+        customer: customerDisplayContent,
         coach: redirect,
         metadata: { relevance: "out_of_scope" },
+        clientRequestId,
       });
       return NextResponse.json({
         ok: true,
@@ -193,7 +246,6 @@ export async function POST(
       usage: { inputTokens: 0, outputTokens: 0, imageCount: 0 },
     };
 
-    // Real-time vision only when a validated upload exists for this turn.
     if (body.hasPhoto && body.photoUploaded) {
       vision = await runGo21RealtimeVision({
         portal,
@@ -217,7 +269,21 @@ export async function POST(
       vision,
     });
 
-    // Goal refinement: high-confidence updates; otherwise ask naturally via V2.
+    const foodCorrection = detectPhotoFoodCorrection(message);
+    const priorVision = await loadRecentVisionEvidenceFromTurns({
+      enrollmentId: portal.enrollmentId,
+      limit: 4,
+    });
+    const recentVisionObservations = [
+      ...(vision.evidenceSummary
+        ? [{ summary: vision.evidenceSummary, correction: foodCorrection }]
+        : []),
+      ...priorVision.map((v) => ({
+        summary: v.correction?.trim() ? `${v.summary}（顧客更正：${v.correction}）` : v.summary,
+        correction: v.correction,
+      })),
+    ].slice(0, 3);
+
     let goalConfirmHint: string | null = null;
     let go21Goal: ReturnType<typeof compactGo21GoalForAi> = null;
     try {
@@ -313,6 +379,20 @@ export async function POST(
     const dayNumber = loaded.generationInput.profileMemory.daysSinceEnrollmentStart;
     const channel = dayNumber >= 20 ? ("day21" as const) : ("free_message" as const);
 
+    const customerMetadata: Record<string, unknown> = {
+      ...(vision.storagePath
+        ? {
+            photoStoragePath: vision.storagePath,
+            mealSlotUnresolved,
+            visionSource: vision.source,
+            visionReusedCache: vision.reusedCache,
+            visionEvidenceSummary: vision.evidenceSummary,
+          }
+        : {}),
+      ...(foodCorrection ? { customerCorrection: foodCorrection } : {}),
+      ...(clientRequestId ? { clientRequestId } : {}),
+    };
+
     const v2 = await runCoachingAiV2Turn({
       generationInput,
       decisionContext,
@@ -321,58 +401,18 @@ export async function POST(
       planSnapshot: generationInput.profileMemory.planSnapshot,
       channel,
       freeMessage: enrichedFreeMessage,
+      customerDisplayContent,
+      customerChannel: body.hasPhoto ? "photo" : "free_message",
+      customerMetadata,
+      clientRequestId,
+      ownerMemberId: portal.ownerMemberId,
       persistToSupabase: true,
+      hydrateFromSupabase: true,
       go21Goal,
+      recentVisionObservations,
     });
 
     const coachMessage = v2.draft.coachMessage;
-
-    // Attach photo path on the latest customer turn metadata (path only — signed URL at read time)
-    if (vision.storagePath) {
-      try {
-        const supabase = createSupabaseServiceClient();
-        const { data: lastCustomer } = await supabase
-          .from("coaching_ai_turns")
-          .select("id")
-          .eq("enrollment_id", portal.enrollmentId)
-          .eq("role", "customer")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (lastCustomer?.id) {
-          const { data: existing } = await supabase
-            .from("coaching_ai_turns")
-            .select("metadata")
-            .eq("id", lastCustomer.id)
-            .eq("enrollment_id", portal.enrollmentId)
-            .maybeSingle();
-          const prior =
-            existing?.metadata && typeof existing.metadata === "object"
-              ? (existing.metadata as Record<string, unknown>)
-              : {};
-          await supabase
-            .from("coaching_ai_turns")
-            .update({
-              metadata: {
-                ...prior,
-                photoStoragePath: vision.storagePath,
-                mealSlotUnresolved,
-                visionSource: vision.source,
-                visionReusedCache: vision.reusedCache,
-              },
-            })
-            .eq("id", lastCustomer.id)
-            .eq("enrollment_id", portal.enrollmentId);
-        }
-      } catch (error) {
-        console.error(
-          JSON.stringify({
-            event: "go21_turn_photo_metadata_failed",
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
-      }
-    }
 
     await scheduleRemindersFromMeta({
       enrollmentId: portal.enrollmentId,
@@ -389,6 +429,7 @@ export async function POST(
       intention: v2.draft.meta.intention,
       relevance,
       extracted,
+      duplicate: v2.persistResult?.duplicate ?? false,
       vision: {
         ran: vision.ran,
         reusedCache: vision.reusedCache,
@@ -408,9 +449,9 @@ export async function POST(
       escalationSuggested: v2.draft.meta.escalationSuggested,
     });
   } catch (error) {
-    const message = toCoachingApiErrorMessage(error, "無法送出訊息");
+    const errMessage = toCoachingApiErrorMessage(error, "無法送出訊息");
     const status = error instanceof CoachingServiceError ? error.status : 500;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: errMessage }, { status });
   }
 }
 
@@ -444,7 +485,17 @@ async function appendPairTurns(input: {
   customer: string;
   coach: string;
   metadata: Record<string, unknown>;
+  clientRequestId?: string | null;
 }): Promise<void> {
+  if (input.clientRequestId) {
+    const prior = await findTurnByClientRequestId({
+      enrollmentId: input.portal.enrollmentId,
+      clientRequestId: input.clientRequestId,
+      role: "coach",
+    });
+    if (prior) return;
+  }
+
   const store = getSharedInMemoryV2Store();
   await store.appendTurn({
     enrollmentId: input.portal.enrollmentId,
@@ -454,6 +505,10 @@ async function appendPairTurns(input: {
     role: "customer",
     channel: "free_message",
     content: input.customer,
+    metadata: {
+      ...input.metadata,
+      ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
+    },
   });
   await store.appendTurn({
     enrollmentId: input.portal.enrollmentId,
@@ -464,7 +519,10 @@ async function appendPairTurns(input: {
     channel: "free_message",
     content: input.coach,
     intention: "acknowledge",
-    metadata: input.metadata,
+    metadata: {
+      ...input.metadata,
+      ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
+    },
   });
   try {
     const supabase = createSupabaseServiceClient();
@@ -477,6 +535,10 @@ async function appendPairTurns(input: {
         role: "customer",
         channel: "free_message",
         content: input.customer,
+        metadata: {
+          ...input.metadata,
+          ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
+        },
       },
       {
         enrollment_id: input.portal.enrollmentId,
@@ -487,7 +549,10 @@ async function appendPairTurns(input: {
         channel: "free_message",
         content: input.coach,
         intention: "acknowledge",
-        metadata: input.metadata,
+        metadata: {
+          ...input.metadata,
+          ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
+        },
       },
     ]);
   } catch (error) {
