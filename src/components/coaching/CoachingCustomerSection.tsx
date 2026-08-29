@@ -24,6 +24,8 @@ import {
   resolveEnrollmentStartDate,
 } from "@/lib/coaching/enrollment-window";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isExperience21dEnrollment } from "@/lib/coaching/experience-21d";
+import Link from "next/link";
 import {
   COACHING_STATUS_LABELS,
   type CoachingEnrollment,
@@ -47,7 +49,9 @@ export function CoachingCustomerSection({
   const [error, setError] = useState<string | null>(null);
   const [goal, setGoal] = useState("");
   const [portalLink, setPortalLink] = useState<string | null>(null);
+  const [go21Link, setGo21Link] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedGo21, setCopiedGo21] = useState(false);
   const [showPlanConfirm, setShowPlanConfirm] = useState(false);
   const [planDraft, setPlanDraft] = useState<CoachingPlanDraft>(() =>
     planSnapshotToDraft(cloneDefaultCoachingPlanSnapshot()),
@@ -96,8 +100,10 @@ export function CoachingCustomerSection({
       const token = await fetchCustomerPortalToken(customerId);
       if (token && !token.revokedAt) {
         setPortalLink(`${window.location.origin}/c/${token.token}/coaching`);
+        setGo21Link(`${window.location.origin}/c/${token.token}/go21`);
       } else {
         setPortalLink(null);
+        setGo21Link(null);
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "無法載入陪跑狀態");
@@ -204,6 +210,15 @@ export function CoachingCustomerSection({
     window.setTimeout(() => setCopied(false), 2000);
   };
 
+  const copyGo21Link = async () => {
+    if (!go21Link) return;
+    await navigator.clipboard.writeText(go21Link);
+    setCopiedGo21(true);
+    window.setTimeout(() => setCopiedGo21(false), 2000);
+  };
+
+  const isGo21 = enrollment ? isExperience21dEnrollment(enrollment) : false;
+
   return (
     <CrmCard className="space-y-4">
       <CrmSectionTitle>AI 陪跑</CrmSectionTitle>
@@ -248,9 +263,20 @@ export function CoachingCustomerSection({
               儲存日期
             </CrmButton>
           </div>
+          {isGo21 && go21Link ? (
+            <div className="space-y-2 rounded-[1rem] border border-[#d7e8c8] bg-[#f4f9ef] p-3">
+              <p className="text-[0.8125rem] font-medium text-[#3d6b1e]">Baki Go 21 專屬連結</p>
+              <p className="break-all text-[0.875rem] text-[#1d1d1f]">{go21Link}</p>
+              <CrmButton disabled={busy} onClick={() => void copyGo21Link()} type="button">
+                {copiedGo21 ? "已複製" : "複製給客人"}
+              </CrmButton>
+            </div>
+          ) : null}
           {portalLink ? (
             <div className="space-y-2">
-              <p className="text-[0.8125rem] font-medium text-[#86868b]">陪跑專屬連結</p>
+              <p className="text-[0.8125rem] font-medium text-[#86868b]">
+                {isGo21 ? "一般陪跑連結（舊版表單）" : "陪跑專屬連結"}
+              </p>
               <p className="break-all text-[0.875rem] text-[#1d1d1f]">{portalLink}</p>
               <CrmButton disabled={busy} onClick={() => void copyLink()} type="button" variant="secondary">
                 {copied ? "已複製" : "複製連結給客戶"}
@@ -304,8 +330,14 @@ export function CoachingCustomerSection({
               value={goal}
             />
           </label>
-          <CrmButton disabled={busy || loading} onClick={openPlanConfirm} type="button">
-            開始陪跑
+          <Link
+            className="flex w-full items-center justify-center rounded-[1rem] bg-[#77b539] px-4 py-3 text-center text-[1rem] font-semibold text-white"
+            href={`/customers/${encodeURIComponent(customerId)}/start-21d`}
+          >
+            開通 21 天 AI 陪跑
+          </Link>
+          <CrmButton disabled={busy || loading} onClick={openPlanConfirm} type="button" variant="secondary">
+            開始一般陪跑
           </CrmButton>
         </div>
       )}

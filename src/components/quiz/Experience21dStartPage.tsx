@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageShell } from "@/components/ui/PageShell";
 import { fetchWithMemberAuth } from "@/lib/quiz/quiz-member-fetch";
-import { ensureCustomerPortalToken } from "@/lib/cloud/customer-cloud-service";
+import { ensureCustomerPortalToken, fetchCustomerPortalToken } from "@/lib/cloud/customer-cloud-service";
 import {
   deriveExperience21dSchedule,
   formatExperience21dShortDate,
@@ -45,6 +45,7 @@ export function Experience21dStartPage({
     startDate: string;
     plannedEndAt: string;
     alreadyActive: boolean;
+    go21Link: string | null;
   } | null>(null);
 
   const load = useCallback(async () => {
@@ -134,11 +135,17 @@ export function Experience21dStartPage({
       };
       if (!response.ok) throw new Error(payload.error ?? "無法啟動 21 天體驗");
       await ensureCustomerPortalToken(customerId).catch(() => undefined);
+      const token = await fetchCustomerPortalToken(customerId).catch(() => null);
+      const go21Link =
+        token && !token.revokedAt
+          ? `${window.location.origin}/c/${token.token}/go21`
+          : null;
       setDone({
         enrollmentId: payload.enrollment?.id ?? "",
         startDate: payload.schedule?.startDate ?? schedule.startDate,
         plannedEndAt: payload.schedule?.plannedEndAt ?? schedule.plannedEndAt,
         alreadyActive: Boolean(payload.alreadyActive),
+        go21Link,
       });
     } catch (activateError) {
       setError(activateError instanceof Error ? activateError.message : "無法啟動 21 天體驗");
@@ -169,6 +176,19 @@ export function Experience21dStartPage({
             <br />
             Day 21：{formatExperience21dShortDate(done.plannedEndAt)}
           </p>
+          {done.go21Link ? (
+            <div className="mt-4 space-y-2 rounded-2xl border border-[#d7e8c8] bg-[#f4f9ef] p-3">
+              <p className="text-[0.8125rem] font-medium text-[#3d6b1e]">Baki Go 21 專屬連結（分享給客人）</p>
+              <p className="break-all text-[0.875rem] text-[#1d1d1f]">{done.go21Link}</p>
+              <button
+                type="button"
+                className="min-h-11 w-full rounded-xl bg-[#77b539] text-[0.9375rem] font-semibold text-white"
+                onClick={() => void navigator.clipboard.writeText(done.go21Link!)}
+              >
+                複製連結
+              </button>
+            </div>
+          ) : null}
         </section>
         {done.enrollmentId ? (
           <Link
@@ -178,30 +198,25 @@ export function Experience21dStartPage({
             查看陪跑
           </Link>
         ) : null}
+        {customerId ? (
+          <Link
+            href={`/customers/${customerId}`}
+            className="mt-2 flex min-h-12 items-center justify-center rounded-2xl border border-[#e5e5ea] text-[0.9375rem] font-semibold text-[#1d1d1f]"
+          >
+            回到客人頁
+          </Link>
+        ) : null}
       </PageShell>
     );
   }
 
   if (active) {
     return (
-      <PageShell title="啟動 21 天體驗" backHref={backHref}>
-        <section className="rounded-[1.5rem] border border-[#eadfd6] bg-[#fffdf9] p-5">
-          <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">這位顧客目前已在 21 天體驗中</p>
-          {active.startDate && active.plannedEndAt ? (
-            <p className="mt-3 text-[0.9375rem] leading-7 text-[#636366]">
-              Day 1：{formatExperience21dShortDate(active.startDate)}
-              <br />
-              Day 21：{formatExperience21dShortDate(active.plannedEndAt)}
-            </p>
-          ) : null}
-        </section>
-        <Link
-          href={`/coaching/${active.enrollmentId}`}
-          className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-[#1d1d1f] text-[0.9375rem] font-semibold text-white"
-        >
-          查看陪跑
-        </Link>
-      </PageShell>
+      <AlreadyActiveGo21Panel
+        active={active}
+        backHref={backHref}
+        customerId={customerId || (mode.kind === "customer" ? mode.customerId : "")}
+      />
     );
   }
 
@@ -292,6 +307,73 @@ export function Experience21dStartPage({
       >
         {busy ? "啟動中…" : "啟動 21 天體驗"}
       </button>
+    </PageShell>
+  );
+}
+
+function AlreadyActiveGo21Panel({
+  active,
+  backHref,
+  customerId,
+}: {
+  active: ActiveExperience;
+  backHref: string;
+  customerId: string;
+}) {
+  const [go21Link, setGo21Link] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!customerId) return;
+    let cancelled = false;
+    void (async () => {
+      await ensureCustomerPortalToken(customerId).catch(() => undefined);
+      const token = await fetchCustomerPortalToken(customerId).catch(() => null);
+      if (cancelled) return;
+      if (token && !token.revokedAt) {
+        setGo21Link(`${window.location.origin}/c/${token.token}/go21`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId]);
+
+  return (
+    <PageShell title="啟動 21 天體驗" backHref={backHref}>
+      <section className="rounded-[1.5rem] border border-[#eadfd6] bg-[#fffdf9] p-5">
+        <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">這位顧客目前已在 21 天體驗中</p>
+        {active.startDate && active.plannedEndAt ? (
+          <p className="mt-3 text-[0.9375rem] leading-7 text-[#636366]">
+            Day 1：{formatExperience21dShortDate(active.startDate)}
+            <br />
+            Day 21：{formatExperience21dShortDate(active.plannedEndAt)}
+          </p>
+        ) : null}
+        {go21Link ? (
+          <div className="mt-4 space-y-2 rounded-2xl border border-[#d7e8c8] bg-[#f4f9ef] p-3">
+            <p className="text-[0.8125rem] font-medium text-[#3d6b1e]">Baki Go 21 專屬連結（分享給客人）</p>
+            <p className="break-all text-[0.875rem] text-[#1d1d1f]">{go21Link}</p>
+            <button
+              type="button"
+              className="min-h-11 w-full rounded-xl bg-[#77b539] text-[0.9375rem] font-semibold text-white"
+              onClick={() => {
+                void navigator.clipboard.writeText(go21Link);
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 2000);
+              }}
+            >
+              {copied ? "已複製" : "複製連結"}
+            </button>
+          </div>
+        ) : null}
+      </section>
+      <Link
+        href={`/coaching/${active.enrollmentId}`}
+        className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-[#1d1d1f] text-[0.9375rem] font-semibold text-white"
+      >
+        查看陪跑
+      </Link>
     </PageShell>
   );
 }
