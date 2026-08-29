@@ -123,10 +123,18 @@ export const GO21_BRAIN_V3_PRINCIPLES = [
 export function go21SystemPromptIncludesShortPolicy(systemPrompt: string): boolean {
   // V3: conversational economy via principles — not a 30–80 character script.
   return (
-    /有用才介入|自然回應/.test(systemPrompt) &&
+    (/有用才介入|自然回應/.test(systemPrompt) || /預設短回|一句到三句/.test(systemPrompt)) &&
     !/30–80/.test(systemPrompt) &&
     !/肯定\s*→\s*分析\s*→\s*建議/.test(systemPrompt)
   );
+}
+
+export function go21SystemPromptPrefersConciseDefault(systemPrompt: string): boolean {
+  return /預設短回|一句到三句|寧可少一句/.test(systemPrompt);
+}
+
+export function go21SystemPromptAllowsTimelyConcreteTip(systemPrompt: string): boolean {
+  return /可執行的建議|一句具體建議|卡住/.test(systemPrompt);
 }
 
 export function go21SystemPromptAllowsNoQuestion(systemPrompt: string): boolean {

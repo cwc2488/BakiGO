@@ -8,8 +8,10 @@ import {
   go21SystemPromptAllowsMetaFeedback,
   go21SystemPromptAllowsNoQuestion,
   go21SystemPromptAllowsOffTopicHuman,
+  go21SystemPromptAllowsTimelyConcreteTip,
   go21SystemPromptHandlesDisengagement,
   go21SystemPromptIncludesShortPolicy,
+  go21SystemPromptPrefersConciseDefault,
   nextClientRequestId,
 } from "@/lib/go21/conversation-quality";
 import {
@@ -38,6 +40,8 @@ describe("Go21 Coaching Brain V3 — prompt architecture", () => {
     expect(go21SystemPromptAllowsOffTopicHuman(sys)).toBe(true);
     expect(go21SystemPromptAllowsMetaFeedback(sys)).toBe(true);
     expect(go21SystemPromptHandlesDisengagement(sys)).toBe(true);
+    expect(go21SystemPromptPrefersConciseDefault(sys)).toBe(true);
+    expect(go21SystemPromptAllowsTimelyConcreteTip(sys)).toBe(true);
     expect(sys).not.toMatch(/30–80/);
     expect(sys).not.toMatch(/SHORT FIRST/);
     expect(sys).not.toMatch(/肯定\s*→\s*分析\s*→\s*建議/);
@@ -155,7 +159,8 @@ describe("Go21 Coaching Brain V3 — behavior fixtures", () => {
       freeMessage: "突然超想吃東西",
       go21Goal: coachCtx.go21Goal,
     });
-    expect(draft.coachMessage).toMatch(/晚上|餓|嘴巴/);
+    expect(draft.coachMessage).toMatch(/晚上|餓|茶|水/);
+    expect(draft.coachMessage).toMatch(/茶|水|撐/);
     expect(draft.coachMessage).not.toMatch(/因為你的21天目標/);
   });
 
@@ -219,6 +224,10 @@ describe("Go21 Coaching Brain V3 — behavior fixtures", () => {
     expect(src).toContain("stickToBottomRef");
     expect(src).toContain("最新訊息");
     expect(src).toContain("onThreadScroll");
+    expect(src).toContain("followLatestConversation");
+    expect(src).toContain("programmaticScrollRef");
+    // Active send pins to latest
+    expect(src).toMatch(/setPendingUser[\s\S]{0,200}followLatestConversation/);
   });
 
   it("TEST 11 — refined current goal wins over original", () => {

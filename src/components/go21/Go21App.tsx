@@ -78,6 +78,8 @@ export function Go21App({ token }: { token: string }) {
   const libraryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const stickToBottomRef = useRef(true);
+  const programmaticScrollRef = useRef(false);
+  const programmaticScrollTimerRef = useRef<number | null>(null);
   const inFlightRequestIdRef = useRef<string | null>(null);
   const failedPayloadRef = useRef<{
     text: string;
@@ -158,7 +160,7 @@ export function Go21App({ token }: { token: string }) {
       setShowJumpLatest(true);
       return;
     }
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    scrollThreadToLatest("smooth");
     setShowJumpLatest(false);
   }, [ctx?.turns.length, pendingUser, busy, sendStatus]);
 
@@ -167,31 +169,62 @@ export function Go21App({ token }: { token: string }) {
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
       if (!stickToBottomRef.current) return;
-      el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+      scrollThreadToLatest("auto");
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, [view]);
 
+  useEffect(() => {
+    return () => {
+      if (programmaticScrollTimerRef.current != null) {
+        window.clearTimeout(programmaticScrollTimerRef.current);
+      }
+    };
+  }, []);
+
+  function markProgrammaticScroll(durationMs: number) {
+    programmaticScrollRef.current = true;
+    if (programmaticScrollTimerRef.current != null) {
+      window.clearTimeout(programmaticScrollTimerRef.current);
+    }
+    programmaticScrollTimerRef.current = window.setTimeout(() => {
+      programmaticScrollRef.current = false;
+      programmaticScrollTimerRef.current = null;
+    }, durationMs);
+  }
+
+  function scrollThreadToLatest(behavior: ScrollBehavior) {
+    const el = threadRef.current;
+    if (!el) return;
+    markProgrammaticScroll(behavior === "smooth" ? 450 : 80);
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }
+
+  function followLatestConversation() {
+    stickToBottomRef.current = true;
+    setShowJumpLatest(false);
+    scrollThreadToLatest("smooth");
+  }
+
   function onThreadScroll() {
+    // Ignore scroll events caused by our own auto-follow (esp. Mobile Safari).
+    if (programmaticScrollRef.current) return;
     const el = threadRef.current;
     if (!el) return;
     const near = isChatNearBottom({
       scrollTop: el.scrollTop,
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
+      thresholdPx: 120,
     });
     stickToBottomRef.current = near;
     if (near) setShowJumpLatest(false);
+    else setShowJumpLatest(true);
   }
 
   function jumpToLatest() {
-    stickToBottomRef.current = true;
-    setShowJumpLatest(false);
-    threadRef.current?.scrollTo({
-      top: threadRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+    followLatestConversation();
   }
 
   useEffect(() => {
@@ -337,6 +370,8 @@ export function Go21App({ token }: { token: string }) {
     setSendStatus(retryingAssistant ? "customer_sent" : "sending");
     setError(null);
     setPendingUser(text || (activePhoto ? "📷 照片" : null));
+    // Actively chatting → pin to latest so send + reply don't require manual scroll.
+    followLatestConversation();
     // Keep draft until authoritative acceptance — restore certainty for the user.
     if (!retrying) setDraft("");
 
@@ -410,7 +445,7 @@ export function Go21App({ token }: { token: string }) {
         setPhotoPreview(null);
         setPhotoMenuOpen(false);
         setDraft("");
-        stickToBottomRef.current = true;
+        followLatestConversation();
         await reload();
         startTransition(() => {
           setPendingUser(null);
@@ -436,7 +471,7 @@ export function Go21App({ token }: { token: string }) {
       setPhotoPreview(null);
       setPhotoMenuOpen(false);
       setDraft("");
-      stickToBottomRef.current = true;
+      followLatestConversation();
       await reload();
       startTransition(() => {
         setPendingUser(null);

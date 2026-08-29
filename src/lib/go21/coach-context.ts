@@ -53,6 +53,7 @@ export function isChatNearBottom(input: {
   clientHeight: number;
   thresholdPx?: number;
 }): boolean {
-  const threshold = input.thresholdPx ?? 96;
+  // Slightly generous for mobile keyboard / rubber-band scroll.
+  const threshold = input.thresholdPx ?? 120;
   return input.scrollHeight - input.scrollTop - input.clientHeight <= threshold;
 }

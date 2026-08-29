@@ -82,8 +82,8 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     /宵夜|晚上|失控|亂吃/.test(input.go21Goal.personalGoal)
   ) {
     return {
-      coachMessage: "欸，這就是晚上那關 👀\n你現在是肚子真的餓，還是嘴巴很想吃？",
-      meta: emptyMeta("investigate", day, stage),
+      coachMessage: "欸，這就是晚上那關 👀 先喝口水或泡杯茶撐一下？真的餓再吃也沒關係。",
+      meta: emptyMeta("encourage", day, stage),
     };
   }
 
@@ -380,9 +380,9 @@ function buildCasualReply(
   if (/嘴饞|想吃|宵夜|十一點|突然很想吃/.test(freeMessage)) {
     const goal = input.go21Goal?.personalGoal ?? "";
     if (/宵夜|晚上|失控|亂吃/.test(goal)) {
-      return "欸，這就是晚上那關 👀\n你現在是肚子真的餓，還是嘴巴很想吃？";
+      return "欸，這就是晚上那關 👀 先喝口水或泡杯茶撐一下？真的餓再吃也沒關係。";
     }
-    return "突然想吃很常見。你是真的餓，還是嘴饞？";
+    return "突然想吃很常見。先喝口水撐一下，還是你現在真的餓？";
   }
   if (/還可以|沒事|先這樣|謝謝|哈哈/.test(freeMessage)) {
     return "好，我知道了。";
