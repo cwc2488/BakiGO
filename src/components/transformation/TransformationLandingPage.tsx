@@ -11,6 +11,7 @@ import {
   captureTransformationAttributionFromSearch,
   readStoredTransformationAttribution,
 } from "@/lib/transformation/transformation-utm";
+import { trackTransformationGoogleAdsConversionOnce } from "@/lib/google-ads/track-transformation-google-ads";
 import {
   trackTransformationFormStartOnce,
   trackTransformationLeadOnce,
@@ -207,6 +208,7 @@ export function TransformationLandingPage({ code }: { code: string }) {
       }
       if (!payload.duplicateOfExisting) {
         trackTransformationLeadOnce(payload.leadId);
+        trackTransformationGoogleAdsConversionOnce(payload.leadId);
       }
       setSubmitted(true);
       window.scrollTo({ top: 0, behavior: "smooth" });

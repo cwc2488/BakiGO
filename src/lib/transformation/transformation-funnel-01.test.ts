@@ -90,6 +90,14 @@ describe("TRANSFORMATION-FUNNEL-01", () => {
     expect(merged.adId).toBe("ad1");
   });
 
+  it("fires Meta Lead and Google Ads conversion only after non-duplicate success", () => {
+    const landing = src("src/components/transformation/TransformationLandingPage.tsx");
+    expect(landing).toContain("trackTransformationGoogleAdsConversionOnce");
+    expect(landing).toMatch(
+      /!payload\.duplicateOfExisting[\s\S]*trackTransformationLeadOnce[\s\S]*trackTransformationGoogleAdsConversionOnce/,
+    );
+  });
+
   it("fires Lead only after success and FormStart only once", () => {
     const store = new Map<string, string>();
     Object.defineProperty(globalThis, "window", { value: globalThis, configurable: true });
