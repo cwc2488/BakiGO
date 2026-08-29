@@ -345,6 +345,7 @@ export type Partner21dCard = {
   realBottleneck: string;
   contactChannel: string | null;
   contactValue: string | null;
+  consultationPreference: Experience21dConsultationPreference | null;
   animalType: string | null;
   animalLabel: string;
 };
@@ -352,6 +353,13 @@ export type Partner21dCard = {
 function partnerCard(row: InterestRow): Partner21dCard {
   const brief = row.brief_json ?? ({} as CoachHandoffBrief);
   const animal = animalPresentation(row.primary_animal_type);
+  const briefPreference = (brief as { consultation_preference?: unknown }).consultation_preference;
+  const preference =
+    row.consultation_preference && isExperience21dConsultationPreference(row.consultation_preference)
+      ? row.consultation_preference
+      : isExperience21dConsultationPreference(briefPreference)
+        ? briefPreference
+        : null;
   return {
     id: row.id,
     displayName: row.display_name || "尚未留名",
@@ -363,6 +371,7 @@ function partnerCard(row: InterestRow): Partner21dCard {
     realBottleneck: brief.real_bottleneck ?? "",
     contactChannel: row.contact_channel,
     contactValue: row.contact_value,
+    consultationPreference: preference,
     animalType: row.primary_animal_type,
     animalLabel: animal.label,
   };

@@ -148,3 +148,13 @@ export function isExperience21dConsultationPreference(
     (EXPERIENCE_21D_CONSULTATION_PREFERENCES as readonly string[]).includes(value)
   );
 }
+
+/** Partner-facing short labels for consultation preference. */
+export function experience21dConsultationPreferenceLabel(
+  value: string | null | undefined,
+): string | null {
+  if (!isExperience21dConsultationPreference(value)) return null;
+  if (value === "text") return "文字";
+  if (value === "phone") return "通話";
+  return "到場";
+}

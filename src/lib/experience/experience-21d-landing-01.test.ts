@@ -65,5 +65,7 @@ describe("Experience 21d landing V1", () => {
     expect(ui).toContain('id="e21d-suitable"');
     expect(ui).toContain("copy.consult.primaryCta");
     expect(ui).toContain('id="e21d-consult"');
+    expect(ui).toContain("/experience/21d/art-hero-portrait.jpg");
+    expect(ui).toContain("e21d-scroll-bar");
   });
 });
