@@ -6,6 +6,13 @@ import type {
 } from "@/types/coaching-ai-v2";
 import { addCalendarDays } from "@/lib/coaching/enrollment-window";
 import type { GenerateCoachingAiV2Input } from "@/lib/coaching/ai/v2/generate-v2";
+import {
+  collectReportedFoods,
+  detectGo21CoachIntent,
+  formatFoodRecallReply,
+  formatGoalRecallReply,
+  formatMenuSuggestionReply,
+} from "@/lib/go21/coach-intent";
 
 /**
  * Context-aware fixture generator for tests/eval without OpenAI.
@@ -16,6 +23,7 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
   const day = memory.lifecycle.dayNumber;
   const stage = memory.lifecycle.stage;
   const logDate = input.generationInput.logDate;
+  const intent = detectGo21CoachIntent({ freeMessage });
 
   if (channel === "day21" || stage === "day21_ending") {
     return buildDay21Draft(input);
@@ -38,6 +46,47 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
+  // Memory / clarification — answer the question from real history first (never invent)
+  if (intent === "memory_food_recall") {
+    return {
+      coachMessage: buildFoodRecallReply(input),
+      meta: emptyMeta("acknowledge", day, stage),
+    };
+  }
+  if (intent === "memory_goal_recall") {
+    const goalReply = formatGoalRecallReply({
+      personalGoal: input.go21Goal?.personalGoal,
+      primaryDirectionLabel: input.go21Goal?.primaryDirectionLabel,
+    });
+    return {
+      coachMessage: goalReply ?? "你還沒設定清楚的 21 天目標，想的話我們可以現在補一句。",
+      meta: emptyMeta("acknowledge", day, stage),
+    };
+  }
+  if (intent === "memory_photo_recall") {
+    const visionRecall = matchVisionRecall(input);
+    return {
+      coachMessage: visionRecall ?? buildFoodRecallReply(input),
+      meta: emptyMeta("acknowledge", day, stage),
+    };
+  }
+
+  // Menu request — actionable options, contextual to today's load + goal
+  if (intent === "menu_request") {
+    const foods = collectFoodsFromInput(input);
+    const alreadyHeavy =
+      foods.some((f) => /炸|漢堡|薯條|奶茶|蛋糕|泡麵|披薩|可樂|雞排/.test(f.label)) ||
+      hasHeavySignalsToday(decisionContext);
+    return {
+      coachMessage: formatMenuSuggestionReply({
+        primaryDirection: input.go21Goal?.primaryDirection,
+        personalGoal: input.go21Goal?.personalGoal,
+        alreadyHeavyToday: alreadyHeavy,
+      }),
+      meta: emptyMeta("educate", day, stage),
+    };
+  }
+
   // Explicit information request — longer answer OK
   if (freeMessage && /為什麼|怎麼幫|有什麼幫助|原理/.test(freeMessage) && /蛋白|減脂|熱量|代謝/.test(freeMessage)) {
     return {
@@ -56,7 +105,7 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
-  // Vision recall — use recent observations / turn memory (no new vision call)
+  // Vision recall fallback (legacy photo phrasing)
   const visionRecall = matchVisionRecall(input);
   if (visionRecall) {
     return {
@@ -259,6 +308,23 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
       memoryWrites: extractEarlyMemory(input).slice(0, 1),
     },
   };
+}
+
+function collectFoodsFromInput(input: GenerateCoachingAiV2Input) {
+  return collectReportedFoods({
+    recentCustomerTurnContents: input.memory.recentTurns
+      .filter((t) => t.role === "customer")
+      .map((t) => t.content),
+    todayMealNotes: input.generationInput.todayContext.primaryMeals.map((m) => ({
+      slot: m.mealSlot,
+      note: m.textNote,
+    })),
+    visionSummaries: input.recentVisionObservations ?? undefined,
+  });
+}
+
+function buildFoodRecallReply(input: GenerateCoachingAiV2Input): string {
+  return formatFoodRecallReply(collectFoodsFromInput(input));
 }
 
 function emptyMeta(

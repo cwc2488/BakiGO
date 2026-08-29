@@ -172,6 +172,11 @@
   font-size: 0.8125rem;
   font-weight: 600;
   box-shadow: 0 6px 18px rgba(29, 29, 31, 0.08);
+  pointer-events: auto;
+}
+.go21-jump-latest[hidden],
+.go21-jump-latest.is-hidden {
+  display: none !important;
 }
 .go21-composer {
   flex-shrink: 0;

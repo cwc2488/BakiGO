@@ -8,7 +8,8 @@ import { assessDailyNutrition } from "@/lib/coaching/ai/assess-daily-nutrition";
 
 /**
  * Lightweight decision context for free-message turns.
- * Optionally accepts real-time meal vision observations for the current turn.
+ * Seeds meal observations from today's logged meal notes so recall / day-pattern
+ * judgment still work when the current utterance is not itself a meal photo.
  */
 export function buildMinimalDecisionContextForFreeMessage(input: {
   generationInput: CoachingGenerationInput;
@@ -16,7 +17,18 @@ export function buildMinimalDecisionContextForFreeMessage(input: {
   mealObservations?: CoachingMealObservation[];
 }): CoachingDecisionContext {
   const customerVoice = extractCustomerVoiceSignals(input.freeMessage);
-  const mealObservations = input.mealObservations ?? [];
+  const fromToday = mealObservationsFromTodayNotes(input.generationInput);
+  const mealObservations = [
+    ...(input.mealObservations ?? []),
+    ...fromToday.filter(
+      (obs) =>
+        !(input.mealObservations ?? []).some(
+          (existing) =>
+            existing.mealSlot === obs.mealSlot &&
+            existing.observedFoods.join("|") === obs.observedFoods.join("|"),
+        ),
+    ),
+  ];
   const dailyNutritionAssessment = assessDailyNutrition({ mealObservations });
   const goalLabel = input.generationInput.profileMemory.goal ?? "陪跑目標";
 
@@ -80,4 +92,32 @@ export function buildMinimalDecisionContextForFreeMessage(input: {
       customerSummary: "",
     },
   };
+}
+
+function mealObservationsFromTodayNotes(
+  generationInput: CoachingGenerationInput,
+): CoachingMealObservation[] {
+  return generationInput.todayContext.primaryMeals
+    .filter((m) => Boolean(m.textNote?.trim()) || Boolean(m.storagePath))
+    .map((m) => {
+      const note = m.textNote?.trim() ?? "";
+      const foods = note
+        ? note
+            .replace(/^(?:早餐|午餐|晚餐|宵夜)(?:吃了|吃)?/, "")
+            .split(/[、，,/]/)
+            .map((s) => s.trim())
+            .filter((s) => s.length >= 2 && s.length <= 24)
+            .slice(0, 4)
+        : [];
+      const heavy = /炸|漢堡|薯條|奶茶|蛋糕|泡麵|披薩|可樂|雞排/.test(note);
+      return {
+        mealSlot: m.mealSlot,
+        observedFoods: foods,
+        signals: heavy ? (["fried_food"] as CoachingMealObservation["signals"]) : [],
+        evidenceText: note ? [note.slice(0, 120)] : [],
+        shakeObserved: /奶昔|代餐|shake/i.test(note),
+        solidFoodObserved: foods.length > 0 || Boolean(m.storagePath),
+        confidence: foods.length > 0 ? ("medium" as const) : ("low" as const),
+      };
+    });
 }

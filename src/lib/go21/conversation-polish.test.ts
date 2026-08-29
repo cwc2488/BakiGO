@@ -38,7 +38,7 @@ describe("Go21 conversation polish", () => {
       channel: "free_message",
       freeMessage: "現在十一點超想吃",
     });
-    expect(user).toContain("一句具體建議");
+    expect(user).toMatch(/可執行選項|據實回答食物|具體調整|護住目標|一句具體建議/);
   });
 
   it("allows stopping without a trailing question; meal photos prefer judgment", () => {

@@ -1,4 +1,5 @@
 import { isChatNearBottom } from "@/lib/go21/coach-context";
+import { shouldShowJumpToLatest } from "@/lib/go21/coach-intent";
 
 /** Delays (ms) to re-pin after layout / image decode on mobile Safari. */
 export const GO21_CHAT_FOLLOW_RETRY_MS = [0, 32, 80, 160, 320, 640, 1200, 2000] as const;
@@ -26,7 +27,17 @@ export function resolveChatScrollStickState(input: {
     clientHeight: input.clientHeight,
     thresholdPx: input.thresholdPx ?? 120,
   });
-  return { stick: near, showJump: !near };
+  const stick = near;
+  return {
+    stick,
+    showJump: shouldShowJumpToLatest({
+      stickToBottom: stick,
+      scrollTop: input.scrollTop,
+      scrollHeight: input.scrollHeight,
+      clientHeight: input.clientHeight,
+      thresholdPx: input.thresholdPx ?? 120,
+    }),
+  };
 }
 
 /** Customer send always re-engages follow; AI arrival only follows if still sticking. */

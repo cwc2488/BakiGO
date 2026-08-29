@@ -173,6 +173,13 @@ export function go21SystemPromptProtectsCustomerGoal(systemPrompt: string): bool
   );
 }
 
+export function go21SystemPromptAnswersMemoryFirst(systemPrompt: string): boolean {
+  return (
+    /記得並用真實歷史|記憶／回想|據實回答/.test(systemPrompt) &&
+    /禁止捏造|還沒記到/.test(systemPrompt)
+  );
+}
+
 /** Heuristic: coach message ends with a question mark (Chinese or ASCII). */
 export function coachMessageEndsWithQuestion(message: string): boolean {
   return /[？?]\s*$/u.test(message.trim());

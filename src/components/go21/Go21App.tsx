@@ -11,6 +11,7 @@ import {
   resolveGo21ShellViewportHeightPx,
   shouldFollowOnAssistantArrival,
 } from "@/lib/go21/chat-scroll";
+import { shouldShowJumpToLatest } from "@/lib/go21/coach-intent";
 import { nextClientRequestId, interpretGo21ChatSendResult, type Go21SendStatus } from "@/lib/go21/conversation-quality";
 import "./go21.css";
 
@@ -170,7 +171,15 @@ export function Go21App({ token }: { token: string }) {
     const el = threadRef.current;
     if (!el) return;
     if (!stickToBottomRef.current) {
-      setShowJumpLatest(true);
+      setShowJumpLatest(
+        shouldShowJumpToLatest({
+          stickToBottom: false,
+          scrollTop: el.scrollTop,
+          scrollHeight: el.scrollHeight,
+          clientHeight: el.clientHeight,
+          thresholdPx: 120,
+        }),
+      );
       return;
     }
     // auto is more reliable than smooth on iPhone after content/layout changes
@@ -272,6 +281,9 @@ export function Go21App({ token }: { token: string }) {
       clientHeight: el.clientHeight,
     });
     el.scrollTop = top;
+    if (stickToBottomRef.current) {
+      setShowJumpLatest(false);
+    }
   }
 
   /** Re-pin while stick is true — does not re-engage after intentional upward scroll. */

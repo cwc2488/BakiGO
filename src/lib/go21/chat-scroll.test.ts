@@ -58,7 +58,7 @@ describe("Go21 chat scroll follow", () => {
     ).toEqual({ stick: false, showJump: true });
   });
 
-  it("keeps stick near bottom", () => {
+  it("hides jump control while sticking to latest", () => {
     expect(
       resolveChatScrollStickState({
         programmatic: false,

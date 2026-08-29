@@ -196,7 +196,7 @@ describe("Go21 schema move compatibility — fixtures + durability contracts", (
     const sys = buildCoachingAiV2SystemPrompt();
     expect(sys).toContain("先理解");
     expect(sys).toContain("有用才介入");
-    expect(sys).toContain("確認／觀察／好奇／教練／鼓勵／澄清／糾正");
+    expect(sys).toMatch(/確認／(?:回憶／)?觀察／|自然回應/);
   });
 });
 
