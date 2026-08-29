@@ -900,8 +900,10 @@ function resolveGo21ClientLogDate(text: string): string {
     dt.setUTCDate(dt.getUTCDate() + days);
     return dt.toISOString().slice(0, 10);
   };
+  if (/後天/.test(text)) return shift(2);
+  if (/明天|明早|明晚|明日/.test(text)) return shift(1);
   if (/前天/.test(text)) return shift(-2);
-  if (/昨天|昨日/.test(text)) return shift(-1);
+  if (/昨天|昨日|昨晚|昨夜/.test(text)) return shift(-1);
   return today;
 }
 

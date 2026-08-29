@@ -52,6 +52,11 @@ export type Go21ExtractedEvent = {
   eventTimeApprox: string | null;
   mealSlot: "breakfast" | "lunch" | "dinner" | "snacks" | "drinks" | "fourth_meal" | null;
   mealNote: string | null;
+  /**
+   * eaten = already consumed; planned = future intent; other = not a meal report.
+   * Never invent certainty when ambiguous.
+   */
+  utteranceKind: "eaten" | "planned" | "other" | null;
   weightKg: number | null;
   /** Optional desired target — never inferred from vague 「我想瘦」 alone. */
   targetWeightKg: number | null;

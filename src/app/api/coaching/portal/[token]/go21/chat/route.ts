@@ -37,6 +37,7 @@ import {
   buildGo21CustomerDisplayContent,
   detectPhotoFoodCorrection,
 } from "@/lib/go21/conversation-quality";
+import { buildTemporalMetadataFromExtract } from "@/lib/go21/temporal-meal-state";
 import {
   acceptGo21CustomerTurn,
   findGo21TurnsByClientRequestId,
@@ -456,6 +457,11 @@ export async function POST(
         : {}),
       ...(foodCorrection ? { customerCorrection: foodCorrection } : {}),
       ...(clientRequestId ? { clientRequestId } : {}),
+      ...buildTemporalMetadataFromExtract({
+        extracted,
+        displayContent: customerDisplayContent,
+        messageLogDate: logDate,
+      }),
     };
 
     // STEP B — durable customer acceptance (independent of AI).

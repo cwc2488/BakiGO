@@ -2,6 +2,10 @@ import { addCalendarDays } from "@/lib/coaching/enrollment-window";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 import type { Go21CorrectionOp, Go21ExtractedEvent } from "@/types/go21";
 import { enrichExtractedEventWithGoalFields } from "@/lib/go21/goal-extract";
+import {
+  classifyGo21UtteranceKind,
+  resolveGo21EventDateWithFuture,
+} from "@/lib/go21/temporal-meal-state";
 
 const MEAL_PATTERNS: Array<{
   slot: Go21ExtractedEvent["mealSlot"];
@@ -34,6 +38,7 @@ export function extractGo21StructuredEvent(input: {
     eventTimeApprox: null,
     mealSlot: null,
     mealNote: null,
+    utteranceKind: null,
     weightKg: null,
     targetWeightKg: null,
     bodyFatPercent: null,
@@ -53,6 +58,7 @@ export function extractGo21StructuredEvent(input: {
 
   if (!text && input.hasPhoto) {
     base.eventDate = input.messageLogDate;
+    base.utteranceKind = "eaten";
     base.unresolvedQuestions.push("meal_slot_unknown");
     base.confidence = "low";
     return base;
@@ -69,16 +75,19 @@ export function extractGo21StructuredEvent(input: {
     base.weightKg = corrections.weightKg;
     base.confidence = "high";
     base.mealNote = text.slice(0, 400);
+    base.utteranceKind = "eaten";
     // Still allow other fields from the same message below when present.
   }
 
-  // Event date relative to message date / explicit calendar date
+  // Event date relative to message date / explicit calendar date (incl. 明天)
   if (!base.eventDate) {
     base.eventDate = resolveEventDate(text, input.messageLogDate);
   } else if (!corrections.ops.some((op) => op.kind === "event_date")) {
-    // Non-correction messages may still refine date
     const resolved = resolveEventDate(text, input.messageLogDate);
-    if (resolved !== input.messageLogDate || /今天|昨天|前天|\d{1,2}\/\d{1,2}/.test(text)) {
+    if (
+      resolved !== input.messageLogDate ||
+      /今天|昨天|前天|明天|後天|\d{1,2}\/\d{1,2}/.test(text)
+    ) {
       base.eventDate = resolved;
     }
   }
@@ -102,6 +111,10 @@ export function extractGo21StructuredEvent(input: {
     !/晚餐|午餐|早餐/.test(text)
   ) {
     base.mealSlot = "snacks";
+  }
+
+  if (!base.utteranceKind) {
+    base.utteranceKind = classifyGo21UtteranceKind(text);
   }
 
   // Body metrics — precision over recall
@@ -132,7 +145,9 @@ export function extractGo21StructuredEvent(input: {
     base.waterMl != null ||
     base.hydrationQuality ||
     base.exerciseNote ||
-    base.corrections.length > 0
+    base.corrections.length > 0 ||
+    base.utteranceKind === "eaten" ||
+    base.utteranceKind === "planned"
   ) {
     base.mealNote = base.mealNote ?? text.slice(0, 400);
     base.confidence =
@@ -164,10 +179,7 @@ export function resolveEventDate(text: string, messageLogDate: string): string {
       return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     }
   }
-  if (/前天/.test(text)) return addCalendarDays(messageLogDate, -2);
-  if (/昨天|昨晚|昨夜/.test(text)) return addCalendarDays(messageLogDate, -1);
-  if (/今天|剛才|剛剛|刚/.test(text)) return messageLogDate;
-  return messageLogDate;
+  return resolveGo21EventDateWithFuture(text, messageLogDate);
 }
 
 function resolveEventTime(text: string): string | null {

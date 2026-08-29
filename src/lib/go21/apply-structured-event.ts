@@ -48,7 +48,12 @@ export async function applyGo21StructuredEvent(input: {
   const logDate = extracted.eventDate ?? coachingTodayLogDate();
 
   const meals: Partial<Record<CoachingMealSlot, { textNote?: string | null }>> = {};
-  if (extracted.mealSlot && extracted.mealNote) {
+  // Only persist eaten meals into daily-log slots — plans must not become "tonight's dinner".
+  if (
+    extracted.mealSlot &&
+    extracted.mealNote &&
+    extracted.utteranceKind !== "planned"
+  ) {
     meals[extracted.mealSlot] = { textNote: extracted.mealNote };
   }
 
@@ -63,7 +68,8 @@ export async function applyGo21StructuredEvent(input: {
     Boolean(extracted.exerciseNote) ||
     extracted.hungerMentioned ||
     hydrationNoteParts.length > 0 ||
-    Boolean(extracted.mealNote && !extracted.mealSlot);
+    Boolean(extracted.mealNote && !extracted.mealSlot && extracted.utteranceKind !== "planned") ||
+    (extracted.utteranceKind === "planned" && Boolean(extracted.mealNote));
 
   if (shouldTouchDaily) {
     try {
@@ -73,8 +79,11 @@ export async function applyGo21StructuredEvent(input: {
       });
       const customerNoteParts = [existing.customerNote?.trim() || null];
       if (extracted.hungerMentioned) customerNoteParts.push("提到容易餓");
-      if (!extracted.mealSlot && extracted.mealNote) {
+      if (!extracted.mealSlot && extracted.mealNote && extracted.utteranceKind !== "planned") {
         customerNoteParts.push(extracted.mealNote);
+      }
+      if (extracted.utteranceKind === "planned" && extracted.mealNote) {
+        customerNoteParts.push(`[計畫｜未食用] ${extracted.mealNote.slice(0, 200)}`);
       }
       for (const part of hydrationNoteParts) {
         if (!customerNoteParts.some((p) => p?.includes(part))) {

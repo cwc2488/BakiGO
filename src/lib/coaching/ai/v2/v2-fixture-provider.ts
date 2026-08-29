@@ -13,6 +13,7 @@ import {
   formatGoalRecallReply,
   formatMenuSuggestionReply,
 } from "@/lib/go21/coach-intent";
+import { buildGo21TemporalTimeline } from "@/lib/go21/temporal-meal-state";
 
 /**
  * Context-aware fixture generator for tests/eval without OpenAI.
@@ -311,13 +312,26 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
 }
 
 function collectFoodsFromInput(input: GenerateCoachingAiV2Input) {
-  return collectReportedFoods({
-    recentCustomerTurnContents: input.memory.recentTurns
-      .filter((t) => t.role === "customer")
-      .map((t) => t.content),
+  const timeline = buildGo21TemporalTimeline({
+    generationLogDate: input.generationInput.logDate,
     todayMealNotes: input.generationInput.todayContext.primaryMeals.map((m) => ({
       slot: m.mealSlot,
       note: m.textNote,
+    })),
+    recentTurns: input.memory.recentTurns.map((t) => ({
+      role: t.role,
+      content: t.content,
+      logDate: t.logDate,
+      metadata: t.metadata,
+    })),
+    visionSummaries: input.recentVisionObservations ?? undefined,
+  });
+  // Recall / continuity: only foods actually eaten today (+ vision), never stale plans.
+  return collectReportedFoods({
+    recentCustomerTurnContents: [],
+    todayMealNotes: timeline.todayEaten.map((e) => ({
+      slot: e.mealSlot ?? "unknown",
+      note: e.label,
     })),
     visionSummaries: input.recentVisionObservations ?? undefined,
   });
@@ -325,6 +339,97 @@ function collectFoodsFromInput(input: GenerateCoachingAiV2Input) {
 
 function buildFoodRecallReply(input: GenerateCoachingAiV2Input): string {
   return formatFoodRecallReply(collectFoodsFromInput(input));
+}
+
+function recentCustomerFoodContext(input: GenerateCoachingAiV2Input): string {
+  const timeline = buildGo21TemporalTimeline({
+    generationLogDate: input.generationInput.logDate,
+    todayMealNotes: input.generationInput.todayContext.primaryMeals.map((m) => ({
+      slot: m.mealSlot,
+      note: m.textNote,
+    })),
+    recentTurns: input.memory.recentTurns.map((t) => ({
+      role: t.role,
+      content: t.content,
+      logDate: t.logDate,
+      metadata: t.metadata,
+    })),
+    visionSummaries: input.recentVisionObservations ?? undefined,
+    currentMessage: input.freeMessage,
+  });
+  return [
+    ...timeline.todayEaten.map((e) => e.label),
+    ...timeline.openPlansForToday.map((e) => e.label),
+    input.freeMessage ?? "",
+  ].join(" ");
+}
+
+function hasHeavySignalsToday(decision: CoachingDecisionContext): boolean {
+  return decision.mealObservations.some((o) =>
+    o.signals.some((s) =>
+      ["fried_food", "sugary_drink", "starch_concentrated", "late_night"].includes(s),
+    ),
+  );
+}
+
+/**
+ * When the live goal conflicts with today's pattern + the next planned choice,
+ * steer with a concrete alternative — no empty praise.
+ * Never invent "tonight's hamburger" unless that plan is still open today.
+ */
+function matchGoalConflictSteering(input: GenerateCoachingAiV2Input): string | null {
+  const goal = input.go21Goal;
+  if (!goal || !isFatLossOrientedGoal(goal)) return null;
+  const msg = (input.freeMessage ?? "").trim();
+  if (!msg) return null;
+
+  const timeline = buildGo21TemporalTimeline({
+    generationLogDate: input.generationInput.logDate,
+    todayMealNotes: input.generationInput.todayContext.primaryMeals.map((m) => ({
+      slot: m.mealSlot,
+      note: m.textNote,
+    })),
+    recentTurns: input.memory.recentTurns.map((t) => ({
+      role: t.role,
+      content: t.content,
+      logDate: t.logDate,
+      metadata: t.metadata,
+    })),
+    currentMessage: msg,
+  });
+
+  const planningHeavy =
+    HEAVY_FOOD_RE.test(msg) &&
+    /等一下|待會|等等|打算|想吃|晚上想|再吃|後來|然後.*吃|準備吃|明天/.test(msg) &&
+    !/吃了|喝了|吃完/.test(msg);
+
+  const plannedLabel =
+    timeline.openPlansForToday.find((p) => HEAVY_FOOD_RE.test(p.label))?.label ??
+    (planningHeavy ? extractPlannedFoodLabel(msg) : null);
+
+  const alreadyHeavy =
+    timeline.todayEaten.some((e) => HEAVY_FOOD_RE.test(e.label)) ||
+    hasHeavySignalsToday(input.decisionContext);
+
+  if (planningHeavy && alreadyHeavy && plannedLabel) {
+    return `欸，今天前面已經偏重了，待會再疊${plannedLabel}的話整天會太兇。換個蛋白質清楚一點的選擇會比較貼你現在的方向，例如雞胸堡、生菜包肉或清湯麵。`;
+  }
+  if (planningHeavy && alreadyHeavy) {
+    return "欸，今天前面已經偏重了，待會再疊重口味的話整天會太兇。換個蛋白質清楚一點的選擇會比較貼你現在的方向。";
+  }
+  if (planningHeavy) {
+    return "以你現在的減脂方向，待會這餐可以換蛋白質清楚、負擔輕一點的選擇，會比再來一輪重口味穩。";
+  }
+  return null;
+}
+
+function extractPlannedFoodLabel(msg: string): string | null {
+  const m = msg.match(
+    /(?:想吃|準備吃|打算吃|再吃)\s*([^\n。！？?]{1,12}(?:漢堡|炸雞|炸麵|薯條|披薩|奶茶|泡麵|雞排|蛋糕))?/,
+  );
+  if (m?.[1]) return m[1].trim();
+  const heavy = msg.match(/漢堡|炸雞|炸麵|薯條|披薩|奶茶|泡麵|雞排|蛋糕/);
+  return heavy?.[0] ?? null;
 }
 
 function emptyMeta(
@@ -487,12 +592,19 @@ function matchSimpleFoodLog(freeMessage: string | null | undefined): string | nu
   const text = freeMessage.trim();
   // Avoid matching vision-enriched or question messages
   if (/\[影像觀察|為什麼|怎麼|？|\?/.test(text)) return null;
+  // Plans are handled by goal-conflict steering — not simple food ack
+  if (/等一下|待會|打算|準備吃|明天|後天|想吃(?!了)/.test(text) && !/吃了|剛吃|剛剛/.test(text)) {
+    return null;
+  }
   const m = text.match(
-    /(?:晚餐|午餐|早餐|宵夜|剛剛)?(?:吃了|吃|喝了|喝)?\s*([^\n。！？]{1,20}(?:飯|麵|漢堡|奶茶|紅茶|咖啡|雞胸|泡麵|蛋糕|滷肉|沙拉|便當|壽司))/,
+    /(?:晚餐|午餐|早餐|宵夜|剛剛)?(?:吃了|吃|喝了|喝)?\s*([^\n。！？]{1,20}(?:燒餅油條|燒餅|油條|飯|麵|漢堡|奶茶|紅茶|咖啡|雞胸|泡麵|蛋糕|滷肉|沙拉|便當|壽司|炸雞|炸麵|雞排|披薩|薯條|蛋|魚|肉|湯|水餃|鍋貼))/,
   );
   if (m?.[1]) return m[1].trim();
-  if (/^(?:晚餐|午餐|早餐).{0,12}$/.test(text) && /飯|麵|堡|茶|肉/.test(text)) {
-    return text.replace(/^(?:晚餐|午餐|早餐)(?:吃了|吃)?/, "").trim() || text;
+  if (
+    /^(?:晚餐|午餐|早餐|宵夜).{0,16}$/.test(text) &&
+    /飯|麵|堡|茶|肉|炸|燒餅|油條|雞|排|沙拉|便當/.test(text)
+  ) {
+    return text.replace(/^(?:晚餐|午餐|早餐|宵夜)(?:吃了|吃)?/, "").trim() || text;
   }
   return null;
 }
@@ -536,7 +648,7 @@ function extractVisionFoodLabel(text: string): string | null {
 }
 
 const HEAVY_FOOD_RE =
-  /炸|漢堡|薯條|奶茶|蛋糕|泡麵|炸雞|鹹酥雞|披薩|可樂|雞排|甜甜圈|炸麵|炸物/;
+  /炸|漢堡|薯條|奶茶|蛋糕|泡麵|炸雞|鹹酥雞|披薩|可樂|雞排|甜甜圈|炸麵|炸物|油條|燒餅/;
 
 function isFatLossOrientedGoal(
   goal: GenerateCoachingAiV2Input["go21Goal"] | null | undefined,
@@ -546,58 +658,6 @@ function isFatLossOrientedGoal(
   return /減脂|瘦|體脂|體態|脂肪/.test(
     `${goal.personalGoal} ${goal.primaryDirectionLabel ?? ""}`,
   );
-}
-
-function recentCustomerFoodContext(input: GenerateCoachingAiV2Input): string {
-  const fromObs = input.decisionContext.mealObservations
-    .flatMap((o) => [...o.observedFoods, ...o.signals])
-    .join(" ");
-  const fromTurns = input.memory.recentTurns
-    .filter((t) => t.role === "customer")
-    .slice(-6)
-    .map((t) => t.content)
-    .join(" ");
-  const fromToday = input.generationInput.todayContext.primaryMeals
-    .map((m) => m.textNote ?? "")
-    .join(" ");
-  const vision = (input.recentVisionObservations ?? [])
-    .map((v) => `${v.summary} ${v.correction ?? ""}`)
-    .join(" ");
-  return `${fromObs} ${fromTurns} ${fromToday} ${vision} ${input.freeMessage ?? ""}`;
-}
-
-function hasHeavySignalsToday(decision: CoachingDecisionContext): boolean {
-  return decision.mealObservations.some((o) =>
-    o.signals.some((s) =>
-      ["fried_food", "sugary_drink", "starch_concentrated", "late_night"].includes(s),
-    ),
-  );
-}
-
-/**
- * When the live goal conflicts with today's pattern + the next planned choice,
- * steer with a concrete alternative — no empty praise.
- */
-function matchGoalConflictSteering(input: GenerateCoachingAiV2Input): string | null {
-  const goal = input.go21Goal;
-  if (!goal || !isFatLossOrientedGoal(goal)) return null;
-  const msg = (input.freeMessage ?? "").trim();
-  if (!msg) return null;
-
-  const planningHeavy =
-    HEAVY_FOOD_RE.test(msg) &&
-    /等一下|待會|等等|打算|想吃|晚上|再吃|後來|然後.*吃|準備吃/.test(msg);
-  const context = recentCustomerFoodContext(input);
-  const alreadyHeavy =
-    HEAVY_FOOD_RE.test(context) || hasHeavySignalsToday(input.decisionContext);
-
-  if (planningHeavy && alreadyHeavy) {
-    return "欸，今天前面已經偏重了，待會再疊漢堡／炸物的話整天會太兇。換個蛋白質清楚一點的選擇會比較貼你現在的方向，例如雞胸堡、生菜包肉或清湯麵。";
-  }
-  if (planningHeavy) {
-    return "以你現在的減脂方向，待會這餐可以換蛋白質清楚、負擔輕一點的選擇，會比再來一輪重口味穩。";
-  }
-  return null;
 }
 
 function goalConflictsWithFoodChoice(
@@ -660,6 +720,10 @@ function buildDefaultContextualReply(
   const level = decision.dailyNutritionAssessment.level;
   const open = memory.openLoops[0];
 
+  // Day-pattern judgment from temporal timeline — never invent tonight from stale plans
+  const dayPattern = matchTodayHeavyPatternReply(input);
+  if (dayPattern) return dayPattern;
+
   if (hunger) {
     return "你說還是會餓，這個我有注意到。我先不急著下結論，想多看幾天是哪一段最容易餓。";
   }
@@ -674,6 +738,41 @@ function buildDefaultContextualReply(
   }
   const name = input.generationInput.profileMemory.displayName;
   return `${name ? `${name}，` : ""}今天這樣我就先記著。有想問的再丟給我。`;
+}
+
+/**
+ * When today already shows a heavy pattern vs fat-loss goal, coach the day —
+ * using only todayEaten / openPlansForToday (never stale hamburger history).
+ */
+function matchTodayHeavyPatternReply(input: GenerateCoachingAiV2Input): string | null {
+  if (!isFatLossOrientedGoal(input.go21Goal)) return null;
+  const timeline = buildGo21TemporalTimeline({
+    generationLogDate: input.generationInput.logDate,
+    todayMealNotes: input.generationInput.todayContext.primaryMeals.map((m) => ({
+      slot: m.mealSlot,
+      note: m.textNote,
+    })),
+    recentTurns: input.memory.recentTurns.map((t) => ({
+      role: t.role,
+      content: t.content,
+      logDate: t.logDate,
+      metadata: t.metadata,
+    })),
+    currentMessage: input.freeMessage,
+  });
+  const heavyEaten = timeline.todayEaten.filter((e) => HEAVY_FOOD_RE.test(e.label));
+  const heavyOpen = timeline.openPlansForToday.find((p) => HEAVY_FOOD_RE.test(p.label));
+  if (heavyOpen && heavyEaten.length > 0) {
+    return `欸，今天前面已經偏重了，待會再疊${heavyOpen.label}的話整天會太兇。換個蛋白質清楚一點的選擇會比較貼你現在的方向。`;
+  }
+  if (heavyEaten.length >= 2 || (heavyEaten.length >= 1 && hasHeavySignalsToday(input.decisionContext))) {
+    const label = heavyEaten[heavyEaten.length - 1]?.label ?? "這餐";
+    return `收到，${label}。今天前面已經偏重了一點；下一餐先把油炸感收一點、蛋白質清楚一點會比較穩。`;
+  }
+  if (heavyEaten.length === 1) {
+    return `收到，${heavyEaten[0].label}。以你現在的方向這餐偏重了一點；下一餐先選蛋白質清楚、油炸少一點的會比較穩。`;
+  }
+  return null;
 }
 
 function pickDefaultIntention(decision: CoachingDecisionContext): CoachingAiV2Intention {
@@ -693,7 +792,7 @@ function extractEarlyMemory(input: GenerateCoachingAiV2Input) {
       confidence: 0.7,
     });
   }
-  const occupation = input.generationInput.profileMemory.customerContext.occupation;
+  const occupation = input.generationInput.profileMemory.customerContext?.occupation;
   if (occupation) {
     writes.push({
       category: "constraint",

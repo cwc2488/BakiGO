@@ -3,6 +3,7 @@ import type { CoachingDecisionContext } from "@/types/coaching-signals";
 import type { CoachingAiV2MemoryBundle } from "@/types/coaching-ai-v2";
 import { lifecycleStageGuidance } from "@/lib/coaching/ai/v2/lifecycle";
 import { coachingDaySpeechLabel, relativeCoachingDayKey } from "@/lib/coaching/coaching-time";
+import { buildGo21TemporalTimeline } from "@/lib/go21/temporal-meal-state";
 
 /**
  * Coaching Brain V3 — unscripted human coach.
@@ -27,6 +28,12 @@ export function buildCoachingAiV2SystemPrompt(): string {
     "- 報餐／照片 → 用今天脈絡＋目標做判斷；對齊就短確認，偏離就點出並給下一步。",
     "- 目標衝突計畫（例如已炸又要漢堡）→ 主動轉向更好選擇。",
     "- 同一句「清淡一點／雞胸沙拉」不要當成萬用回覆套在所有意圖上。",
+    "",
+    "時間線（連續感的關鍵）：",
+    "- 必須分清：今天 vs 前幾天、早餐／午餐／晚餐／點心、已吃 vs 正吃 vs 計畫要吃、舊計畫是否仍有效。",
+    "- temporalTimeline.todayEaten = 今天已吃；openPlansForToday = 今天仍開放的未來計畫；doNotTreatAsCurrent = 舊提及／已失效計畫。",
+    "- 禁止把舊的食物／計畫講成「今晚的Ｘ」或「待會的Ｘ」，除非它仍在 openPlansForToday。",
+    "- 相對詞（剛剛／早上／中午／晚上／昨天／明天）要落地到正確日與餐次；資訊不夠時不要發明時間確定性。",
     "",
     "目標導向（專業觀點，不是討好）：",
     "- 不要對偏離目標的食物空口稱讚（例如「看起來很讚」「好好吃」「方向可以」），尤其減脂目標遇到油炸／漢堡／甜飲等高負擔選擇時。",
@@ -133,6 +140,22 @@ export function buildCoachingAiV2UserPrompt(input: {
     outcomeSummary: truncate(decisionContext.outcomeAssessment.customerSummary, 160),
   };
 
+  const temporalTimeline = buildGo21TemporalTimeline({
+    generationLogDate: generationInput.logDate,
+    todayMealNotes: today.primaryMeals.map((m) => ({
+      slot: m.mealSlot,
+      note: m.textNote,
+    })),
+    recentTurns: memory.recentTurns.map((t) => ({
+      role: t.role,
+      content: t.content,
+      logDate: t.logDate,
+      metadata: t.metadata,
+    })),
+    visionSummaries: input.recentVisionObservations ?? undefined,
+    currentMessage: input.freeMessage,
+  });
+
   const payload = {
     channel,
     freeMessage: input.freeMessage ? truncate(input.freeMessage, 1600) : null,
@@ -161,15 +184,31 @@ export function buildCoachingAiV2UserPrompt(input: {
       : null,
     recentVisionObservations: (input.recentVisionObservations ?? []).slice(0, 3),
     today: compactToday,
+    temporalTimeline: temporalTimeline.promptBlock,
     decisionContext: compactDecision,
     rollingPatterns: generationInput.rollingMemory.recurringPatterns.slice(0, 6),
-    recentTurns: memory.recentTurns.map((t) => ({
-      role: t.role,
-      channel: t.channel,
-      logDate: t.logDate,
-      content: truncate(t.content, 280),
-      intention: t.intention,
-    })),
+    recentTurns: memory.recentTurns.map((t) => {
+      const temporal =
+        t.metadata && typeof t.metadata === "object"
+          ? (t.metadata as Record<string, unknown>).temporal
+          : null;
+      return {
+        role: t.role,
+        channel: t.channel,
+        logDate: t.logDate,
+        content: truncate(t.content, 280),
+        intention: t.intention,
+        temporal:
+          temporal && typeof temporal === "object"
+            ? {
+                utteranceKind: (temporal as Record<string, unknown>).utteranceKind ?? null,
+                eventDate: (temporal as Record<string, unknown>).eventDate ?? t.logDate,
+                mealSlot: (temporal as Record<string, unknown>).mealSlot ?? null,
+                relativeLabel: (temporal as Record<string, unknown>).relativeLabel ?? null,
+              }
+            : null,
+      };
+    }),
     durableMemory: memory.durableMemory.map((m) => ({
       id: m.id,
       category: m.category,
@@ -193,8 +232,9 @@ export function buildCoachingAiV2UserPrompt(input: {
     })),
     instructions: [
       "先判斷這一輪意圖：記憶回想／菜單請求／報餐判斷／目標衝突／其他。意圖不同，回應就不同。",
-      "若顧客問「我跟你說／告訴你我吃了什麼」：只根據 recentTurns、today.meals、recentVisionObservations 據實回答食物；沒有就說還沒記到。禁止捏造，禁止改念減脂建議。",
-      "若顧客要菜單／吃什麼好：給可執行選項，並參考今天已吃＋go21Goal；不要空話或萬用雞胸沙拉口號。",
+      "時間線以 temporalTimeline 為準：todayEaten=今天已吃；openPlansForToday=今天仍有效的未來計畫；doNotTreatAsCurrent 禁止講成今晚／今天。",
+      "若顧客問「我跟你說／告訴你我吃了什麼」：只據實回答 todayEaten＋明確 eaten 紀錄；不要把 planned／舊提及講成已吃。禁止捏造。",
+      "若顧客要菜單／吃什麼好：給可執行選項，並參考 todayEaten＋go21Goal；不要空話或萬用雞胸沙拉口號。",
       "報餐／照片：用今天脈絡＋目標做判斷。對齊短確認；偏離給下一步。不要空口稱讚偏離目標的食物。",
       "預設短回（約一句到三句）；要菜單或知識時可稍長。收尾不要預設問句。",
       "go21Goal.currentPersonalGoal 是錨點，不是每則口號。目標意識來自 continuity，不是重複講義。",
