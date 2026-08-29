@@ -525,3 +525,13 @@ export async function updateTransformationLeadForAdmin(input: {
   }
   return mapLeadRow(data as Record<string, unknown>);
 }
+
+export async function deleteTransformationLeadForAdmin(leadId: string): Promise<{ id: string }> {
+  const supabase = requireService();
+  await getTransformationLeadForAdmin(leadId);
+  const { error } = await supabase.from("transformation_leads").delete().eq("id", leadId);
+  if (error) {
+    throw new TransformationError(error.message, 500, "delete_failed");
+  }
+  return { id: leadId };
+}

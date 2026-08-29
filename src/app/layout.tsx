@@ -3,6 +3,10 @@ import { Geist } from "next/font/google";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { AppShell } from "@/components/navigation/AppShell";
 import { AuthProvider } from "@/lib/auth/auth-context";
+import {
+  BAKI_GO_DEFAULT_DESCRIPTION,
+  BAKI_GO_DEFAULT_TITLE,
+} from "@/lib/site/default-metadata";
 import { getSupabaseEnvScript } from "@/lib/supabase/env";
 import "./globals.css";
 
@@ -12,12 +16,25 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Baki GO",
-  description: "直銷組織的每日成長夥伴",
+  title: {
+    default: BAKI_GO_DEFAULT_TITLE,
+    template: "%s | Baki Go",
+  },
+  description: BAKI_GO_DEFAULT_DESCRIPTION,
+  openGraph: {
+    title: BAKI_GO_DEFAULT_TITLE,
+    description: BAKI_GO_DEFAULT_DESCRIPTION,
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: BAKI_GO_DEFAULT_TITLE,
+    description: BAKI_GO_DEFAULT_DESCRIPTION,
+  },
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    title: "Baki GO",
+    title: "Baki Go",
     statusBarStyle: "default",
   },
 };

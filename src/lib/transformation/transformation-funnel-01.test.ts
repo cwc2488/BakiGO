@@ -130,9 +130,41 @@ describe("TRANSFORMATION-FUNNEL-01", () => {
     expect(src("src/lib/auth/public-paths.ts")).toContain('"/transform/"');
     const adminApi = src("src/app/api/admin/transformation/leads/route.ts");
     expect(adminApi).toContain("assertSuperAdmin");
+    const leadDetailApi = src("src/app/api/admin/transformation/leads/[id]/route.ts");
+    expect(leadDetailApi).toContain("assertSuperAdmin");
+    expect(leadDetailApi).toContain("deleteTransformationLeadForAdmin");
     const shareApi = src("src/app/api/admin/transformation/share/route.ts");
     expect(shareApi).toContain("assertSuperAdmin");
     expect(shareApi).toContain("getOrCreateTransformationShareLink");
+  });
+
+  it("uses compact admin list and authenticated delete", () => {
+    const adminPage = src("src/components/transformation/AdminTransformationPage.tsx");
+    expect(adminPage).toContain("<table");
+    expect(adminPage).toContain("確定要刪除");
+    expect(adminPage).toContain('method: "DELETE"');
+    const service = src("src/lib/transformation/transformation-service.ts");
+    expect(service).toContain("deleteTransformationLeadForAdmin");
+    expect(service).toMatch(/deleteTransformationLeadForAdmin[\s\S]*transformation_leads[\s\S]*\.delete\(\)/);
+  });
+
+  it("links converted leads via customer search instead of UUID paste", () => {
+    const detailPage = src("src/components/transformation/AdminTransformationDetailPage.tsx");
+    expect(detailPage).toContain("連結顧客");
+    expect(detailPage).toContain("searchCustomers");
+    expect(detailPage).toContain("確認連結");
+    expect(detailPage).not.toContain("貼上 ID");
+  });
+
+  it("shows active contact success UI with confirmed LINE destination", () => {
+    const landing = src("src/components/transformation/TransformationLandingPage.tsx");
+    expect(landing).toContain("申請完成！");
+    expect(landing).toContain("最後一步：主動聯絡我們");
+    expect(landing).toContain("https://line.me/ti/p/rqkTMnEK8J");
+    expect(landing).toContain("https://www.instagram.com/Omtcsh/");
+    expect(landing).toContain("用 LINE 聯絡我");
+    expect(landing).toContain("用 Instagram 聯絡我");
+    expect(landing).toContain("trackTransformationLeadOnce");
   });
 
   it("enforces owner-only resolve via super admin check in service", () => {
@@ -141,6 +173,16 @@ describe("TRANSFORMATION-FUNNEL-01", () => {
     expect(service).toContain("resolveActiveTransformationOwnerByCode");
     expect(service).toContain("customer_before_conversion");
     expect(service).toMatch(/listTransformationLeadsForAdmin[\s\S]*transformation_leads/);
+  });
+
+  it("deletes lead row only and keeps customer FK as set null on customer delete", () => {
+    const migration = src("supabase/migrations/062_transformation_funnel_v1.sql");
+    expect(migration).toContain("customer_id uuid references public.customers (id) on delete set null");
+    const service = src("src/lib/transformation/transformation-service.ts");
+    expect(service).toMatch(
+      /deleteTransformationLeadForAdmin[\s\S]*from\("transformation_leads"\)[\s\S]*\.delete\(\)/,
+    );
+    expect(service).not.toMatch(/deleteTransformationLeadForAdmin[\s\S]*from\("customers"\)/);
   });
 
   it("does not modify recruitment or quiz funnel files", () => {

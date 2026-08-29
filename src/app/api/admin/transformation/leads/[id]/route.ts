@@ -3,6 +3,7 @@ import { assertSuperAdmin, SuperAdminAccessError } from "@/lib/auth/assert-super
 import { getMemberIdFromRequest } from "@/lib/supabase/member-auth";
 import {
   TransformationError,
+  deleteTransformationLeadForAdmin,
   getTransformationLeadForAdmin,
   updateTransformationLeadForAdmin,
 } from "@/lib/transformation/transformation-service";
@@ -74,6 +75,30 @@ export async function PATCH(request: Request, context: Ctx) {
     }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to update lead." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: Request, context: Ctx) {
+  try {
+    const memberId = await getMemberIdFromRequest(request);
+    if (!memberId) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+    await assertSuperAdmin(memberId);
+    const { id } = await context.params;
+    const result = await deleteTransformationLeadForAdmin(id);
+    return NextResponse.json({ ok: true, deletedId: result.id });
+  } catch (error) {
+    if (error instanceof TransformationError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    }
+    if (error instanceof SuperAdminAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to delete lead." },
       { status: 500 },
     );
   }

@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { PageShell } from "@/components/ui/PageShell";
 import { BrandCard } from "@/components/ui/brand-ui";
@@ -13,13 +14,33 @@ import {
 } from "@/lib/transformation/transformation-contract";
 import type { TransformationLeadRecord, TransformationShareLinkView } from "@/lib/transformation/transformation-service";
 
+function formatLeadCreatedAt(iso: string): string {
+  const date = new Date(iso);
+  return date.toLocaleString("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength)}…`;
+}
+
 export function AdminTransformationPage() {
+  const router = useRouter();
   const [statusFilter, setStatusFilter] = useState<"" | TransformationLeadStatus>("");
   const [leads, setLeads] = useState<TransformationLeadRecord[]>([]);
   const [shareLink, setShareLink] = useState<TransformationShareLinkView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copyHint, setCopyHint] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TransformationLeadRecord | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [successHint, setSuccessHint] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,6 +90,29 @@ export function AdminTransformationPage() {
     }
   };
 
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setError(null);
+    try {
+      const response = await fetchWithMemberAuth(`/api/admin/transformation/leads/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "刪除失敗");
+      }
+      setLeads((current) => current.filter((lead) => lead.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      setSuccessHint("已刪除名單");
+      setTimeout(() => setSuccessHint(null), 2500);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "刪除失敗");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   return (
     <PageShell
       title="體態改造名單"
@@ -96,7 +140,7 @@ export function AdminTransformationPage() {
         <label className="block text-[0.8125rem] text-[#86868b]">
           狀態篩選
           <select
-            className="mt-1.5 min-h-11 w-full rounded-2xl border border-[#eadfd6] bg-white px-3 text-[0.9375rem] text-[#1d1d1f] sm:w-56"
+            className="mt-1.5 min-h-9 w-full rounded-xl border border-[#eadfd6] bg-white px-3 text-[0.875rem] text-[#1d1d1f] sm:w-56"
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value as "" | TransformationLeadStatus)}
           >
@@ -111,6 +155,7 @@ export function AdminTransformationPage() {
         <p className="text-[0.8125rem] text-[#86868b]">共 {leads.length} 筆</p>
       </div>
 
+      {successHint ? <p className="text-sm text-[#248a3d]">{successHint}</p> : null}
       {error ? <p className="text-sm text-[#b42318]">{error}</p> : null}
 
       {loading ? (
@@ -122,30 +167,107 @@ export function AdminTransformationPage() {
           <p className="text-[0.9375rem] leading-7 text-[#86868b]">目前沒有符合條件的名單。</p>
         </BrandCard>
       ) : (
-        <ul className="space-y-3">
-          {leads.map((lead) => (
-            <li key={lead.id}>
-              <Link href={`/admin/transformation/${lead.id}`} className="block">
-                <BrandCard variant="bordered" className="transition-shadow hover:shadow-md active:scale-[0.99]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-[1.0625rem] font-semibold text-[#1d1d1f]">{lead.name}</h3>
-                      <p className="mt-1 text-[0.875rem] text-[#636366]">{lead.goal}</p>
-                    </div>
-                    <span className="shrink-0 rounded-full bg-[#f5f5f7] px-2.5 py-1 text-[0.75rem] text-[#636366]">
+        <div className="overflow-x-auto rounded-xl border border-[#eadfd6] bg-white">
+          <table className="w-full min-w-[960px] border-collapse text-left text-[0.8125rem] leading-tight text-[#1d1d1f]">
+            <thead className="border-b border-[#eadfd6] bg-[#faf8f6] text-[0.75rem] font-semibold uppercase tracking-wide text-[#86868b]">
+              <tr>
+                <th className="whitespace-nowrap px-2.5 py-2">建立時間</th>
+                <th className="whitespace-nowrap px-2.5 py-2">姓名</th>
+                <th className="whitespace-nowrap px-2.5 py-2">手機</th>
+                <th className="whitespace-nowrap px-2.5 py-2">LINE / IG</th>
+                <th className="whitespace-nowrap px-2.5 py-2">目標</th>
+                <th className="min-w-[8rem] px-2.5 py-2">最想改善部位／問題</th>
+                <th className="whitespace-nowrap px-2.5 py-2">狀態</th>
+                <th className="whitespace-nowrap px-2.5 py-2 text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leads.map((lead) => (
+                <tr
+                  key={lead.id}
+                  className="cursor-pointer border-b border-[#f0ebe6] transition-colors hover:bg-[#faf8f6] last:border-b-0"
+                  onClick={() => router.push(`/admin/transformation/${lead.id}`)}
+                >
+                  <td className="whitespace-nowrap px-2.5 py-1.5 text-[#636366]">
+                    {formatLeadCreatedAt(lead.createdAt)}
+                  </td>
+                  <td className="max-w-[6rem] truncate px-2.5 py-1.5 font-medium">{lead.name}</td>
+                  <td className="whitespace-nowrap px-2.5 py-1.5 text-[#636366]">{lead.phone}</td>
+                  <td className="max-w-[5rem] truncate px-2.5 py-1.5 text-[#636366]">
+                    {lead.socialContact ?? "—"}
+                  </td>
+                  <td className="max-w-[5rem] truncate px-2.5 py-1.5">{lead.goal}</td>
+                  <td className="max-w-[10rem] truncate px-2.5 py-1.5 text-[#636366]">
+                    {truncateText(lead.targetAreaOrProblem, 28)}
+                  </td>
+                  <td className="whitespace-nowrap px-2.5 py-1.5">
+                    <span className="inline-block rounded-full bg-[#f5f5f7] px-2 py-0.5 text-[0.6875rem] text-[#636366]">
                       {TRANSFORMATION_LEAD_STATUS_LABEL[lead.status]}
                     </span>
-                  </div>
-                  <p className="mt-2 text-[0.8125rem] text-[#86868b]">
-                    {new Date(lead.createdAt).toLocaleString("zh-TW")}
-                    {lead.source ? ` · ${lead.source}` : ""}
-                  </p>
-                </BrandCard>
-              </Link>
-            </li>
-          ))}
-        </ul>
+                  </td>
+                  <td className="whitespace-nowrap px-2.5 py-1.5 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <Link
+                        href={`/admin/transformation/${lead.id}`}
+                        className="text-[0.75rem] font-medium text-[#248a3d] underline-offset-2 hover:underline"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        查看
+                      </Link>
+                      <button
+                        type="button"
+                        className="text-[0.75rem] font-medium text-[#b42318] underline-offset-2 hover:underline"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setDeleteTarget(lead);
+                        }}
+                      >
+                        刪除
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
+
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-lead-title"
+          >
+            <h2 id="delete-lead-title" className="text-[1rem] font-semibold text-[#1d1d1f]">
+              確定刪除？
+            </h2>
+            <p className="mt-2 text-[0.9375rem] leading-7 text-[#636366]">
+              確定要刪除「{deleteTarget.name}」的申請資料嗎？此操作無法復原。
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-full border border-[#eadfd6] px-4 py-2 text-[0.8125rem] font-medium text-[#636366]"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => void handleDeleteConfirm()}
+                className="rounded-full bg-[#b42318] px-4 py-2 text-[0.8125rem] font-semibold text-white disabled:opacity-50"
+              >
+                確定刪除
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </PageShell>
   );
 }

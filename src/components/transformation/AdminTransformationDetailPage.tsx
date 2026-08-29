@@ -2,10 +2,14 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { searchCustomers } from "@/lib/customers/customer-search";
 import { PageShell } from "@/components/ui/PageShell";
 import { BrandCard } from "@/components/ui/brand-ui";
 import { fetchWithMemberAuth } from "@/lib/quiz/quiz-member-fetch";
+import { createCustomerRepository } from "@/lib/repositories/customer-repository";
+import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import {
   TRANSFORMATION_LEAD_STATUS_LABEL,
   TRANSFORMATION_LOST_REASON_LABEL,
@@ -14,6 +18,7 @@ import {
   type TransformationLostReason,
 } from "@/lib/transformation/transformation-contract";
 import type { TransformationLeadRecord } from "@/lib/transformation/transformation-service";
+import type { Customer } from "@/types/customer";
 
 const STATUS_ACTIONS: { status: TransformationLeadStatus; label: string }[] = [
   { status: "contacted", label: "標記已聯絡" },
@@ -24,14 +29,19 @@ const STATUS_ACTIONS: { status: TransformationLeadStatus; label: string }[] = [
 ];
 
 export function AdminTransformationDetailPage({ leadId }: { leadId: string }) {
+  const storage = useMemo(() => createLocalStorageAdapter(), []);
+  const repo = useMemo(() => createCustomerRepository(storage), [storage]);
   const [lead, setLead] = useState<TransformationLeadRecord | null>(null);
   const [notes, setNotes] = useState("");
-  const [customerId, setCustomerId] = useState("");
   const [lostReason, setLostReason] = useState<TransformationLostReason>("no_interest");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [linkPanelOpen, setLinkPanelOpen] = useState(false);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,7 +58,6 @@ export function AdminTransformationDetailPage({ leadId }: { leadId: string }) {
       }
       setLead(payload.lead);
       setNotes(payload.lead.notes ?? "");
-      setCustomerId(payload.lead.customerId ?? "");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "無法載入名單");
     } finally {
@@ -59,6 +68,29 @@ export function AdminTransformationDetailPage({ leadId }: { leadId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const reloadCustomers = useCallback(() => {
+    const memberId = resolveAuthenticatedMemberId(storage);
+    if (!memberId) {
+      setCustomers([]);
+      return;
+    }
+    setCustomers(repo.getCustomersByOwner(memberId));
+  }, [repo, storage]);
+
+  useEffect(() => {
+    reloadCustomers();
+  }, [reloadCustomers]);
+
+  const customerMatches = useMemo(
+    () => searchCustomers(customers, customerQuery).slice(0, 12),
+    [customers, customerQuery],
+  );
+
+  const linkedCustomer = useMemo(
+    () => (lead?.customerId ? customers.find((customer) => customer.id === lead.customerId) : undefined),
+    [customers, lead?.customerId],
+  );
 
   const patchLead = async (body: Record<string, unknown>) => {
     setBusy(true);
@@ -80,8 +112,9 @@ export function AdminTransformationDetailPage({ leadId }: { leadId: string }) {
       }
       setLead(payload.lead);
       setNotes(payload.lead.notes ?? "");
-      setCustomerId(payload.lead.customerId ?? "");
       setMessage("已更新");
+      setSelectedCustomer(null);
+      setLinkPanelOpen(false);
     } catch (patchError) {
       setError(patchError instanceof Error ? patchError.message : "更新失敗");
     } finally {
@@ -168,53 +201,51 @@ export function AdminTransformationDetailPage({ leadId }: { leadId: string }) {
               key={action.status}
               type="button"
               disabled={busy || lead.status === action.status}
-              onClick={() =>
-                void patchLead({
-                  status: action.status,
-                  ...(action.status === "converted" && customerId ? { customerId } : {}),
-                })
-              }
+              onClick={() => void patchLead({ status: action.status })}
               className="rounded-full border border-[#eadfd6] px-3 py-1.5 text-[0.8125rem] font-medium disabled:opacity-50"
             >
               {action.label}
             </button>
           ))}
         </div>
-        {lead.status === "converted" || lead.status !== "lost" ? (
-          <div className="space-y-2 pt-2">
-            <label className="block text-[0.8125rem] text-[#86868b]">
-              連結顧客 ID（僅已轉換）
-              <input
-                className="mt-1 w-full min-h-11 rounded-2xl border border-[#eadfd6] bg-white px-3 text-[0.9375rem]"
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                placeholder="建立顧客後貼上 ID"
-                disabled={lead.status !== "converted"}
-              />
-            </label>
-            {lead.status === "converted" && customerId ? (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void patchLead({ customerId })}
-                className="rounded-full bg-[#1d1d1f] px-4 py-2 text-[0.8125rem] font-semibold text-white"
-              >
-                儲存顧客連結
-              </button>
-            ) : null}
-            {lead.status === "converted" && createCustomerHref ? (
-              <p className="text-[0.8125rem] text-[#86868b]">
-                <Link href={createCustomerHref} className="underline">
-                  建立顧客
-                </Link>
-                後，將顧客 ID 貼上並儲存連結。
-              </p>
-            ) : null}
+        {lead.status === "converted" ? (
+          <div className="space-y-2 border-t border-[#eadfd6] pt-3">
+            <p className="text-[0.8125rem] font-medium text-[#86868b]">顧客連結</p>
             {lead.customerId ? (
-              <Link href={`/customers/${lead.customerId}`} className="text-[0.875rem] text-[#248a3d] underline">
-                查看已連結顧客
-              </Link>
-            ) : null}
+              <div className="space-y-1">
+                <p className="text-[0.9375rem] text-[#1d1d1f]">
+                  已連結：{linkedCustomer?.displayName ?? lead.customerId}
+                  {linkedCustomer?.phone ? ` · ${linkedCustomer.phone}` : ""}
+                </p>
+                <Link href={`/customers/${lead.customerId}`} className="text-[0.875rem] text-[#248a3d] underline">
+                  查看已連結顧客
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    reloadCustomers();
+                    setCustomerQuery(lead.phone || lead.name);
+                    setSelectedCustomer(null);
+                    setLinkPanelOpen(true);
+                  }}
+                  className="rounded-full bg-[#1d1d1f] px-4 py-2 text-[0.8125rem] font-semibold text-white disabled:opacity-50"
+                >
+                  連結顧客
+                </button>
+                {createCustomerHref ? (
+                  <p className="text-[0.8125rem] text-[#86868b]">
+                    尚未建立顧客？{" "}
+                    <Link href={createCustomerHref} className="underline">
+                      建立顧客
+                    </Link>
+                  </p>
+                ) : null}
+              </div>
+            )}
           </div>
         ) : null}
         <div className="space-y-2 border-t border-[#eadfd6] pt-3">
@@ -270,6 +301,86 @@ export function AdminTransformationDetailPage({ leadId }: { leadId: string }) {
           儲存備註
         </button>
       </BrandCard>
+
+      {linkPanelOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 pb-6 sm:items-center">
+          <div
+            className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="link-customer-title"
+          >
+            <h2 id="link-customer-title" className="text-[1rem] font-semibold text-[#1d1d1f]">
+              連結顧客
+            </h2>
+            <p className="mt-1 text-[0.8125rem] text-[#86868b]">搜尋姓名或手機，選擇正確的顧客後確認連結。</p>
+            <input
+              className="mt-3 w-full min-h-11 rounded-2xl border border-[#eadfd6] bg-white px-3 text-[0.9375rem]"
+              value={customerQuery}
+              onChange={(event) => {
+                setCustomerQuery(event.target.value);
+                setSelectedCustomer(null);
+              }}
+              placeholder="輸入姓名或手機"
+              autoFocus
+            />
+            <ul className="mt-3 max-h-56 space-y-1 overflow-y-auto">
+              {customerMatches.length === 0 ? (
+                <li className="rounded-xl bg-[#faf8f6] px-3 py-4 text-center text-[0.875rem] text-[#86868b]">
+                  尚未建立顧客
+                </li>
+              ) : (
+                customerMatches.map((customer) => {
+                  const selected = selectedCustomer?.id === customer.id;
+                  return (
+                    <li key={customer.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCustomer(customer)}
+                        className={`w-full rounded-xl border px-3 py-2.5 text-left text-[0.875rem] ${
+                          selected
+                            ? "border-[#248a3d] bg-[#f0faf3]"
+                            : "border-[#eadfd6] bg-white hover:bg-[#faf8f6]"
+                        }`}
+                      >
+                        <p className="font-medium text-[#1d1d1f]">{customer.displayName}</p>
+                        <p className="mt-0.5 text-[0.75rem] text-[#86868b]">
+                          {customer.phone || "無手機"}
+                          {customer.lineId ? ` · ${customer.lineId}` : ""}
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setLinkPanelOpen(false);
+                  setSelectedCustomer(null);
+                }}
+                className="rounded-full border border-[#eadfd6] px-4 py-2 text-[0.8125rem] font-medium text-[#636366]"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={busy || !selectedCustomer}
+                onClick={() => {
+                  if (!selectedCustomer) return;
+                  void patchLead({ customerId: selectedCustomer.id });
+                }}
+                className="rounded-full bg-[#1d1d1f] px-4 py-2 text-[0.8125rem] font-semibold text-white disabled:opacity-50"
+              >
+                確認連結
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </PageShell>
   );
 }

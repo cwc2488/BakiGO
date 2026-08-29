@@ -237,20 +237,50 @@ export function TransformationLandingPage({ code }: { code: string }) {
   }
 
   if (submitted) {
+    const lineHref = "https://line.me/ti/p/rqkTMnEK8J";
+    const instagramHref = "https://www.instagram.com/Omtcsh/";
+
     return (
-      <div className="min-h-dvh bg-black px-5 py-16 text-white">
-        <div className="mx-auto max-w-md space-y-4 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#FFD700] text-3xl font-bold text-black">
-            ✓
+      <div className="min-h-dvh px-5 py-10" style={{ backgroundColor: FORM_PAGE_BG }}>
+        <div className="mx-auto max-w-md space-y-6 text-center text-black">
+          <div className="space-y-2">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#EE0000] text-2xl font-bold text-white">
+              ✓
+            </div>
+            <h1 className="text-[1.625rem] font-bold tracking-tight">申請完成！</h1>
           </div>
-          <h1 className="text-[1.75rem] font-bold">申請成功！</h1>
-          <p className="text-[0.9375rem] leading-7 text-white/80">
-            我們已收到你的資料，
-            <br />
-            工作人員會與你聯絡了解你的需求與體態目標。
-          </p>
-          <p className="text-[0.875rem] leading-6 text-[#FFD700]">
-            請留意電話、LINE 或 IG 訊息。
+
+          <div className="space-y-3 text-left">
+            <h2 className="text-center text-[1.125rem] font-semibold">最後一步：主動聯絡我們</h2>
+            <p className="text-[0.9375rem] leading-7 text-[#636366]">
+              為避免 LINE／Instagram 的陌生訊息限制，請選擇一種方式主動傳訊息給我們，方便工作人員與你聯絡。
+            </p>
+            <p className="rounded-2xl bg-white px-4 py-3 text-[0.875rem] leading-6 text-[#636366] shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
+              提示：傳訊息時可以告訴我們：「我剛完成體態改造申請」
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <a
+              href={lineHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-h-[3.25rem] w-full items-center justify-center rounded-2xl bg-[#06C755] px-4 text-[1rem] font-semibold text-white shadow-[0_4px_12px_rgba(6,199,85,0.25)]"
+            >
+              用 LINE 聯絡我
+            </a>
+            <a
+              href={instagramHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-h-[3.25rem] w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#f58529] via-[#dd2a7b] to-[#8134af] px-4 text-[1rem] font-semibold text-white shadow-[0_4px_12px_rgba(221,42,123,0.2)]"
+            >
+              用 Instagram 聯絡我
+            </a>
+          </div>
+
+          <p className="text-[0.8125rem] leading-6 text-[#86868b]">
+            LINE ID：weichi.kinneas · IG：Omtcsh
           </p>
         </div>
       </div>
