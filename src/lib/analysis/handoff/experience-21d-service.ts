@@ -188,16 +188,35 @@ export async function request21dInterest(input: {
   if (existing && hasUsableContact(existing)) {
     if (preference && existing.consultation_preference !== preference) {
       const supabase = requireService();
-      const { data: updated, error: updateError } = await supabase
-        .from("experience_21d_interests")
-        .update({
+      const patch = {
+        consultation_preference: preference,
+        landing_page_version: landingPageVersion ?? existing.landing_page_version ?? EXPERIENCE_21D_LANDING_VERSION,
+        brief_json: {
+          ...(existing.brief_json ?? {}),
           consultation_preference: preference,
           landing_page_version: landingPageVersion ?? existing.landing_page_version ?? EXPERIENCE_21D_LANDING_VERSION,
-          updated_at: new Date().toISOString(),
-        })
+        },
+        updated_at: new Date().toISOString(),
+      };
+      let { data: updated, error: updateError } = await supabase
+        .from("experience_21d_interests")
+        .update(patch)
         .eq("id", existing.id)
         .select("*")
         .maybeSingle();
+      if (updateError && /consultation_preference|landing_page_version|schema cache/i.test(updateError.message)) {
+        const retry = await supabase
+          .from("experience_21d_interests")
+          .update({
+            brief_json: patch.brief_json,
+            updated_at: patch.updated_at,
+          })
+          .eq("id", existing.id)
+          .select("*")
+          .maybeSingle();
+        updated = retry.data;
+        updateError = retry.error;
+      }
       if (!updateError && updated) {
         await record21dFunnelEvent({
           analysisSessionId: input.analysisSessionId,
@@ -268,31 +287,51 @@ export async function request21dInterest(input: {
     .upsert(payload, { onConflict: "analysis_session_id" })
     .select("*")
     .maybeSingle();
-  if (error || !data) {
+  let saved = data as InterestRow | null;
+  let saveError = error;
+  // Preview may run before additive 063 is applied; keep preference in brief_json.
+  if (
+    saveError &&
+    /consultation_preference|landing_page_version|schema cache/i.test(saveError.message)
+  ) {
+    const {
+      consultation_preference: _pref,
+      landing_page_version: _ver,
+      ...legacyPayload
+    } = payload;
+    const retry = await supabase
+      .from("experience_21d_interests")
+      .upsert(legacyPayload, { onConflict: "analysis_session_id" })
+      .select("*")
+      .maybeSingle();
+    saved = retry.data as InterestRow | null;
+    saveError = retry.error;
+  }
+  if (saveError || !saved) {
     const raced = await getInterestBySessionId(input.analysisSessionId);
     if (raced && hasUsableContact(raced)) {
       return { public: toPublicHandoff(input.session, raced)!, created: false };
     }
-    throw new AnalysisSessionError(error?.message || "Failed to save interest.", 500, "interest_failed");
+    throw new AnalysisSessionError(saveError?.message || "Failed to save interest.", 500, "interest_failed");
   }
   await record21dFunnelEvent({
     analysisSessionId: input.analysisSessionId,
     event: "21d_contact_captured",
-    interestId: String(data.id),
+    interestId: String(saved.id),
   });
   await record21dFunnelEvent({
     analysisSessionId: input.analysisSessionId,
     event: "21d_interest_created",
-    interestId: String(data.id),
+    interestId: String(saved.id),
   });
   if (preference) {
     await record21dFunnelEvent({
       analysisSessionId: input.analysisSessionId,
       event: "21d_consultation_submitted",
-      interestId: String(data.id),
+      interestId: String(saved.id),
     });
   }
-  return { public: toPublicHandoff(input.session, data as InterestRow)!, created: true };
+  return { public: toPublicHandoff(input.session, saved)!, created: true };
 }
 
 export type Partner21dCard = {
