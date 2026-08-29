@@ -308,6 +308,6 @@ export function compactGo21GoalForAi(record: Go21GoalRecord | null): {
     originalPersonalGoal: view.originalPersonalGoal,
     wasRefined: view.wasRefined,
     guidance:
-      "Silent understanding only. current personalGoal is the live coaching anchor; originalPersonalGoal is history. Do not recite the goal. Use it when the moment is relevant (e.g. late-night craving). Never invent progress.",
+      "Protect the live goal with professional judgment. current personalGoal is the coaching anchor; originalPersonalGoal is history. Do not recite the goal as a mantra. When today's food or plans conflict with the goal (e.g. fat loss + fried + another burger), steer with a concrete alternative — never empty praise. Never invent progress.",
   };
 }

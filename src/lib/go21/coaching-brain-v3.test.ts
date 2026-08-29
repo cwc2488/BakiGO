@@ -224,10 +224,9 @@ describe("Go21 Coaching Brain V3 — behavior fixtures", () => {
     expect(src).toContain("stickToBottomRef");
     expect(src).toContain("最新訊息");
     expect(src).toContain("onThreadScroll");
-    expect(src).toContain("followLatestConversation");
-    expect(src).toContain("programmaticScrollRef");
     expect(src).toContain("schedulePinToLatest");
     expect(src).toContain("shouldFollowOnAssistantArrival");
+    expect(src).not.toMatch(/\.scrollIntoView\s*\(/);
     // Active send pins to latest
     expect(src).toMatch(/setPendingUser[\s\S]{0,240}followLatestConversation/);
   });

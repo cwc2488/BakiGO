@@ -5,6 +5,7 @@ import {
   isThreadFullyShowingLatest,
   programmaticScrollLockMs,
   resolveChatScrollStickState,
+  resolveGo21ShellViewportHeightPx,
   shouldFollowOnAssistantArrival,
   shouldForceFollowOnSend,
 } from "@/lib/go21/chat-scroll";
@@ -75,22 +76,42 @@ describe("Go21 chat scroll follow", () => {
     expect(shouldFollowOnAssistantArrival(false)).toBe(false);
   });
 
-  it("retries after layout/image decode windows", () => {
-    expect(GO21_CHAT_FOLLOW_RETRY_MS.length).toBeGreaterThanOrEqual(4);
-    expect(GO21_CHAT_FOLLOW_RETRY_MS.some((ms) => ms >= 500)).toBe(true);
-    expect(programmaticScrollLockMs("smooth")).toBeGreaterThanOrEqual(800);
-    expect(programmaticScrollLockMs("auto")).toBeGreaterThanOrEqual(150);
+  it("retries after layout/image decode windows and prefers auto lock", () => {
+    expect(GO21_CHAT_FOLLOW_RETRY_MS.length).toBeGreaterThanOrEqual(5);
+    expect(GO21_CHAT_FOLLOW_RETRY_MS.some((ms) => ms >= 1000)).toBe(true);
+    expect(programmaticScrollLockMs("auto")).toBeGreaterThanOrEqual(100);
   });
 
-  it("chat UI observes content growth and image loads, not only container box", () => {
+  it("uses visualViewport height for iPhone keyboard chrome", () => {
+    expect(
+      resolveGo21ShellViewportHeightPx({
+        visualViewportHeight: 520.4,
+        windowInnerHeight: 844,
+      }),
+    ).toBe(520);
+    expect(
+      resolveGo21ShellViewportHeightPx({
+        visualViewportHeight: null,
+        windowInnerHeight: 844,
+      }),
+    ).toBe(844);
+  });
+
+  it("chat UI uses fixed shell + chat panel; no scrollIntoView; observes composer", () => {
     const src = readFileSync(resolve(process.cwd(), "src/components/go21/Go21App.tsx"), "utf8");
+    const css = readFileSync(resolve(process.cwd(), "src/components/go21/go21.css"), "utf8");
+    expect(css).toContain("go21-chat-panel");
+    expect(css).toMatch(/--go21-vvh/);
+    expect(css).toMatch(/min-height:\s*0/);
+    expect(css).toMatch(/\.go21-composer[\s\S]*flex-shrink:\s*0/);
     expect(src).toContain("threadContentRef");
-    expect(src).toContain("latestAnchorRef");
+    expect(src).toContain("composerRef");
     expect(src).toContain("schedulePinToLatest");
-    expect(src).toContain("ResizeObserver");
+    expect(src).toContain("resolveGo21ShellViewportHeightPx");
     expect(src).toContain('addEventListener("load"');
+    expect(src).not.toMatch(/\.scrollIntoView\s*\(/);
+    expect(src).toContain("Never use scrollIntoView");
     expect(src).toContain("shouldFollowOnAssistantArrival");
-    expect(src).toContain("followLatestConversation()");
     expect(src).toMatch(/setPendingUser[\s\S]{0,240}followLatestConversation/);
   });
 });

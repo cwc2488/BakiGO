@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   coachMessageEndsWithQuestion,
+  coachMessageHasEmptyFoodPraise,
   go21SystemPromptAllowsTimelyConcreteTip,
   go21SystemPromptIncludesShortPolicy,
   go21SystemPromptPrefersConciseDefault,
   go21SystemPromptAllowsStopWithoutQuestion,
   go21SystemPromptPrefersMealPhotoJudgment,
+  go21SystemPromptProtectsCustomerGoal,
 } from "@/lib/go21/conversation-quality";
 import { buildCoachingAiV2SystemPrompt, buildCoachingAiV2UserPrompt } from "@/lib/coaching/ai/v2/v2-prompts";
 import { generateFixtureV2Draft } from "@/lib/coaching/ai/v2/v2-fixture-provider";
@@ -43,6 +45,7 @@ describe("Go21 conversation polish", () => {
     const sys = buildCoachingAiV2SystemPrompt();
     expect(go21SystemPromptAllowsStopWithoutQuestion(sys)).toBe(true);
     expect(go21SystemPromptPrefersMealPhotoJudgment(sys)).toBe(true);
+    expect(go21SystemPromptProtectsCustomerGoal(sys)).toBe(true);
     const user = buildCoachingAiV2UserPrompt({
       generationInput: minimalGi(),
       decisionContext: minimalDecision(),
@@ -50,7 +53,7 @@ describe("Go21 conversation polish", () => {
       channel: "free_message",
       freeMessage: "📷",
     });
-    expect(user).toMatch(/收尾不要預設問句|不要叫顧客自己評價這餐/);
+    expect(user).toMatch(/收尾不要預設問句|不要叫顧客自己評價這餐|護住目標/);
   });
 
   it("simple food log stays concise; goal moment may include one concrete tip", () => {
@@ -114,9 +117,68 @@ describe("Go21 conversation polish", () => {
       memory: emptyMemory(8),
       channel: "free_message",
       freeMessage: "[影像觀察] 看起來像炸雞便當",
+      go21Goal: {
+        primaryDirection: "fat_loss_body",
+        primaryDirectionLabel: "減脂／體態改善",
+        personalGoal: "三週減體脂",
+        targetWeightKg: 70,
+        originalPersonalGoal: null,
+        wasRefined: false,
+        guidance: "protect goal",
+      },
     });
-    expect(draft.coachMessage).toMatch(/偏重|收一點|方向可以|記著/);
+    expect(draft.coachMessage).toMatch(/偏重|收一點|記著/);
     expect(draft.coachMessage).not.toMatch(/你覺得|哪裡跟前幾天|我先不搶答/);
+    expect(coachMessageEndsWithQuestion(draft.coachMessage)).toBe(false);
+    expect(coachMessageHasEmptyFoodPraise(draft.coachMessage)).toBe(false);
+  });
+
+  it("fat loss + fried earlier + planned hamburger steers toward a better choice", () => {
+    const draft = generateFixtureV2Draft({
+      generationInput: minimalGi(),
+      decisionContext: {
+        ...minimalDecision(),
+        mealObservations: [
+          {
+            mealSlot: "lunch",
+            observedFoods: ["炸麵"],
+            signals: ["fried_food"],
+            shakeObserved: false,
+            solidFoodObserved: true,
+            confidence: "medium",
+          },
+        ],
+      } as unknown as CoachingDecisionContext,
+      finalInterventionLevel: "normal",
+      memory: {
+        ...emptyMemory(9),
+        recentTurns: [
+          {
+            id: "t1",
+            role: "customer" as const,
+            channel: "free_message" as const,
+            logDate: "2026-08-29",
+            content: "午餐吃了炸麵",
+            intention: null,
+            createdAt: "2026-08-29T04:00:00.000Z",
+          } as never,
+        ],
+      },
+      channel: "free_message",
+      freeMessage: "等一下想吃漢堡",
+      go21Goal: {
+        primaryDirection: "fat_loss_body",
+        primaryDirectionLabel: "減脂／體態改善",
+        personalGoal: "減脂改善體態",
+        targetWeightKg: 68,
+        originalPersonalGoal: null,
+        wasRefined: false,
+        guidance: "protect goal",
+      },
+    });
+    expect(draft.coachMessage).toMatch(/偏重|換|雞|沙拉|蛋白質|方向/);
+    expect(draft.coachMessage).not.toMatch(/很讚|好好吃|方向可以/);
+    expect(coachMessageHasEmptyFoodPraise(draft.coachMessage)).toBe(false);
     expect(coachMessageEndsWithQuestion(draft.coachMessage)).toBe(false);
   });
 

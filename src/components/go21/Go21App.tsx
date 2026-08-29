@@ -8,6 +8,7 @@ import {
   computeScrollTopForLatest,
   programmaticScrollLockMs,
   resolveChatScrollStickState,
+  resolveGo21ShellViewportHeightPx,
   shouldFollowOnAssistantArrival,
 } from "@/lib/go21/chat-scroll";
 import { nextClientRequestId, interpretGo21ChatSendResult, type Go21SendStatus } from "@/lib/go21/conversation-quality";
@@ -83,6 +84,8 @@ export function Go21App({ token }: { token: string }) {
   const threadRef = useRef<HTMLDivElement>(null);
   const threadContentRef = useRef<HTMLDivElement>(null);
   const latestAnchorRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLFormElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const stickToBottomRef = useRef(true);
@@ -170,36 +173,68 @@ export function Go21App({ token }: { token: string }) {
       setShowJumpLatest(true);
       return;
     }
-    schedulePinToLatest("smooth");
+    // auto is more reliable than smooth on iPhone after content/layout changes
+    schedulePinToLatest("auto");
     setShowJumpLatest(false);
-  }, [ctx?.turns.length, pendingUser, busy, sendStatus]);
+  }, [ctx?.turns.length, pendingUser, busy, sendStatus, photoPreview]);
 
   useEffect(() => {
     const content = threadContentRef.current;
+    const composer = composerRef.current;
     if (!content || typeof ResizeObserver === "undefined") return;
 
-    const onContentGrew = () => {
+    const onLayoutChange = () => {
       if (!stickToBottomRef.current) return;
       scrollThreadToLatest("auto");
     };
 
-    const ro = new ResizeObserver(onContentGrew);
+    const ro = new ResizeObserver(onLayoutChange);
     ro.observe(content);
+    if (composer) ro.observe(composer);
 
     // Photo decode changes height after first paint — catch bubble <img> loads.
     const onLoadCapture = (event: Event) => {
       const target = event.target;
       if (!(target instanceof HTMLImageElement)) return;
-      if (!content.contains(target)) return;
-      onContentGrew();
+      if (!content.contains(target) && !(composer && composer.contains(target))) return;
+      onLayoutChange();
     };
     content.addEventListener("load", onLoadCapture, true);
+    composer?.addEventListener("load", onLoadCapture, true);
 
     return () => {
       ro.disconnect();
       content.removeEventListener("load", onLoadCapture, true);
+      composer?.removeEventListener("load", onLoadCapture, true);
     };
   }, [view, ctx?.turns.length, pendingUser, photoPreview]);
+
+  // Keep shell height inside the real iPhone visual viewport (keyboard / browser chrome).
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell || typeof window === "undefined") return;
+
+    const apply = () => {
+      const px = resolveGo21ShellViewportHeightPx({
+        visualViewportHeight: window.visualViewport?.height ?? null,
+        windowInnerHeight: window.innerHeight,
+      });
+      shell.style.setProperty("--go21-vvh", `${px}px`);
+      if (stickToBottomRef.current) {
+        scrollThreadToLatest("auto");
+      }
+    };
+
+    apply();
+    window.addEventListener("resize", apply);
+    window.visualViewport?.addEventListener("resize", apply);
+    window.visualViewport?.addEventListener("scroll", apply);
+    return () => {
+      window.removeEventListener("resize", apply);
+      window.visualViewport?.removeEventListener("resize", apply);
+      window.visualViewport?.removeEventListener("scroll", apply);
+    };
+  }, [view]);
 
   useEffect(() => {
     return () => {
@@ -226,46 +261,40 @@ export function Go21App({ token }: { token: string }) {
     }, durationMs);
   }
 
-  function scrollThreadToLatest(behavior: ScrollBehavior) {
+  function scrollThreadToLatest(_behavior: ScrollBehavior = "auto") {
     const el = threadRef.current;
     if (!el) return;
-    markProgrammaticScroll(programmaticScrollLockMs(behavior));
-    const anchor = latestAnchorRef.current;
-    if (anchor) {
-      anchor.scrollIntoView({ behavior, block: "end", inline: "nearest" });
-    }
+    // Never use scrollIntoView — on iOS it can scroll the document and tuck
+    // the newest bubble under the composer.
+    markProgrammaticScroll(programmaticScrollLockMs("auto"));
     const top = computeScrollTopForLatest({
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
     });
-    if (behavior === "auto") {
-      el.scrollTop = top;
-    } else {
-      el.scrollTo({ top, behavior });
-    }
+    el.scrollTop = top;
   }
 
   /** Re-pin while stick is true — does not re-engage after intentional upward scroll. */
-  function schedulePinToLatest(behavior: ScrollBehavior = "auto") {
+  function schedulePinToLatest(_behavior: ScrollBehavior = "auto") {
     if (!stickToBottomRef.current) return;
     const gen = ++followGenRef.current;
     clearFollowTimers();
 
-    const run = (b: ScrollBehavior) => {
+    const run = () => {
       if (followGenRef.current !== gen) return;
       if (!stickToBottomRef.current) return;
-      scrollThreadToLatest(b);
+      scrollThreadToLatest("auto");
     };
 
-    run(behavior === "smooth" ? "auto" : behavior);
+    run();
     requestAnimationFrame(() => {
-      run("auto");
-      requestAnimationFrame(() => run(behavior));
+      run();
+      requestAnimationFrame(run);
     });
 
     for (const delay of GO21_CHAT_FOLLOW_RETRY_MS) {
       if (delay === 0) continue;
-      const id = window.setTimeout(() => run("auto"), delay);
+      const id = window.setTimeout(run, delay);
       followTimersRef.current.push(id);
     }
   }
@@ -274,7 +303,7 @@ export function Go21App({ token }: { token: string }) {
   function followLatestConversation() {
     stickToBottomRef.current = true;
     setShowJumpLatest(false);
-    schedulePinToLatest("smooth");
+    schedulePinToLatest("auto");
   }
 
   function onThreadScroll() {
@@ -516,7 +545,7 @@ export function Go21App({ token }: { token: string }) {
         setDraft("");
         // If user scrolled up while waiting, do not yank them back on AI arrival.
         if (shouldFollowOnAssistantArrival(stickToBottomRef.current)) {
-          schedulePinToLatest("smooth");
+          schedulePinToLatest("auto");
         }
         await reload();
         startTransition(() => {
@@ -544,7 +573,7 @@ export function Go21App({ token }: { token: string }) {
       setPhotoMenuOpen(false);
       setDraft("");
       if (shouldFollowOnAssistantArrival(stickToBottomRef.current)) {
-        schedulePinToLatest("smooth");
+        schedulePinToLatest("auto");
       }
       await reload();
       startTransition(() => {
@@ -591,7 +620,7 @@ export function Go21App({ token }: { token: string }) {
 
   if (loading) {
     return (
-      <div className="go21-shell">
+      <div ref={shellRef} className="go21-shell">
         <p className="go21-muted">載入中…</p>
       </div>
     );
@@ -599,14 +628,14 @@ export function Go21App({ token }: { token: string }) {
 
   if (!ctx) {
     return (
-      <div className="go21-shell">
+      <div ref={shellRef} className="go21-shell">
         <p className="go21-error">{error ?? "無法開啟連結"}</p>
       </div>
     );
   }
 
   return (
-    <div className="go21-shell">
+    <div ref={shellRef} className="go21-shell">
       <header className="go21-header">
         <div>
           <p className="go21-brand">{ctx.brandName}</p>
@@ -702,7 +731,7 @@ export function Go21App({ token }: { token: string }) {
       ) : null}
 
       {view === "chat" ? (
-        <>
+        <div className="go21-chat-panel">
           {ctx.reminders.length > 0 ? (
             <div className="go21-reminder">
               {ctx.reminders[0]!.message}
@@ -761,6 +790,7 @@ export function Go21App({ token }: { token: string }) {
             </button>
           ) : null}
           <form
+            ref={composerRef}
             className="go21-composer"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
@@ -842,7 +872,7 @@ export function Go21App({ token }: { token: string }) {
               </button>
             </div>
           </form>
-        </>
+        </div>
       ) : null}
 
     </div>

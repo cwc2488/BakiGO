@@ -115,6 +115,7 @@ export function detectPhotoFoodCorrection(message: string): string | null {
 /** Brain V3 principles — economy without a hard character quota. */
 export const GO21_BRAIN_V3_PRINCIPLES = [
   "先理解",
+  "記得目標並護住它",
   "記得，但別背誦",
   "自然回應",
   "有用才介入",
@@ -134,7 +135,7 @@ export function go21SystemPromptPrefersConciseDefault(systemPrompt: string): boo
 }
 
 export function go21SystemPromptAllowsTimelyConcreteTip(systemPrompt: string): boolean {
-  return /可執行的建議|一句具體建議|卡住/.test(systemPrompt);
+  return /可執行的建議|一句具體建議|卡住|具體調整／替代|給一個更好的下一步/.test(systemPrompt);
 }
 
 export function go21SystemPromptAllowsNoQuestion(systemPrompt: string): boolean {
@@ -164,9 +165,22 @@ export function go21SystemPromptPrefersMealPhotoJudgment(systemPrompt: string): 
   );
 }
 
+/** Goal stewardship — protect goal without empty praise when choices conflict. */
+export function go21SystemPromptProtectsCustomerGoal(systemPrompt: string): boolean {
+  return (
+    /記得目標並護住它|護住目標/.test(systemPrompt) &&
+    /不要對偏離目標的食物空口稱讚|不要對偏離目標的食物說/.test(systemPrompt)
+  );
+}
+
 /** Heuristic: coach message ends with a question mark (Chinese or ASCII). */
 export function coachMessageEndsWithQuestion(message: string): boolean {
   return /[？?]\s*$/u.test(message.trim());
+}
+
+/** Empty praise that should not appear when food conflicts with goal. */
+export function coachMessageHasEmptyFoodPraise(message: string): boolean {
+  return /看起來很讚|好好吃|好香|聽起來很讚|方向可以|沒什麼要念你/.test(message);
 }
 
 export function go21SystemPromptHandlesDisengagement(systemPrompt: string): boolean {

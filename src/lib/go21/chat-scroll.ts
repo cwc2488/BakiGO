@@ -1,11 +1,11 @@
 import { isChatNearBottom } from "@/lib/go21/coach-context";
 
-/** Delays (ms) to re-pin after layout / image decode on mobile. */
-export const GO21_CHAT_FOLLOW_RETRY_MS = [0, 50, 120, 280, 600, 1100] as const;
+/** Delays (ms) to re-pin after layout / image decode on mobile Safari. */
+export const GO21_CHAT_FOLLOW_RETRY_MS = [0, 32, 80, 160, 320, 640, 1200, 2000] as const;
 
-/** Keep ignore-window long enough for smooth scroll + Safari rubber-band events. */
+/** Prefer auto on iPhone — smooth often undershoots before layout settles. */
 export function programmaticScrollLockMs(behavior: ScrollBehavior): number {
-  return behavior === "smooth" ? 900 : 220;
+  return behavior === "smooth" ? 700 : 180;
 }
 
 /**
@@ -39,8 +39,8 @@ export function shouldFollowOnAssistantArrival(stickToBottom: boolean): boolean 
 }
 
 /**
- * Target scrollTop so the newest content sits at the bottom of the viewport.
- * Clamped for short threads.
+ * Target scrollTop so the newest content sits at the bottom of the thread viewport.
+ * Thread must be the only scrollport (composer is a flex sibling, not an overlay).
  */
 export function computeScrollTopForLatest(input: {
   scrollHeight: number;
@@ -58,4 +58,19 @@ export function isThreadFullyShowingLatest(input: {
   const slack = input.slackPx ?? 8;
   const target = computeScrollTopForLatest(input);
   return input.scrollTop >= target - slack;
+}
+
+/**
+ * CSS pixel height for the Go21 shell from visualViewport when available.
+ * Keeps the composer inside the visible iPhone viewport when the keyboard opens.
+ */
+export function resolveGo21ShellViewportHeightPx(input: {
+  visualViewportHeight: number | null | undefined;
+  windowInnerHeight: number;
+}): number {
+  const vv = input.visualViewportHeight;
+  if (typeof vv === "number" && Number.isFinite(vv) && vv > 0) {
+    return Math.round(vv);
+  }
+  return Math.round(input.windowInnerHeight);
 }

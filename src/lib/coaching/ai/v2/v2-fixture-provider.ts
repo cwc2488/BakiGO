@@ -47,6 +47,15 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
+  // Goal conflict / day-pattern steering — protect goal without shame lectures
+  const goalSteer = matchGoalConflictSteering(input);
+  if (goalSteer) {
+    return {
+      coachMessage: goalSteer,
+      meta: emptyMeta("challenge", day, stage),
+    };
+  }
+
   // Vision recall — use recent observations / turn memory (no new vision call)
   const visionRecall = matchVisionRecall(input);
   if (visionRecall) {
@@ -59,7 +68,7 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
   // Photo / vision observation — useful judgment when cues exist; no self-eval quiz
   if (freeMessage && /\[影像觀察/.test(freeMessage)) {
     const food = extractVisionFoodLabel(freeMessage);
-    const mealJudgment = buildMealPhotoJudgment(decisionContext, food);
+    const mealJudgment = buildMealPhotoJudgment(decisionContext, food, input.go21Goal);
     if (mealJudgment) {
       return {
         coachMessage: mealJudgment,
@@ -72,9 +81,16 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
-  // Simple food log — acknowledge only (no nutrition correction obligation)
+  // Simple food log — acknowledge only when not conflicting with goal
   const simpleFood = matchSimpleFoodLog(freeMessage);
   if (simpleFood) {
+    const conflict = goalConflictsWithFoodChoice(input.go21Goal, simpleFood, decisionContext);
+    if (conflict) {
+      return {
+        coachMessage: conflict,
+        meta: emptyMeta("challenge", day, stage),
+      };
+    }
     return {
       coachMessage: `收到，${simpleFood} 👌`,
       meta: emptyMeta("acknowledge", day, stage),
@@ -453,6 +469,81 @@ function extractVisionFoodLabel(text: string): string | null {
   return null;
 }
 
+const HEAVY_FOOD_RE =
+  /炸|漢堡|薯條|奶茶|蛋糕|泡麵|炸雞|鹹酥雞|披薩|可樂|雞排|甜甜圈|炸麵|炸物/;
+
+function isFatLossOrientedGoal(
+  goal: GenerateCoachingAiV2Input["go21Goal"] | null | undefined,
+): boolean {
+  if (!goal) return false;
+  if (goal.primaryDirection === "fat_loss_body") return true;
+  return /減脂|瘦|體脂|體態|脂肪/.test(
+    `${goal.personalGoal} ${goal.primaryDirectionLabel ?? ""}`,
+  );
+}
+
+function recentCustomerFoodContext(input: GenerateCoachingAiV2Input): string {
+  const fromObs = input.decisionContext.mealObservations
+    .flatMap((o) => [...o.observedFoods, ...o.signals])
+    .join(" ");
+  const fromTurns = input.memory.recentTurns
+    .filter((t) => t.role === "customer")
+    .slice(-6)
+    .map((t) => t.content)
+    .join(" ");
+  const fromToday = input.generationInput.todayContext.primaryMeals
+    .map((m) => m.textNote ?? "")
+    .join(" ");
+  const vision = (input.recentVisionObservations ?? [])
+    .map((v) => `${v.summary} ${v.correction ?? ""}`)
+    .join(" ");
+  return `${fromObs} ${fromTurns} ${fromToday} ${vision} ${input.freeMessage ?? ""}`;
+}
+
+function hasHeavySignalsToday(decision: CoachingDecisionContext): boolean {
+  return decision.mealObservations.some((o) =>
+    o.signals.some((s) =>
+      ["fried_food", "sugary_drink", "starch_concentrated", "late_night"].includes(s),
+    ),
+  );
+}
+
+/**
+ * When the live goal conflicts with today's pattern + the next planned choice,
+ * steer with a concrete alternative — no empty praise.
+ */
+function matchGoalConflictSteering(input: GenerateCoachingAiV2Input): string | null {
+  const goal = input.go21Goal;
+  if (!goal || !isFatLossOrientedGoal(goal)) return null;
+  const msg = (input.freeMessage ?? "").trim();
+  if (!msg) return null;
+
+  const planningHeavy =
+    HEAVY_FOOD_RE.test(msg) &&
+    /等一下|待會|等等|打算|想吃|晚上|再吃|後來|然後.*吃|準備吃/.test(msg);
+  const context = recentCustomerFoodContext(input);
+  const alreadyHeavy =
+    HEAVY_FOOD_RE.test(context) || hasHeavySignalsToday(input.decisionContext);
+
+  if (planningHeavy && alreadyHeavy) {
+    return "欸，今天前面已經偏重了，待會再疊漢堡／炸物的話整天會太兇。換個蛋白質清楚一點的選擇會比較貼你現在的方向，例如雞胸堡、生菜包肉或清湯麵。";
+  }
+  if (planningHeavy) {
+    return "以你現在的減脂方向，待會這餐可以換蛋白質清楚、負擔輕一點的選擇，會比再來一輪重口味穩。";
+  }
+  return null;
+}
+
+function goalConflictsWithFoodChoice(
+  goal: GenerateCoachingAiV2Input["go21Goal"] | null | undefined,
+  foodLabel: string,
+  decision: CoachingDecisionContext,
+): string | null {
+  if (!isFatLossOrientedGoal(goal)) return null;
+  if (!HEAVY_FOOD_RE.test(foodLabel) && !hasHeavySignalsToday(decision)) return null;
+  return `收到，${foodLabel}。以你現在的方向這餐偏重了一點；下一餐先選蛋白質清楚、油炸少一點的會比較穩。`;
+}
+
 /**
  * When photo/vision cues are enough, prefer a useful judgment over asking
  * the customer to evaluate the meal themselves.
@@ -460,6 +551,7 @@ function extractVisionFoodLabel(text: string): string | null {
 function buildMealPhotoJudgment(
   decision: CoachingDecisionContext,
   food: string | null,
+  goal?: GenerateCoachingAiV2Input["go21Goal"] | null,
 ): string | null {
   const foods =
     food != null && food.length > 0
@@ -467,24 +559,28 @@ function buildMealPhotoJudgment(
       : decision.mealObservations.flatMap((o) => o.observedFoods).slice(0, 3);
   const label = foods.length > 0 ? foods.join("、") : null;
   const level = decision.dailyNutritionAssessment.level;
-  const heavySignals = decision.mealObservations.some((o) =>
-    o.signals.some((s) =>
-      ["fried_food", "sugary_drink", "starch_concentrated", "late_night"].includes(s),
-    ),
-  );
+  const heavySignals = hasHeavySignalsToday(decision);
+  const heavyLabel = Boolean(label && HEAVY_FOOD_RE.test(label));
+  const fatLoss = isFatLossOrientedGoal(goal);
 
-  if (heavySignals || level === "off_track" || level === "needs_adjustment") {
+  if (heavySignals || heavyLabel || level === "off_track" || level === "needs_adjustment") {
+    if (fatLoss) {
+      if (label) {
+        return `這張看起來是${label}。以你減脂方向，這餐偏重了一點；下一餐先把份量或油炸感收一點就好。`;
+      }
+      return "這餐看起來偏重了一點。下一餐先把份量收一點就好，不用整天生氣。";
+    }
     if (label) {
-      return `這張看起來是${label}。以你現在的方向，這餐偏重了一點；下一餐先把份量或油炸感收一點就好。`;
+      return `這張看起來是${label}。這餐偏重了一點；下一餐先把份量或油炸感收一點就好。`;
     }
     return "這餐看起來偏重了一點。下一餐先把份量收一點就好，不用整天生氣。";
   }
   if (level === "on_track" || decision.mealObservations.some((o) => o.shakeObserved)) {
-    if (label) return `看到${label}了，這餐方向可以，我先記著。`;
+    if (label) return `看到${label}了，這餐我先記著。`;
     return "這餐看起來穩，我先記著。";
   }
   if (label && decision.mealObservations.length > 0) {
-    return `看到${label}了 👀 這餐我先記著，暫時沒什麼要特別念你的。`;
+    return `看到${label}了 👀 這餐我先記著。`;
   }
   return null;
 }
