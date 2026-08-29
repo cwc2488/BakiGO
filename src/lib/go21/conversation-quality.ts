@@ -149,10 +149,45 @@ export function go21SystemPromptAllowsMetaFeedback(systemPrompt: string): boolea
   return /像機器人/.test(systemPrompt) && /不要辯護/.test(systemPrompt);
 }
 
-export type Go21SendStatus = "idle" | "sending" | "failed";
+export type Go21SendStatus =
+  | "idle"
+  | "sending"
+  | "customer_sent"
+  | "failed"
+  | "coach_failed";
 
 export function nextClientRequestId(existing?: string | null): string {
   if (existing?.trim()) return existing.trim();
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   return `go21-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+/** Client helper: interpret chat API durability fields. */
+export function interpretGo21ChatSendResult(payload: {
+  ok?: boolean;
+  customerAccepted?: boolean;
+  assistantStatus?: string | null;
+  coachMessage?: string | null;
+}): {
+  customerSent: boolean;
+  coachOk: boolean;
+  coachFailed: boolean;
+  messageRetry: boolean;
+} {
+  const assistantStatus = payload.assistantStatus ?? null;
+  const customerSent =
+    payload.customerAccepted === true ||
+    (payload.ok === true && assistantStatus === "ok") ||
+    (payload.ok === true && assistantStatus === "failed");
+  const coachOk = payload.ok === true && assistantStatus === "ok";
+  const coachFailed = customerSent && assistantStatus === "failed";
+  // Legacy responses without assistantStatus but with coachMessage
+  const legacyOk =
+    payload.ok === true && assistantStatus == null && Boolean(payload.coachMessage);
+  return {
+    customerSent: customerSent || legacyOk,
+    coachOk: coachOk || legacyOk,
+    coachFailed,
+    messageRetry: !(customerSent || legacyOk),
+  };
 }

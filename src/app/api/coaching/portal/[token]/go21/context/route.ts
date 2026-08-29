@@ -35,6 +35,7 @@ export async function GET(
       photoUrl: string | null;
       mealSlotUnresolved: boolean;
       photoStoragePath: string | null;
+      clientRequestId: string | null;
     }> = [];
 
     try {
@@ -78,6 +79,8 @@ export async function GET(
             photoUrl,
             mealSlotUnresolved: metadata.mealSlotUnresolved === true,
             photoStoragePath: null, // never expose storage path to client
+            clientRequestId:
+              typeof metadata.clientRequestId === "string" ? metadata.clientRequestId : null,
           };
         }),
       );
@@ -97,12 +100,28 @@ export async function GET(
         photoUrl: null,
         mealSlotUnresolved: false,
         photoStoragePath: null,
+        clientRequestId:
+          typeof t.metadata?.clientRequestId === "string"
+            ? t.metadata.clientRequestId
+            : null,
       }));
     }
 
     const lastCustomerTurn = [...turns].reverse().find((t) => t.role === "customer");
     const lastActiveDate = lastCustomerTurn?.createdAt?.slice(0, 10) ?? null;
     const suggestReengagement = isReengagementDue(lastActiveDate);
+
+    // If the thread ends on a customer turn, coach reply is still recoverable.
+    const lastMeaningful = [...turns].reverse().find((t) => t.channel !== "system");
+    const pendingCoachReply =
+      lastMeaningful?.role === "customer" && lastMeaningful.clientRequestId
+        ? {
+            customerTurnId: lastMeaningful.id,
+            clientRequestId: lastMeaningful.clientRequestId,
+            content: lastMeaningful.content,
+            logDate: lastMeaningful.createdAt.slice(0, 10),
+          }
+        : null;
 
     // Surface recently delivered reminder turns as coach-initiated messages (already in thread)
     const reminderTurns = turns.filter((t) => t.channel === "system").slice(-3);
@@ -124,7 +143,8 @@ export async function GET(
         needsBaseline: bundle.needsBaseline,
         needsGoal: bundle.needsGoal,
         goal: bundle.goal,
-        turns: turns.map(({ photoStoragePath: _p, ...rest }) => rest),
+        turns: turns.map(({ photoStoragePath: _p, clientRequestId: _c, ...rest }) => rest),
+        pendingCoachReply,
         reminders: reminderTurns.map((t) => ({
           id: t.id,
           kind: "in_app",

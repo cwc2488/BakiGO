@@ -59,6 +59,9 @@ export type RunCoachingAiV2TurnInput = {
     summary: string;
     correction: string | null;
   }> | null;
+  /** Customer turn already durably accepted — skip duplicate Supabase customer insert. */
+  customerAlreadyAccepted?: boolean;
+  existingCustomerTurnId?: string | null;
 };
 
 export type RunCoachingAiV2TurnResult = {
@@ -147,25 +150,39 @@ export async function runCoachingAiV2Turn(
       ? input.customerMetadata.customerCorrection
       : null;
 
+  const clientReq = input.clientRequestId?.trim() || null;
+  const customerAlreadyInMemory =
+    Boolean(input.customerAlreadyAccepted) &&
+    Boolean(clientReq) &&
+    memory.recentTurns.some(
+      (t) =>
+        t.role === "customer" &&
+        t.metadata &&
+        t.metadata.clientRequestId === clientReq,
+    );
+
   // In-memory turn for generation uses AI-enriched content; Supabase stores display content.
-  await store.appendTurn({
-    enrollmentId: input.generationInput.enrollmentId,
-    customerId: input.generationInput.customerId,
-    ownerMemberId,
-    cycleId: effectiveCycle?.id ?? memory.lifecycle.cycle?.id ?? null,
-    logDate,
-    role: "customer",
-    channel:
-      input.customerChannel ??
-      (channel === "free_message" ? "free_message" : channel === "day21" ? "day21" : "daily_log"),
-    content: enrichTurnContentForAi({
-      displayContent,
-      visionEvidenceSummary: visionSummary,
-      customerCorrection: correction,
-    }),
-    contentSummary: visionSummary?.slice(0, 400) ?? null,
-    metadata: input.customerMetadata ?? {},
-  });
+  // When customer was already accepted + hydrated, do not append a duplicate in-memory turn.
+  if (!customerAlreadyInMemory) {
+    await store.appendTurn({
+      enrollmentId: input.generationInput.enrollmentId,
+      customerId: input.generationInput.customerId,
+      ownerMemberId,
+      cycleId: effectiveCycle?.id ?? memory.lifecycle.cycle?.id ?? null,
+      logDate,
+      role: "customer",
+      channel:
+        input.customerChannel ??
+        (channel === "free_message" ? "free_message" : channel === "day21" ? "day21" : "daily_log"),
+      content: enrichTurnContentForAi({
+        displayContent,
+        visionEvidenceSummary: visionSummary,
+        customerCorrection: correction,
+      }),
+      contentSummary: visionSummary?.slice(0, 400) ?? null,
+      metadata: input.customerMetadata ?? {},
+    });
+  }
 
   // Refresh memory after customer turn
   const memoryAfterCustomer = await store.loadMemoryBundle({
@@ -267,6 +284,10 @@ export async function runCoachingAiV2Turn(
           (channel === "free_message" ? "free_message" : channel === "day21" ? "day21" : "daily_log"),
         customerMetadata: input.customerMetadata,
         clientRequestId: input.clientRequestId,
+        existingCustomerTurnId: input.existingCustomerTurnId ?? null,
+        skipCustomerInsert: Boolean(
+          input.customerAlreadyAccepted || input.existingCustomerTurnId,
+        ),
       });
       if (!persistResult.ok) memoryUpdateOutcome = "failed";
     } catch (error) {

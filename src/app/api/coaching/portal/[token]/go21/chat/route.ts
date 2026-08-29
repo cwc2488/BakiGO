@@ -38,17 +38,27 @@ import {
   detectPhotoFoodCorrection,
 } from "@/lib/go21/conversation-quality";
 import {
-  findTurnByClientRequestId,
+  acceptGo21CustomerTurn,
+  findGo21TurnsByClientRequestId,
   loadRecentVisionEvidenceFromTurns,
 } from "@/lib/coaching/ai/v2/v2-supabase-store";
 import type { Go21ExtractedEvent } from "@/types/go21";
 import type { CoachingMealSlot } from "@/types/coaching";
+import {
+  categorizeGo21GenerationError,
+  logGo21ChatDiagnostic,
+  newGo21ChatCorrelationId,
+  sanitizeGo21ChatErrorMessage,
+  type Go21ChatStage,
+} from "@/lib/go21/chat-diagnostics";
 
 export const runtime = "nodejs";
 
 /**
  * Baki Go 21 chat turn:
- * safety → relevance → NL extract → structured persist → V2 coach brain → reminder intents.
+ * safety → relevance → NL extract → structured persist → accept customer → V2/V3 coach → reminder intents.
+ *
+ * Durability: customer acceptance is independent of AI generation success.
  */
 export async function POST(
   request: Request,
@@ -61,9 +71,22 @@ export async function POST(
     return NextResponse.json({ error: "AI Coach V2 is not enabled." }, { status: 409 });
   }
 
+  const correlationId = newGo21ChatCorrelationId();
+  let stage: Go21ChatStage = "auth";
+  let enrollmentIdForLog: string | undefined;
+  let clientRequestIdPresent = false;
+  let customerPersisted = false;
+  let generationStarted = false;
+  let assistantPersisted = false;
+  let acceptedCustomerTurnId: string | null = null;
+
   try {
+    stage = "auth";
     const { token } = await context.params;
     const { portal, enrollment } = await requireGo21Portal(token);
+    enrollmentIdForLog = portal.enrollmentId;
+
+    stage = "validate";
     const body = (await request.json()) as {
       message?: string;
       hasPhoto?: boolean;
@@ -71,6 +94,8 @@ export async function POST(
       mealSlotHint?: "breakfast" | "lunch" | "dinner" | null;
       logDate?: string;
       clientRequestId?: string;
+      /** Explicit coach-response retry after customer was already accepted. */
+      retryAssistant?: boolean;
     };
     const message = body.message?.trim() ?? "";
     if ((!message || message.length > 2000) && !body.hasPhoto) {
@@ -78,19 +103,29 @@ export async function POST(
     }
 
     const clientRequestId = body.clientRequestId?.trim() || null;
+    clientRequestIdPresent = Boolean(clientRequestId);
+
+    stage = "idempotency_lookup";
     if (clientRequestId) {
-      const prior = await findTurnByClientRequestId({
+      const prior = await findGo21TurnsByClientRequestId({
         enrollmentId: portal.enrollmentId,
         clientRequestId,
-        role: "coach",
       });
-      if (prior) {
+      if (prior.coach) {
         return NextResponse.json({
           ok: true,
-          coachMessage: prior.content,
+          customerAccepted: true,
+          customerTurnId: prior.customer?.id ?? null,
+          clientRequestId,
+          assistantStatus: "ok",
+          coachMessage: prior.coach.content,
           duplicate: true,
           relevance: "in_scope",
         });
+      }
+      if (prior.customer) {
+        customerPersisted = true;
+        acceptedCustomerTurnId = prior.customer.id;
       }
     }
 
@@ -105,6 +140,7 @@ export async function POST(
       hasPhoto: Boolean(body.hasPhoto),
     });
 
+    stage = "relevance";
     const previous = await loadPreviousExtraction(portal.enrollmentId);
     const relevance = classifyGo21Relevance(message || "photo");
     const extracted = extractGo21StructuredEvent({
@@ -129,16 +165,24 @@ export async function POST(
       const reply =
         safety.safeReply ??
         "你提到的狀況超出我能安全處理的範圍。請先以專業醫療／真人教練為準。";
-      await appendPairTurns({
+      const accepted = await acceptCustomerThenCoach({
         portal,
         logDate,
         customer: customerDisplayContent,
         coach: reply,
         metadata: { relevance: "safety", safety: true },
         clientRequestId,
+        channel: "free_message",
+        existingCustomerTurnId: acceptedCustomerTurnId,
       });
+      customerPersisted = accepted.customerPersisted;
+      assistantPersisted = accepted.assistantPersisted;
       return NextResponse.json({
         ok: true,
+        customerAccepted: accepted.customerPersisted,
+        customerTurnId: accepted.customerTurnId,
+        clientRequestId,
+        assistantStatus: accepted.assistantPersisted ? "ok" : "failed",
         coachMessage: reply,
         relevance,
         extracted,
@@ -150,7 +194,7 @@ export async function POST(
     // Disengagement: brief human reply (after safety). Do not motivational-essay.
     const disengagement = assessGo21Disengagement(message);
     if (disengagement.detected && disengagement.briefReply && relevance !== "out_of_scope") {
-      await appendPairTurns({
+      const accepted = await acceptCustomerThenCoach({
         portal,
         logDate,
         customer: customerDisplayContent,
@@ -161,9 +205,17 @@ export async function POST(
           wantsToStop: disengagement.wantsToStop,
         },
         clientRequestId,
+        channel: "free_message",
+        existingCustomerTurnId: acceptedCustomerTurnId,
       });
+      customerPersisted = accepted.customerPersisted;
+      assistantPersisted = accepted.assistantPersisted;
       return NextResponse.json({
         ok: true,
+        customerAccepted: accepted.customerPersisted,
+        customerTurnId: accepted.customerTurnId,
+        clientRequestId,
+        assistantStatus: accepted.assistantPersisted ? "ok" : "failed",
         coachMessage: disengagement.briefReply,
         relevance: "in_scope",
         extracted,
@@ -171,6 +223,7 @@ export async function POST(
       });
     }
 
+    stage = "structured_apply";
     if (relevance !== "out_of_scope") {
       const applied = await applyGo21StructuredEvent({
         portal,
@@ -190,16 +243,24 @@ export async function POST(
 
     if (relevance === "out_of_scope") {
       const redirect = composeGo21OutOfScopeReply(message);
-      await appendPairTurns({
+      const accepted = await acceptCustomerThenCoach({
         portal,
         logDate,
         customer: customerDisplayContent,
         coach: redirect,
         metadata: { relevance: "out_of_scope" },
         clientRequestId,
+        channel: "free_message",
+        existingCustomerTurnId: acceptedCustomerTurnId,
       });
+      customerPersisted = accepted.customerPersisted;
+      assistantPersisted = accepted.assistantPersisted;
       return NextResponse.json({
         ok: true,
+        customerAccepted: accepted.customerPersisted,
+        customerTurnId: accepted.customerTurnId,
+        clientRequestId,
+        assistantStatus: accepted.assistantPersisted ? "ok" : "failed",
         coachMessage: redirect,
         relevance,
         extracted,
@@ -207,6 +268,7 @@ export async function POST(
       });
     }
 
+    stage = "context_hydrate";
     const loaded = await loadAuthoritativeCoachingGenerationInput({
       enrollmentId: portal.enrollmentId,
       ownerMemberId: portal.ownerMemberId,
@@ -246,6 +308,7 @@ export async function POST(
       usage: { inputTokens: 0, outputTokens: 0, imageCount: 0 },
     };
 
+    stage = "vision";
     if (body.hasPhoto && body.photoUploaded) {
       vision = await runGo21RealtimeVision({
         portal,
@@ -284,6 +347,7 @@ export async function POST(
       })),
     ].slice(0, 3);
 
+    stage = "goal_context";
     let goalConfirmHint: string | null = null;
     let go21Goal: ReturnType<typeof buildGo21CoachGenerationContext>["go21Goal"] = null;
     try {
@@ -394,27 +458,173 @@ export async function POST(
       ...(clientRequestId ? { clientRequestId } : {}),
     };
 
-    const v2 = await runCoachingAiV2Turn({
-      generationInput,
-      decisionContext,
-      enrollmentStartedAt: lifecycleAnchor,
-      plannedEndAt: loaded.enrollmentPlannedEndAt,
-      planSnapshot: generationInput.profileMemory.planSnapshot,
-      channel,
-      freeMessage: enrichedFreeMessage,
-      customerDisplayContent,
-      customerChannel: body.hasPhoto ? "photo" : "free_message",
-      customerMetadata,
-      clientRequestId,
-      ownerMemberId: portal.ownerMemberId,
-      persistToSupabase: true,
-      hydrateFromSupabase: true,
-      go21Goal,
-      recentVisionObservations,
-    });
+    // STEP B — durable customer acceptance (independent of AI).
+    stage = "customer_persist";
+    if (!acceptedCustomerTurnId) {
+      const accepted = await acceptGo21CustomerTurn({
+        enrollmentId: portal.enrollmentId,
+        customerId: portal.customerId,
+        ownerMemberId: portal.ownerMemberId,
+        logDate,
+        content: customerDisplayContent,
+        channel: body.hasPhoto ? "photo" : "free_message",
+        metadata: customerMetadata,
+        clientRequestId,
+      });
+      if (!accepted.ok || !accepted.customerTurnId) {
+        logGo21ChatDiagnostic({
+          stage: "customer_persist",
+          correlationId,
+          enrollmentId: enrollmentIdForLog,
+          clientRequestIdPresent,
+          customerPersisted: false,
+          generationStarted: false,
+          assistantPersisted: false,
+          errorName: "CustomerPersistError",
+          errorMessage: sanitizeGo21ChatErrorMessage(accepted.errorMessage),
+          errorCategory: "persist_failed",
+          providerStatus: null,
+        });
+        return NextResponse.json(
+          {
+            ok: false,
+            customerAccepted: false,
+            clientRequestId,
+            assistantStatus: "skipped",
+            error: "訊息還無法送出，請重試",
+          },
+          { status: 503 },
+        );
+      }
+      customerPersisted = true;
+      acceptedCustomerTurnId = accepted.customerTurnId;
+      if (accepted.coachTurn) {
+        assistantPersisted = true;
+        return NextResponse.json({
+          ok: true,
+          customerAccepted: true,
+          customerTurnId: accepted.customerTurnId,
+          clientRequestId,
+          assistantStatus: "ok",
+          coachMessage: accepted.coachTurn.content,
+          duplicate: true,
+          relevance,
+          extracted,
+        });
+      }
+    } else {
+      customerPersisted = true;
+    }
 
+    stage = "generation";
+    generationStarted = true;
+    let v2: Awaited<ReturnType<typeof runCoachingAiV2Turn>>;
+    try {
+      v2 = await runCoachingAiV2Turn({
+        generationInput,
+        decisionContext,
+        enrollmentStartedAt: lifecycleAnchor,
+        plannedEndAt: loaded.enrollmentPlannedEndAt,
+        planSnapshot: generationInput.profileMemory.planSnapshot,
+        channel,
+        freeMessage: enrichedFreeMessage,
+        customerDisplayContent,
+        customerChannel: body.hasPhoto ? "photo" : "free_message",
+        customerMetadata,
+        clientRequestId,
+        ownerMemberId: portal.ownerMemberId,
+        persistToSupabase: true,
+        hydrateFromSupabase: true,
+        go21Goal,
+        recentVisionObservations,
+        customerAlreadyAccepted: true,
+        existingCustomerTurnId: acceptedCustomerTurnId,
+      });
+    } catch (genError) {
+      const categorized = categorizeGo21GenerationError(genError);
+      logGo21ChatDiagnostic({
+        stage: "generation",
+        correlationId,
+        enrollmentId: enrollmentIdForLog,
+        clientRequestIdPresent,
+        customerPersisted: true,
+        generationStarted: true,
+        assistantPersisted: false,
+        errorName: genError instanceof Error ? genError.name : "Error",
+        errorMessage: categorized.message,
+        errorCategory: categorized.category,
+        providerStatus: categorized.providerStatus,
+      });
+      // Customer message is already sent — do not HTTP 500 the acceptance.
+      return NextResponse.json({
+        ok: true,
+        customerAccepted: true,
+        customerTurnId: acceptedCustomerTurnId,
+        clientRequestId,
+        assistantStatus: "failed",
+        assistantError: {
+          category: categorized.category,
+          retryable: categorized.retryable,
+          message: "教練剛剛沒接上",
+        },
+        coachMessage: null,
+        relevance,
+        extracted,
+        vision: {
+          ran: vision.ran,
+          reusedCache: vision.reusedCache,
+          failed: vision.failed,
+          source: vision.source,
+          mealSlotUnresolved: vision.mealSlotUnresolved,
+          evidenceSummary: vision.evidenceSummary,
+          imageCount: vision.usage.imageCount,
+        },
+        photoVisionInChat: vision.ran && !vision.failed && Boolean(vision.evidenceSummary),
+        lifecycle: {
+          dayNumber: loaded.generationInput.profileMemory.daysSinceEnrollmentStart,
+          stage: null,
+          anchorDate: lifecycleAnchor,
+        },
+      });
+    }
+
+    stage = "assistant_persist";
     const coachMessage = v2.draft.coachMessage;
+    assistantPersisted = Boolean(v2.persistResult?.coachTurnId || v2.persistResult?.coachMessage);
 
+    if (!assistantPersisted && !v2.persistResult?.duplicate) {
+      const categorized = categorizeGo21GenerationError(new Error("assistant persist failed"));
+      logGo21ChatDiagnostic({
+        stage: "assistant_persist",
+        correlationId,
+        enrollmentId: enrollmentIdForLog,
+        clientRequestIdPresent,
+        customerPersisted: true,
+        generationStarted: true,
+        assistantPersisted: false,
+        errorName: "AssistantPersistError",
+        errorMessage: categorized.message,
+        errorCategory: "persist_failed",
+        providerStatus: null,
+      });
+      return NextResponse.json({
+        ok: true,
+        customerAccepted: true,
+        customerTurnId: acceptedCustomerTurnId,
+        clientRequestId,
+        assistantStatus: "failed",
+        assistantError: {
+          category: "persist_failed",
+          retryable: true,
+          message: "教練剛剛沒接上",
+        },
+        coachMessage: null,
+        relevance,
+        extracted,
+      });
+    }
+
+    stage = "reminders";
     await scheduleRemindersFromMeta({
       enrollmentId: portal.enrollmentId,
       customerId: portal.customerId,
@@ -424,8 +634,13 @@ export async function POST(
       dayNumber: v2.observability.lifecycleDay,
     });
 
+    stage = "serialize";
     return NextResponse.json({
       ok: true,
+      customerAccepted: true,
+      customerTurnId: acceptedCustomerTurnId,
+      clientRequestId,
+      assistantStatus: "ok",
       coachMessage,
       intention: v2.draft.meta.intention,
       relevance,
@@ -450,9 +665,49 @@ export async function POST(
       escalationSuggested: v2.draft.meta.escalationSuggested,
     });
   } catch (error) {
+    const categorized = categorizeGo21GenerationError(error);
+    logGo21ChatDiagnostic({
+      stage,
+      correlationId,
+      enrollmentId: enrollmentIdForLog,
+      clientRequestIdPresent,
+      customerPersisted,
+      generationStarted,
+      assistantPersisted,
+      errorName: error instanceof Error ? error.name : "Error",
+      errorMessage: categorized.message,
+      errorCategory: categorized.category,
+      providerStatus: categorized.providerStatus,
+    });
+
+    // If customer was already accepted, never report the send as a hard failure.
+    if (customerPersisted && acceptedCustomerTurnId) {
+      return NextResponse.json({
+        ok: true,
+        customerAccepted: true,
+        customerTurnId: acceptedCustomerTurnId,
+        clientRequestId: null,
+        assistantStatus: "failed",
+        assistantError: {
+          category: categorized.category,
+          retryable: true,
+          message: "教練剛剛沒接上",
+        },
+        coachMessage: null,
+      });
+    }
+
     const errMessage = toCoachingApiErrorMessage(error, "無法送出訊息");
     const status = error instanceof CoachingServiceError ? error.status : 500;
-    return NextResponse.json({ error: errMessage }, { status });
+    return NextResponse.json(
+      {
+        ok: false,
+        customerAccepted: false,
+        assistantStatus: "skipped",
+        error: errMessage,
+      },
+      { status },
+    );
   }
 }
 
@@ -480,21 +735,43 @@ async function loadPreviousExtraction(
   }
 }
 
-async function appendPairTurns(input: {
+async function acceptCustomerThenCoach(input: {
   portal: { enrollmentId: string; customerId: string; ownerMemberId: string };
   logDate: string;
   customer: string;
   coach: string;
   metadata: Record<string, unknown>;
   clientRequestId?: string | null;
-}): Promise<void> {
-  if (input.clientRequestId) {
-    const prior = await findTurnByClientRequestId({
+  channel: "free_message" | "photo";
+  existingCustomerTurnId?: string | null;
+}): Promise<{
+  customerPersisted: boolean;
+  assistantPersisted: boolean;
+  customerTurnId: string | null;
+}> {
+  let customerTurnId = input.existingCustomerTurnId ?? null;
+  let customerPersisted = Boolean(customerTurnId);
+
+  if (!customerTurnId) {
+    const accepted = await acceptGo21CustomerTurn({
       enrollmentId: input.portal.enrollmentId,
+      customerId: input.portal.customerId,
+      ownerMemberId: input.portal.ownerMemberId,
+      logDate: input.logDate,
+      content: input.customer,
+      channel: input.channel,
+      metadata: input.metadata,
       clientRequestId: input.clientRequestId,
-      role: "coach",
     });
-    if (prior) return;
+    customerPersisted = accepted.ok && Boolean(accepted.customerTurnId);
+    customerTurnId = accepted.customerTurnId;
+    if (accepted.coachTurn) {
+      return {
+        customerPersisted: true,
+        assistantPersisted: true,
+        customerTurnId,
+      };
+    }
   }
 
   const store = getSharedInMemoryV2Store();
@@ -504,7 +781,7 @@ async function appendPairTurns(input: {
     ownerMemberId: input.portal.ownerMemberId,
     logDate: input.logDate,
     role: "customer",
-    channel: "free_message",
+    channel: input.channel,
     content: input.customer,
     metadata: {
       ...input.metadata,
@@ -523,25 +800,30 @@ async function appendPairTurns(input: {
     metadata: {
       ...input.metadata,
       ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
+      ...(customerTurnId ? { replyToCustomerTurnId: customerTurnId } : {}),
     },
   });
+
+  let assistantPersisted = false;
   try {
+    if (input.clientRequestId) {
+      const prior = await findGo21TurnsByClientRequestId({
+        enrollmentId: input.portal.enrollmentId,
+        clientRequestId: input.clientRequestId,
+      });
+      if (prior.coach) {
+        return {
+          customerPersisted: true,
+          assistantPersisted: true,
+          customerTurnId: prior.customer?.id ?? customerTurnId,
+        };
+      }
+    }
+
     const supabase = createSupabaseServiceClient();
-    await supabase.from("coaching_ai_turns").insert([
-      {
-        enrollment_id: input.portal.enrollmentId,
-        customer_id: input.portal.customerId,
-        owner_member_id: input.portal.ownerMemberId,
-        log_date: input.logDate,
-        role: "customer",
-        channel: "free_message",
-        content: input.customer,
-        metadata: {
-          ...input.metadata,
-          ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
-        },
-      },
-      {
+    const { data, error } = await supabase
+      .from("coaching_ai_turns")
+      .insert({
         enrollment_id: input.portal.enrollmentId,
         customer_id: input.portal.customerId,
         owner_member_id: input.portal.ownerMemberId,
@@ -553,9 +835,21 @@ async function appendPairTurns(input: {
         metadata: {
           ...input.metadata,
           ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
+          ...(customerTurnId ? { replyToCustomerTurnId: customerTurnId } : {}),
         },
-      },
-    ]);
+      })
+      .select("id")
+      .maybeSingle();
+    assistantPersisted = !error && Boolean(data?.id);
+    if (error) {
+      console.error(
+        JSON.stringify({
+          event: "go21_coach_turn_persist_failed",
+          enrollmentId: input.portal.enrollmentId,
+          error: error.message,
+        }),
+      );
+    }
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -565,6 +859,8 @@ async function appendPairTurns(input: {
       }),
     );
   }
+
+  return { customerPersisted, assistantPersisted, customerTurnId };
 }
 
 async function scheduleRemindersFromMeta(input: {

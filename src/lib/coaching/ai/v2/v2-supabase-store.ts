@@ -17,6 +17,22 @@ export type PersistV2MemoryResult = {
   coachMessage: string | null;
 };
 
+export type Go21TurnByClientRequest = {
+  id: string;
+  content: string;
+  role: "customer" | "coach" | "system" | string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type AcceptGo21CustomerTurnResult = {
+  ok: boolean;
+  duplicate: boolean;
+  customerTurnId: string | null;
+  coachTurn: { id: string; content: string } | null;
+  errorMessage: string | null;
+};
+
 /**
  * Best-effort Supabase persistence for V2 memory.
  * Persists BOTH customer + coach turns (authoritative conversation history).
@@ -40,6 +56,9 @@ export async function persistV2MemoryFromSupabaseIfConfigured(input: {
   customerChannel?: CoachingAiV2TurnChannel;
   customerMetadata?: Record<string, unknown>;
   clientRequestId?: string | null;
+  /** When set, customer row was already accepted — do not insert again. */
+  existingCustomerTurnId?: string | null;
+  skipCustomerInsert?: boolean;
 }): Promise<PersistV2MemoryResult> {
   if (!isSupabaseServiceConfigured()) {
     return { ok: false, duplicate: false, customerTurnId: null, coachTurnId: null, coachMessage: null };
@@ -64,18 +83,17 @@ export async function persistV2MemoryFromSupabaseIfConfigured(input: {
 
     // Idempotency: one clientRequestId → one customer + one coach turn
     if (input.clientRequestId?.trim()) {
-      const existing = await findTurnByClientRequestId({
+      const existingPair = await findGo21TurnsByClientRequestId({
         enrollmentId: input.enrollmentId,
         clientRequestId: input.clientRequestId.trim(),
-        role: "coach",
       });
-      if (existing) {
+      if (existingPair.coach) {
         return {
           ok: true,
           duplicate: true,
-          customerTurnId: null,
-          coachTurnId: existing.id,
-          coachMessage: existing.content,
+          customerTurnId: existingPair.customer?.id ?? input.existingCustomerTurnId ?? null,
+          coachTurnId: existingPair.coach.id,
+          coachMessage: existingPair.coach.content,
         };
       }
     }
@@ -128,30 +146,35 @@ export async function persistV2MemoryFromSupabaseIfConfigured(input: {
       ...(input.clientRequestId ? { clientRequestId: input.clientRequestId } : {}),
     };
 
-    let customerTurnId: string | null = null;
-    const { data: customerInserted, error: customerError } = await supabase
-      .from("coaching_ai_turns")
-      .insert({
-        enrollment_id: input.enrollmentId,
-        customer_id: input.customerId,
-        owner_member_id: ownerMemberId,
-        cycle_id: cycleId,
-        log_date: input.logDate,
-        role: "customer",
-        channel: customerChannel,
-        content: customerContent,
-        content_summary:
-          typeof customerMeta.visionEvidenceSummary === "string"
-            ? String(customerMeta.visionEvidenceSummary).slice(0, 400)
-            : null,
-        metadata: customerMeta,
-      })
-      .select("id")
-      .maybeSingle();
-    if (customerError) {
-      console.error("[coaching_ai_v2] customer turn persist failed", customerError);
-    } else {
-      customerTurnId = (customerInserted?.id as string | undefined) ?? null;
+    let customerTurnId: string | null = input.existingCustomerTurnId ?? null;
+    const skipCustomer =
+      Boolean(input.skipCustomerInsert) || Boolean(input.existingCustomerTurnId);
+
+    if (!skipCustomer) {
+      const { data: customerInserted, error: customerError } = await supabase
+        .from("coaching_ai_turns")
+        .insert({
+          enrollment_id: input.enrollmentId,
+          customer_id: input.customerId,
+          owner_member_id: ownerMemberId,
+          cycle_id: cycleId,
+          log_date: input.logDate,
+          role: "customer",
+          channel: customerChannel,
+          content: customerContent,
+          content_summary:
+            typeof customerMeta.visionEvidenceSummary === "string"
+              ? String(customerMeta.visionEvidenceSummary).slice(0, 400)
+              : null,
+          metadata: customerMeta,
+        })
+        .select("id")
+        .maybeSingle();
+      if (customerError) {
+        console.error("[coaching_ai_v2] customer turn persist failed", customerError);
+      } else {
+        customerTurnId = (customerInserted?.id as string | undefined) ?? null;
+      }
     }
 
     const { data: coachInserted, error: coachError } = await supabase
@@ -304,7 +327,7 @@ export async function persistV2MemoryFromSupabaseIfConfigured(input: {
     }
 
     return {
-      ok: Boolean(customerTurnId || coachTurnId),
+      ok: skipCustomer ? Boolean(coachTurnId) : Boolean(customerTurnId || coachTurnId),
       duplicate: false,
       customerTurnId,
       coachTurnId,
@@ -321,30 +344,179 @@ export async function findTurnByClientRequestId(input: {
   clientRequestId: string;
   role?: "customer" | "coach";
 }): Promise<{ id: string; content: string; metadata: Record<string, unknown> } | null> {
-  if (!isSupabaseServiceConfigured()) return null;
+  const pair = await findGo21TurnsByClientRequestId({
+    enrollmentId: input.enrollmentId,
+    clientRequestId: input.clientRequestId,
+  });
+  if (input.role === "coach") {
+    return pair.coach
+      ? { id: pair.coach.id, content: pair.coach.content, metadata: pair.coach.metadata }
+      : null;
+  }
+  if (input.role === "customer") {
+    return pair.customer
+      ? {
+          id: pair.customer.id,
+          content: pair.customer.content,
+          metadata: pair.customer.metadata,
+        }
+      : null;
+  }
+  const hit = pair.coach ?? pair.customer;
+  return hit ? { id: hit.id, content: hit.content, metadata: hit.metadata } : null;
+}
+
+export async function findGo21TurnsByClientRequestId(input: {
+  enrollmentId: string;
+  clientRequestId: string;
+}): Promise<{
+  customer: Go21TurnByClientRequest | null;
+  coach: Go21TurnByClientRequest | null;
+}> {
+  if (!isSupabaseServiceConfigured()) return { customer: null, coach: null };
   try {
     const supabase = createSupabaseServiceClient();
-    let query = supabase
+    const { data } = await supabase
       .from("coaching_ai_turns")
       .select("id, content, metadata, role, created_at")
       .eq("enrollment_id", input.enrollmentId)
       .contains("metadata", { clientRequestId: input.clientRequestId })
-      .order("created_at", { ascending: false })
-      .limit(4);
-    if (input.role) query = query.eq("role", input.role);
-    const { data } = await query;
-    const row = (data ?? [])[0];
-    if (!row?.id) return null;
-    return {
-      id: String(row.id),
-      content: String(row.content),
-      metadata:
-        row.metadata && typeof row.metadata === "object"
-          ? (row.metadata as Record<string, unknown>)
-          : {},
-    };
+      .order("created_at", { ascending: true })
+      .limit(8);
+    let customer: Go21TurnByClientRequest | null = null;
+    let coach: Go21TurnByClientRequest | null = null;
+    for (const row of data ?? []) {
+      if (!row?.id) continue;
+      const mapped: Go21TurnByClientRequest = {
+        id: String(row.id),
+        content: String(row.content ?? ""),
+        role: String(row.role ?? ""),
+        metadata:
+          row.metadata && typeof row.metadata === "object"
+            ? (row.metadata as Record<string, unknown>)
+            : {},
+        createdAt: String(row.created_at ?? ""),
+      };
+      if (mapped.role === "customer" && !customer) customer = mapped;
+      if (mapped.role === "coach" && !coach) coach = mapped;
+    }
+    return { customer, coach };
   } catch {
-    return null;
+    return { customer: null, coach: null };
+  }
+}
+
+/**
+ * Durability boundary: accept exactly one canonical customer turn for a clientRequestId.
+ * Does not require AI generation success.
+ */
+export async function acceptGo21CustomerTurn(input: {
+  enrollmentId: string;
+  customerId: string;
+  ownerMemberId: string;
+  logDate: string;
+  content: string;
+  channel: CoachingAiV2TurnChannel;
+  metadata?: Record<string, unknown>;
+  clientRequestId?: string | null;
+}): Promise<AcceptGo21CustomerTurnResult> {
+  if (!isSupabaseServiceConfigured()) {
+    return {
+      ok: false,
+      duplicate: false,
+      customerTurnId: null,
+      coachTurn: null,
+      errorMessage: "service_unavailable",
+    };
+  }
+
+  const clientRequestId = input.clientRequestId?.trim() || null;
+  if (clientRequestId) {
+    const existing = await findGo21TurnsByClientRequestId({
+      enrollmentId: input.enrollmentId,
+      clientRequestId,
+    });
+    if (existing.customer || existing.coach) {
+      return {
+        ok: true,
+        duplicate: true,
+        customerTurnId: existing.customer?.id ?? null,
+        coachTurn: existing.coach
+          ? { id: existing.coach.id, content: existing.coach.content }
+          : null,
+        errorMessage: null,
+      };
+    }
+  }
+
+  try {
+    const supabase = createSupabaseServiceClient();
+    const metadata: Record<string, unknown> = {
+      ...(input.metadata ?? {}),
+      ...(clientRequestId ? { clientRequestId } : {}),
+    };
+    const { data, error } = await supabase
+      .from("coaching_ai_turns")
+      .insert({
+        enrollment_id: input.enrollmentId,
+        customer_id: input.customerId,
+        owner_member_id: input.ownerMemberId,
+        log_date: input.logDate,
+        role: "customer",
+        channel: input.channel,
+        content: input.content.slice(0, 4000),
+        content_summary:
+          typeof metadata.visionEvidenceSummary === "string"
+            ? String(metadata.visionEvidenceSummary).slice(0, 400)
+            : null,
+        metadata,
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (error) {
+      // Lost-response / race: another request may have accepted the same clientRequestId.
+      if (clientRequestId) {
+        const raced = await findGo21TurnsByClientRequestId({
+          enrollmentId: input.enrollmentId,
+          clientRequestId,
+        });
+        if (raced.customer || raced.coach) {
+          return {
+            ok: true,
+            duplicate: true,
+            customerTurnId: raced.customer?.id ?? null,
+            coachTurn: raced.coach
+              ? { id: raced.coach.id, content: raced.coach.content }
+              : null,
+            errorMessage: null,
+          };
+        }
+      }
+      return {
+        ok: false,
+        duplicate: false,
+        customerTurnId: null,
+        coachTurn: null,
+        errorMessage: error.message?.slice(0, 200) ?? "customer_persist_failed",
+      };
+    }
+
+    return {
+      ok: true,
+      duplicate: false,
+      customerTurnId: (data?.id as string | undefined) ?? null,
+      coachTurn: null,
+      errorMessage: null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      duplicate: false,
+      customerTurnId: null,
+      coachTurn: null,
+      errorMessage: error instanceof Error ? error.message.slice(0, 200) : "customer_persist_failed",
+    };
   }
 }
 

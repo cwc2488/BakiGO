@@ -146,7 +146,8 @@ describe("Go21 conversation quality — idempotency + policy", () => {
       "utf8",
     );
     expect(src).toContain("clientRequestId");
-    expect(src).toContain("findTurnByClientRequestId");
+    expect(src).toContain("findGo21TurnsByClientRequestId");
+    expect(src).toContain("acceptGo21CustomerTurn");
     expect(src).toContain("duplicate: true");
     const persist = readFileSync(
       resolve(process.cwd(), "src/lib/coaching/ai/v2/v2-supabase-store.ts"),

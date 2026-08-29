@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState, useTransition } fr
 import type { Go21ProgressMilestone } from "@/types/go21";
 import { GO21_PRIMARY_DIRECTION_LABELS, GO21_PRIMARY_DIRECTIONS } from "@/types/go21";
 import { isChatNearBottom } from "@/lib/go21/coach-context";
-import { nextClientRequestId, type Go21SendStatus } from "@/lib/go21/conversation-quality";
+import { nextClientRequestId, interpretGo21ChatSendResult, type Go21SendStatus } from "@/lib/go21/conversation-quality";
 import "./go21.css";
 
 type Go21Turn = {
@@ -51,6 +51,12 @@ type Go21ContextPayload = {
     setAt: string;
   } | null;
   turns: Go21Turn[];
+  pendingCoachReply?: {
+    customerTurnId: string;
+    clientRequestId: string;
+    content: string;
+    logDate: string;
+  } | null;
   reminders: Array<{ id: string; kind: string; message: string; dueAt: string }>;
 };
 
@@ -100,6 +106,7 @@ export function Go21App({ token }: { token: string }) {
     } else {
       setView("chat");
     }
+    return payload.go21;
   }, [token]);
 
   useEffect(() => {
@@ -117,6 +124,32 @@ export function Go21App({ token }: { token: string }) {
       cancelled = true;
     };
   }, [reload]);
+
+  // Recover coach-response retry after reload when customer turn is durable but unanswered.
+  useEffect(() => {
+    if (loading || busy) return;
+    if (sendStatus === "sending" || sendStatus === "customer_sent" || sendStatus === "failed") {
+      return;
+    }
+    const pending = ctx?.pendingCoachReply;
+    if (pending?.clientRequestId) {
+      failedPayloadRef.current = {
+        text: pending.content,
+        photoFile: null,
+        clientRequestId: pending.clientRequestId,
+        photoUploaded: true,
+        mealSlotHint: null,
+        logDate: pending.logDate || resolveGo21ClientLogDate(pending.content),
+      };
+      inFlightRequestIdRef.current = pending.clientRequestId;
+      if (sendStatus !== "coach_failed") setSendStatus("coach_failed");
+      return;
+    }
+    if (sendStatus === "coach_failed") {
+      setSendStatus("idle");
+      failedPayloadRef.current = null;
+    }
+  }, [ctx?.pendingCoachReply, loading, busy, sendStatus]);
 
   useEffect(() => {
     const el = threadRef.current;
@@ -270,10 +303,14 @@ export function Go21App({ token }: { token: string }) {
     }
   }
 
-  async function sendMessage(options?: { retry?: boolean }) {
+  async function sendMessage(options?: { retry?: boolean; retryAssistant?: boolean }) {
     if (sendLock || busy) return;
 
-    const retrying = Boolean(options?.retry && failedPayloadRef.current);
+    const retryingMessage = Boolean(options?.retry && failedPayloadRef.current && sendStatus === "failed");
+    const retryingAssistant = Boolean(
+      options?.retryAssistant && failedPayloadRef.current && sendStatus === "coach_failed",
+    );
+    const retrying = retryingMessage || retryingAssistant;
     const failed = failedPayloadRef.current;
 
     const text = retrying ? failed!.text : draft.trim();
@@ -297,7 +334,7 @@ export function Go21App({ token }: { token: string }) {
 
     setSendLock(true);
     setBusy(true);
-    setSendStatus("sending");
+    setSendStatus(retryingAssistant ? "customer_sent" : "sending");
     setError(null);
     setPendingUser(text || (activePhoto ? "📷 照片" : null));
     // Keep draft until authoritative acceptance — restore certainty for the user.
@@ -335,14 +372,62 @@ export function Go21App({ token }: { token: string }) {
             mealSlotHint,
             logDate,
             clientRequestId,
+            retryAssistant: retryingAssistant || undefined,
           }),
         });
       } finally {
         window.clearTimeout(timeout);
       }
 
-      const payload = (await response.json()) as { ok?: boolean; error?: string; coachMessage?: string };
-      if (!response.ok || !payload.ok) throw new Error(payload.error ?? "送出失敗");
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        coachMessage?: string | null;
+        customerAccepted?: boolean;
+        assistantStatus?: string | null;
+        assistantError?: { message?: string; retryable?: boolean };
+      };
+
+      const interpreted = interpretGo21ChatSendResult(payload);
+
+      if (interpreted.customerSent) {
+        // Customer message is durably accepted — clear composer certainty.
+        failedPayloadRef.current = interpreted.coachFailed
+          ? {
+              text,
+              photoFile: activePhoto,
+              clientRequestId,
+              photoUploaded,
+              mealSlotHint,
+              logDate,
+            }
+          : null;
+        if (!interpreted.coachFailed) {
+          inFlightRequestIdRef.current = null;
+        }
+        setPhotoFile(null);
+        if (photoPreview) URL.revokeObjectURL(photoPreview);
+        setPhotoPreview(null);
+        setPhotoMenuOpen(false);
+        setDraft("");
+        stickToBottomRef.current = true;
+        await reload();
+        startTransition(() => {
+          setPendingUser(null);
+          if (interpreted.coachFailed) {
+            setSendStatus("coach_failed");
+            setError(null);
+          } else {
+            setSendStatus("idle");
+            setError(null);
+          }
+        });
+        return;
+      }
+
+      if (!response.ok || !payload.ok || interpreted.messageRetry) {
+        throw new Error(payload.error ?? "送出失敗");
+      }
 
       failedPayloadRef.current = null;
       inFlightRequestIdRef.current = null;
@@ -527,7 +612,7 @@ export function Go21App({ token }: { token: string }) {
                 {turn.content}
               </div>
             ))}
-            {pendingUser ? (
+            {pendingUser && sendStatus === "sending" ? (
               <div className="go21-bubble go21-user">
                 {photoPreview ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -536,7 +621,9 @@ export function Go21App({ token }: { token: string }) {
                 {pendingUser}
               </div>
             ) : null}
-            {sendStatus === "sending" || busy ? (
+            {sendStatus === "sending" ||
+            sendStatus === "customer_sent" ||
+            (busy && sendStatus !== "failed" && sendStatus !== "coach_failed") ? (
               <div className="go21-thinking">教練正在回覆…</div>
             ) : null}
             {sendStatus === "failed" ? (
@@ -544,6 +631,14 @@ export function Go21App({ token }: { token: string }) {
                 <p>還沒送出成功</p>
                 <button type="button" onClick={() => void sendMessage({ retry: true })}>
                   重試
+                </button>
+              </div>
+            ) : null}
+            {sendStatus === "coach_failed" ? (
+              <div className="go21-coach-failed">
+                <p>教練剛剛沒接上</p>
+                <button type="button" onClick={() => void sendMessage({ retryAssistant: true })}>
+                  重試回覆
                 </button>
               </div>
             ) : null}
