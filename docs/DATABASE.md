@@ -831,7 +831,22 @@ Member (coach)
 
 **Reuse:** `customers`, `members`, `customer_portal_tokens`, `body_composition_records`, `customer_progress_photos` (read-only in coach detail).
 
-### AI Coaching Phase 3d — Coach Action Memory
+### AI Coaching V2 — 21-day freeform (`064_coaching_ai_v2.sql`)
+
+| Table | Purpose |
+|-------|---------|
+| `coaching_ai_cycles` | Intensive 21-day AI coaching cycle per enrollment |
+| `coaching_ai_memory` | Durable compact coaching memory |
+| `coaching_ai_open_loops` | Unfinished coaching threads |
+| `coaching_ai_hypotheses` | Revisable probabilistic interpretations |
+| `coaching_ai_turns` | Bounded conversational turns |
+| `coaching_ai_day21_reflections` | Personalized end-of-cycle synthesis |
+
+**RLS:** Owner-member SELECT only. Mutations via service-role APIs. Additive / non-destructive.
+
+Customer-facing freeform message lives in `coaching_ai_outputs.output_json.customer.coach_message` when V2 is enabled.
+
+
 
 **Status:** Applied migration `031_coaching_coach_actions.sql`. Coach-only internal memory.
 

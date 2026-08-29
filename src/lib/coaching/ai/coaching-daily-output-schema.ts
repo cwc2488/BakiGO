@@ -16,6 +16,7 @@ const mealFeedbackSchema = z.object({
 });
 
 export const coachingDailyGenerationCustomerOutputSchema = z.object({
+  coach_message: z.string().min(1).max(4000).nullable().optional(),
   encouragement: z.string().min(1).max(240),
   today_feedback: z.string().min(1).max(500),
   daily_food_summary: z.string().min(1).max(320),

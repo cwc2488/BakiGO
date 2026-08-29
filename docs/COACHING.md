@@ -48,6 +48,16 @@ Consultation Engine remains `experimental_hidden` and is not used by coaching.
 - Customer member accounts
 - Refactoring progress photos off base64
 
+## Phase AI Coach V2 — 21-day freeform coach
+
+**Status:** Implemented on `feat/ai-coach-v2` (not Production).
+
+See [COACHING_AI_V2.md](./COACHING_AI_V2.md).
+
+V2 replaces customer-facing sectioned daily reports with a freeform `coach_message`, adds durable memory / open loops / hypotheses / 21-day lifecycle, and keeps deterministic signal + Attention engines for coach-side authority.
+
+Toggle: `COACHING_AI_V2_ENABLED=0` forces legacy V1 generation path.
+
 ## Phase 2c — Production Daily Coach Integration
 
 **Status:** Wired. Daily submit enqueues generation jobs; service-role worker processes with claim/retry/stale recovery; customer complete page polls customer-facing fields; coach dashboard/detail show deterministic intervention + AI wording.

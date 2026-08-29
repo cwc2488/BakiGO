@@ -1,0 +1,182 @@
+import type { CoachingGenerationInput } from "@/types/coaching-ai";
+import type { CoachingDecisionContext } from "@/types/coaching-signals";
+import type { CoachingAiV2MemoryBundle } from "@/types/coaching-ai-v2";
+import { lifecycleStageGuidance } from "@/lib/coaching/ai/v2/lifecycle";
+import { coachingDaySpeechLabel, relativeCoachingDayKey } from "@/lib/coaching/coaching-time";
+
+/**
+ * V2 system prompt — structured context + freedom.
+ * Deliberately does NOT require praise / meal analysis / advice / follow-up every turn.
+ */
+export function buildCoachingAiV2SystemPrompt(): string {
+  return [
+    "你是 Baki GO 的 21 天 AI 陪跑教練。你是 AI，不要假裝是人類；但仍要像一個記得對方、願意聊天的教練。",
+    "語言：繁體中文（台灣）。自然、有溫度、直接但不責備。",
+    "",
+    "最高原則：STRUCTURED INTERNALLY. FREE EXTERNALLY.",
+    "- 你會收到結構化的身份、生命週期、記憶、開放線程、假設、安全邊界與系統證據。",
+    "- 對顧客說話時，不要被模板綁住。不要每則都「肯定 → 分析 → 建議 → 鼓勵」。",
+    "- 你可以只回一句、只問問題、只觀察、調侃一下、挑戰、鼓勵、說明、深入分析，或幾乎不給建議。",
+    "- 照片只是證據的一種，不是自動觸發標準營養報告的開關。",
+    "",
+    "核心價值：",
+    "- 持續 > 完美",
+    "- 不責備、不羞辱、不製造罪惡感",
+    "- 要求可以提高，情緒壓力不能提高",
+    "- 只在有證據時引用過去；沒有把握就不要假裝記得",
+    "- 不要把不確定的假設講成顧客事實",
+    "",
+    "決策：先判斷這輪最有用的 coaching intention，再自然回應。",
+    "intention 可為：observe / acknowledge / investigate / encourage / educate / challenge / reinforce / test_hypothesis / follow_up / detect_risk / escalate / casual / reflect",
+    "不要對顧客暴露 chain-of-thought 或 intention 標籤。",
+    "",
+    "生命週期：階段只是引導，不是腳本。可依上下文偏離。",
+    "",
+    "記憶規則：",
+    "- recentTurns：近期對話，保持連貫",
+    "- durableMemory：值得長期記住的事",
+    "- openLoops：未完成線程（例如「明天晚餐再拍給我」）— 若今天輸入對得上，要自然接續",
+    "- hypotheses：暫定解釋，可因矛盾證據削弱／修正／放棄",
+    "- 只在「記住會改善未來教練決策」時寫入新 memory",
+    "",
+    "安全硬邊界（不得違反）：",
+    "- 不診斷疾病、不取代醫療、不開藥",
+    "- 不建議危險限制飲食、不鼓勵飲食疾患行為",
+    "- 不捏造顧客歷史、測量、承諾或情緒狀態",
+    "- 醫療／高風險／明確求助真人 → safetyTriggered 或 escalationSuggested",
+    "",
+    "輸出：",
+    "- coach_message：給顧客看的唯一主要訊息（自然散文）",
+    "- meta：內部用，顧客看不到",
+    "- 不要為了填欄位而硬寫讚美／建議／追問",
+  ].join("\n");
+}
+
+export function buildCoachingAiV2UserPrompt(input: {
+  generationInput: CoachingGenerationInput;
+  decisionContext: CoachingDecisionContext;
+  memory: CoachingAiV2MemoryBundle;
+  channel: "daily_log" | "free_message" | "day21";
+  freeMessage?: string | null;
+}): string {
+  const { generationInput, decisionContext, memory, channel } = input;
+  const reportDayRelation = relativeCoachingDayKey(generationInput.logDate) ?? "historical";
+  const reportDaySpeechLabel = coachingDaySpeechLabel(generationInput.logDate);
+  const today = generationInput.todayContext;
+  const stage = memory.lifecycle.stage;
+
+  const compactToday = {
+    logDate: generationInput.logDate,
+    reportDayRelation,
+    reportDaySpeechLabel,
+    submitted: today.submitted,
+    meals: today.primaryMeals.map((m) => ({
+      slot: m.mealSlot,
+      note: truncate(m.textNote, 120),
+      hasPhoto: Boolean(m.storagePath),
+    })),
+    secondaryNotes: today.secondaryMealNotes
+      .filter((m) => m.textNote?.trim())
+      .map((m) => ({ slot: m.mealSlot, note: truncate(m.textNote, 80) })),
+    waterMl: today.waterMl,
+    sleep: {
+      bedtime: today.sleepBedtime,
+      wake: today.sleepWakeTime,
+      duration: today.sleepDurationLabel,
+    },
+    exerciseNote: truncate(today.exerciseNote, 120),
+    bowelMovementCount: today.bowelMovementCount,
+    customerNote: truncate(today.customerNote, 400),
+  };
+
+  const compactDecision = {
+    finalInterventionLevel: decisionContext.finalInterventionLevel,
+    dailyNutritionLevel: decisionContext.dailyNutritionAssessment.level,
+    priorities: decisionContext.priorities.slice(0, 2).map((p) => ({
+      reason: p.reason,
+      tomorrowFocusSubject: p.tomorrowFocusSubject,
+    })),
+    mealObservations: decisionContext.mealObservations.map((o) => ({
+      slot: o.mealSlot,
+      foods: o.observedFoods.slice(0, 6),
+      signals: o.signals.slice(0, 4),
+      shakeObserved: o.shakeObserved,
+      solidFoodObserved: o.solidFoodObserved,
+      confidence: o.confidence,
+    })),
+    customerVoice: decisionContext.customerVoice.map((v) => ({
+      key: v.key,
+      excerpt: truncate(v.rawExcerpt, 80),
+    })),
+    recurringIssue: decisionContext.recurringIssue?.label ?? null,
+    improvedIssue: decisionContext.improvedIssue?.label ?? null,
+    goalLabel: decisionContext.goalContext.goalLabel,
+    measurementStage: decisionContext.goalContext.measurementStage,
+    outcomeStatus: decisionContext.outcomeAssessment.outcomeStatus,
+    outcomeSummary: truncate(decisionContext.outcomeAssessment.customerSummary, 160),
+  };
+
+  const payload = {
+    channel,
+    freeMessage: input.freeMessage ? truncate(input.freeMessage, 800) : null,
+    lifecycle: {
+      dayNumber: memory.lifecycle.dayNumber,
+      stage,
+      intensiveActive: memory.lifecycle.intensiveActive,
+      daysRemaining: memory.lifecycle.daysRemaining,
+      guidance: lifecycleStageGuidance(stage),
+    },
+    profile: {
+      displayName: generationInput.profileMemory.displayName,
+      goal: generationInput.profileMemory.goal,
+      daysSinceEnrollmentStart: generationInput.profileMemory.daysSinceEnrollmentStart,
+    },
+    today: compactToday,
+    decisionContext: compactDecision,
+    rollingPatterns: generationInput.rollingMemory.recurringPatterns.slice(0, 6),
+    recentTurns: memory.recentTurns.map((t) => ({
+      role: t.role,
+      channel: t.channel,
+      logDate: t.logDate,
+      content: truncate(t.content, 280),
+      intention: t.intention,
+    })),
+    durableMemory: memory.durableMemory.map((m) => ({
+      id: m.id,
+      category: m.category,
+      content: m.content,
+      confidence: m.confidence,
+    })),
+    openLoops: memory.openLoops.map((l) => ({
+      id: l.id,
+      subject: l.subject,
+      detail: l.detail,
+      status: l.status,
+      dueLogDate: l.dueLogDate,
+    })),
+    hypotheses: memory.hypotheses.map((h) => ({
+      id: h.id,
+      statement: h.statement,
+      confidence: h.confidence,
+      status: h.status,
+      supporting: h.supportingEvidence.slice(0, 3),
+      contradicting: h.contradictingEvidence.slice(0, 3),
+    })),
+    instructions: [
+      "寫出這一輪最有用的自然回應到 coach_message。",
+      "若 openLoops 與今天輸入相關，自然接續；不要假裝記得沒有證據的事。",
+      "若階段是 day21_ending，coach_message 必須是個人化反思，並填 meta.day21Reflection。",
+      "meta.memoryWrites / openLoopOps / hypothesisOps 只在真正有價值時填，可為空陣列。",
+      "不要輸出固定段落標題；不要每則都給改善建議。",
+    ],
+  };
+
+  return JSON.stringify(payload);
+}
+
+function truncate(value: string | null | undefined, max: number): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1)}…`;
+}

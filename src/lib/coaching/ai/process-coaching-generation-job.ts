@@ -398,19 +398,68 @@ export async function processCoachingGenerationJob(
     });
     const finalInterventionLevel = decisionContext.finalInterventionLevel;
 
-    const provider = createCoachingAiProvider();
-    const { result } = await generateDailyCoachWithTelemetry({
-      provider,
-      request: {
+    const { isCoachingAiV2Enabled, runCoachingAiV2Turn } = await import(
+      "@/lib/coaching/ai/v2/run-v2-turn"
+    );
+
+    let outputJson;
+    let resultModel: string;
+    let resultPromptVersion: string;
+    let aiProposedInterventionLevel = finalInterventionLevel;
+
+    if (isCoachingAiV2Enabled()) {
+      const v2 = await runCoachingAiV2Turn({
         generationInput: loaded.generationInput,
-        preparedMealImages: preparedImages.prepared,
-        finalInterventionLevel,
         decisionContext,
-      },
-      ownerMemberId: job.ownerMemberId,
-      imageUsageMetadata: preparedImages.telemetry,
-      persistTelemetry: true,
-    });
+        enrollmentStartedAt: loaded.enrollmentStartedAt,
+        plannedEndAt: loaded.enrollmentPlannedEndAt,
+        planSnapshot: loaded.generationInput.profileMemory.planSnapshot,
+        channel:
+          loaded.generationInput.profileMemory.daysSinceEnrollmentStart >= 20
+            ? "day21"
+            : "daily_log",
+        persistToSupabase: true,
+      });
+      // Keep coach-side decision authority (nutrition / intervention / attention).
+      outputJson = applyCoachingDecisionContextToOutput(v2.outputJson, decisionContext, {
+        generationInput: loaded.generationInput,
+      });
+      // Preserve freeform customer message after authority rewrite.
+      const bridgedMessage = v2.draft.coachMessage;
+      outputJson = {
+        ...outputJson,
+        customer: {
+          ...outputJson.customer,
+          coach_message: bridgedMessage,
+          encouragement: bridgedMessage.slice(0, 240),
+          today_feedback: bridgedMessage.slice(0, 500),
+        },
+      };
+      resultModel = v2.model;
+      resultPromptVersion = v2.promptVersion;
+      aiProposedInterventionLevel = outputJson.coach.proposed_intervention_level;
+    } else {
+      const provider = createCoachingAiProvider();
+      const { result } = await generateDailyCoachWithTelemetry({
+        provider,
+        request: {
+          generationInput: loaded.generationInput,
+          preparedMealImages: preparedImages.prepared,
+          finalInterventionLevel,
+          decisionContext,
+        },
+        ownerMemberId: job.ownerMemberId,
+        imageUsageMetadata: preparedImages.telemetry,
+        persistTelemetry: true,
+      });
+      outputJson = applyCoachingDecisionContextToOutput(result.output, decisionContext, {
+        generationInput: loaded.generationInput,
+      });
+      resultModel = result.model;
+      resultPromptVersion = result.promptVersion;
+      aiProposedInterventionLevel = outputJson.coach.proposed_intervention_level;
+    }
+
     latency.coach_generation_completed_at = new Date().toISOString();
     logCoachingAiJobLifecycle({
       stage: "job_coach_completed",
@@ -418,10 +467,6 @@ export async function processCoachingGenerationJob(
       duration_ms:
         Date.parse(latency.coach_generation_completed_at) -
         Date.parse(latency.coach_generation_started_at!),
-    });
-
-    const outputJson = applyCoachingDecisionContextToOutput(result.output, decisionContext, {
-      generationInput: loaded.generationInput,
     });
 
     latency.persist_started_at = new Date().toISOString();
@@ -434,10 +479,10 @@ export async function processCoachingGenerationJob(
       fingerprint: currentFingerprint,
       generationInput: loaded.generationInput,
       outputJson,
-      model: result.model,
-      promptVersion: result.promptVersion,
+      model: resultModel,
+      promptVersion: resultPromptVersion,
       finalInterventionLevel,
-      aiProposedInterventionLevel: outputJson.coach.proposed_intervention_level,
+      aiProposedInterventionLevel,
     });
     await markGenerationJobCompleted(job.id);
     latency.persist_completed_at = new Date().toISOString();
