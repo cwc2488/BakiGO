@@ -139,6 +139,7 @@ export async function loadCoachingCommandCenter(input: {
       .in("enrollment_id", enrollmentIds)
       .gte("log_date", windowStart)
       .lte("log_date", input.asOfLogDate)
+      .is("deleted_at", null)
       .order("log_date", { ascending: false }),
     supabase
       .from("coaching_ai_outputs")
@@ -148,6 +149,7 @@ export async function loadCoachingCommandCenter(input: {
       .eq("point_key", COACHING_AI_POINT_KEY)
       .gte("log_date", windowStart)
       .lte("log_date", input.asOfLogDate)
+      .is("deleted_at", null)
       .order("log_date", { ascending: false }),
     supabase
       .from("body_composition_records")
