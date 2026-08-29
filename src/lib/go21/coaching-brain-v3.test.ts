@@ -226,8 +226,10 @@ describe("Go21 Coaching Brain V3 — behavior fixtures", () => {
     expect(src).toContain("onThreadScroll");
     expect(src).toContain("followLatestConversation");
     expect(src).toContain("programmaticScrollRef");
+    expect(src).toContain("schedulePinToLatest");
+    expect(src).toContain("shouldFollowOnAssistantArrival");
     // Active send pins to latest
-    expect(src).toMatch(/setPendingUser[\s\S]{0,200}followLatestConversation/);
+    expect(src).toMatch(/setPendingUser[\s\S]{0,240}followLatestConversation/);
   });
 
   it("TEST 11 — refined current goal wins over original", () => {

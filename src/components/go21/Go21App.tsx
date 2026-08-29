@@ -3,7 +3,13 @@
 import { FormEvent, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import type { Go21ProgressMilestone } from "@/types/go21";
 import { GO21_PRIMARY_DIRECTION_LABELS, GO21_PRIMARY_DIRECTIONS } from "@/types/go21";
-import { isChatNearBottom } from "@/lib/go21/coach-context";
+import {
+  GO21_CHAT_FOLLOW_RETRY_MS,
+  computeScrollTopForLatest,
+  programmaticScrollLockMs,
+  resolveChatScrollStickState,
+  shouldFollowOnAssistantArrival,
+} from "@/lib/go21/chat-scroll";
 import { nextClientRequestId, interpretGo21ChatSendResult, type Go21SendStatus } from "@/lib/go21/conversation-quality";
 import "./go21.css";
 
@@ -75,11 +81,15 @@ export function Go21App({ token }: { token: string }) {
   const [sendLock, setSendLock] = useState(false);
   const [showJumpLatest, setShowJumpLatest] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
+  const threadContentRef = useRef<HTMLDivElement>(null);
+  const latestAnchorRef = useRef<HTMLDivElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const stickToBottomRef = useRef(true);
   const programmaticScrollRef = useRef(false);
   const programmaticScrollTimerRef = useRef<number | null>(null);
+  const followTimersRef = useRef<number[]>([]);
+  const followGenRef = useRef(0);
   const inFlightRequestIdRef = useRef<string | null>(null);
   const failedPayloadRef = useRef<{
     text: string;
@@ -160,28 +170,50 @@ export function Go21App({ token }: { token: string }) {
       setShowJumpLatest(true);
       return;
     }
-    scrollThreadToLatest("smooth");
+    schedulePinToLatest("smooth");
     setShowJumpLatest(false);
   }, [ctx?.turns.length, pendingUser, busy, sendStatus]);
 
   useEffect(() => {
-    const el = threadRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => {
+    const content = threadContentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+
+    const onContentGrew = () => {
       if (!stickToBottomRef.current) return;
       scrollThreadToLatest("auto");
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [view]);
+    };
+
+    const ro = new ResizeObserver(onContentGrew);
+    ro.observe(content);
+
+    // Photo decode changes height after first paint — catch bubble <img> loads.
+    const onLoadCapture = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLImageElement)) return;
+      if (!content.contains(target)) return;
+      onContentGrew();
+    };
+    content.addEventListener("load", onLoadCapture, true);
+
+    return () => {
+      ro.disconnect();
+      content.removeEventListener("load", onLoadCapture, true);
+    };
+  }, [view, ctx?.turns.length, pendingUser, photoPreview]);
 
   useEffect(() => {
     return () => {
       if (programmaticScrollTimerRef.current != null) {
         window.clearTimeout(programmaticScrollTimerRef.current);
       }
+      clearFollowTimers();
     };
   }, []);
+
+  function clearFollowTimers() {
+    for (const id of followTimersRef.current) window.clearTimeout(id);
+    followTimersRef.current = [];
+  }
 
   function markProgrammaticScroll(durationMs: number) {
     programmaticScrollRef.current = true;
@@ -197,30 +229,67 @@ export function Go21App({ token }: { token: string }) {
   function scrollThreadToLatest(behavior: ScrollBehavior) {
     const el = threadRef.current;
     if (!el) return;
-    markProgrammaticScroll(behavior === "smooth" ? 450 : 80);
-    el.scrollTo({ top: el.scrollHeight, behavior });
+    markProgrammaticScroll(programmaticScrollLockMs(behavior));
+    const anchor = latestAnchorRef.current;
+    if (anchor) {
+      anchor.scrollIntoView({ behavior, block: "end", inline: "nearest" });
+    }
+    const top = computeScrollTopForLatest({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    });
+    if (behavior === "auto") {
+      el.scrollTop = top;
+    } else {
+      el.scrollTo({ top, behavior });
+    }
   }
 
+  /** Re-pin while stick is true — does not re-engage after intentional upward scroll. */
+  function schedulePinToLatest(behavior: ScrollBehavior = "auto") {
+    if (!stickToBottomRef.current) return;
+    const gen = ++followGenRef.current;
+    clearFollowTimers();
+
+    const run = (b: ScrollBehavior) => {
+      if (followGenRef.current !== gen) return;
+      if (!stickToBottomRef.current) return;
+      scrollThreadToLatest(b);
+    };
+
+    run(behavior === "smooth" ? "auto" : behavior);
+    requestAnimationFrame(() => {
+      run("auto");
+      requestAnimationFrame(() => run(behavior));
+    });
+
+    for (const delay of GO21_CHAT_FOLLOW_RETRY_MS) {
+      if (delay === 0) continue;
+      const id = window.setTimeout(() => run("auto"), delay);
+      followTimersRef.current.push(id);
+    }
+  }
+
+  /** Customer send: always re-engage follow so the new bubble is visible. */
   function followLatestConversation() {
     stickToBottomRef.current = true;
     setShowJumpLatest(false);
-    scrollThreadToLatest("smooth");
+    schedulePinToLatest("smooth");
   }
 
   function onThreadScroll() {
-    // Ignore scroll events caused by our own auto-follow (esp. Mobile Safari).
-    if (programmaticScrollRef.current) return;
     const el = threadRef.current;
     if (!el) return;
-    const near = isChatNearBottom({
+    const next = resolveChatScrollStickState({
+      programmatic: programmaticScrollRef.current,
       scrollTop: el.scrollTop,
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
       thresholdPx: 120,
     });
-    stickToBottomRef.current = near;
-    if (near) setShowJumpLatest(false);
-    else setShowJumpLatest(true);
+    if (!next) return;
+    stickToBottomRef.current = next.stick;
+    setShowJumpLatest(next.showJump);
   }
 
   function jumpToLatest() {
@@ -445,7 +514,10 @@ export function Go21App({ token }: { token: string }) {
         setPhotoPreview(null);
         setPhotoMenuOpen(false);
         setDraft("");
-        followLatestConversation();
+        // If user scrolled up while waiting, do not yank them back on AI arrival.
+        if (shouldFollowOnAssistantArrival(stickToBottomRef.current)) {
+          schedulePinToLatest("smooth");
+        }
         await reload();
         startTransition(() => {
           setPendingUser(null);
@@ -471,7 +543,9 @@ export function Go21App({ token }: { token: string }) {
       setPhotoPreview(null);
       setPhotoMenuOpen(false);
       setDraft("");
-      followLatestConversation();
+      if (shouldFollowOnAssistantArrival(stickToBottomRef.current)) {
+        schedulePinToLatest("smooth");
+      }
       await reload();
       startTransition(() => {
         setPendingUser(null);
@@ -635,48 +709,51 @@ export function Go21App({ token }: { token: string }) {
             </div>
           ) : null}
           <div ref={threadRef} className="go21-thread" onScroll={onThreadScroll}>
-            {ctx.turns.map((turn) => (
-              <div
-                key={turn.id}
-                className={turn.role === "customer" ? "go21-bubble go21-user" : "go21-bubble go21-ai"}
-              >
-                {turn.photoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img className="go21-turn-photo" src={turn.photoUrl} alt="餐點照片" />
-                ) : null}
-                {turn.content}
-              </div>
-            ))}
-            {pendingUser && sendStatus === "sending" ? (
-              <div className="go21-bubble go21-user">
-                {photoPreview ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img className="go21-turn-photo" src={photoPreview} alt="" />
-                ) : null}
-                {pendingUser}
-              </div>
-            ) : null}
-            {sendStatus === "sending" ||
-            sendStatus === "customer_sent" ||
-            (busy && sendStatus !== "failed" && sendStatus !== "coach_failed") ? (
-              <div className="go21-thinking">教練正在回覆…</div>
-            ) : null}
-            {sendStatus === "failed" ? (
-              <div className="go21-send-failed">
-                <p>還沒送出成功</p>
-                <button type="button" onClick={() => void sendMessage({ retry: true })}>
-                  重試
-                </button>
-              </div>
-            ) : null}
-            {sendStatus === "coach_failed" ? (
-              <div className="go21-coach-failed">
-                <p>教練剛剛沒接上</p>
-                <button type="button" onClick={() => void sendMessage({ retryAssistant: true })}>
-                  重試回覆
-                </button>
-              </div>
-            ) : null}
+            <div ref={threadContentRef} className="go21-thread-content">
+              {ctx.turns.map((turn) => (
+                <div
+                  key={turn.id}
+                  className={turn.role === "customer" ? "go21-bubble go21-user" : "go21-bubble go21-ai"}
+                >
+                  {turn.photoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img className="go21-turn-photo" src={turn.photoUrl} alt="餐點照片" />
+                  ) : null}
+                  {turn.content}
+                </div>
+              ))}
+              {pendingUser && sendStatus === "sending" ? (
+                <div className="go21-bubble go21-user">
+                  {photoPreview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img className="go21-turn-photo" src={photoPreview} alt="" />
+                  ) : null}
+                  {pendingUser}
+                </div>
+              ) : null}
+              {sendStatus === "sending" ||
+              sendStatus === "customer_sent" ||
+              (busy && sendStatus !== "failed" && sendStatus !== "coach_failed") ? (
+                <div className="go21-thinking">教練正在回覆…</div>
+              ) : null}
+              {sendStatus === "failed" ? (
+                <div className="go21-send-failed">
+                  <p>還沒送出成功</p>
+                  <button type="button" onClick={() => void sendMessage({ retry: true })}>
+                    重試
+                  </button>
+                </div>
+              ) : null}
+              {sendStatus === "coach_failed" ? (
+                <div className="go21-coach-failed">
+                  <p>教練剛剛沒接上</p>
+                  <button type="button" onClick={() => void sendMessage({ retryAssistant: true })}>
+                    重試回覆
+                  </button>
+                </div>
+              ) : null}
+              <div ref={latestAnchorRef} className="go21-thread-anchor" aria-hidden />
+            </div>
           </div>
           {showJumpLatest ? (
             <button type="button" className="go21-jump-latest" onClick={jumpToLatest}>

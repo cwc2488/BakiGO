@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  coachMessageEndsWithQuestion,
   go21SystemPromptAllowsTimelyConcreteTip,
   go21SystemPromptIncludesShortPolicy,
   go21SystemPromptPrefersConciseDefault,
+  go21SystemPromptAllowsStopWithoutQuestion,
+  go21SystemPromptPrefersMealPhotoJudgment,
 } from "@/lib/go21/conversation-quality";
 import { buildCoachingAiV2SystemPrompt, buildCoachingAiV2UserPrompt } from "@/lib/coaching/ai/v2/v2-prompts";
 import { generateFixtureV2Draft } from "@/lib/coaching/ai/v2/v2-fixture-provider";
@@ -36,6 +39,20 @@ describe("Go21 conversation polish", () => {
     expect(user).toContain("一句具體建議");
   });
 
+  it("allows stopping without a trailing question; meal photos prefer judgment", () => {
+    const sys = buildCoachingAiV2SystemPrompt();
+    expect(go21SystemPromptAllowsStopWithoutQuestion(sys)).toBe(true);
+    expect(go21SystemPromptPrefersMealPhotoJudgment(sys)).toBe(true);
+    const user = buildCoachingAiV2UserPrompt({
+      generationInput: minimalGi(),
+      decisionContext: minimalDecision(),
+      memory: emptyMemory(9),
+      channel: "free_message",
+      freeMessage: "📷",
+    });
+    expect(user).toMatch(/收尾不要預設問句|不要叫顧客自己評價這餐/);
+  });
+
   it("simple food log stays concise; goal moment may include one concrete tip", () => {
     const food = generateFixtureV2Draft({
       generationInput: minimalGi(),
@@ -66,7 +83,72 @@ describe("Go21 conversation polish", () => {
       },
     });
     expect(craving.coachMessage).toMatch(/茶|水|撐/);
+    expect(coachMessageEndsWithQuestion(craving.coachMessage)).toBe(false);
     expect(craving.coachMessage.split("\n").length).toBeLessThanOrEqual(3);
+  });
+
+  it("meal photo with cues gives judgment instead of asking customer to self-evaluate", () => {
+    const draft = generateFixtureV2Draft({
+      generationInput: minimalGi(),
+      decisionContext: {
+        ...minimalDecision(),
+        dailyNutritionAssessment: {
+          level: "needs_adjustment",
+          reasons: ["heavy"],
+          positiveFactors: [],
+          adjustmentSubjects: ["dinner"],
+          confidence: "medium",
+        },
+        mealObservations: [
+          {
+            mealSlot: "dinner",
+            observedFoods: ["炸雞"],
+            signals: ["fried_food"],
+            shakeObserved: false,
+            solidFoodObserved: true,
+            confidence: "medium",
+          },
+        ],
+      } as unknown as CoachingDecisionContext,
+      finalInterventionLevel: "normal",
+      memory: emptyMemory(8),
+      channel: "free_message",
+      freeMessage: "[影像觀察] 看起來像炸雞便當",
+    });
+    expect(draft.coachMessage).toMatch(/偏重|收一點|方向可以|記著/);
+    expect(draft.coachMessage).not.toMatch(/你覺得|哪裡跟前幾天|我先不搶答/);
+    expect(coachMessageEndsWithQuestion(draft.coachMessage)).toBe(false);
+  });
+
+  it("autonomy on-track does not quiz the customer about the meal", () => {
+    const draft = generateFixtureV2Draft({
+      generationInput: minimalGi(),
+      decisionContext: {
+        ...minimalDecision(),
+        dailyNutritionAssessment: {
+          level: "on_track",
+          reasons: [],
+          positiveFactors: ["balanced"],
+          adjustmentSubjects: [],
+          confidence: "high",
+        },
+        mealObservations: [
+          {
+            mealSlot: "lunch",
+            observedFoods: ["沙拉"],
+            signals: [],
+            shakeObserved: false,
+            solidFoodObserved: true,
+            confidence: "high",
+          },
+        ],
+      } as unknown as CoachingDecisionContext,
+      finalInterventionLevel: "normal",
+      memory: emptyMemory(18),
+      channel: "daily_log",
+    });
+    expect(draft.coachMessage).not.toMatch(/你覺得|我先不搶答/);
+    expect(coachMessageEndsWithQuestion(draft.coachMessage)).toBe(false);
   });
 
   it("default near-bottom threshold is mobile-friendly", () => {
@@ -82,7 +164,8 @@ describe("Go21 conversation polish", () => {
     const src = readFileSync(resolve(process.cwd(), "src/components/go21/Go21App.tsx"), "utf8");
     expect(src).toContain("followLatestConversation");
     expect(src).toContain("programmaticScrollRef");
-    expect(src).toContain("if (programmaticScrollRef.current) return");
+    expect(src).toContain("schedulePinToLatest");
+    expect(src).toContain("shouldFollowOnAssistantArrival");
     expect(src).toContain("thresholdPx: 120");
   });
 });
@@ -96,7 +179,7 @@ function emptyMemory(dayNumber: number) {
     lifecycle: {
       cycle: null,
       dayNumber,
-      stage: "find_patterns" as const,
+      stage: dayNumber >= 15 ? ("build_autonomy" as const) : ("find_patterns" as const),
       intensiveActive: true,
       daysRemaining: Math.max(0, 21 - dayNumber),
     },

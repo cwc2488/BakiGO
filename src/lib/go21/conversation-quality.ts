@@ -138,7 +138,35 @@ export function go21SystemPromptAllowsTimelyConcreteTip(systemPrompt: string): b
 }
 
 export function go21SystemPromptAllowsNoQuestion(systemPrompt: string): boolean {
-  return /沒有固定順序|不必立刻|沒有.*必問|幾乎什麼都不說/.test(systemPrompt);
+  return (
+    /沒有固定順序|不必立刻|沒有.*必問|幾乎什麼都不說/.test(systemPrompt) ||
+    /不要習慣把每則回覆都收在問句|觀察或具體建議講完.*停|收尾不要預設問句/.test(
+      systemPrompt,
+    )
+  );
+}
+
+/** Prefer ending without a mandatory question — real coach judgment. */
+export function go21SystemPromptAllowsStopWithoutQuestion(systemPrompt: string): boolean {
+  return (
+    /不要習慣把每則回覆都收在問句/.test(systemPrompt) ||
+    /觀察或具體建議講完.*可以自然停住/.test(systemPrompt) ||
+    /收尾不要預設問句/.test(systemPrompt)
+  );
+}
+
+/** Meal photos: useful judgment over asking customer to self-evaluate. */
+export function go21SystemPromptPrefersMealPhotoJudgment(systemPrompt: string): boolean {
+  return (
+    /餐點照片/.test(systemPrompt) &&
+    (/優先給一句有用判斷|給判斷或一句具體建議後停/.test(systemPrompt) ||
+      /不要反問顧客.*這餐|不要叫顧客自己評價這餐/.test(systemPrompt))
+  );
+}
+
+/** Heuristic: coach message ends with a question mark (Chinese or ASCII). */
+export function coachMessageEndsWithQuestion(message: string): boolean {
+  return /[？?]\s*$/u.test(message.trim());
 }
 
 export function go21SystemPromptHandlesDisengagement(systemPrompt: string): boolean {

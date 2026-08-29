@@ -56,9 +56,16 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
-  // Photo / vision observation — acknowledge, don't lecture
+  // Photo / vision observation — useful judgment when cues exist; no self-eval quiz
   if (freeMessage && /\[影像觀察/.test(freeMessage)) {
     const food = extractVisionFoodLabel(freeMessage);
+    const mealJudgment = buildMealPhotoJudgment(decisionContext, food);
+    if (mealJudgment) {
+      return {
+        coachMessage: mealJudgment,
+        meta: emptyMeta("educate", day, stage),
+      };
+    }
     return {
       coachMessage: food ? `看到啦，是${food} 👀` : "照片收到了 👀",
       meta: emptyMeta("observe", day, stage),
@@ -82,7 +89,7 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     /宵夜|晚上|失控|亂吃/.test(input.go21Goal.personalGoal)
   ) {
     return {
-      coachMessage: "欸，這就是晚上那關 👀 先喝口水或泡杯茶撐一下？真的餓再吃也沒關係。",
+      coachMessage: "欸，這就是晚上那關 👀 先喝口水或泡杯茶撐一下，真的餓再吃也沒關係。",
       meta: emptyMeta("encourage", day, stage),
     };
   }
@@ -180,7 +187,7 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
       coachMessage:
         stage === "find_patterns"
           ? "我看了這幾天，有件事你可能沒注意到：問題未必只在晚餐本身，比較像白天偏少、下午很餓，晚上再補回來。"
-          : "還是那個假設：下午容易餓，然後晚餐容易補過頭。要不要明天下午先試一個小點心，我們再看晚餐？",
+          : "還是那個假設：下午容易餓，然後晚餐容易補過頭。明天下午可以先試一個小點心，我們再看晚餐。",
       meta: {
         ...emptyMeta(stage === "find_patterns" ? "investigate" : "test_hypothesis", day, stage),
         hypothesisOps: hypCreate,
@@ -219,10 +226,10 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
-  // Autonomy nudge (not every time — only when on-track-ish)
+  // Autonomy nudge — observe / tip, do not push self-evaluation questions
   if (stage === "build_autonomy" && decisionContext.dailyNutritionAssessment.level === "on_track") {
     return {
-      coachMessage: "你先看一下今天這餐，你覺得哪裡跟前幾天不一樣？我先不搶答。",
+      coachMessage: "今天這餐我覺得穩，你有在維持自己的節奏，這樣就好。",
       meta: emptyMeta("challenge", day, stage),
     };
   }
@@ -380,9 +387,9 @@ function buildCasualReply(
   if (/嘴饞|想吃|宵夜|十一點|突然很想吃/.test(freeMessage)) {
     const goal = input.go21Goal?.personalGoal ?? "";
     if (/宵夜|晚上|失控|亂吃/.test(goal)) {
-      return "欸，這就是晚上那關 👀 先喝口水或泡杯茶撐一下？真的餓再吃也沒關係。";
+      return "欸，這就是晚上那關 👀 先喝口水或泡杯茶撐一下，真的餓再吃也沒關係。";
     }
-    return "突然想吃很常見。先喝口水撐一下，還是你現在真的餓？";
+    return "突然想吃很常見。先喝口水撐一下，真的餓再決定要不要吃。";
   }
   if (/還可以|沒事|先這樣|謝謝|哈哈/.test(freeMessage)) {
     return "好，我知道了。";
@@ -442,6 +449,42 @@ function extractVisionFoodLabel(text: string): string | null {
   for (const re of patterns) {
     const m = text.match(re);
     if (m?.[1]) return m[1];
+  }
+  return null;
+}
+
+/**
+ * When photo/vision cues are enough, prefer a useful judgment over asking
+ * the customer to evaluate the meal themselves.
+ */
+function buildMealPhotoJudgment(
+  decision: CoachingDecisionContext,
+  food: string | null,
+): string | null {
+  const foods =
+    food != null && food.length > 0
+      ? [food]
+      : decision.mealObservations.flatMap((o) => o.observedFoods).slice(0, 3);
+  const label = foods.length > 0 ? foods.join("、") : null;
+  const level = decision.dailyNutritionAssessment.level;
+  const heavySignals = decision.mealObservations.some((o) =>
+    o.signals.some((s) =>
+      ["fried_food", "sugary_drink", "starch_concentrated", "late_night"].includes(s),
+    ),
+  );
+
+  if (heavySignals || level === "off_track" || level === "needs_adjustment") {
+    if (label) {
+      return `這張看起來是${label}。以你現在的方向，這餐偏重了一點；下一餐先把份量或油炸感收一點就好。`;
+    }
+    return "這餐看起來偏重了一點。下一餐先把份量收一點就好，不用整天生氣。";
+  }
+  if (level === "on_track" || decision.mealObservations.some((o) => o.shakeObserved)) {
+    if (label) return `看到${label}了，這餐方向可以，我先記著。`;
+    return "這餐看起來穩，我先記著。";
+  }
+  if (label && decision.mealObservations.length > 0) {
+    return `看到${label}了 👀 這餐我先記著，暫時沒什麼要特別念你的。`;
   }
   return null;
 }
