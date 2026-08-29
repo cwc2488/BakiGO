@@ -800,7 +800,7 @@ Member (coach)
 | `coaching_enrollments` | Active/paused/completed coaching relationship; plan snapshot + onboarding state. `started_at` = Day 1 authority; `planned_end_at` (034) = inclusive planned end (default start+89 days); `ended_at` = actual completion timestamp |
 | `coaching_daily_logs` | One row per enrollment per `log_date` (Asia/Taipei). Sleep: `sleep_bedtime`, `sleep_wake_time`; `sleep_duration` computed on save. Soft-delete: `deleted_at` / `deleted_by` (037); default queries exclude deleted rows. Active unique is `(enrollment_id, log_date) WHERE deleted_at IS NULL`. |
 | `coaching_meal_entries` | Meal slot rows linked to daily log |
-| `coaching_meal_photos` | Storage path refs for meal photos (private bucket) |
+| `coaching_meal_photos` | Storage path refs for meal photos (private bucket); optional `vision_observation_json` cache (`067`) for real-time + daily reuse |
 
 **Migration `028_coaching_sleep_times.sql`:** adds `sleep_bedtime`, `sleep_wake_time` to `coaching_daily_logs`.
 

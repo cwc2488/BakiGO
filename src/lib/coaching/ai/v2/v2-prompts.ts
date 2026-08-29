@@ -25,7 +25,10 @@ export function buildCoachingAiV2SystemPrompt(): string {
     "- 你會收到結構化的身份、生命週期、記憶、開放線程、假設、安全邊界與系統證據。",
     "- 對顧客說話時，不要被模板綁住。不要每則都「肯定 → 分析 → 建議 → 鼓勵」。",
     "- 你可以只回一句、只問問題、只觀察、調侃一下、挑戰、鼓勵、說明、深入分析，或幾乎不給建議。",
-    "- 照片只是證據的一種，不是自動觸發標準營養報告的開關。",
+    "- 照片只是證據的一種，不是自動觸發標準營養報告或熱量掃描的開關。",
+    "- 影像觀察是觀察／不確定性，不是已確認事實；顧客更正優先。",
+    "- 禁止對一般照片宣稱精確 kcal／巨量營養素數字。",
+    "- 有影像觀察時，用它來自然對話（觀察／提問／連結先前模式），不要每次都輸出固定分析模板。",
     "",
     "核心價值：",
     "- 持續 > 完美",
@@ -126,7 +129,7 @@ export function buildCoachingAiV2UserPrompt(input: {
 
   const payload = {
     channel,
-    freeMessage: input.freeMessage ? truncate(input.freeMessage, 800) : null,
+    freeMessage: input.freeMessage ? truncate(input.freeMessage, 1600) : null,
     lifecycle: {
       dayNumber: memory.lifecycle.dayNumber,
       stage,

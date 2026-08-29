@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 import { toCoachingApiErrorMessage } from "@/lib/coaching/coaching-api-error";
-import { CoachingServiceError } from "@/lib/coaching/coaching-service";
+import {
+  CoachingServiceError,
+  createSignedCoachingPhotoUrl,
+} from "@/lib/coaching/coaching-service";
 import { loadGo21PortalBundle } from "@/lib/go21/go21-portal";
 import { getSharedInMemoryV2Store } from "@/lib/coaching/ai/v2/memory-store";
 import { createSupabaseServiceClient } from "@/lib/supabase/service-client";
 import { isReengagementDue } from "@/lib/go21/reminders";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
+import { parseGo21PhotoPath } from "@/lib/go21/realtime-vision";
 
 export const runtime = "nodejs";
 
@@ -28,6 +32,9 @@ export async function GET(
       content: string;
       createdAt: string;
       channel: string | null;
+      photoUrl: string | null;
+      mealSlotUnresolved: boolean;
+      photoStoragePath: string | null;
     }> = [];
 
     try {
@@ -38,13 +45,42 @@ export async function GET(
         .eq("enrollment_id", bundle.enrollmentId)
         .order("created_at", { ascending: true })
         .limit(80);
-      turns = (data ?? []).map((row) => ({
-        id: String(row.id),
-        role: String(row.role),
-        content: String(row.content),
-        createdAt: String(row.created_at),
-        channel: row.channel ? String(row.channel) : null,
-      }));
+      turns = await Promise.all(
+        (data ?? []).map(async (row) => {
+          const metadata =
+            row.metadata && typeof row.metadata === "object"
+              ? (row.metadata as Record<string, unknown>)
+              : {};
+          const rawPath =
+            typeof metadata.photoStoragePath === "string" ? metadata.photoStoragePath : null;
+          let photoUrl: string | null = null;
+          // Authoritative ownership: path must match this portal's customer + enrollment.
+          if (rawPath) {
+            const parsed = parseGo21PhotoPath(rawPath);
+            if (
+              parsed &&
+              parsed.customerId === bundle.customerId &&
+              parsed.enrollmentId === bundle.enrollmentId
+            ) {
+              try {
+                photoUrl = await createSignedCoachingPhotoUrl(rawPath, 900);
+              } catch {
+                photoUrl = null;
+              }
+            }
+          }
+          return {
+            id: String(row.id),
+            role: String(row.role),
+            content: String(row.content),
+            createdAt: String(row.created_at),
+            channel: row.channel ? String(row.channel) : null,
+            photoUrl,
+            mealSlotUnresolved: metadata.mealSlotUnresolved === true,
+            photoStoragePath: null, // never expose storage path to client
+          };
+        }),
+      );
     } catch {
       const store = getSharedInMemoryV2Store();
       const mem = await store.loadMemoryBundle({
@@ -58,6 +94,9 @@ export async function GET(
         content: t.content,
         createdAt: t.createdAt,
         channel: t.channel,
+        photoUrl: null,
+        mealSlotUnresolved: false,
+        photoStoragePath: null,
       }));
     }
 
@@ -83,7 +122,7 @@ export async function GET(
         customerProfile: bundle.customerProfile,
         latestBody: bundle.latestBody,
         needsBaseline: bundle.needsBaseline,
-        turns,
+        turns: turns.map(({ photoStoragePath: _p, ...rest }) => rest),
         reminders: reminderTurns.map((t) => ({
           id: t.id,
           kind: "in_app",

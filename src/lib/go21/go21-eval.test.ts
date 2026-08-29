@@ -393,4 +393,142 @@ describe("Baki Go 21 customer chat evaluation", () => {
     expect(stillMealChatbot).toBe(false);
     expect(feelsGeneralChatgpt).toBe(false);
   }, 60_000);
+
+  it("vision evidence connects to prior vegetable struggle without scanner template", async () => {
+    const store = new CoachingAiV2MemoryStore();
+    await store.ensureActiveCycle({
+      enrollmentId: ENROLLMENT,
+      customerId: "cus-go21-1",
+      ownerMemberId: "owner",
+      enrollmentStartedAt: START,
+      plannedEndAt: addCalendarDays(START, 20),
+      planSnapshot: DEFAULT_COACHING_PLAN_SNAPSHOT,
+    });
+
+    await store.applyMemoryWrites({
+      enrollmentId: ENROLLMENT,
+      customerId: "cus-go21-1",
+      ownerMemberId: "owner",
+      logDate: addCalendarDays(START, 5),
+      writes: [
+        {
+          category: "pattern",
+          content: "蔬菜吃得偏少，晚餐常只有肉和飯",
+          confidence: 0.8,
+        },
+      ],
+    });
+    await store.applyOpenLoopOps({
+      enrollmentId: ENROLLMENT,
+      customerId: "cus-go21-1",
+      ownerMemberId: "owner",
+      logDate: addCalendarDays(START, 5),
+      ops: [
+        {
+          op: "create",
+          subject: "晚餐多加一點蔬菜",
+          detail: "試試看晚餐蔬菜份量",
+          dueLogDate: addCalendarDays(START, 6),
+        },
+      ],
+    });
+
+    const vegTurn: ChatTurn = {
+      dayOffset: 6,
+      message: "晚餐",
+      hasPhoto: true,
+      meals: [
+        {
+          slot: "dinner",
+          foods: ["雞胸", "飯", "一大盤青菜", "番茄"],
+          signals: [],
+        },
+      ],
+    };
+    const decision = buildDecision(vegTurn);
+    decision.improvedIssue = {
+      key: "vegetables_improved",
+      label: "蔬菜份量有改善",
+      evidence: [{ key: "meal_vision", value: "visible_vegetables" }],
+      sourceSignalKeys: ["vegetable_low"],
+    };
+    decision.mealObservations = decision.mealObservations.map((o) => ({
+      ...o,
+      visibleVegetables: true,
+      confidence: "medium" as const,
+      uncertainties: [],
+    }));
+
+    const freeMessage = [
+      "晚餐",
+      "",
+      "[影像觀察｜僅供教練參考，非已確認事實]",
+      "dinner｜可見：雞胸、飯、一大盤青菜、番茄｜有看到蔬菜，有看到蛋白質來源｜信心：medium",
+    ].join("\n");
+
+    const result = await runCoachingAiV2Turn({
+      generationInput: buildInput(vegTurn),
+      decisionContext: decision,
+      enrollmentStartedAt: START,
+      plannedEndAt: addCalendarDays(START, 20),
+      channel: "free_message",
+      freeMessage,
+      store,
+    });
+
+    const msg = result.draft.coachMessage;
+    expect(msg).not.toMatch(/\d{3,}\s*kcal|卡路里約|巨量營養素/);
+    expect(msg).not.toMatch(/今日飲食總評|營養分析報告|掃描完成/);
+    expect(msg.length).toBeGreaterThan(8);
+  }, 30_000);
+
+  it("uncertain vision communicates uncertainty rather than hallucinating identity", async () => {
+    const store = new CoachingAiV2MemoryStore();
+    await store.ensureActiveCycle({
+      enrollmentId: ENROLLMENT,
+      customerId: "cus-go21-1",
+      ownerMemberId: "owner",
+      enrollmentStartedAt: START,
+      plannedEndAt: addCalendarDays(START, 20),
+      planSnapshot: DEFAULT_COACHING_PLAN_SNAPSHOT,
+    });
+
+    const turn: ChatTurn = {
+      dayOffset: 7,
+      message: "午餐",
+      hasPhoto: true,
+      meals: [{ slot: "lunch", foods: ["淺色肉類？", "飯"] }],
+    };
+    const decision = buildDecision(turn);
+    decision.mealObservations = [
+      {
+        ...mealObs("lunch", ["淺色肉類？", "飯"]),
+        confidence: "low",
+        uncertainties: ["主菜像雞肉或魚，看不清楚"],
+        visibleProteinSource: true,
+        visibleVegetables: false,
+      },
+    ];
+
+    const freeMessage = [
+      "午餐",
+      "",
+      "[影像觀察｜僅供教練參考，非已確認事實]",
+      "lunch｜可見：淺色肉類？、飯｜不確定：主菜像雞肉或魚，看不清楚｜信心：low",
+    ].join("\n");
+
+    const result = await runCoachingAiV2Turn({
+      generationInput: buildInput(turn),
+      decisionContext: decision,
+      enrollmentStartedAt: START,
+      plannedEndAt: addCalendarDays(START, 20),
+      channel: "free_message",
+      freeMessage,
+      store,
+    });
+
+    const msg = result.draft.coachMessage;
+    expect(msg).not.toMatch(/確定是雞肉|100%是魚|精確熱量/);
+    expect(msg).not.toMatch(/\d{3,}\s*kcal/);
+  }, 30_000);
 });

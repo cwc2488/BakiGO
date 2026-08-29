@@ -21,7 +21,13 @@ import { composeGo21OutOfScopeReply } from "@/lib/go21/out-of-scope-reply";
 import { addCalendarDays } from "@/lib/coaching/enrollment-window";
 import { requireGo21Portal, resolveGo21LifecycleAnchor } from "@/lib/go21/go21-portal";
 import { assessCoachingAiV2Safety } from "@/lib/coaching/ai/v2/v2-safety";
+import {
+  runGo21RealtimeVision,
+  composeGo21VisionFreeMessage,
+  type Go21RealtimeVisionResult,
+} from "@/lib/go21/realtime-vision";
 import type { Go21ExtractedEvent } from "@/types/go21";
+import type { CoachingMealSlot } from "@/types/coaching";
 
 export const runtime = "nodejs";
 
@@ -156,21 +162,59 @@ export async function POST(
       },
     };
 
-    // Photo reality: storagePath on meals is the secure reference; V2 free_message still text-led.
-    // Vision meal observation remains in the daily job pipeline — do not pretend images are OCR'd here.
-    const photoPaths = generationInput.todayContext.primaryMeals
-      .filter((m) => m.storagePath)
-      .map((m) => m.mealSlot);
+    const eventLogDate = extracted.eventDate ?? logDate;
+    const mealSlotUnresolved =
+      Boolean(body.hasPhoto) &&
+      !extracted.mealSlot &&
+      !(body.mealSlotHint && ["breakfast", "lunch", "dinner"].includes(body.mealSlotHint));
+
+    const preferredSlot: CoachingMealSlot | null =
+      (extracted.mealSlot as CoachingMealSlot | null) ||
+      body.mealSlotHint ||
+      (mealSlotUnresolved ? "snacks" : null);
+
+    let vision: Go21RealtimeVisionResult = {
+      ran: false,
+      reusedCache: false,
+      failed: false,
+      failureReason: null,
+      storagePath: null,
+      mealSlotResolved: null,
+      mealSlotUnresolved,
+      observations: [],
+      evidenceSummary: null,
+      source: "none",
+      usage: { inputTokens: 0, outputTokens: 0, imageCount: 0 },
+    };
+
+    // Real-time vision only when a validated upload exists for this turn.
+    if (body.hasPhoto && body.photoUploaded) {
+      vision = await runGo21RealtimeVision({
+        portal,
+        generationInput,
+        logDate: eventLogDate,
+        preferredSlot,
+        mealSlotUnresolved,
+      });
+    } else if (body.hasPhoto && !body.photoUploaded) {
+      console.info(
+        JSON.stringify({
+          event: "go21_photo_claimed_without_upload",
+          enrollmentId: portal.enrollmentId,
+        }),
+      );
+    }
+
+    const freeMessage = composeGo21VisionFreeMessage({
+      customerMessage: message,
+      hasPhoto: Boolean(body.hasPhoto),
+      vision,
+    });
 
     const decisionContext = buildMinimalDecisionContextForFreeMessage({
       generationInput,
-      freeMessage:
-        message ||
-        (body.hasPhoto
-          ? photoPaths.length > 0
-            ? `傳了餐點照片（${photoPaths.join("、")}）`
-            : "傳了一張餐點照片（餐別待確認）"
-          : ""),
+      freeMessage,
+      mealObservations: vision.observations,
     });
 
     if (extracted.hungerMentioned && decisionContext.customerVoice.length === 0) {
@@ -192,6 +236,12 @@ export async function POST(
     const dayNumber = loaded.generationInput.profileMemory.daysSinceEnrollmentStart;
     const channel = dayNumber >= 20 ? ("day21" as const) : ("free_message" as const);
 
+    // Graceful degradation when vision fails: still coach with photo received note.
+    let coachOverride: string | null = null;
+    if (vision.failed && body.hasPhoto) {
+      coachOverride = null; // let V2 respond with the system note in freeMessage
+    }
+
     const v2 = await runCoachingAiV2Turn({
       generationInput,
       decisionContext,
@@ -199,9 +249,58 @@ export async function POST(
       plannedEndAt: loaded.enrollmentPlannedEndAt,
       planSnapshot: generationInput.profileMemory.planSnapshot,
       channel,
-      freeMessage: message || (body.hasPhoto ? "（照片）" : ""),
+      freeMessage,
       persistToSupabase: true,
     });
+
+    const coachMessage = coachOverride ?? v2.draft.coachMessage;
+
+    // Attach photo path on the latest customer turn metadata (path only — signed URL at read time)
+    if (vision.storagePath) {
+      try {
+        const supabase = createSupabaseServiceClient();
+        const { data: lastCustomer } = await supabase
+          .from("coaching_ai_turns")
+          .select("id")
+          .eq("enrollment_id", portal.enrollmentId)
+          .eq("role", "customer")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (lastCustomer?.id) {
+          const { data: existing } = await supabase
+            .from("coaching_ai_turns")
+            .select("metadata")
+            .eq("id", lastCustomer.id)
+            .eq("enrollment_id", portal.enrollmentId)
+            .maybeSingle();
+          const prior =
+            existing?.metadata && typeof existing.metadata === "object"
+              ? (existing.metadata as Record<string, unknown>)
+              : {};
+          await supabase
+            .from("coaching_ai_turns")
+            .update({
+              metadata: {
+                ...prior,
+                photoStoragePath: vision.storagePath,
+                mealSlotUnresolved,
+                visionSource: vision.source,
+                visionReusedCache: vision.reusedCache,
+              },
+            })
+            .eq("id", lastCustomer.id)
+            .eq("enrollment_id", portal.enrollmentId);
+        }
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            event: "go21_turn_photo_metadata_failed",
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
+    }
 
     await scheduleRemindersFromMeta({
       enrollmentId: portal.enrollmentId,
@@ -214,12 +313,20 @@ export async function POST(
 
     return NextResponse.json({
       ok: true,
-      coachMessage: v2.draft.coachMessage,
+      coachMessage,
       intention: v2.draft.meta.intention,
       relevance,
       extracted,
-      photoSlotsWithStorage: photoPaths,
-      photoVisionInChat: false,
+      vision: {
+        ran: vision.ran,
+        reusedCache: vision.reusedCache,
+        failed: vision.failed,
+        source: vision.source,
+        mealSlotUnresolved: vision.mealSlotUnresolved,
+        evidenceSummary: vision.evidenceSummary,
+        imageCount: vision.usage.imageCount,
+      },
+      photoVisionInChat: vision.ran && !vision.failed && Boolean(vision.evidenceSummary),
       lifecycle: {
         dayNumber: v2.observability.lifecycleDay,
         stage: v2.observability.lifecycleStage,

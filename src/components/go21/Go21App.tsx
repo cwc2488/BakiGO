@@ -10,6 +10,8 @@ type Go21Turn = {
   content: string;
   createdAt: string;
   channel?: string | null;
+  photoUrl?: string | null;
+  mealSlotUnresolved?: boolean;
 };
 
 type Go21ContextPayload = {
@@ -181,12 +183,16 @@ export function Go21App({ token }: { token: string }) {
       else if (/早餐|早上/.test(text)) mealSlotHint = "breakfast";
       else if (/晚餐|晚上/.test(text)) mealSlotHint = "dinner";
 
-      if (photoFile && mealSlotHint) {
+      const logDate = resolveGo21ClientLogDate(text);
+
+      // Always upload when a photo is attached. Unknown meal → snacks (not invented dinner/lunch).
+      if (photoFile) {
+        const uploadSlot = mealSlotHint ?? "snacks";
         const form = new FormData();
         form.append("photo", photoFile);
-        form.append("logDate", new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" }));
+        form.append("logDate", logDate);
         const upload = await fetch(
-          `/api/coaching/portal/${encodeURIComponent(token)}/meals/${mealSlotHint}/photo`,
+          `/api/coaching/portal/${encodeURIComponent(token)}/meals/${uploadSlot}/photo`,
           { method: "POST", body: form },
         );
         photoUploaded = upload.ok;
@@ -203,6 +209,7 @@ export function Go21App({ token }: { token: string }) {
           hasPhoto: Boolean(photoFile),
           photoUploaded,
           mealSlotHint,
+          logDate,
         }),
       });
       const payload = (await response.json()) as { ok?: boolean; error?: string; coachMessage?: string };
@@ -319,10 +326,22 @@ export function Go21App({ token }: { token: string }) {
                 key={turn.id}
                 className={turn.role === "customer" ? "go21-bubble go21-user" : "go21-bubble go21-ai"}
               >
+                {turn.photoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className="go21-turn-photo" src={turn.photoUrl} alt="餐點照片" />
+                ) : null}
                 {turn.content}
               </div>
             ))}
-            {pendingUser ? <div className="go21-bubble go21-user">{pendingUser}</div> : null}
+            {pendingUser ? (
+              <div className="go21-bubble go21-user">
+                {photoPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className="go21-turn-photo" src={photoPreview} alt="" />
+                ) : null}
+                {pendingUser}
+              </div>
+            ) : null}
             {busy ? <div className="go21-thinking">教練正在回覆…</div> : null}
           </div>
           <form
@@ -382,6 +401,20 @@ export function Go21App({ token }: { token: string }) {
 
     </div>
   );
+}
+
+/** Taipei calendar date for upload/chat — mirrors server relative-date extract lightly. */
+function resolveGo21ClientLogDate(text: string): string {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+  const shift = (days: number) => {
+    const [y, m, d] = today.split("-").map(Number);
+    const dt = new Date(Date.UTC(y!, m! - 1, d!));
+    dt.setUTCDate(dt.getUTCDate() + days);
+    return dt.toISOString().slice(0, 10);
+  };
+  if (/前天/.test(text)) return shift(-2);
+  if (/昨天|昨日/.test(text)) return shift(-1);
+  return today;
 }
 
 function BaselineForm({

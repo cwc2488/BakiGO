@@ -23,6 +23,10 @@ import { generateDailyCoachWithTelemetry } from "@/lib/coaching/ai/generate-dail
 import { loadAuthoritativeCoachingGenerationInput } from "@/lib/coaching/ai/load-coaching-generation-context";
 import { observeCoachingMeals } from "@/lib/coaching/ai/observe-coaching-meals";
 import {
+  loadGo21VisionCacheForStoragePaths,
+  saveVisionCache,
+} from "@/lib/go21/realtime-vision";
+import {
   createEmptyCoachingAiLatency,
   logCoachingAiLatency,
 } from "@/lib/coaching/ai/coaching-ai-latency";
@@ -361,17 +365,57 @@ export async function processCoachingGenerationJob(
       daily_log_id: todayLog.id || null,
       meta: { prepared_image_count: preparedImages.prepared.length },
     });
-    const { observations: mealObservations } = await observeCoachingMeals({
-      generationInput: loaded.generationInput,
-      preparedMealImages: preparedImages.prepared,
-      ownerMemberId: job.ownerMemberId,
-      persistTelemetry: true,
-    });
+
+    // Reuse Go21 real-time vision cache when present — avoid duplicate OpenAI vision calls.
+    const cachedByPath = await loadGo21VisionCacheForStoragePaths(
+      preparedImages.prepared.map((img) => img.sourceStoragePath),
+    );
+    const uncachedImages = preparedImages.prepared.filter(
+      (img) => !cachedByPath.has(img.sourceStoragePath),
+    );
+    let mealObservations = Array.from(cachedByPath.values());
+    if (uncachedImages.length > 0) {
+      const observed = await observeCoachingMeals({
+        generationInput: loaded.generationInput,
+        preparedMealImages: uncachedImages,
+        ownerMemberId: job.ownerMemberId,
+        persistTelemetry: true,
+      });
+      for (const obs of observed.observations) {
+        const match = uncachedImages.find((img) => img.mealSlot === obs.mealSlot);
+        if (match && (observed.source === "vision" || observed.source === "merged")) {
+          await saveVisionCache({
+            storagePath: match.sourceStoragePath,
+            observation: obs,
+            source: observed.source,
+            model: process.env.COACHING_DAILY_AI_MODEL_ID ?? "meal_vision",
+          });
+        }
+      }
+      const bySlot = new Map(mealObservations.map((o) => [o.mealSlot, o]));
+      for (const obs of observed.observations) {
+        bySlot.set(obs.mealSlot, obs);
+      }
+      mealObservations = Array.from(bySlot.values());
+    } else if (preparedImages.prepared.length === 0) {
+      const observed = await observeCoachingMeals({
+        generationInput: loaded.generationInput,
+        preparedMealImages: [],
+        ownerMemberId: job.ownerMemberId,
+        persistTelemetry: true,
+      });
+      mealObservations = observed.observations;
+    }
+
     latency.vision_completed_at = new Date().toISOString();
     logCoachingAiJobLifecycle({
       stage: "job_vision_completed",
       ...lifecycleBase(job),
       duration_ms: Date.parse(latency.vision_completed_at) - Date.parse(latency.vision_started_at!),
+      meta: {
+        vision_cache_hits: cachedByPath.size,
+        vision_live_images: uncachedImages.length,
+      },
     });
 
     const customerVoice = extractCustomerVoiceSignals(loaded.generationInput.todayContext.customerNote);

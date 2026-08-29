@@ -1,18 +1,23 @@
 import type { CoachingGenerationInput } from "@/types/coaching-ai";
-import type { CoachingDecisionContext } from "@/types/coaching-signals";
+import type {
+  CoachingDecisionContext,
+  CoachingMealObservation,
+} from "@/types/coaching-signals";
 import { extractCustomerVoiceSignals } from "@/lib/coaching/ai/extract-customer-voice";
 import { assessDailyNutrition } from "@/lib/coaching/ai/assess-daily-nutrition";
 
 /**
- * Lightweight decision context for free-message turns (no vision / meal photos).
- * Reuses goal/outcome defaults; avoids full signal engine cost for short chats.
+ * Lightweight decision context for free-message turns.
+ * Optionally accepts real-time meal vision observations for the current turn.
  */
 export function buildMinimalDecisionContextForFreeMessage(input: {
   generationInput: CoachingGenerationInput;
   freeMessage: string;
+  mealObservations?: CoachingMealObservation[];
 }): CoachingDecisionContext {
   const customerVoice = extractCustomerVoiceSignals(input.freeMessage);
-  const dailyNutritionAssessment = assessDailyNutrition({ mealObservations: [] });
+  const mealObservations = input.mealObservations ?? [];
+  const dailyNutritionAssessment = assessDailyNutrition({ mealObservations });
   const goalLabel = input.generationInput.profileMemory.goal ?? "陪跑目標";
 
   return {
@@ -24,7 +29,7 @@ export function buildMinimalDecisionContextForFreeMessage(input: {
     coachAttention: { required: false, reason: null, evidence: [] },
     finalInterventionLevel: "normal",
     customerVoice,
-    mealObservations: [],
+    mealObservations,
     photoReuse: [],
     pendingFollowUps: input.generationInput.priorAiContext?.pendingFollowUps ?? [],
     dailyNutritionAssessment,
