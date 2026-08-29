@@ -3,8 +3,13 @@ import { Geist } from "next/font/google";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { AppShell } from "@/components/navigation/AppShell";
 import { AuthProvider } from "@/lib/auth/auth-context";
+import { getPublicAppOrigin } from "@/lib/app/public-origin";
 import {
   BAKI_GO_DEFAULT_DESCRIPTION,
+  BAKI_GO_DEFAULT_OG_IMAGE_ALT,
+  BAKI_GO_DEFAULT_OG_IMAGE_HEIGHT,
+  BAKI_GO_DEFAULT_OG_IMAGE_PATH,
+  BAKI_GO_DEFAULT_OG_IMAGE_WIDTH,
   BAKI_GO_DEFAULT_TITLE,
 } from "@/lib/site/default-metadata";
 import { getSupabaseEnvScript } from "@/lib/supabase/env";
@@ -15,7 +20,15 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
+const defaultOgImage = {
+  url: BAKI_GO_DEFAULT_OG_IMAGE_PATH,
+  width: BAKI_GO_DEFAULT_OG_IMAGE_WIDTH,
+  height: BAKI_GO_DEFAULT_OG_IMAGE_HEIGHT,
+  alt: BAKI_GO_DEFAULT_OG_IMAGE_ALT,
+} as const;
+
 export const metadata: Metadata = {
+  metadataBase: new URL(getPublicAppOrigin()),
   title: {
     default: BAKI_GO_DEFAULT_TITLE,
     template: "%s | Baki Go",
@@ -25,11 +38,13 @@ export const metadata: Metadata = {
     title: BAKI_GO_DEFAULT_TITLE,
     description: BAKI_GO_DEFAULT_DESCRIPTION,
     type: "website",
+    images: [defaultOgImage],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: BAKI_GO_DEFAULT_TITLE,
     description: BAKI_GO_DEFAULT_DESCRIPTION,
+    images: [BAKI_GO_DEFAULT_OG_IMAGE_PATH],
   },
   manifest: "/manifest.json",
   appleWebApp: {
