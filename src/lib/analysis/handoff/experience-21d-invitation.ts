@@ -3,6 +3,7 @@ import {
   EXPERIENCE_21D_FOOTER,
   EXPERIENCE_21D_HEADING,
   EXPERIENCE_21D_INCLUDES,
+  EXPERIENCE_21D_LANDING_CTA_HINT,
   EXPERIENCE_21D_PRIMARY_CTA,
   EXPERIENCE_21D_SECONDARY_CTA,
   EXPERIENCE_21D_TITLE,
@@ -46,8 +47,7 @@ export function build21dInvitationBridge(report: ResetReport): string {
     "",
     `**${insight}。**`,
     "",
-    "如果你願意，我會建議用 21 天，",
-    "讓真人教練陪你把這件事真正放進生活裡。",
+    EXPERIENCE_21D_LANDING_CTA_HINT,
   ].join("\n");
 }
 

@@ -14,6 +14,11 @@ import {
   type Experience21dFunnelEvent,
   type Experience21dStatus,
 } from "@/lib/analysis/handoff/experience-21d-path";
+import {
+  EXPERIENCE_21D_LANDING_VERSION,
+  isExperience21dConsultationPreference,
+  type Experience21dConsultationPreference,
+} from "@/lib/experience/experience-21d-landing-copy";
 import { RESET_META_KEY } from "@/lib/analysis/reset/reset-path";
 import type { ResetPublicView, ResetSession } from "@/lib/analysis/reset/reset-contract";
 import { normalizeCustomerPhone } from "@/lib/customers/customer-profile";
@@ -45,6 +50,8 @@ type InterestRow = {
   display_name: string | null;
   contact_channel: string | null;
   contact_value: string | null;
+  consultation_preference: Experience21dConsultationPreference | null;
+  landing_page_version: string | null;
   invitation_bridge: string | null;
   brief_json: CoachHandoffBrief;
   created_at: string;
@@ -160,6 +167,8 @@ export async function request21dInterest(input: {
     channel?: string | null;
     value?: string | null;
   } | null;
+  consultationPreference?: Experience21dConsultationPreference | null;
+  landingPageVersion?: string | null;
 }): Promise<{ public: Experience21dPublicHandoff; created: boolean }> {
   if (input.session.act !== "report" || !input.session.report) {
     throw new AnalysisSessionError("Report is not ready.", 409, "report_not_ready");
@@ -169,9 +178,38 @@ export async function request21dInterest(input: {
     event: "21d_interest_clicked",
   });
   const existing = await getInterestBySessionId(input.analysisSessionId);
+  const preference =
+    input.consultationPreference && isExperience21dConsultationPreference(input.consultationPreference)
+      ? input.consultationPreference
+      : null;
+  const landingPageVersion = input.landingPageVersion?.trim() || null;
+
+  // Idempotent: already submitted with usable contact (+ optional preference already set).
   if (existing && hasUsableContact(existing)) {
+    if (preference && existing.consultation_preference !== preference) {
+      const supabase = requireService();
+      const { data: updated, error: updateError } = await supabase
+        .from("experience_21d_interests")
+        .update({
+          consultation_preference: preference,
+          landing_page_version: landingPageVersion ?? existing.landing_page_version ?? EXPERIENCE_21D_LANDING_VERSION,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id)
+        .select("*")
+        .maybeSingle();
+      if (!updateError && updated) {
+        await record21dFunnelEvent({
+          analysisSessionId: input.analysisSessionId,
+          event: "21d_consultation_submitted",
+          interestId: String(updated.id),
+        });
+        return { public: toPublicHandoff(input.session, updated as InterestRow)!, created: false };
+      }
+    }
     return { public: toPublicHandoff(input.session, existing)!, created: false };
   }
+
   const parsed = parse21dContact(input.contact ?? {});
   if (!parsed) {
     return {
@@ -194,6 +232,14 @@ export async function request21dInterest(input: {
   });
   const invitation = build21dInvitation(input.session.report);
   const supabase = requireService();
+  const briefPayload =
+    preference != null
+      ? {
+          ...brief,
+          consultation_preference: preference,
+          landing_page_version: landingPageVersion ?? EXPERIENCE_21D_LANDING_VERSION,
+        }
+      : brief;
   const payload = {
     analysis_session_id: input.analysisSessionId,
     customer_id: customerId,
@@ -209,8 +255,12 @@ export async function request21dInterest(input: {
     display_name: parsed.displayName,
     contact_channel: parsed.channel,
     contact_value: parsed.value,
+    consultation_preference: preference,
+    landing_page_version: preference
+      ? landingPageVersion ?? EXPERIENCE_21D_LANDING_VERSION
+      : landingPageVersion,
     invitation_bridge: invitation.bridge,
-    brief_json: brief,
+    brief_json: briefPayload,
     updated_at: new Date().toISOString(),
   };
   const { data, error } = await supabase
@@ -235,6 +285,13 @@ export async function request21dInterest(input: {
     event: "21d_interest_created",
     interestId: String(data.id),
   });
+  if (preference) {
+    await record21dFunnelEvent({
+      analysisSessionId: input.analysisSessionId,
+      event: "21d_consultation_submitted",
+      interestId: String(data.id),
+    });
+  }
   return { public: toPublicHandoff(input.session, data as InterestRow)!, created: true };
 }
 

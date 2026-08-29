@@ -70,6 +70,8 @@ Production Supabase (`baki-go` / `ubdrkrvyyrqdvlehzhsz`) already contains the Qu
 
 **21D-HANDOFF-01:** After RESET report, consumer can express INTEREST in a paid 21-day experience (no price, no checkout). Attribution copies from `analysis_sessions` — `/r` growth share owner wins over `/q` referrer. Minimal contact capture: display name + one channel (`line`, `instagram`, or `phone`).
 
+**21D Experience Landing + Consultation V1 (`063`):** Public LP at `/experience/21d/[token]` (analysis session token). Adds nullable `consultation_preference` (`text` | `phone` | `in_person`) and `landing_page_version` on `experience_21d_interests`. Funnel events include `21d_landing_viewed`, `21d_consultation_*`. Ownership still copied server-side from the analysis session — client cannot forge partner IDs.
+
 **QUIZ-PARTNER-01:** Workbench statuses are presentation only: interested→待聯絡, contacted/considering→已聯絡, joined→已成交, declined→未成交. Joined/declined change lead status only — no customer, enrollment, order, or payment.
 
 **21D-START-01 (no new tables):** After Lead `joined`, Partner creates/selects an owned Customer and starts a 21-day coaching journey on existing `coaching_enrollments`. Marker lives in `plan_snapshot_json.experience21d`.
