@@ -17,6 +17,7 @@ import {
 } from "@/lib/go21/chat-scroll";
 import { shouldShowJumpToLatest } from "@/lib/go21/coach-intent";
 import { nextClientRequestId, interpretGo21ChatSendResult, type Go21SendStatus } from "@/lib/go21/conversation-quality";
+import { shouldShowGo21CoachFailedCard } from "@/lib/go21/pending-coach-reply";
 import "./go21.css";
 
 type Go21Turn = {
@@ -148,13 +149,22 @@ export function Go21App({ token }: { token: string }) {
   }, [reload]);
 
   // Recover coach-response retry after reload when customer turn is durable but unanswered.
+  // Persisted coach reply is authoritative — never keep failure card when reply exists.
   useEffect(() => {
     if (loading || busy) return;
     if (sendStatus === "sending" || sendStatus === "customer_sent" || sendStatus === "failed") {
       return;
     }
     const pending = ctx?.pendingCoachReply;
-    if (pending?.clientRequestId) {
+    const showFailed = shouldShowGo21CoachFailedCard({
+      pendingCoachReply: pending ?? null,
+      turns: (ctx?.turns ?? []).map((t) => ({
+        id: t.id,
+        role: t.role,
+        channel: t.channel,
+      })),
+    });
+    if (showFailed && pending?.clientRequestId) {
       failedPayloadRef.current = {
         text: pending.content,
         photoFile: null,
@@ -171,7 +181,7 @@ export function Go21App({ token }: { token: string }) {
       setSendStatus("idle");
       failedPayloadRef.current = null;
     }
-  }, [ctx?.pendingCoachReply, loading, busy, sendStatus]);
+  }, [ctx?.pendingCoachReply, ctx?.turns, loading, busy, sendStatus]);
 
   useEffect(() => {
     const el = threadRef.current;

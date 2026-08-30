@@ -585,10 +585,15 @@ function Go21PlanEditor({
       </p>
       <div className="space-y-2">
         {rows.map((row, index) => (
-          <div key={row.period} className="grid grid-cols-[3.5rem_1fr_4.5rem] gap-2">
-            <span className="self-center text-[0.75rem] text-[#86868b]">{labels[row.period] ?? row.period}</span>
+          <div
+            key={row.period}
+            className="min-w-0 space-y-2 rounded-[0.75rem] border border-[#eef3ea] bg-[#fafcfa] p-2.5 sm:grid sm:grid-cols-[3.5rem_minmax(0,1fr)_4.5rem] sm:items-center sm:gap-2 sm:space-y-0 sm:border-0 sm:bg-transparent sm:p-0"
+          >
+            <span className="block text-[0.75rem] font-medium text-[#5a7a3a] sm:self-center sm:font-normal sm:text-[#86868b]">
+              {labels[row.period] ?? row.period}
+            </span>
             <input
-              className="rounded-[0.75rem] border border-[#e5e5ea] px-3 py-2 text-[0.9375rem]"
+              className="w-full min-w-0 rounded-[0.75rem] border border-[#e5e5ea] bg-white px-3 py-2 text-[0.9375rem]"
               placeholder="項目名稱"
               value={row.name}
               onChange={(e) => {
@@ -597,7 +602,7 @@ function Go21PlanEditor({
               }}
             />
             <input
-              className="rounded-[0.75rem] border border-[#e5e5ea] px-2 py-2 text-[0.875rem]"
+              className="w-full min-w-0 rounded-[0.75rem] border border-[#e5e5ea] bg-white px-3 py-2 text-[0.9375rem] sm:px-2 sm:text-[0.875rem]"
               placeholder="份量"
               value={row.amount}
               onChange={(e) => {

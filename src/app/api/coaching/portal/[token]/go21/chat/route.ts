@@ -47,6 +47,7 @@ import {
   buildGo21CurrentTurnEvidence,
   go21CurrentTurnBlocksNutritionMutation,
 } from "@/lib/go21/current-turn-evidence";
+import { selectGo21HistoricalVisionForGeneration } from "@/lib/go21/historical-vision";
 import {
   compactGo21UnderstandingForAi,
   loadGo21UnderstandingRecord,
@@ -101,6 +102,7 @@ export async function POST(
   let generationStarted = false;
   let assistantPersisted = false;
   let acceptedCustomerTurnId: string | null = null;
+  let requestClientRequestId: string | null = null;
 
   try {
     stage = "auth";
@@ -126,6 +128,7 @@ export async function POST(
 
     const clientRequestId = body.clientRequestId?.trim() || null;
     clientRequestIdPresent = Boolean(clientRequestId);
+    requestClientRequestId = clientRequestId;
 
     stage = "idempotency_lookup";
     if (clientRequestId) {
@@ -373,20 +376,31 @@ export async function POST(
       enrollmentId: portal.enrollmentId,
       limit: 4,
     });
-    // Current non-food observation stays conversational; do NOT feed it into
-    // priorVision / todayEaten as meal evidence. Prior visions are history only.
+    // Current food observation may appear as history for NEXT turns only.
+    // Corrupted / non-food / unstructured prior rows never masquerade as current image.
     const currentVisionForHistory =
       vision.ran && vision.foodRelevant && vision.evidenceSummary
         ? [{ summary: vision.evidenceSummary, correction: foodCorrection }]
         : [];
+    const historicalVision = selectGo21HistoricalVisionForGeneration({
+      prior: priorVision.map((v) => ({
+        summary: v.correction?.trim() ? `${v.summary}（顧客更正：${v.correction}）` : v.summary,
+        correction: v.correction,
+        createdAt: v.createdAt,
+        foodRelevant: v.foodRelevant,
+      })),
+      currentTurnHasPhoto: Boolean(body.hasPhoto),
+      currentTurnNonFood: vision.ran && vision.foodRelevant === false,
+    });
     const recentVisionObservations = [
-      ...currentVisionForHistory,
-      ...priorVision
-        .filter((v) => !/非餐點/.test(v.summary))
-        .map((v) => ({
-          summary: v.correction?.trim() ? `${v.summary}（顧客更正：${v.correction}）` : v.summary,
-          correction: v.correction,
-        })),
+      ...currentVisionForHistory.map((v) => ({
+        summary: v.summary,
+        correction: v.correction,
+      })),
+      ...historicalVision.map((v) => ({
+        summary: v.summary,
+        correction: v.correction,
+      })),
     ].slice(0, 3);
 
     const currentTurnEvidence = buildGo21CurrentTurnEvidence({
@@ -625,6 +639,7 @@ export async function POST(
             visionSource: vision.source,
             visionReusedCache: vision.reusedCache,
             visionEvidenceSummary: vision.evidenceSummary,
+            visionFoodRelevant: vision.foodRelevant,
           }
         : {}),
       ...(foodCorrection ? { customerCorrection: foodCorrection } : {}),
@@ -864,12 +879,32 @@ export async function POST(
     });
 
     // If customer was already accepted, never report the send as a hard failure.
+    // Re-check durable coach reply before exposing retry — race/late persist must win.
     if (customerPersisted && acceptedCustomerTurnId) {
+      if (requestClientRequestId && enrollmentIdForLog) {
+        const prior = await findGo21TurnsByClientRequestId({
+          enrollmentId: enrollmentIdForLog,
+          clientRequestId: requestClientRequestId,
+        });
+        if (prior.coach?.content?.trim()) {
+          return NextResponse.json({
+            ok: true,
+            customerAccepted: true,
+            customerTurnId: acceptedCustomerTurnId,
+            clientRequestId: requestClientRequestId,
+            assistantStatus: "ok",
+            coachMessage: prior.coach.content,
+            recoveredAfterError: true,
+            relevance: "in_scope",
+          });
+        }
+      }
+
       return NextResponse.json({
         ok: true,
         customerAccepted: true,
         customerTurnId: acceptedCustomerTurnId,
-        clientRequestId: null,
+        clientRequestId: requestClientRequestId,
         assistantStatus: "failed",
         assistantError: {
           category: categorized.category,

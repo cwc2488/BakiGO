@@ -527,14 +527,17 @@ export function Experience21dStartPage({
         </p>
         <div className="mt-4 space-y-3">
           {planRows.map((row, index) => (
-            <div key={row.period} className="grid grid-cols-[4.5rem_1fr_5.5rem] items-end gap-2">
-              <span className="pb-2.5 text-[0.8125rem] font-medium text-[#5a7a3a]">
+            <div
+              key={row.period}
+              className="min-w-0 space-y-2 rounded-xl border border-[#eef3ea] bg-[#fafcfa] p-3 sm:grid sm:grid-cols-[4.5rem_minmax(0,1fr)_5.5rem] sm:items-end sm:gap-2 sm:space-y-0 sm:border-0 sm:bg-transparent sm:p-0"
+            >
+              <span className="block text-[0.8125rem] font-medium text-[#5a7a3a] sm:pb-2.5">
                 {GO21_COACH_PLAN_PERIOD_LABELS[row.period]}
               </span>
-              <label className="space-y-1">
-                <span className="sr-only">項目</span>
+              <label className="block min-w-0 space-y-1">
+                <span className="text-[0.6875rem] text-[#86868b] sm:sr-only">項目名稱</span>
                 <input
-                  className="min-h-11 w-full rounded-xl border border-[#e4ebe0] bg-[#fafcfa] px-3 text-[0.9375rem]"
+                  className="min-h-11 w-full min-w-0 rounded-xl border border-[#e4ebe0] bg-white px-3 text-[0.9375rem] sm:bg-[#fafcfa]"
                   placeholder="例如：正常飲食／飲品／指定項目"
                   value={row.name}
                   onChange={(e) => {
@@ -545,10 +548,10 @@ export function Experience21dStartPage({
                   }}
                 />
               </label>
-              <label className="space-y-1">
-                <span className="sr-only">份量</span>
+              <label className="block min-w-0 space-y-1">
+                <span className="text-[0.6875rem] text-[#86868b] sm:sr-only">份量</span>
                 <input
-                  className="min-h-11 w-full rounded-xl border border-[#e4ebe0] bg-[#fafcfa] px-2 text-[0.875rem]"
+                  className="min-h-11 w-full min-w-0 rounded-xl border border-[#e4ebe0] bg-white px-3 text-[0.9375rem] sm:bg-[#fafcfa] sm:px-2 sm:text-[0.875rem]"
                   placeholder="份量"
                   value={row.amount}
                   onChange={(e) => {

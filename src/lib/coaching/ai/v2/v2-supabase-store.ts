@@ -718,7 +718,14 @@ export async function hydrateV2StoreFromSupabase(input: {
 export async function loadRecentVisionEvidenceFromTurns(input: {
   enrollmentId: string;
   limit?: number;
-}): Promise<Array<{ summary: string; correction: string | null; createdAt: string }>> {
+}): Promise<
+  Array<{
+    summary: string;
+    correction: string | null;
+    createdAt: string;
+    foodRelevant: boolean | null;
+  }>
+> {
   if (!isSupabaseServiceConfigured()) return [];
   try {
     const supabase = createSupabaseServiceClient();
@@ -729,7 +736,12 @@ export async function loadRecentVisionEvidenceFromTurns(input: {
       .eq("role", "customer")
       .order("created_at", { ascending: false })
       .limit(input.limit ?? 5);
-    const out: Array<{ summary: string; correction: string | null; createdAt: string }> = [];
+    const out: Array<{
+      summary: string;
+      correction: string | null;
+      createdAt: string;
+      foodRelevant: boolean | null;
+    }> = [];
     for (const row of data ?? []) {
       const metadata =
         row.metadata && typeof row.metadata === "object"
@@ -745,6 +757,8 @@ export async function loadRecentVisionEvidenceFromTurns(input: {
         correction:
           typeof metadata.customerCorrection === "string" ? metadata.customerCorrection : null,
         createdAt: String(row.created_at),
+        foodRelevant:
+          typeof metadata.visionFoodRelevant === "boolean" ? metadata.visionFoodRelevant : null,
       });
     }
     return out;

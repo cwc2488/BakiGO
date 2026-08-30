@@ -12,6 +12,8 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service-client";
 import { isReengagementDue } from "@/lib/go21/reminders";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 import { parseGo21PhotoPath } from "@/lib/go21/realtime-vision";
+import { resolveGo21PendingCoachReply } from "@/lib/go21/pending-coach-reply";
+import { findGo21TurnsByClientRequestId } from "@/lib/coaching/ai/v2/v2-supabase-store";
 
 export const runtime = "nodejs";
 
@@ -37,18 +39,21 @@ export async function GET(
       mealSlotUnresolved: boolean;
       photoStoragePath: string | null;
       clientRequestId: string | null;
+      replyToCustomerTurnId: string | null;
     }> = [];
 
     try {
       const supabase = createSupabaseServiceClient();
+      // Latest window — ASC+limit(80) previously dropped newest coach replies.
       const { data } = await supabase
         .from("coaching_ai_turns")
         .select("id, role, content, created_at, channel, metadata")
         .eq("enrollment_id", bundle.enrollmentId)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
         .limit(80);
+      const newestFirst = data ?? [];
       turns = await Promise.all(
-        (data ?? []).map(async (row) => {
+        [...newestFirst].reverse().map(async (row) => {
           const metadata =
             row.metadata && typeof row.metadata === "object"
               ? (row.metadata as Record<string, unknown>)
@@ -82,6 +87,10 @@ export async function GET(
             photoStoragePath: null, // never expose storage path to client
             clientRequestId:
               typeof metadata.clientRequestId === "string" ? metadata.clientRequestId : null,
+            replyToCustomerTurnId:
+              typeof metadata.replyToCustomerTurnId === "string"
+                ? metadata.replyToCustomerTurnId
+                : null,
           };
         }),
       );
@@ -105,6 +114,10 @@ export async function GET(
           typeof t.metadata?.clientRequestId === "string"
             ? t.metadata.clientRequestId
             : null,
+        replyToCustomerTurnId:
+          typeof t.metadata?.replyToCustomerTurnId === "string"
+            ? t.metadata.replyToCustomerTurnId
+            : null,
       }));
     }
 
@@ -112,17 +125,17 @@ export async function GET(
     const lastActiveDate = lastCustomerTurn?.createdAt?.slice(0, 10) ?? null;
     const suggestReengagement = isReengagementDue(lastActiveDate);
 
-    // If the thread ends on a customer turn, coach reply is still recoverable.
-    const lastMeaningful = [...turns].reverse().find((t) => t.channel !== "system");
-    const pendingCoachReply =
-      lastMeaningful?.role === "customer" && lastMeaningful.clientRequestId
-        ? {
-            customerTurnId: lastMeaningful.id,
-            clientRequestId: lastMeaningful.clientRequestId,
-            content: lastMeaningful.content,
-            logDate: lastMeaningful.createdAt.slice(0, 10),
-          }
-        : null;
+    // Persisted coach reply is authoritative — never surface retry when reply exists.
+    let pendingCoachReply = resolveGo21PendingCoachReply(turns);
+    if (pendingCoachReply?.clientRequestId) {
+      const pair = await findGo21TurnsByClientRequestId({
+        enrollmentId: bundle.enrollmentId,
+        clientRequestId: pendingCoachReply.clientRequestId,
+      });
+      if (pair.coach) {
+        pendingCoachReply = null;
+      }
+    }
 
     // Surface recently delivered reminder turns as coach-initiated messages (already in thread)
     const reminderTurns = turns.filter((t) => t.channel === "system").slice(-3);
@@ -159,7 +172,14 @@ export async function GET(
         goal: bundle.goal,
         dailyTargets,
         dailyState,
-        turns: turns.map(({ photoStoragePath: _p, clientRequestId: _c, ...rest }) => rest),
+        turns: turns.map(
+          ({
+            photoStoragePath: _p,
+            clientRequestId: _c,
+            replyToCustomerTurnId: _r,
+            ...rest
+          }) => rest,
+        ),
         pendingCoachReply,
         reminders: reminderTurns.map((t) => ({
           id: t.id,

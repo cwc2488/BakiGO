@@ -240,19 +240,23 @@ export function interpretGo21ChatSendResult(payload: {
   messageRetry: boolean;
 } {
   const assistantStatus = payload.assistantStatus ?? null;
+  const hasUsableCoach = Boolean(payload.coachMessage?.trim());
   const customerSent =
     payload.customerAccepted === true ||
     (payload.ok === true && assistantStatus === "ok") ||
     (payload.ok === true && assistantStatus === "failed");
-  const coachOk = payload.ok === true && assistantStatus === "ok";
-  const coachFailed = customerSent && assistantStatus === "failed";
+  // Usable coach_message supersedes a stale failed status (reconciliation).
+  const coachOk =
+    (payload.ok === true && assistantStatus === "ok") ||
+    (payload.ok === true && hasUsableCoach && assistantStatus !== "skipped");
+  const coachFailed = customerSent && assistantStatus === "failed" && !hasUsableCoach;
   // Legacy responses without assistantStatus but with coachMessage
   const legacyOk =
-    payload.ok === true && assistantStatus == null && Boolean(payload.coachMessage);
+    payload.ok === true && assistantStatus == null && hasUsableCoach;
   return {
     customerSent: customerSent || legacyOk,
     coachOk: coachOk || legacyOk,
-    coachFailed,
+    coachFailed: coachFailed && !legacyOk,
     messageRetry: !(customerSent || legacyOk),
   };
 }

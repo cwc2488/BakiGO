@@ -222,6 +222,15 @@ export function buildGo21TemporalTimeline(input: {
     if (!raw) continue;
     // Non-food / non-meal vision must never become todayEaten
     if (/非餐點|不是餐點|可見：貓|可見：狗|可見：寵物/.test(raw)) continue;
+    // Historical label prefix from generation pipeline — treat as history only
+    if (/^\[歷史影像/.test(raw)) {
+      // Do not promote labelled historical vision into todayEaten
+      continue;
+    }
+    // Corrupted legacy rows often store meal notes without Vision structure
+    if (!/可見：|信心：|餐別未確認|^(早餐|午餐|晚餐)/.test(raw) && /會議|吃飯|考慮/.test(raw)) {
+      continue;
+    }
     const label =
       extractFoodLabels(raw)[0] ??
       raw.replace(/看起來像|像是|像|為|是/g, "").trim().slice(0, 16);
