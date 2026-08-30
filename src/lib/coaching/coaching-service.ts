@@ -547,6 +547,8 @@ export async function upsertCoachingDailyLog(input: {
   bowelMovementCount?: number | null;
   sleepBedtime?: string | null;
   sleepWakeTime?: string | null;
+  /** Direct duration label when hours were reported without bed/wake. */
+  sleepDuration?: string | null;
   customerNote?: string | null;
   meals?: Partial<Record<CoachingMealSlot, { textNote?: string | null; eatenAt?: string | null }>>;
   markSubmitted?: boolean;
@@ -586,6 +588,10 @@ export async function upsertCoachingDailyLog(input: {
       patch.sleep_duration =
         resolvedBedtime && resolvedWake ? computeSleepDurationLabel(resolvedBedtime, resolvedWake) : null;
     }
+  }
+
+  if (input.sleepDuration !== undefined && patch.sleep_duration === undefined) {
+    patch.sleep_duration = input.sleepDuration?.trim() || null;
   }
 
   if (input.customerNote !== undefined) patch.customer_note = input.customerNote?.trim() || null;

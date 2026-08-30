@@ -846,7 +846,7 @@ Member (coach)
 
 Customer-facing freeform message lives in `coaching_ai_outputs.output_json.customer.coach_message` when V2 is enabled.
 
-### Baki Go 21 — customer chat surface (`065_coaching_go21.sql`, `066_go21_reminder_uniqueness.sql`, `068_go21_goal.sql`, `069_go21_understanding.sql`)
+### Baki Go 21 — customer chat surface (`065_coaching_go21.sql`, `066_go21_reminder_uniqueness.sql`, `068_go21_goal.sql`, `069_go21_understanding.sql`, `070_go21_daily_targets.sql`)
 
 | Change | Purpose |
 |--------|---------|
@@ -855,6 +855,8 @@ Customer-facing freeform message lives in `coaching_ai_outputs.output_json.custo
 | `066` uniqueness | Measurement/daily kinds: one per Taipei day; open_loop allows multiple via `related_open_loop_id` |
 | `coaching_enrollments.go21_goal_json` | Durable 21-day goal record |
 | `coaching_enrollments.go21_understanding_json` | Premium Coaching Brain — longitudinal personal understanding (evidence, confidence, revisable) |
+| `coaching_enrollments.go21_daily_targets_json` | Coach-set daily water/calories/protein/sleep targets for Go21 enrollment (optional; existing enrollments compatible) |
+| `coaching_daily_logs.nutrition_estimate_json` | Optional soft calorie/protein estimates for the day (uncertain bands; never fake precision) |
 
 **Security:** Customer entry via existing opaque `customer_portal_tokens` at `/c/{token}/go21`. Go21 routes enforce experience-21d eligibility. No guessable customer IDs in URLs.
 

@@ -12,12 +12,20 @@ import {
   isIsoDate,
 } from "@/lib/coaching/experience-21d";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
+import { GO21_DAILY_TARGET_PRESETS } from "@/types/go21";
 
 type ActiveExperience = {
   enrollmentId: string;
   startDate: string | null;
   plannedEndAt: string | null;
   status: string;
+};
+
+type DailyTargetsDraft = {
+  waterMl: number;
+  caloriesKcal: number;
+  proteinG: number;
+  sleepHours: number;
 };
 
 type StartMode =
@@ -45,6 +53,13 @@ export function Experience21dStartPage({
   const [active, setActive] = useState<ActiveExperience | null>(null);
   const [otherCoaching, setOtherCoaching] = useState(false);
   const [productReceivedDate, setProductReceivedDate] = useState(coachingTodayLogDate());
+  const [targets, setTargets] = useState<DailyTargetsDraft>({
+    waterMl: GO21_DAILY_TARGET_PRESETS[1].waterMl,
+    caloriesKcal: GO21_DAILY_TARGET_PRESETS[1].caloriesKcal,
+    proteinG: GO21_DAILY_TARGET_PRESETS[1].proteinG,
+    sleepHours: GO21_DAILY_TARGET_PRESETS[1].sleepHours,
+  });
+  const [presetId, setPresetId] = useState<string>("standard");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -175,6 +190,12 @@ export function Experience21dStartPage({
           productReceivedDate: schedule.productReceivedDate,
           customerProfile: {
             displayName: customerName || initialCustomerName || null,
+          },
+          dailyTargets: {
+            waterMl: targets.waterMl,
+            caloriesKcal: targets.caloriesKcal,
+            proteinG: targets.proteinG,
+            sleepHours: targets.sleepHours,
           },
         }),
       });
@@ -385,16 +406,95 @@ export function Experience21dStartPage({
             </div>
           </dl>
         ) : null}
+      </section>
 
-        {schedule ? (
-          <p className="mt-4 text-[0.8125rem] leading-6 text-[#86868b]">
-            拿到產品：{formatExperience21dShortDate(schedule.productReceivedDate)}
-            <br />
-            開始陪跑：{formatExperience21dShortDate(schedule.startDate)}
-            <br />
-            預計完成：{formatExperience21dShortDate(schedule.plannedEndAt)}
-          </p>
-        ) : null}
+      <section className="mt-4 rounded-[1.5rem] border border-[#e4ebe0] bg-white p-5">
+        <p className="text-[0.75rem] font-semibold tracking-wide text-[#5a7a3a]">每日陪跑目標</p>
+        <h3 className="mt-1 text-[1.0625rem] font-semibold text-[#1d1d1f]">給 AI 教練的四個基準</h3>
+        <p className="mt-2 text-[0.875rem] leading-6 text-[#636366]">
+          水、熱量、蛋白質、睡眠。啟動後可再調整，不用重開。
+        </p>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {GO21_DAILY_TARGET_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => {
+                setPresetId(p.id);
+                setTargets({
+                  waterMl: p.waterMl,
+                  caloriesKcal: p.caloriesKcal,
+                  proteinG: p.proteinG,
+                  sleepHours: p.sleepHours,
+                });
+              }}
+              className={`min-h-10 rounded-full px-3.5 text-[0.8125rem] font-medium ${
+                presetId === p.id
+                  ? "bg-[#1d1d1f] text-white"
+                  : "bg-[#f3f6f0] text-[#3d6b1e]"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <label className="space-y-1.5">
+            <span className="text-[0.75rem] text-[#86868b]">水 (ml)</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              className="min-h-11 w-full rounded-xl border border-[#e4ebe0] bg-[#fafcfa] px-3 text-[1rem]"
+              value={targets.waterMl}
+              onChange={(e) => {
+                setPresetId("custom");
+                setTargets((t) => ({ ...t, waterMl: Number(e.target.value) || 0 }));
+              }}
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-[0.75rem] text-[#86868b]">熱量 (kcal)</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              className="min-h-11 w-full rounded-xl border border-[#e4ebe0] bg-[#fafcfa] px-3 text-[1rem]"
+              value={targets.caloriesKcal}
+              onChange={(e) => {
+                setPresetId("custom");
+                setTargets((t) => ({ ...t, caloriesKcal: Number(e.target.value) || 0 }));
+              }}
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-[0.75rem] text-[#86868b]">蛋白質 (g)</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              className="min-h-11 w-full rounded-xl border border-[#e4ebe0] bg-[#fafcfa] px-3 text-[1rem]"
+              value={targets.proteinG}
+              onChange={(e) => {
+                setPresetId("custom");
+                setTargets((t) => ({ ...t, proteinG: Number(e.target.value) || 0 }));
+              }}
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-[0.75rem] text-[#86868b]">睡眠 (小時)</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              step="0.5"
+              className="min-h-11 w-full rounded-xl border border-[#e4ebe0] bg-[#fafcfa] px-3 text-[1rem]"
+              value={targets.sleepHours}
+              onChange={(e) => {
+                setPresetId("custom");
+                setTargets((t) => ({ ...t, sleepHours: Number(e.target.value) || 0 }));
+              }}
+            />
+          </label>
+        </div>
       </section>
 
       {error ? <p className="mt-3 text-[0.9375rem] text-[#cf1322]">{error}</p> : null}

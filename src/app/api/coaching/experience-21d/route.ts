@@ -99,6 +99,12 @@ export async function POST(request: Request) {
         birthYear?: number | null;
         birthDate?: string | null;
       } | null;
+      dailyTargets?: {
+        waterMl?: number | null;
+        caloriesKcal?: number | null;
+        proteinG?: number | null;
+        sleepHours?: number | null;
+      } | null;
     };
     if (!body.customerId?.trim() || !body.productReceivedDate?.trim()) {
       return NextResponse.json({ error: "customerId and productReceivedDate required." }, { status: 400 });
@@ -109,6 +115,7 @@ export async function POST(request: Request) {
       productReceivedDate: body.productReceivedDate.trim(),
       interestId: body.interestId?.trim() || null,
       customerProfile: body.customerProfile ?? null,
+      dailyTargets: body.dailyTargets ?? null,
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

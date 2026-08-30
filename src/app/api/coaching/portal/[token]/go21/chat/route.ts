@@ -32,6 +32,7 @@ import {
   saveGo21Goal,
 } from "@/lib/go21/goal";
 import { buildGo21CoachGenerationContext } from "@/lib/go21/coach-context";
+import { loadGo21TodayDailyState } from "@/lib/go21/load-daily-state";
 import {
   compactGo21UnderstandingForAi,
   loadGo21UnderstandingRecord,
@@ -424,6 +425,17 @@ export async function POST(
 
     // Premium Coaching Brain — load + consolidate durable understanding before generate
     let longitudinalUnderstanding: ReturnType<typeof compactGo21UnderstandingForAi> = null;
+    let dailyTargetsState: Awaited<ReturnType<typeof loadGo21TodayDailyState>>["forAi"] | null =
+      null;
+    try {
+      const todayState = await loadGo21TodayDailyState({
+        enrollmentId: portal.enrollmentId,
+        logDate: generationInput.logDate,
+      });
+      dailyTargetsState = todayState.forAi;
+    } catch {
+      dailyTargetsState = null;
+    }
     try {
       const priorUnderstanding = await loadGo21UnderstandingRecord(portal.enrollmentId);
       const dayForUnderstanding = loaded.generationInput.profileMemory.daysSinceEnrollmentStart;
@@ -603,6 +615,7 @@ export async function POST(
         go21Goal,
         recentVisionObservations,
         longitudinalUnderstanding,
+        dailyTargetsState,
         customerAlreadyAccepted: true,
         existingCustomerTurnId: acceptedCustomerTurnId,
       });

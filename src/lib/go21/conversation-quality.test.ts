@@ -243,8 +243,9 @@ describe("Go21 conversation quality — idempotency + policy", () => {
     // Library input must exist without capture
     expect(src).toMatch(/libraryRef[\s\S]*accept="image\/\*[\s\S]*hidden/);
     expect(src).toMatch(/cameraRef[\s\S]*capture="environment"/);
-    // First-entry human copy
-    expect(src).toContain("開始 Day 1");
+    // First-entry human copy — journey, not chatbot chrome
+    expect(src).toContain("開始第 1 天");
+    expect(src).toMatch(/私人飲食陪跑/);
     expect(src).not.toContain("🤖 AI 幫你整理");
   });
 });

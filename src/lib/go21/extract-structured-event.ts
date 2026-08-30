@@ -48,6 +48,10 @@ export function extractGo21StructuredEvent(input: {
     waterMl: null,
     hydrationQuality: null,
     hydrationNote: null,
+    sleepHours: null,
+    sleepBedtime: null,
+    sleepWakeTime: null,
+    sleepNote: null,
     exerciseNote: null,
     hungerMentioned: /很餓|還是會餓|容易餓|好餓|飢餓|不夠飽/.test(text),
     confidence: "low",
@@ -135,6 +139,13 @@ export function extractGo21StructuredEvent(input: {
   base.hydrationQuality = water.hydrationQuality;
   base.hydrationNote = water.hydrationNote;
 
+  // Sleep: hours / bed / wake only when defensible
+  const sleep = extractSleep(text);
+  base.sleepHours = sleep.sleepHours;
+  base.sleepBedtime = sleep.sleepBedtime;
+  base.sleepWakeTime = sleep.sleepWakeTime;
+  base.sleepNote = sleep.sleepNote;
+
   if (/健身|運動|重訓|跑步|走路|瑜珈|有氧|走了?\s*\d+\s*步/.test(text)) {
     base.exerciseNote = text.slice(0, 200);
   }
@@ -144,6 +155,10 @@ export function extractGo21StructuredEvent(input: {
     base.weightKg != null ||
     base.waterMl != null ||
     base.hydrationQuality ||
+    base.sleepHours != null ||
+    base.sleepBedtime ||
+    base.sleepWakeTime ||
+    base.sleepNote ||
     base.exerciseNote ||
     base.corrections.length > 0 ||
     base.utteranceKind === "eaten" ||
@@ -153,7 +168,7 @@ export function extractGo21StructuredEvent(input: {
     base.confidence =
       base.mealSlot || base.weightKg != null || base.corrections.length > 0
         ? "high"
-        : base.waterMl != null
+        : base.waterMl != null || base.sleepHours != null
           ? "medium"
           : "low";
   } else if (input.hasPhoto) {
@@ -308,6 +323,83 @@ function extractHydration(text: string): {
     };
   }
   return { waterMl: null, hydrationQuality: null, hydrationNote: null };
+}
+
+function extractSleep(text: string): {
+  sleepHours: number | null;
+  sleepBedtime: string | null;
+  sleepWakeTime: string | null;
+  sleepNote: string | null;
+} {
+  let sleepHours: number | null = null;
+  let sleepBedtime: string | null = null;
+  let sleepWakeTime: string | null = null;
+  let sleepNote: string | null = null;
+
+  const hoursMatch =
+    text.match(/睡了?\s*(\d{1,2}(?:\.\d)?)\s*小時/) ||
+    text.match(/只睡\s*(\d{1,2}(?:\.\d)?)\s*(?:小時|hr)/i) ||
+    text.match(/睡\s*(\d{1,2})\s*個半小時/) ||
+    text.match(/(\d{1,2})\s*個半小時/);
+  if (hoursMatch) {
+    let h = Number(hoursMatch[1]);
+    if (/個半/.test(hoursMatch[0]!)) h += 0.5;
+    if (Number.isFinite(h) && h >= 2 && h <= 14) {
+      sleepHours = Math.round(h * 10) / 10;
+    }
+  }
+  // 「四個半小時」 Chinese
+  const cnHalf = text.match(/([一二三四五六七八九十兩])\s*個半\s*小時/);
+  if (cnHalf && sleepHours == null) {
+    const map: Record<string, number> = {
+      一: 1,
+      二: 2,
+      兩: 2,
+      三: 3,
+      四: 4,
+      五: 5,
+      六: 6,
+      七: 7,
+      八: 8,
+      九: 9,
+      十: 10,
+    };
+    const base = map[cnHalf[1]!] ?? null;
+    if (base != null) sleepHours = base + 0.5;
+  }
+
+  const bed =
+    text.match(/(?:昨晚|昨天晚上|昨晚差不多)?\s*(\d{1,2})(?::|點)(\d{0,2})\s*(?:左右)?\s*(?:才)?睡/) ||
+    text.match(/(\d{1,2})\s*點\s*(?:多)?\s*睡/);
+  if (bed) {
+    const h = Number(bed[1]);
+    const m = bed[2] ? Number(bed[2].padEnd(2, "0").slice(0, 2)) : 0;
+    if (Number.isFinite(h) && h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      sleepBedtime = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+  }
+
+  const wake =
+    text.match(/(?:今天)?\s*(\d{1,2})(?::|點)(\d{0,2})\s*(?:左右)?\s*(?:才)?醒/) ||
+    text.match(/(\d{1,2})\s*點\s*(?:多)?\s*(?:起床|醒來)/);
+  if (wake) {
+    const h = Number(wake[1]);
+    const m = wake[2] ? Number(wake[2].padEnd(2, "0").slice(0, 2)) : 0;
+    if (Number.isFinite(h) && h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      sleepWakeTime = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+  }
+
+  if (/失眠|幾乎沒睡|沒怎麼睡|睡很差|睡超差|翻來覆去/.test(text)) {
+    sleepNote = "睡眠品質差（質性）";
+    if (sleepHours == null && /幾乎沒睡|沒怎麼睡/.test(text)) {
+      // Still don't invent hours — leave null
+    }
+  } else if (/睡很好|睡飽|睡得不錯/.test(text)) {
+    sleepNote = "睡眠還可以（質性）";
+  }
+
+  return { sleepHours, sleepBedtime, sleepWakeTime, sleepNote };
 }
 
 function detectCorrections(

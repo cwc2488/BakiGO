@@ -11,7 +11,7 @@ import {
   CoachingAiV2MemoryStore,
   getSharedInMemoryV2Store,
 } from "@/lib/coaching/ai/v2/memory-store";
-import { generateCoachingAiV2, logCoachingAiV2Observability } from "@/lib/coaching/ai/v2/generate-v2";
+import { generateCoachingAiV2, logCoachingAiV2Observability, type GenerateCoachingAiV2Input } from "@/lib/coaching/ai/v2/generate-v2";
 import { bridgeV2DraftToDailyOutput } from "@/lib/coaching/ai/v2/v2-bridge";
 import {
   hydrateV2StoreFromSupabase,
@@ -62,6 +62,7 @@ export type RunCoachingAiV2TurnInput = {
   }> | null;
   /** Premium Coaching Brain — durable personal understanding for this enrollment. */
   longitudinalUnderstanding?: Go21LongitudinalUnderstandingForAi | null;
+  dailyTargetsState?: GenerateCoachingAiV2Input["dailyTargetsState"];
   /** Customer turn already durably accepted — skip duplicate Supabase customer insert. */
   customerAlreadyAccepted?: boolean;
   existingCustomerTurnId?: string | null;
@@ -203,6 +204,7 @@ export async function runCoachingAiV2Turn(
     go21Goal: input.go21Goal,
     recentVisionObservations: input.recentVisionObservations,
     longitudinalUnderstanding: input.longitudinalUnderstanding,
+    dailyTargetsState: input.dailyTargetsState,
   });
 
   let memoryUpdateOutcome: CoachingAiV2Observability["memoryUpdateOutcome"] = "applied";

@@ -162,7 +162,7 @@ describe("Go21 Human Coach Voice — prompt contract", () => {
     expect(sys).toMatch(/今天我不推|今天我比較不推/);
     expect(sys).not.toMatch(/主動建議換成蛋白質清楚/);
     expect(sys).not.toMatch(/點出今天整體模式，並給一個更好的下一步選擇/);
-    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/human_coach_voice/);
+    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/human_coach_voice|daily_targets/);
   });
 
   it("user prompt injects humanCoachReply shape for live model", () => {

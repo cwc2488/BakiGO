@@ -45,6 +45,31 @@ export type GenerateCoachingAiV2Input = {
     correction: string | null;
   }> | null;
   longitudinalUnderstanding?: Go21LongitudinalUnderstandingForAi | null;
+  /** Soft daily targets + approx today state — judgment aid, not a report to narrate. */
+  dailyTargetsState?: {
+    logDate: string;
+    targets: {
+      waterMl: number | null;
+      caloriesKcal: number | null;
+      proteinG: number | null;
+      sleepHours: number | null;
+    } | null;
+    approxToday: {
+      waterMl: number | null;
+      waterConfidence: string;
+      caloriesKcal: number | null;
+      caloriesRange: [number, number] | null;
+      caloriesConfidence: string;
+      proteinG: number | null;
+      proteinRange: [number, number] | null;
+      proteinConfidence: string;
+      sleepHours: number | null;
+      sleepConfidence: string;
+      sleepNote: string | null;
+    };
+    softCues: string[];
+    guidance: string;
+  } | null;
 };
 
 export type GenerateCoachingAiV2Result = {
@@ -166,6 +191,7 @@ export async function generateCoachingAiV2(
               go21Goal: input.go21Goal,
               recentVisionObservations: input.recentVisionObservations,
               longitudinalUnderstanding: input.longitudinalUnderstanding,
+              dailyTargetsState: input.dailyTargetsState,
             }),
           },
         ],

@@ -180,20 +180,30 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
-  // Menu request — actionable options; personalize from preferences when present
+  // Menu request — actionable options; personalize from preferences + soft daily cues
   if (intent === "menu_request" || utteranceMode === "asking_advice") {
-    if (intent === "menu_request" || /菜單|吃什麼|怎麼選/.test(freeMessage ?? "")) {
+    if (intent === "menu_request" || /菜單|吃什麼|怎麼選|晚餐吃什麼/.test(freeMessage ?? "")) {
       const foods = collectFoodsFromInput(input);
       const alreadyHeavy =
         foods.some((f) => /炸|漢堡|薯條|奶茶|蛋糕|泡麵|披薩|可樂|雞排/.test(f.label)) ||
         hasHeavySignalsToday(decisionContext);
       const dislike = understanding?.knownPreferences?.find((p) => p.polarity === "dislike");
       const like = understanding?.knownPreferences?.find((p) => p.polarity === "like");
-      let menu = formatMenuSuggestionReply({
-        primaryDirection: input.go21Goal?.primaryDirection,
-        personalGoal: input.go21Goal?.personalGoal,
-        alreadyHeavyToday: alreadyHeavy,
-      });
+      const softCues = input.dailyTargetsState?.softCues ?? [];
+      const proteinBehind = softCues.some((c) => /蛋白質/.test(c));
+      const caloriesOk = !softCues.some((c) => /熱量偏多/.test(c));
+
+      let menu: string;
+      if (proteinBehind && caloriesOk) {
+        menu =
+          "今天熱量還好，但蛋白質有點少。\n晚餐我會選肉多一點的，雞腿或魚都可以。";
+      } else {
+        menu = formatMenuSuggestionReply({
+          primaryDirection: input.go21Goal?.primaryDirection,
+          personalGoal: input.go21Goal?.personalGoal,
+          alreadyHeavyToday: alreadyHeavy,
+        });
+      }
       if (dislike?.content) {
         menu = `${menu}（我記得你不太喜歡${dislike.content}，這組先避開。）`;
       } else if (like?.content) {
@@ -805,6 +815,11 @@ function buildCasualReply(
     return "睡眠差真的會讓後面更好餓。今天先不硬撐完美。";
   }
   if (/嘴饞|想吃|宵夜|十一點|突然很想吃/.test(freeMessage)) {
+    const sleepHours = input.dailyTargetsState?.approxToday.sleepHours;
+    const sleepCue = input.dailyTargetsState?.softCues.some((c) => /睡眠|睡/.test(c));
+    if ((sleepHours != null && sleepHours < 5.5) || sleepCue) {
+      return "你今天一直想吃甜的，我反而先不怪飲食。你昨晚睡得偏少，今天食慾比較難壓很正常。";
+    }
     const goal = input.go21Goal?.personalGoal ?? "";
     if (/宵夜|晚上|失控|亂吃/.test(goal)) {
       return "欸，這就是晚上那關 👀 先喝口水或泡杯茶撐一下，真的餓再吃也沒關係。";

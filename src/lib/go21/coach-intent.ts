@@ -14,7 +14,7 @@ export type Go21CoachIntent =
   | "other";
 
 const MEMORY_FOOD_RE =
-  /(?:記得|跟你說|告訴過你|跟你講|說過|講過).{0,24}(?:吃|喝)|(?:吃|喝).{0,24}(?:什麼|啥)|我(?:跟你)?說(?:了)?什麼|what\s+(?:did\s+)?i\s+(?:tell|say|eat|ate)|what\s+(?:have\s+)?i\s+(?:told|eaten)|remind\s+me\s+what|你還記得我.{0,12}吃/iu;
+  /(?:記得|跟你說|告訴過你|跟你講|說過|講過).{0,24}(?:吃|喝)|(?:吃了|喝了|吃過|喝過).{0,24}(?:什麼|啥)|我(?:跟你)?說(?:了)?什麼|what\s+(?:did\s+)?i\s+(?:tell|say|eat|ate)|what\s+(?:have\s+)?i\s+(?:told|eaten)|remind\s+me\s+what|你還記得我.{0,12}吃/iu;
 
 const MEMORY_GOAL_RE =
   /(?:記得|說過|講過).{0,20}(?:目標|想改|方向)|我(?:的)?目標(?:是|什麼)|what(?:'s|\s+is)\s+my\s+goal|21\s*天想改什麼/iu;
@@ -23,7 +23,7 @@ const MEMORY_PHOTO_RE =
   /剛剛拍|我拍了什麼|剛傳的|那張照片|剛剛.*什麼|照片(?:裡|是)什麼/u;
 
 const MENU_RE =
-  /(?:給|推薦|建議|幫).{0,8}(?:菜單|餐單|吃什麼|晚餐吃什麼|午餐吃什麼)|菜單|menu|今天吃什麼好|晚餐怎麼選|給我.*選項/iu;
+  /(?:給|推薦|建議|幫).{0,8}(?:菜單|餐單|吃什麼)|菜單|menu|今天吃什麼(?:好)?|晚餐吃什麼|午餐吃什麼|早餐吃什麼|宵夜吃什麼|晚餐怎麼選|怎麼選|給我.*選項/iu;
 
 const GOAL_PLAN_RE =
   /等一下|待會|等等|打算|想吃|準備吃|晚上.*吃|再吃/u;
@@ -37,9 +37,10 @@ export function detectGo21CoachIntent(input: {
   const msg = (input.freeMessage ?? "").trim();
   if (!msg) return "other";
   if (MEMORY_PHOTO_RE.test(msg)) return "memory_photo_recall";
+  // Menu before memory: 「晚餐吃什麼？」is advice, not food recall
+  if (MENU_RE.test(msg)) return "menu_request";
   if (MEMORY_FOOD_RE.test(msg)) return "memory_food_recall";
   if (MEMORY_GOAL_RE.test(msg)) return "memory_goal_recall";
-  if (MENU_RE.test(msg)) return "menu_request";
   if (GOAL_PLAN_RE.test(msg) && HEAVY_FOOD_RE.test(msg)) return "goal_conflict_plan";
   if (looksLikeMealReport(msg)) return "meal_report";
   return "other";

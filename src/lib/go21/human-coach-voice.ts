@@ -82,6 +82,8 @@ export function buildGo21HumanCoachReplyContract(input: {
     "鼓勵語句",
     "Goal 口號",
     "收尾問句",
+    "每日目標數字報告",
+    "還差多少 kcal／g／ml",
   ];
 
   if (input.channel === "day21") {

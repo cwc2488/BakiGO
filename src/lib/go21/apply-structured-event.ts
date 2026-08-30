@@ -61,10 +61,14 @@ export async function applyGo21StructuredEvent(input: {
   if (extracted.hydrationNote) hydrationNoteParts.push(extracted.hydrationNote);
   if (extracted.hydrationQuality === "low") hydrationNoteParts.push("喝水偏少");
   if (extracted.hydrationQuality === "high") hydrationNoteParts.push("喝水偏多");
+  if (extracted.sleepNote) hydrationNoteParts.push(extracted.sleepNote);
 
   const shouldTouchDaily =
     Object.keys(meals).length > 0 ||
     extracted.waterMl != null ||
+    extracted.sleepHours != null ||
+    Boolean(extracted.sleepBedtime) ||
+    Boolean(extracted.sleepWakeTime) ||
     Boolean(extracted.exerciseNote) ||
     extracted.hungerMentioned ||
     hydrationNoteParts.length > 0 ||
@@ -94,11 +98,21 @@ export async function applyGo21StructuredEvent(input: {
         customerNoteParts.push("（照片待確認餐別）");
       }
 
+      const sleepDurationLabel =
+        extracted.sleepHours != null
+          ? extracted.sleepHours % 1 === 0
+            ? `${extracted.sleepHours}小時`
+            : `${extracted.sleepHours}小時`
+          : undefined;
+
       await upsertCoachingDailyLog({
         portal: input.portal,
         logDate,
         meals: Object.keys(meals).length > 0 ? meals : undefined,
         waterMl: extracted.waterMl ?? undefined,
+        sleepBedtime: extracted.sleepBedtime ?? undefined,
+        sleepWakeTime: extracted.sleepWakeTime ?? undefined,
+        sleepDuration: sleepDurationLabel,
         exerciseNote: extracted.exerciseNote ?? undefined,
         customerNote: customerNoteParts.filter(Boolean).join("；") || undefined,
         markSubmitted: false,

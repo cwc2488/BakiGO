@@ -114,6 +114,30 @@ export function buildCoachingAiV2UserPrompt(input: {
     correction: string | null;
   }> | null;
   longitudinalUnderstanding?: Go21LongitudinalUnderstandingForAi | null;
+  dailyTargetsState?: {
+    logDate: string;
+    targets: {
+      waterMl: number | null;
+      caloriesKcal: number | null;
+      proteinG: number | null;
+      sleepHours: number | null;
+    } | null;
+    approxToday: {
+      waterMl: number | null;
+      waterConfidence: string;
+      caloriesKcal: number | null;
+      caloriesRange: [number, number] | null;
+      caloriesConfidence: string;
+      proteinG: number | null;
+      proteinRange: [number, number] | null;
+      proteinConfidence: string;
+      sleepHours: number | null;
+      sleepConfidence: string;
+      sleepNote: string | null;
+    };
+    softCues: string[];
+    guidance: string;
+  } | null;
 }): string {
   const { generationInput, decisionContext, memory, channel } = input;
   const reportDayRelation = relativeCoachingDayKey(generationInput.logDate) ?? "historical";
@@ -292,6 +316,7 @@ export function buildCoachingAiV2UserPrompt(input: {
     recentVisionObservations: (input.recentVisionObservations ?? []).slice(0, 3),
     today: compactToday,
     temporalTimeline: temporalTimeline.promptBlock,
+    dailyTargetsState: input.dailyTargetsState ?? null,
     decisionContext: compactDecision,
     rollingPatterns: generationInput.rollingMemory.recurringPatterns.slice(0, 6),
     recentTurns: memory.recentTurns.map((t) => {
@@ -347,6 +372,7 @@ export function buildCoachingAiV2UserPrompt(input: {
       "若顧客問「我跟你說／告訴你我吃了什麼」：只據實回答食物 todayEaten＋明確 eaten 紀錄；不要把 planned／舊提及講成已吃。禁止捏造。",
       "若顧客要菜單／吃什麼好：給可執行選項，並參考 todayEaten＋go21Goal＋knownPreferences；不要空話或萬用雞胸沙拉口號。",
       "報餐／照片：用今天脈絡＋目標做判斷。對齊短確認；偏離時給一句有觀點的話（可不推／可折衷／必要時一句下一步）。不要空口稱讚偏離目標的食物。護住目標但不每則喊口號，也不要預設「風險＋替代＋鼓勵」。",
+      "dailyTargetsState：內部判斷用水／熱量／蛋白質／睡眠。不要每則報「還差 XX kcal／g／ml」。數字只在這一刻有用才說；顧客問吃什麼且蛋白質偏少時，一句蛋白質提示就夠。睡眠短又嘴饞時，可用睡眠解釋食慾。影像估計不確定，禁止假裝精準。",
       "單純報餐：常常短回即可。禁止每則建議／稱讚／問句／營養課／Goal 口號。收尾不要預設問句；不要叫顧客自己評價這餐。",
       "go21Goal.currentPersonalGoal 是錨點，不是每則口號。目標意識來自 continuity，不是重複講義。",
       "decisionContext 是內部線索；free_message 時不要把它念成營養報告。",

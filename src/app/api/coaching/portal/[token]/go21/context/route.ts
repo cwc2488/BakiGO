@@ -6,6 +6,7 @@ import {
   createSignedCoachingPhotoUrl,
 } from "@/lib/coaching/coaching-service";
 import { loadGo21PortalBundle } from "@/lib/go21/go21-portal";
+import { loadGo21TodayDailyState } from "@/lib/go21/load-daily-state";
 import { getSharedInMemoryV2Store } from "@/lib/coaching/ai/v2/memory-store";
 import { createSupabaseServiceClient } from "@/lib/supabase/service-client";
 import { isReengagementDue } from "@/lib/go21/reminders";
@@ -126,6 +127,19 @@ export async function GET(
     // Surface recently delivered reminder turns as coach-initiated messages (already in thread)
     const reminderTurns = turns.filter((t) => t.channel === "system").slice(-3);
 
+    let dailyState = null;
+    let dailyTargets = bundle.dailyTargets;
+    try {
+      const loaded = await loadGo21TodayDailyState({
+        enrollmentId: bundle.enrollmentId,
+        targetsJson: bundle.dailyTargets,
+      });
+      dailyState = loaded.dailyState;
+      dailyTargets = loaded.targets ?? bundle.dailyTargets;
+    } catch {
+      dailyState = null;
+    }
+
     return NextResponse.json({
       ok: true,
       go21: {
@@ -143,6 +157,8 @@ export async function GET(
         needsBaseline: bundle.needsBaseline,
         needsGoal: bundle.needsGoal,
         goal: bundle.goal,
+        dailyTargets,
+        dailyState,
         turns: turns.map(({ photoStoragePath: _p, clientRequestId: _c, ...rest }) => rest),
         pendingCoachReply,
         reminders: reminderTurns.map((t) => ({

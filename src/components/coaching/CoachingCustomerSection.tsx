@@ -283,6 +283,7 @@ export function CoachingCustomerSection({
               </CrmButton>
             </div>
           ) : null}
+          {isGo21 ? <Go21TargetsEditor customerId={customerId} disabled={busy} /> : null}
           {!isGo21 && portalLink ? (
             <div className="space-y-2">
               <p className="text-[0.8125rem] font-medium text-[#86868b]">歷史陪跑連結</p>
@@ -338,5 +339,133 @@ export function CoachingCustomerSection({
         </div>
       ) : null}
     </CrmCard>
+  );
+}
+
+function Go21TargetsEditor({
+  customerId,
+  disabled,
+}: {
+  customerId: string;
+  disabled?: boolean;
+}) {
+  const [waterMl, setWaterMl] = useState(2500);
+  const [caloriesKcal, setCaloriesKcal] = useState(1600);
+  const [proteinG, setProteinG] = useState(100);
+  const [sleepHours, setSleepHours] = useState(7.5);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetchWithTimeout(
+          `/api/coaching/go21/targets?customerId=${encodeURIComponent(customerId)}`,
+        );
+        const payload = (await res.json()) as {
+          targets?: {
+            waterMl?: number | null;
+            caloriesKcal?: number | null;
+            proteinG?: number | null;
+            sleepHours?: number | null;
+          } | null;
+        };
+        if (cancelled || !res.ok) return;
+        if (payload.targets) {
+          if (payload.targets.waterMl != null) setWaterMl(payload.targets.waterMl);
+          if (payload.targets.caloriesKcal != null) setCaloriesKcal(payload.targets.caloriesKcal);
+          if (payload.targets.proteinG != null) setProteinG(payload.targets.proteinG);
+          if (payload.targets.sleepHours != null) setSleepHours(payload.targets.sleepHours);
+        }
+        setLoaded(true);
+      } catch {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId]);
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetchWithTimeout("/api/coaching/go21/targets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId,
+          waterMl,
+          caloriesKcal,
+          proteinG,
+          sleepHours,
+          source: "coach_edit",
+        }),
+      });
+      const payload = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(payload.error ?? "無法儲存");
+      setMsg("已更新每日目標");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "無法儲存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!loaded) {
+    return <p className="text-[0.8125rem] text-[#86868b]">載入每日目標…</p>;
+  }
+
+  return (
+    <div className="space-y-3 rounded-[1rem] border border-[#e4ebe0] bg-white p-3">
+      <p className="text-[0.8125rem] font-medium text-[#5a7a3a]">每日陪跑目標</p>
+      <p className="text-[0.75rem] leading-5 text-[#86868b]">水／熱量／蛋白質／睡眠 — 可隨時調整，不用重開。</p>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="space-y-1">
+          <span className="text-[0.75rem] text-[#86868b]">水 ml</span>
+          <input
+            type="number"
+            className="w-full rounded-[0.75rem] border border-[#e5e5ea] px-3 py-2 text-[0.9375rem]"
+            value={waterMl}
+            onChange={(e) => setWaterMl(Number(e.target.value) || 0)}
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-[0.75rem] text-[#86868b]">熱量 kcal</span>
+          <input
+            type="number"
+            className="w-full rounded-[0.75rem] border border-[#e5e5ea] px-3 py-2 text-[0.9375rem]"
+            value={caloriesKcal}
+            onChange={(e) => setCaloriesKcal(Number(e.target.value) || 0)}
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-[0.75rem] text-[#86868b]">蛋白質 g</span>
+          <input
+            type="number"
+            className="w-full rounded-[0.75rem] border border-[#e5e5ea] px-3 py-2 text-[0.9375rem]"
+            value={proteinG}
+            onChange={(e) => setProteinG(Number(e.target.value) || 0)}
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-[0.75rem] text-[#86868b]">睡眠 小時</span>
+          <input
+            type="number"
+            step="0.5"
+            className="w-full rounded-[0.75rem] border border-[#e5e5ea] px-3 py-2 text-[0.9375rem]"
+            value={sleepHours}
+            onChange={(e) => setSleepHours(Number(e.target.value) || 0)}
+          />
+        </label>
+      </div>
+      <CrmButton disabled={disabled || saving} onClick={() => void save()} type="button" variant="secondary">
+        {saving ? "儲存中…" : "儲存每日目標"}
+      </CrmButton>
+      {msg ? <p className="text-[0.8125rem] text-[#636366]">{msg}</p> : null}
+    </div>
   );
 }

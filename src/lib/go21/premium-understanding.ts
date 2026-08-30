@@ -35,6 +35,8 @@ const PATTERN_SMALL_LUNCH_EVENING = "small_lunch_evening_overeating";
 const PATTERN_LATE_NIGHT = "late_night_eating";
 const PATTERN_WEEKEND_CHAOS = "weekend_chaos_eating";
 const PATTERN_STRESS_TRIGGER = "stress_triggered_eating";
+const PATTERN_POOR_SLEEP_CRAVING = "poor_sleep_next_day_craving";
+const PATTERN_LOW_PROTEIN_HUNGER = "low_protein_afternoon_hunger";
 
 export function emptyGo21UnderstandingRecord(): Go21UnderstandingRecord {
   return {
@@ -279,7 +281,7 @@ export function extractGo21TurnSignals(input: {
   if (/晚上.*餓|又餓爆|餓爆|晚上失控|晚餐.*補|晚上狂吃|晚上又吃很多/.test(msg)) {
     push("evening_overeating", msg.slice(0, 80));
   }
-  if (/突然.*想吃|超想吃|很想吃宵夜|嘴饞/.test(msg)) {
+  if (/突然.*想吃|超想吃|很想吃|一直想吃|想吃甜|嘴饞/.test(msg)) {
     push("evening_craving", msg.slice(0, 80));
   }
   if (/午餐只|中午只|中午沒吃|沒吃午餐|午餐沒吃|中午吃很少|午餐吃很少|隨便吃一點|只吃.*水果|只喝.*咖啡/.test(msg)) {
@@ -321,6 +323,27 @@ export function extractGo21TurnSignals(input: {
   }
   if (/晚上很穩|晚上沒亂吃|今晚沒爆|宵夜沒吃|晚上還好/.test(msg)) {
     push("stable_evening", msg.slice(0, 80));
+  }
+
+  // Sleep / recovery — only when clearly stated (never invent hours)
+  if (
+    /只睡\s*\d|睡了?\s*\d|睡很少|失眠|幾乎沒睡|沒怎麼睡|睡超差|四個半小時|五小時|不到六小時/.test(msg) ||
+    /只睡[一二兩三四五六七八九十半]+小時/.test(msg) ||
+    /睡了?[一二兩三四五六七八九十半]+小時/.test(msg)
+  ) {
+    push("poor_sleep_stated", msg.slice(0, 80));
+  }
+  if (/睡很好|睡飽|睡了?\s*[七八九]|睡滿/.test(msg)) {
+    push("good_sleep_stated", msg.slice(0, 80));
+  }
+  if (/蛋白質.*少|蛋白不夠|沒吃什麼肉|幾乎沒蛋白質/.test(msg)) {
+    push("low_protein_stated", msg.slice(0, 80));
+  }
+  if (
+    signals.some((s) => s.signal === "evening_craving" || s.signal === "evening_overeating") &&
+    /睡|失眠|熬夜/.test(msg)
+  ) {
+    push("sleep_linked_craving", msg.slice(0, 80));
   }
 
   // Infer small lunch from today meal notes when message is evening hunger
@@ -469,6 +492,44 @@ export function updateGo21UnderstandingFromTurn(input: {
       signal: "stress_eating",
       summary: newSignals.find((s) => s.signal === "stress_eating")?.detail ?? "stress",
       supportDelta: 0.15,
+    });
+  }
+
+  // Poor sleep ↔ craving (only with co-occurring evidence; never invent)
+  const hasPoorSleep =
+    newSignals.some((s) => s.signal === "poor_sleep_stated") ||
+    sameDayHasSignal(observations, input.logDate, "poor_sleep_stated");
+  const hasCraving =
+    newSignals.some(
+      (s) =>
+        s.signal === "evening_craving" ||
+        s.signal === "evening_overeating" ||
+        s.signal === "sleep_linked_craving",
+    ) || sameDayHasSignal(observations, input.logDate, "evening_craving");
+  if (hasPoorSleep && hasCraving) {
+    items = upsertPatternItem(items, {
+      patternKey: PATTERN_POOR_SLEEP_CRAVING,
+      category: "timing_goal_link",
+      statement: "睡得明顯偏少的日子，隔天或當天晚上比較容易嘴饞、想吃高熱量的東西",
+      logDate: input.logDate,
+      signal: "poor_sleep_craving_link",
+      summary: "poor sleep + craving/overeating",
+      supportDelta: 0.16,
+    });
+  }
+
+  if (
+    newSignals.some((s) => s.signal === "low_protein_stated") &&
+    newSignals.some((s) => s.signal === "evening_craving" || s.signal === "evening_overeating")
+  ) {
+    items = upsertPatternItem(items, {
+      patternKey: PATTERN_LOW_PROTEIN_HUNGER,
+      category: "timing_goal_link",
+      statement: "蛋白質吃得比較不完整的日子，下午或晚上比較容易爆餓",
+      logDate: input.logDate,
+      signal: "low_protein_hunger_link",
+      summary: "low protein + hunger/craving",
+      supportDelta: 0.14,
     });
   }
 
@@ -795,6 +856,12 @@ export function customerFacingInsightHint(item: Go21UnderstandingItem): string {
   }
   if (item.patternKey === PATTERN_WEEKEND_CHAOS) {
     return "週末那一段好像比較容易亂。不是要你禁止玩，是我們可以提前想好一個底線。";
+  }
+  if (item.patternKey === PATTERN_POOR_SLEEP_CRAVING) {
+    return "你睡不到 6 小時的隔天，晚上比較容易想吃高熱量的東西。這幾天有點重複——我先不怪飲食，先看睡眠。";
+  }
+  if (item.patternKey === PATTERN_LOW_PROTEIN_HUNGER) {
+    return "蛋白質吃得比較完整的幾天，你下午比較不容易爆餓。之後我們可以先把蛋白質顧好。";
   }
   if (item.category === "strategy_worked") {
     return `看起來「${item.statement}」對你是有感的，值得繼續。`;

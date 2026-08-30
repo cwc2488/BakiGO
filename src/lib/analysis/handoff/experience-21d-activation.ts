@@ -20,6 +20,11 @@ import {
   ensureOwnedCloudCustomer,
 } from "@/lib/go21/ensure-cloud-customer";
 import {
+  buildGo21DailyTargetsSnapshot,
+  loadGo21DailyTargetsRecord,
+  saveGo21DailyTargets,
+} from "@/lib/go21/daily-targets";
+import {
   createSupabaseServiceClient,
   isSupabaseServiceConfigured,
 } from "@/lib/supabase/service-client";
@@ -213,6 +218,13 @@ export async function activateExperience21d(input: {
     birthYear?: number | null;
     birthDate?: string | null;
   } | null;
+  /** Optional daily coaching targets set at activation. */
+  dailyTargets?: {
+    waterMl?: number | null;
+    caloriesKcal?: number | null;
+    proteinG?: number | null;
+    sleepHours?: number | null;
+  } | null;
 }): Promise<{
   alreadyActive: boolean;
   enrollment: ReturnType<typeof serializeCoachingEnrollment>;
@@ -255,6 +267,14 @@ export async function activateExperience21d(input: {
   });
   if (existing) {
     if (isExperience21dEnrollment(existing)) {
+      if (input.dailyTargets) {
+        await maybeSaveActivationTargets({
+          enrollmentId: existing.id,
+          customerId: input.customerId,
+          ownerMemberId: input.ownerMemberId,
+          dailyTargets: input.dailyTargets,
+        });
+      }
       return {
         alreadyActive: true,
         enrollment: serializeCoachingEnrollment(existing),
@@ -314,6 +334,15 @@ export async function activateExperience21d(input: {
       .eq("owner_member_id", input.ownerMemberId);
   }
 
+  if (input.dailyTargets) {
+    await maybeSaveActivationTargets({
+      enrollmentId: enrollment.id,
+      customerId: input.customerId,
+      ownerMemberId: input.ownerMemberId,
+      dailyTargets: input.dailyTargets,
+    });
+  }
+
   return {
     alreadyActive: false,
     enrollment: serializeCoachingEnrollment(enrollment),
@@ -321,6 +350,48 @@ export async function activateExperience21d(input: {
     customerDisplayName: customer.displayName,
     portalToken: portal.token,
   };
+}
+
+async function maybeSaveActivationTargets(input: {
+  enrollmentId: string;
+  customerId: string;
+  ownerMemberId: string;
+  dailyTargets: {
+    waterMl?: number | null;
+    caloriesKcal?: number | null;
+    proteinG?: number | null;
+    sleepHours?: number | null;
+  };
+}): Promise<void> {
+  const t = input.dailyTargets;
+  if (
+    t.waterMl == null &&
+    t.caloriesKcal == null &&
+    t.proteinG == null &&
+    t.sleepHours == null
+  ) {
+    return;
+  }
+  try {
+    const snapshot = buildGo21DailyTargetsSnapshot({
+      waterMl: t.waterMl,
+      caloriesKcal: t.caloriesKcal,
+      proteinG: t.proteinG,
+      sleepHours: t.sleepHours,
+      source: "activation",
+    });
+    const prior = await loadGo21DailyTargetsRecord(input.enrollmentId);
+    await saveGo21DailyTargets({
+      enrollmentId: input.enrollmentId,
+      customerId: input.customerId,
+      ownerMemberId: input.ownerMemberId,
+      snapshot,
+      reason: "activation",
+      prior,
+    });
+  } catch {
+    // Targets column may be missing pre-070 — activation must still succeed.
+  }
 }
 
 export function assertSafe21dReturnPath(raw: string | null | undefined): string | null {
