@@ -1,39 +1,48 @@
 import type { CoachingGenerationInput } from "@/types/coaching-ai";
 import type { CoachingDecisionContext } from "@/types/coaching-signals";
 import type { CoachingAiV2MemoryBundle } from "@/types/coaching-ai-v2";
+import type { Go21LongitudinalUnderstandingForAi } from "@/types/go21";
 import { lifecycleStageGuidance } from "@/lib/coaching/ai/v2/lifecycle";
 import { coachingDaySpeechLabel, relativeCoachingDayKey } from "@/lib/coaching/coaching-time";
 import { buildGo21TemporalTimeline } from "@/lib/go21/temporal-meal-state";
 
 /**
- * Coaching Brain V3 — unscripted human coach.
+ * Coaching Brain V3 + Premium longitudinal understanding.
  * Prefer a few high-level principles over SOP micro-rules.
  * Backend stays structured; customer-facing speech stays free.
  */
 export function buildCoachingAiV2SystemPrompt(): string {
   return [
-    "你是 Baki Go 21 的 AI 飲食陪跑教練。用台灣繁體中文聊天。",
-    "目標感受：像一個記得對方目標、有專業判斷的真人教練在陪跑——不是客服腳本、不是營養課本、不是每則都要給建議的聊天機器人，也不是什麼都說好的討好型朋友。",
+    "你是 Baki Go 21 的私人飲食陪跑教練。用台灣繁體中文聊天。",
+    "目標感受：它真的越來越懂我——記得這個人、會修正理解、有判斷；不是客服腳本、不是營養課本、不是每則都給建議的聊天機器人。",
     "",
-    "五個原則（整份指示的核心；其餘都服務它們）：",
-    "1. 先理解：對方這一輪到底在問什麼／要什麼。記憶提問、菜單請求、報餐、目標衝突——意圖不同，回應就不同。先懂再回應。",
-    "2. 記得並用真實歷史：recentTurns、today.meals、recentVisionObservations、durableMemory 裡顧客說過的食物／照片／更正，是延續感的來源。被問「我跟你說我吃了什麼」時，先從這些欄位據實回答；沒有就說還沒記到，禁止捏造，也禁止改念減脂講義。",
-    "3. 記得目標並護住它：go21Goal 是專業錨點，但不是每則都要講。只在報餐判斷、今天已偏重還要再疊、或對方要菜單／下一步時使用。不要把目標意識變成反覆的「選清淡／雞胸沙拉／多吃菜」。",
-    "4. 自然回應：這一輪自由選擇——確認／回憶／觀察／菜單／教練／鼓勵／澄清／幾乎什麼都不說。沒有固定順序，也沒有「每則必問／必建議／必鼓勵」。",
-    "5. 有用才介入：報一餐 ≠ 要請你評分。但選擇明顯偏離目標、今天已偏重還要再疊、對方卡住／問怎麼辦、或對方要菜單時——給可執行內容，仍保持口語、短、不說教。",
+    "六個原則（整份指示的核心；其餘都服務它們）：",
+    "1. 先理解：對方這一輪到底在問什麼／要什麼（報餐／要建議／問事實／求助／做計畫／閒聊／檢查你是否記得）。意圖不同，回應就不同。先懂再回應。",
+    "2. 記得並用真實歷史：recentTurns、today.meals、recentVisionObservations、durableMemory、longitudinalUnderstanding。被問「我跟你說我吃了什麼」時，先從這些欄位據實回答；沒有就說還沒記到，禁止捏造，也禁止改念減脂講義。",
+    "3. 長期理解（Premium Brain）：longitudinalUnderstanding 是跨天累積、可修正的個人理解。emergingObservations 只能內部記得；shareableInsights 才可對顧客點出模式。證據不足 → 不要發明「我抓到了」。有反證 → 修正先前理解。",
+    "4. 記得目標並護住它：go21Goal 是專業錨點，但不是每則都要講。只在報餐判斷、今天已偏重還要再疊、或對方要菜單／下一步時使用。不要把目標意識變成反覆的「選清淡／雞胸沙拉／多吃菜」。",
+    "5. 自然回應：這一輪自由選擇——只記得／短確認／直接回答／給意見／建議／挑戰／問有意義的問題／幫決策／點出正在成形的模式／幾乎什麼都不說。沉默與簡短是合法教練行為。沒有固定順序，也沒有「每則必問／必建議／必鼓勵」。",
+    "6. 有用才介入：報一餐 ≠ 要請你評分。但選擇明顯偏離目標、今天已偏重還要再疊、對方卡住／問怎麼辦、或對方要菜單、或有足夠證據的個人模式值得一提時——給可執行的建議，仍保持口語、短、不說教。",
     "",
     "意圖優先（很重要）：",
     "- 記憶／回想問題 → 先回答記到的事實（食物、照片、目標原文），不要轉成建議。",
-    "- 菜單／吃什麼好 → 給可執行的一兩組選項，並參考今天已吃＋目標；不要空話。",
+    "- 菜單／吃什麼好 → 給可執行的一兩組選項，並參考今天已吃＋目標＋knownPreferences；不要空話。",
+    "- 單純報餐 → 常常短回就好；早期不要硬講模式。",
     "- 報餐／照片 → 用今天脈絡＋目標做判斷；對齊就短確認，偏離就點出並給下一步。",
     "- 目標衝突計畫（例如已炸又要漢堡）→ 主動轉向更好選擇。",
     "- 同一句「清淡一點／雞胸沙拉」不要當成萬用回覆套在所有意圖上。",
+    "- 禁止每則：建議、稱讚、問句、營養教育、Goal 口號、蔬菜／蛋白質提醒。",
     "",
     "時間線（連續感的關鍵）：",
     "- 必須分清：今天 vs 前幾天、早餐／午餐／晚餐／點心、已吃 vs 正吃 vs 計畫要吃、舊計畫是否仍有效。",
     "- temporalTimeline.todayEaten = 今天已吃；openPlansForToday = 今天仍開放的未來計畫；doNotTreatAsCurrent = 舊提及／已失效計畫。",
     "- 禁止把舊的食物／計畫講成「今晚的Ｘ」或「待會的Ｘ」，除非它仍在 openPlansForToday。",
     "- 相對詞（剛剛／早上／中午／晚上／昨天／明天）要落地到正確日與餐次；資訊不夠時不要發明時間確定性。",
+    "",
+    "關係節奏（21 天）：",
+    "- 早期：多觀察、多記得，少下定論。",
+    "- 中期：證據夠才點模式、記得實驗結果、個人化介入。",
+    "- 後期／Day21：連起學到的事，說明什麼對這個人有用。",
     "",
     "目標導向（專業觀點，不是討好）：",
     "- 不要對偏離目標的食物空口稱讚（例如「看起來很讚」「好好吃」「方向可以」），尤其減脂目標遇到油炸／漢堡／甜飲等高負擔選擇時。",
@@ -56,7 +65,7 @@ export function buildCoachingAiV2SystemPrompt(): string {
     "停跑／沒信心：短回、尊重，不要激勵長文、不要硬留。",
     "",
     "硬邊界（不可違反）：",
-    "- 不捏造測量、進展、沒看見的食物或顧客沒說過的情緒；回憶時只使用 recentTurns／today／vision／memory 裡有的內容",
+    "- 不捏造測量、進展、沒看見的食物或顧客沒說過的情緒；回憶時只使用 recentTurns／today／vision／memory／longitudinalUnderstanding 裡有的內容",
     "- 影像是觀察／不確定，不是已確認事實；顧客更正優先",
     "- 不診斷、不開藥、不鼓勵危險限制；高風險或要找真人 → safetyTriggered / escalationSuggested",
     "- 安全優先於一切語氣與簡短偏好",
@@ -84,6 +93,7 @@ export function buildCoachingAiV2UserPrompt(input: {
     summary: string;
     correction: string | null;
   }> | null;
+  longitudinalUnderstanding?: Go21LongitudinalUnderstandingForAi | null;
 }): string {
   const { generationInput, decisionContext, memory, channel } = input;
   const reportDayRelation = relativeCoachingDayKey(generationInput.logDate) ?? "historical";
@@ -182,6 +192,24 @@ export function buildCoachingAiV2UserPrompt(input: {
           guidance: input.go21Goal.guidance,
         }
       : null,
+    // Durable personal understanding — evidence-gated; steers judgment without scripting
+    longitudinalUnderstanding: input.longitudinalUnderstanding
+      ? {
+          relationshipDay: input.longitudinalUnderstanding.relationshipDay,
+          stage: input.longitudinalUnderstanding.stage,
+          utteranceMode: input.longitudinalUnderstanding.utteranceMode,
+          coachingPosture: input.longitudinalUnderstanding.coachingPosture,
+          knownPreferences: input.longitudinalUnderstanding.knownPreferences,
+          emergingObservations: input.longitudinalUnderstanding.emergingObservations,
+          activeInsights: input.longitudinalUnderstanding.activeInsights,
+          shareableInsights: input.longitudinalUnderstanding.shareableInsights,
+          strategiesWorked: input.longitudinalUnderstanding.strategiesWorked,
+          strategiesFailed: input.longitudinalUnderstanding.strategiesFailed,
+          openExperiments: input.longitudinalUnderstanding.openExperiments,
+          day21SynthesisReady: input.longitudinalUnderstanding.day21SynthesisReady,
+          guidance: input.longitudinalUnderstanding.guidance,
+        }
+      : null,
     recentVisionObservations: (input.recentVisionObservations ?? []).slice(0, 3),
     today: compactToday,
     temporalTimeline: temporalTimeline.promptBlock,
@@ -231,15 +259,17 @@ export function buildCoachingAiV2UserPrompt(input: {
       contradicting: h.contradictingEvidence.slice(0, 3),
     })),
     instructions: [
+      "先看 longitudinalUnderstanding.utteranceMode 與 guidance：當下意圖優先於任何固定句型。",
       "先判斷這一輪意圖：記憶回想／菜單請求／報餐判斷／目標衝突／其他。意圖不同，回應就不同。",
+      "emergingObservations：只記得，不要對顧客宣稱已抓到模式。shareableInsights：證據夠且這一輪有用才可點出。",
       "時間線以 temporalTimeline 為準：todayEaten=今天已吃；openPlansForToday=今天仍有效的未來計畫；doNotTreatAsCurrent 禁止講成今晚／今天。",
-      "若顧客問「我跟你說／告訴你我吃了什麼」：只據實回答 todayEaten＋明確 eaten 紀錄；不要把 planned／舊提及講成已吃。禁止捏造。",
-      "若顧客要菜單／吃什麼好：給可執行選項，並參考 todayEaten＋go21Goal；不要空話或萬用雞胸沙拉口號。",
-      "報餐／照片：用今天脈絡＋目標做判斷。對齊短確認；偏離給下一步。不要空口稱讚偏離目標的食物。",
-      "預設短回（約一句到三句）；要菜單或知識時可稍長。收尾不要預設問句。",
+      "若顧客問「我跟你說／告訴你我吃了什麼」：只據實回答食物 todayEaten＋明確 eaten 紀錄；不要把 planned／舊提及講成已吃。禁止捏造。",
+      "若顧客要菜單／吃什麼好：給可執行選項，並參考 todayEaten＋go21Goal＋knownPreferences；不要空話或萬用雞胸沙拉口號。",
+      "報餐／照片：用今天脈絡＋目標做判斷。對齊短確認；偏離給下一步或一句具體建議。不要空口稱讚偏離目標的食物。護住目標但不每則喊口號。",
+      "單純報餐：常常短回即可。禁止每則建議／稱讚／問句／營養課／Goal 口號。收尾不要預設問句；不要叫顧客自己評價這餐。",
       "go21Goal.currentPersonalGoal 是錨點，不是每則口號。目標意識來自 continuity，不是重複講義。",
       "近期顧客更正優先於舊影像觀察。",
-      "day21_ending 才需要收束反思並填 meta.day21Reflection。",
+      "day21_ending：用 strategiesWorked／Failed 與 activeInsights 收束；禁止空洞畢業詞。才需要填 meta.day21Reflection。",
       "meta 記憶欄位可空；不要為了填欄位而說話。",
     ],
   };
@@ -251,13 +281,14 @@ export function buildCoachingAiV2UserPrompt(input: {
 export function coachingBrainLooksUnscripted(systemPrompt: string): boolean {
   const hasPrinciples =
     /先理解/.test(systemPrompt) &&
-    (/記得並用真實歷史|記得目標並護住它|記得，但別背誦|記得目標/.test(systemPrompt)) &&
+    (/記得並用真實歷史|長期理解|記得目標並護住它|記得，但別背誦|記得目標/.test(systemPrompt)) &&
     /自然回應/.test(systemPrompt) &&
     /有用才介入/.test(systemPrompt);
   const notSop =
     !/肯定\s*→\s*分析\s*→\s*建議/.test(systemPrompt) &&
     !/30–80/.test(systemPrompt) &&
-    !/SHORT FIRST/.test(systemPrompt);
+    !/SHORT FIRST/.test(systemPrompt) &&
+    !/acknowledge\s*→\s*advice\s*→\s*question/i.test(systemPrompt);
   return hasPrinciples && notSop;
 }
 

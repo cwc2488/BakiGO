@@ -5,6 +5,7 @@ import type {
   CoachingAiV2MemoryBundle,
   CoachingAiV2Observability,
 } from "@/types/coaching-ai-v2";
+import type { Go21LongitudinalUnderstandingForAi } from "@/types/go21";
 import {
   COACHING_AI_V2_PROMPT_VERSION,
   COACHING_AI_V2_POINT_KEY,
@@ -43,6 +44,7 @@ export type GenerateCoachingAiV2Input = {
     summary: string;
     correction: string | null;
   }> | null;
+  longitudinalUnderstanding?: Go21LongitudinalUnderstandingForAi | null;
 };
 
 export type GenerateCoachingAiV2Result = {
@@ -163,6 +165,7 @@ export async function generateCoachingAiV2(
               freeMessage: input.freeMessage,
               go21Goal: input.go21Goal,
               recentVisionObservations: input.recentVisionObservations,
+              longitudinalUnderstanding: input.longitudinalUnderstanding,
             }),
           },
         ],

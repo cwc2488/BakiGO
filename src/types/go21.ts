@@ -158,3 +158,126 @@ export type Go21GoalRefinementProposal = {
   confidence: "high" | "medium" | "low";
   needsConfirmation: boolean;
 };
+
+/** Current-turn utterance mode — steers response freedom, not a rigid script. */
+export const GO21_UTTERANCE_MODES = [
+  "reporting",
+  "asking_advice",
+  "factual_question",
+  "seeking_help",
+  "making_plan",
+  "casual_chat",
+  "memory_check",
+  "other",
+] as const;
+export type Go21UtteranceMode = (typeof GO21_UTTERANCE_MODES)[number];
+
+export const GO21_UNDERSTANDING_CATEGORIES = [
+  "eating_pattern",
+  "preference",
+  "difficulty",
+  "trigger",
+  "strategy_worked",
+  "strategy_failed",
+  "timing_goal_link",
+  "communication",
+  "other",
+] as const;
+export type Go21UnderstandingCategory = (typeof GO21_UNDERSTANDING_CATEGORIES)[number];
+
+export const GO21_UNDERSTANDING_ITEM_STATUSES = [
+  "emerging",
+  "active",
+  "confirmed",
+  "revised",
+  "rejected",
+] as const;
+export type Go21UnderstandingItemStatus = (typeof GO21_UNDERSTANDING_ITEM_STATUSES)[number];
+
+export type Go21UnderstandingEvidence = {
+  at: string;
+  logDate: string;
+  signal: string;
+  summary: string;
+};
+
+export type Go21UnderstandingItem = {
+  id: string;
+  category: Go21UnderstandingCategory;
+  /** Stable key for merge / revise (e.g. small_lunch_evening_binge). */
+  patternKey: string;
+  statement: string;
+  confidence: number;
+  status: Go21UnderstandingItemStatus;
+  evidenceCount: number;
+  supportingEvidence: Go21UnderstandingEvidence[];
+  contradictingEvidence: Go21UnderstandingEvidence[];
+  firstSeenLogDate: string;
+  lastSeenLogDate: string;
+  revisedFromId: string | null;
+};
+
+export type Go21UnderstandingObservation = {
+  logDate: string;
+  signal: string;
+  detail: string;
+  at: string;
+};
+
+export type Go21UnderstandingExperiment = {
+  id: string;
+  description: string;
+  status: "proposed" | "running" | "worked" | "failed" | "inconclusive";
+  startedLogDate: string;
+  relatedPatternKey: string | null;
+  outcomeNote: string | null;
+};
+
+/** Durable enrollment-level personal understanding (Premium Coaching Brain). */
+export type Go21UnderstandingRecord = {
+  version: 1;
+  items: Go21UnderstandingItem[];
+  observations: Go21UnderstandingObservation[];
+  preferences: Array<{
+    content: string;
+    polarity: "like" | "dislike" | "constraint";
+    confidence: number;
+    lastSeenLogDate: string;
+  }>;
+  experiments: Go21UnderstandingExperiment[];
+  /** Short notes about what coaching approaches fit this person. */
+  coachingNotes: string[];
+  updatedAt: string;
+};
+
+/** Compact block injected into freeform generation. */
+export type Go21LongitudinalUnderstandingForAi = {
+  relationshipDay: number | null;
+  stage: string;
+  utteranceMode: Go21UtteranceMode;
+  coachingPosture: string;
+  knownPreferences: Array<{ content: string; polarity: string; confidence: number }>;
+  /** Low-confidence — remember only; do not claim as established pattern. */
+  emergingObservations: Array<{ statement: string; confidence: number; evidenceCount: number }>;
+  /** Enough evidence to influence judgment silently. */
+  activeInsights: Array<{
+    statement: string;
+    confidence: number;
+    evidenceCount: number;
+    patternKey: string;
+    category: string;
+  }>;
+  /** May mention to the customer this turn if useful. */
+  shareableInsights: Array<{
+    statement: string;
+    confidence: number;
+    evidenceCount: number;
+    patternKey: string;
+    customerFacingHint: string;
+  }>;
+  strategiesWorked: string[];
+  strategiesFailed: string[];
+  openExperiments: Array<{ description: string; status: string }>;
+  day21SynthesisReady: boolean;
+  guidance: string;
+};

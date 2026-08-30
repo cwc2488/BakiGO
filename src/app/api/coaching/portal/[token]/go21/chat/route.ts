@@ -33,6 +33,12 @@ import {
 } from "@/lib/go21/goal";
 import { buildGo21CoachGenerationContext } from "@/lib/go21/coach-context";
 import {
+  compactGo21UnderstandingForAi,
+  loadGo21UnderstandingRecord,
+  saveGo21UnderstandingRecord,
+  updateGo21UnderstandingFromTurn,
+} from "@/lib/go21/premium-understanding";
+import {
   assessGo21Disengagement,
   buildGo21CustomerDisplayContent,
   detectPhotoFoodCorrection,
@@ -416,6 +422,59 @@ export async function POST(
       );
     }
 
+    // Premium Coaching Brain — load + consolidate durable understanding before generate
+    let longitudinalUnderstanding: ReturnType<typeof compactGo21UnderstandingForAi> = null;
+    try {
+      const priorUnderstanding = await loadGo21UnderstandingRecord(portal.enrollmentId);
+      const dayForUnderstanding = loaded.generationInput.profileMemory.daysSinceEnrollmentStart;
+      const stageForUnderstanding =
+        dayForUnderstanding <= 3
+          ? "understand"
+          : dayForUnderstanding <= 7
+            ? "find_patterns"
+            : dayForUnderstanding <= 14
+              ? "experiment"
+              : dayForUnderstanding <= 20
+                ? "build_autonomy"
+                : dayForUnderstanding >= 21
+                  ? "day21_ending"
+                  : "understand";
+      const updated = updateGo21UnderstandingFromTurn({
+        prior: priorUnderstanding,
+        freeMessage: customerDisplayContent,
+        logDate,
+        todayMealNotes: generationInput.todayContext.primaryMeals.map((m) => ({
+          slot: m.mealSlot,
+          note: m.textNote,
+        })),
+        lifecycleDay: dayForUnderstanding,
+        lifecycleStage: stageForUnderstanding,
+      });
+      await saveGo21UnderstandingRecord({
+        enrollmentId: portal.enrollmentId,
+        customerId: portal.customerId,
+        ownerMemberId: portal.ownerMemberId,
+        record: updated.record,
+      });
+      longitudinalUnderstanding = compactGo21UnderstandingForAi({
+        record: updated.record,
+        utteranceMode: updated.utteranceMode,
+        lifecycleDay: dayForUnderstanding,
+        lifecycleStage: stageForUnderstanding,
+      });
+    } catch (understandingError) {
+      console.error(
+        JSON.stringify({
+          event: "go21_understanding_chat_path_failed",
+          enrollmentId: portal.enrollmentId,
+          error:
+            understandingError instanceof Error
+              ? understandingError.message
+              : String(understandingError),
+        }),
+      );
+    }
+
     const enrichedFreeMessage = goalConfirmHint
       ? `${freeMessage}\n\n[系統｜目標]\n${goalConfirmHint}`
       : freeMessage;
@@ -543,6 +602,7 @@ export async function POST(
         hydrateFromSupabase: true,
         go21Goal,
         recentVisionObservations,
+        longitudinalUnderstanding,
         customerAlreadyAccepted: true,
         existingCustomerTurnId: acceptedCustomerTurnId,
       });

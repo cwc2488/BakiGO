@@ -846,13 +846,15 @@ Member (coach)
 
 Customer-facing freeform message lives in `coaching_ai_outputs.output_json.customer.coach_message` when V2 is enabled.
 
-### Baki Go 21 — customer chat surface (`065_coaching_go21.sql`, `066_go21_reminder_uniqueness.sql`)
+### Baki Go 21 — customer chat surface (`065_coaching_go21.sql`, `066_go21_reminder_uniqueness.sql`, `068_go21_goal.sql`, `069_go21_understanding.sql`)
 
 | Change | Purpose |
 |--------|---------|
 | `coaching_ai_reminders` | Reminder intents (daily / open-loop / measurement / experiment / reengagement). Delivery channel separate; in-app first. |
 | `coaching_enrollments.go21_started_at` | Idempotent customer “開始我的 21 天陪跑” marker |
 | `066` uniqueness | Measurement/daily kinds: one per Taipei day; open_loop allows multiple via `related_open_loop_id` |
+| `coaching_enrollments.go21_goal_json` | Durable 21-day goal record |
+| `coaching_enrollments.go21_understanding_json` | Premium Coaching Brain — longitudinal personal understanding (evidence, confidence, revisable) |
 
 **Security:** Customer entry via existing opaque `customer_portal_tokens` at `/c/{token}/go21`. Go21 routes enforce experience-21d eligibility. No guessable customer IDs in URLs.
 

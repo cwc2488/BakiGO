@@ -14,10 +14,12 @@ import {
   formatMenuSuggestionReply,
 } from "@/lib/go21/coach-intent";
 import { buildGo21TemporalTimeline } from "@/lib/go21/temporal-meal-state";
+import { synthesizeDay21Understanding } from "@/lib/go21/premium-understanding";
 
 /**
  * Context-aware fixture generator for tests/eval without OpenAI.
  * Intentionally varies response shape — not a canned template array shuffle.
+ * Reads longitudinalUnderstanding when present (Premium Coaching Brain).
  */
 export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): CoachingAiV2GenerationDraft {
   const { decisionContext, memory, freeMessage, channel } = input;
@@ -25,6 +27,8 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
   const stage = memory.lifecycle.stage;
   const logDate = input.generationInput.logDate;
   const intent = detectGo21CoachIntent({ freeMessage });
+  const understanding = input.longitudinalUnderstanding ?? null;
+  const utteranceMode = understanding?.utteranceMode ?? null;
 
   if (channel === "day21" || stage === "day21_ending") {
     return buildDay21Draft(input);
@@ -48,11 +52,15 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
   }
 
   // Memory / clarification — answer the question from real history first (never invent)
-  if (intent === "memory_food_recall") {
-    return {
-      coachMessage: buildFoodRecallReply(input),
-      meta: emptyMeta("acknowledge", day, stage),
-    };
+  if (intent === "memory_food_recall" || utteranceMode === "memory_check") {
+    if (intent === "memory_goal_recall") {
+      /* fall through below */
+    } else if (intent === "memory_food_recall" || /吃|喝|餐/.test(freeMessage ?? "")) {
+      return {
+        coachMessage: buildFoodRecallReply(input),
+        meta: emptyMeta("acknowledge", day, stage),
+      };
+    }
   }
   if (intent === "memory_goal_recall") {
     const goalReply = formatGoalRecallReply({
@@ -72,24 +80,91 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
-  // Menu request — actionable options, contextual to today's load + goal
-  if (intent === "menu_request") {
-    const foods = collectFoodsFromInput(input);
-    const alreadyHeavy =
-      foods.some((f) => /炸|漢堡|薯條|奶茶|蛋糕|泡麵|披薩|可樂|雞排/.test(f.label)) ||
-      hasHeavySignalsToday(decisionContext);
+  // Revised understanding — acknowledge we were wrong when customer brings counter-evidence
+  const revisedInsight = understanding?.emergingObservations.find((o) =>
+    /降級|反證|改觀察/.test(o.statement),
+  );
+  if (
+    revisedInsight &&
+    freeMessage &&
+    /午餐吃完整|中午有好好吃|晚上很穩|晚上沒亂吃/.test(freeMessage)
+  ) {
     return {
-      coachMessage: formatMenuSuggestionReply({
-        primaryDirection: input.go21Goal?.primaryDirection,
-        personalGoal: input.go21Goal?.personalGoal,
-        alreadyHeavyToday: alreadyHeavy,
-      }),
-      meta: emptyMeta("educate", day, stage),
+      coachMessage:
+        "嗯，我先前覺得晚上失控主要來自中午吃太少，但你最近這幾天有點不一樣。這條我先修正，改看別的線索。",
+      meta: emptyMeta("test_hypothesis", day, stage),
     };
   }
 
+  // Longitudinal insight — only when durable understanding says shareable + turn is useful
+  const shareable = understanding?.shareableInsights?.[0] ?? null;
+  if (
+    shareable &&
+    freeMessage &&
+    (utteranceMode === "reporting" ||
+      utteranceMode === "seeking_help" ||
+      /晚上又|又餓|又爆|宵夜|失控/.test(freeMessage)) &&
+    !/菜單|吃什麼好/.test(freeMessage)
+  ) {
+    return {
+      coachMessage: shareable.customerFacingHint,
+      meta: {
+        ...emptyMeta("investigate", day, stage),
+        memoryWrites: [
+          {
+            category: "insight" as const,
+            content: shareable.statement,
+            confidence: shareable.confidence,
+          },
+        ],
+        openLoopOps: understanding?.openExperiments?.[0]
+          ? [
+              {
+                op: "create" as const,
+                subject: understanding.openExperiments[0].description.slice(0, 40),
+                detail: understanding.openExperiments[0].description,
+                dueLogDate: addCalendarDays(logDate, 1),
+                status: "waiting" as const,
+              },
+            ]
+          : [],
+      },
+    };
+  }
+
+  // Menu request — actionable options; personalize from preferences when present
+  if (intent === "menu_request" || utteranceMode === "asking_advice") {
+    if (intent === "menu_request" || /菜單|吃什麼|怎麼選/.test(freeMessage ?? "")) {
+      const foods = collectFoodsFromInput(input);
+      const alreadyHeavy =
+        foods.some((f) => /炸|漢堡|薯條|奶茶|蛋糕|泡麵|披薩|可樂|雞排/.test(f.label)) ||
+        hasHeavySignalsToday(decisionContext);
+      const dislike = understanding?.knownPreferences?.find((p) => p.polarity === "dislike");
+      const like = understanding?.knownPreferences?.find((p) => p.polarity === "like");
+      let menu = formatMenuSuggestionReply({
+        primaryDirection: input.go21Goal?.primaryDirection,
+        personalGoal: input.go21Goal?.personalGoal,
+        alreadyHeavyToday: alreadyHeavy,
+      });
+      if (dislike?.content) {
+        menu = `${menu}（我記得你不太喜歡${dislike.content}，這組先避開。）`;
+      } else if (like?.content) {
+        menu = `${menu}（可以往你比較愛的${like.content}方向靠一點。）`;
+      }
+      return {
+        coachMessage: menu,
+        meta: emptyMeta("educate", day, stage),
+      };
+    }
+  }
+
   // Explicit information request — longer answer OK
-  if (freeMessage && /為什麼|怎麼幫|有什麼幫助|原理/.test(freeMessage) && /蛋白|減脂|熱量|代謝/.test(freeMessage)) {
+  if (
+    (utteranceMode === "factual_question" ||
+      (freeMessage && /為什麼|怎麼幫|有什麼幫助|原理/.test(freeMessage))) &&
+    freeMessage &&
+    /蛋白|減脂|熱量|代謝/.test(freeMessage)
+  ) {
     return {
       coachMessage:
         "簡單說：蛋白質比較能讓你有飽足感，也比較能保住肌肉。減脂時如果只狂砍熱量、蛋白質又很少，人容易餓、肌肉也比較容易掉，後面更難維持。不是魔法，是讓過程比較穩。",
@@ -132,19 +207,45 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
   }
 
   // Simple food log — acknowledge only when not conflicting with goal
+  // Early stage / reporting: keep short; never invent patterns from one event
   const simpleFood = matchSimpleFoodLog(freeMessage);
-  if (simpleFood) {
-    const conflict = goalConflictsWithFoodChoice(input.go21Goal, simpleFood, decisionContext);
+  if (simpleFood || utteranceMode === "reporting") {
+    const conflict = simpleFood
+      ? goalConflictsWithFoodChoice(input.go21Goal, simpleFood, decisionContext)
+      : null;
     if (conflict) {
       return {
         coachMessage: conflict,
         meta: emptyMeta("challenge", day, stage),
       };
     }
-    return {
-      coachMessage: `收到，${simpleFood} 👌`,
-      meta: emptyMeta("acknowledge", day, stage),
-    };
+    // Influence silently via active insights without claiming shareable pattern
+    if (
+      understanding?.activeInsights?.some((i) => i.patternKey === "small_lunch_evening_overeating") &&
+      freeMessage &&
+      /晚上|宵夜|餓/.test(freeMessage) &&
+      !(understanding.shareableInsights?.length)
+    ) {
+      return {
+        coachMessage: simpleFood
+          ? `收到，${simpleFood}。我先記著晚上這段。`
+          : "收到，我先記著晚上這段。",
+        meta: emptyMeta("observe", day, stage),
+      };
+    }
+    if (simpleFood) {
+      return {
+        coachMessage: `收到，${simpleFood} 👌`,
+        meta: emptyMeta("acknowledge", day, stage),
+      };
+    }
+    if (utteranceMode === "reporting" && freeMessage) {
+      const short = freeMessage.replace(/\s+/g, " ").trim().slice(0, 24);
+      return {
+        coachMessage: short.length <= 12 ? `嗯，${short}。` : "收到 👌",
+        meta: emptyMeta("acknowledge", day, stage),
+      };
+    }
   }
 
   // Goal-relevant late craving — use goal silently (no verbatim recitation)
@@ -160,11 +261,14 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
-  // Pattern: repeated afternoon skip / evening hunger
+  // Pattern: repeated afternoon skip / evening hunger (legacy decision-context path)
+  // Prefer durable understanding shareable path above; keep this as fallback without hallucinating on day 1
   if (
     freeMessage &&
     /晚上又餓|又餓爆|又超餓/.test(freeMessage) &&
-    looksLikeEveningOvereatPattern(decisionContext, memory)
+    looksLikeEveningOvereatPattern(decisionContext, memory) &&
+    stage !== "understand" &&
+    (day == null || day >= 4)
   ) {
     return {
       coachMessage:
@@ -233,10 +337,11 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
-  // Pattern formation (days 4–7+)
+  // Pattern formation (days 4–7+) — only when understanding does not already own this
   if (
     (stage === "find_patterns" || stage === "experiment" || stage === "build_autonomy") &&
-    looksLikeEveningOvereatPattern(decisionContext, memory)
+    looksLikeEveningOvereatPattern(decisionContext, memory) &&
+    !(understanding?.shareableInsights?.length)
   ) {
     const hypCreate =
       memory.hypotheses.length === 0
@@ -826,6 +931,19 @@ function maybeCreateObserveLoop(
 
 function buildDay21Draft(input: GenerateCoachingAiV2Input): CoachingAiV2GenerationDraft {
   const { memory } = input;
+  const understanding = input.longitudinalUnderstanding;
+  const fromUnderstanding = understanding
+    ? {
+        majorPatterns: understanding.activeInsights.map((i) => i.statement).slice(0, 5),
+        whatWorked: understanding.strategiesWorked.slice(0, 5),
+        whatDidNot: understanding.strategiesFailed.slice(0, 5),
+        recurringDifficulties: understanding.activeInsights
+          .filter((i) => /difficulty|trigger|difficulty/.test(i.category) || i.category === "difficulty" || i.category === "trigger")
+          .map((i) => i.statement)
+          .slice(0, 5),
+      }
+    : synthesizeDay21Understanding(null);
+
   const patterns = memory.durableMemory
     .filter((m) => m.category === "pattern" || m.category === "insight")
     .map((m) => m.content);
@@ -841,11 +959,13 @@ function buildDay21Draft(input: GenerateCoachingAiV2Input): CoachingAiV2Generati
   const hyp = memory.hypotheses.map((h) => h.statement);
 
   const majorPatterns =
-    patterns.length > 0
-      ? patterns.slice(0, 3)
-      : hyp.slice(0, 2).length > 0
-        ? hyp.slice(0, 2)
-        : ["回報節奏有建立，但飲食型態證據仍有限"];
+    fromUnderstanding.majorPatterns.length > 0
+      ? fromUnderstanding.majorPatterns.slice(0, 3)
+      : patterns.length > 0
+        ? patterns.slice(0, 3)
+        : hyp.slice(0, 2).length > 0
+          ? hyp.slice(0, 2)
+          : ["回報節奏有建立，但飲食型態證據仍有限"];
 
   const goalWish =
     input.go21Goal?.originalPersonalGoal ||
@@ -853,31 +973,50 @@ function buildDay21Draft(input: GenerateCoachingAiV2Input): CoachingAiV2Generati
     input.generationInput.profileMemory.goal ||
     "減脂／調整生活節奏";
 
-  const reflection = {
-    startingSituation: statements[0] ?? `21 天前，你希望：${goalWish}`,
-    majorPatterns,
-    meaningfulChanges:
-      worked.length > 0 ? worked.slice(0, 3) : ["持續回報本身是可觀察到的改變"],
-    recurringDifficulties:
-      failed.length > 0
+  const whatWorked =
+    fromUnderstanding.whatWorked.length > 0
+      ? fromUnderstanding.whatWorked.slice(0, 3)
+      : worked.length > 0
+        ? worked.slice(0, 3)
+        : ["願意誠實回報"];
+  const whatDidNot =
+    fromUnderstanding.whatDidNot.length > 0
+      ? fromUnderstanding.whatDidNot.slice(0, 3)
+      : failed.length > 0
+        ? failed.slice(0, 3)
+        : ["尚未形成穩定的替代策略"];
+  const recurringDifficulties =
+    fromUnderstanding.recurringDifficulties.length > 0
+      ? fromUnderstanding.recurringDifficulties.slice(0, 3)
+      : failed.length > 0
         ? failed.slice(0, 3)
         : memory.openLoops.map((l) => l.subject).slice(0, 2).length
           ? memory.openLoops.map((l) => l.subject).slice(0, 2)
-          : ["偶發偏離仍會出現"],
-    triggers: memory.durableMemory
-      .filter((m) => m.category === "trigger")
-      .map((m) => m.content)
-      .slice(0, 3),
-    experimentsAttempted: memory.durableMemory
-      .filter((m) => m.category === "strategy_worked" || m.category === "strategy_failed")
-      .map((m) => m.content)
-      .slice(0, 4),
-    whatWorked: worked.length > 0 ? worked.slice(0, 3) : ["願意誠實回報"],
-    whatDidNot: failed.length > 0 ? failed.slice(0, 3) : ["尚未形成穩定的替代策略"],
+          : ["偶發偏離仍會出現"];
+
+  const reflection = {
+    startingSituation: statements[0] ?? `21 天前，你希望：${goalWish}`,
+    majorPatterns,
+    meaningfulChanges: whatWorked,
+    recurringDifficulties,
+    triggers: [
+      ...memory.durableMemory.filter((m) => m.category === "trigger").map((m) => m.content),
+      ...(understanding?.activeInsights
+        .filter((i) => i.category === "trigger")
+        .map((i) => i.statement) ?? []),
+    ].slice(0, 3),
+    experimentsAttempted: [
+      ...(understanding?.openExperiments.map((e) => e.description) ?? []),
+      ...memory.durableMemory
+        .filter((m) => m.category === "strategy_worked" || m.category === "strategy_failed")
+        .map((m) => m.content),
+    ].slice(0, 4),
+    whatWorked,
+    whatDidNot,
     sustainable: ["維持每日回報", "對飢餓時段保持覺察"].slice(0, 3),
     nextActions: [
       majorPatterns[0] ? `繼續觀察：${majorPatterns[0].slice(0, 40)}` : "維持回報節奏",
-      "遇到偏離時先標出時段，再決定要不要調",
+      whatWorked[0] ? `延續對你有用的：${whatWorked[0].slice(0, 36)}` : "遇到偏離時先標出時段，再決定要不要調",
       "需要時找真人教練一起看卡關點",
     ].slice(0, 3),
   };
@@ -886,7 +1025,8 @@ function buildDay21Draft(input: GenerateCoachingAiV2Input): CoachingAiV2Generati
     "21 天先停在這裡。不是畢業典禮講稿，是根據我們實際走過的內容。",
     `一開始：${reflection.startingSituation}`,
     `我看到的主要模式：${reflection.majorPatterns.join("；")}`,
-    `有感覺的改變：${reflection.meaningfulChanges.join("；")}`,
+    `對你比較有用的做法：${reflection.whatWorked.join("；")}`,
+    `比較沒那麼有效的：${reflection.whatDidNot.join("；")}`,
     `還容易卡住的地方：${reflection.recurringDifficulties.join("；")}`,
     `比較值得帶走的下一步：${reflection.nextActions.join("；")}`,
   ].join("\n");

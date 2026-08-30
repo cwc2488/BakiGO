@@ -30,6 +30,10 @@ V1 was architecturally a **structured daily report generator**, not a coach conv
 
 Observe → Remember → Understand → Reason → Choose coaching strategy → Respond naturally → Preserve useful state/open loops → Observe next.
 
+## Premium longitudinal understanding (Go21)
+
+Durable customer understanding lives on `coaching_enrollments.go21_understanding_json` and is injected as `longitudinalUnderstanding` in the freeform user prompt. It accumulates evidence-backed preferences, patterns, triggers, and strategy outcomes across days; confidence gates prevent hallucinated insights; contradiction revises prior items. Lifecycle stage guides posture (observe early → pattern share mid → Day 21 synthesis) without scripting every turn. See `docs/GO21.md` § Premium Coaching Brain.
+
 ## Principle
 
 **Structured internally. Free externally.**

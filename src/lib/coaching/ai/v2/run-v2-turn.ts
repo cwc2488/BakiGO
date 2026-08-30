@@ -6,6 +6,7 @@ import type {
   CoachingAiV2Observability,
   CoachingAiV2TurnChannel,
 } from "@/types/coaching-ai-v2";
+import type { Go21LongitudinalUnderstandingForAi } from "@/types/go21";
 import {
   CoachingAiV2MemoryStore,
   getSharedInMemoryV2Store,
@@ -59,6 +60,8 @@ export type RunCoachingAiV2TurnInput = {
     summary: string;
     correction: string | null;
   }> | null;
+  /** Premium Coaching Brain — durable personal understanding for this enrollment. */
+  longitudinalUnderstanding?: Go21LongitudinalUnderstandingForAi | null;
   /** Customer turn already durably accepted — skip duplicate Supabase customer insert. */
   customerAlreadyAccepted?: boolean;
   existingCustomerTurnId?: string | null;
@@ -199,6 +202,7 @@ export async function runCoachingAiV2Turn(
     freeMessage: input.freeMessage,
     go21Goal: input.go21Goal,
     recentVisionObservations: input.recentVisionObservations,
+    longitudinalUnderstanding: input.longitudinalUnderstanding,
   });
 
   let memoryUpdateOutcome: CoachingAiV2Observability["memoryUpdateOutcome"] = "applied";
