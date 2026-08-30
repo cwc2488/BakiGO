@@ -1,7 +1,7 @@
 /** Baki Go 21 — customer-facing 21-day AI nutrition coaching experience. */
 
 export const GO21_BRAND_NAME = "Baki Go 21" as const;
-export const GO21_BRAND_SUBTITLE = "你的 21 天 AI 飲食教練" as const;
+export const GO21_BRAND_SUBTITLE = "21 天私人飲食陪跑" as const;
 export const GO21_CYCLE_DAYS = 21 as const;
 
 export const GO21_MEASUREMENT_DAYS = [1, 7, 14, 21] as const;
@@ -69,6 +69,14 @@ export type Go21ExtractedEvent = {
   /** Qualitative hydration signal — never invents ml. */
   hydrationQuality: Go21HydrationQuality;
   hydrationNote: string | null;
+  /** Sleep hours when customer stated a defensible duration (e.g. 睡了6小時). */
+  sleepHours: number | null;
+  /** Approximate bedtime HH:mm when stated. */
+  sleepBedtime: string | null;
+  /** Approximate wake time HH:mm when stated. */
+  sleepWakeTime: string | null;
+  /** Qualitative sleep note — never invents hours. */
+  sleepNote: string | null;
   exerciseNote: string | null;
   hungerMentioned: boolean;
   confidence: "high" | "medium" | "low";
@@ -281,3 +289,115 @@ export type Go21LongitudinalUnderstandingForAi = {
   day21SynthesisReady: boolean;
   guidance: string;
 };
+
+/** Source of a daily-targets snapshot. */
+export type Go21DailyTargetsSource = "activation" | "coach_edit" | "ui_edit";
+
+/** Durable daily coaching targets (water / calories / protein / sleep). */
+export type Go21DailyTargetsSnapshot = {
+  waterMl: number | null;
+  caloriesKcal: number | null;
+  proteinG: number | null;
+  sleepHours: number | null;
+  setAt: string;
+  source: Go21DailyTargetsSource;
+};
+
+export type Go21DailyTargetsHistoryEntry = {
+  at: string;
+  targets: Go21DailyTargetsSnapshot;
+  reason: string;
+};
+
+export type Go21DailyTargetsRecord = {
+  version: 1;
+  current: Go21DailyTargetsSnapshot;
+  history: Go21DailyTargetsHistoryEntry[];
+};
+
+export type Go21DailyTargetsPublicView = {
+  waterMl: number | null;
+  caloriesKcal: number | null;
+  proteinG: number | null;
+  sleepHours: number | null;
+  setAt: string;
+  source: Go21DailyTargetsSource;
+  /** True when at least one target is set. */
+  hasAny: boolean;
+};
+
+/** Confidence for estimated daily nutrition — never imply false precision. */
+export type Go21EstimateConfidence =
+  | "none"
+  | "low"
+  | "medium"
+  | "high"
+  | "reported";
+
+/** Lightweight today state for UI + AI (not a tracker dashboard). */
+export type Go21DailyStatePublicView = {
+  logDate: string;
+  targets: Go21DailyTargetsPublicView | null;
+  water: {
+    ml: number | null;
+    confidence: Go21EstimateConfidence;
+    qualitative: "low" | "high" | null;
+  };
+  calories: {
+    /** Midpoint of estimate band when available — UI must not show as exact. */
+    approxKcal: number | null;
+    rangeLow: number | null;
+    rangeHigh: number | null;
+    confidence: Go21EstimateConfidence;
+  };
+  protein: {
+    approxG: number | null;
+    rangeLow: number | null;
+    rangeHigh: number | null;
+    confidence: Go21EstimateConfidence;
+  };
+  sleep: {
+    hours: number | null;
+    bedtime: string | null;
+    wakeTime: string | null;
+    confidence: Go21EstimateConfidence;
+    note: string | null;
+  };
+  /** Soft coaching cues for UI (never fake %). */
+  cues: Array<{
+    key: "water" | "calories" | "protein" | "sleep";
+    tone: "quiet" | "soft" | "attention";
+    label: string;
+  }>;
+};
+
+/** Fast coach presets — starting points, not medical prescriptions. */
+export const GO21_DAILY_TARGET_PRESETS = [
+  {
+    id: "light",
+    label: "輕量",
+    hint: "較低熱量、穩蛋白質",
+    waterMl: 2000,
+    caloriesKcal: 1400,
+    proteinG: 80,
+    sleepHours: 7,
+  },
+  {
+    id: "standard",
+    label: "標準",
+    hint: "一般減脂陪跑常用",
+    waterMl: 2500,
+    caloriesKcal: 1600,
+    proteinG: 100,
+    sleepHours: 7.5,
+  },
+  {
+    id: "active",
+    label: "活躍",
+    hint: "活動量較高",
+    waterMl: 3000,
+    caloriesKcal: 2000,
+    proteinG: 120,
+    sleepHours: 8,
+  },
+] as const;

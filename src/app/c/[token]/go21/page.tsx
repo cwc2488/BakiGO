@@ -1,12 +1,13 @@
 import { Go21App } from "@/components/go21/Go21App";
 import type { Metadata } from "next";
+import { GO21_BRAND_SUBTITLE } from "@/types/go21";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Baki Go 21",
-    description: "你的 21 天 AI 飲食教練",
+    description: GO21_BRAND_SUBTITLE,
     applicationName: "Baki Go 21",
     appleWebApp: {
       capable: true,

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { GO21_BRAND_SUBTITLE } from "@/types/go21";
 
 export const runtime = "nodejs";
 
@@ -12,12 +13,12 @@ export async function GET(
   const manifest = {
     name: "Baki Go 21",
     short_name: "Baki Go 21",
-    description: "你的 21 天 AI 飲食教練",
+    description: GO21_BRAND_SUBTITLE,
     start_url: startUrl,
     scope: startUrl,
     display: "standalone",
-    background_color: "#f3f8ef",
-    theme_color: "#77b539",
+    background_color: "#f7f5f1",
+    theme_color: "#2a4a38",
     lang: "zh-Hant",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },

@@ -1,7 +1,11 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState, useTransition } from "react";
-import type { Go21ProgressMilestone } from "@/types/go21";
+import type {
+  Go21DailyStatePublicView,
+  Go21DailyTargetsPublicView,
+  Go21ProgressMilestone,
+} from "@/types/go21";
 import { GO21_PRIMARY_DIRECTION_LABELS, GO21_PRIMARY_DIRECTIONS } from "@/types/go21";
 import {
   GO21_CHAT_FOLLOW_RETRY_MS,
@@ -58,6 +62,8 @@ type Go21ContextPayload = {
     wasRefined: boolean;
     setAt: string;
   } | null;
+  dailyTargets: Go21DailyTargetsPublicView | null;
+  dailyState: Go21DailyStatePublicView | null;
   turns: Go21Turn[];
   pendingCoachReply?: {
     customerTurnId: string;
@@ -653,8 +659,10 @@ export function Go21App({ token }: { token: string }) {
           <p className="go21-brand">{ctx.brandName}</p>
           <p className="go21-sub">{ctx.brandSubtitle}</p>
         </div>
-        <div className="go21-day">
-          Day {ctx.dayNumber ?? "—"} / {ctx.dayTotal}
+        <div className="go21-day" aria-label={`第 ${ctx.dayNumber ?? "—"} 天，共 ${ctx.dayTotal} 天`}>
+          <span className="go21-day-label">第</span>
+          {ctx.dayNumber ?? "—"}
+          <span className="go21-day-label">／{ctx.dayTotal} 天</span>
         </div>
         <button type="button" className="go21-linkish" onClick={() => setView(view === "progress" ? "chat" : "progress")}>
           {view === "progress" ? "回到對話" : "進度"}
@@ -683,15 +691,13 @@ export function Go21App({ token }: { token: string }) {
 
       {view === "start" ? (
         <div className="go21-start">
-          <p className="go21-brand" style={{ fontSize: "1.5rem", marginBottom: "0.75rem" }}>
-            Baki Go 21
-          </p>
+          <p className="go21-start-brand">Baki Go 21</p>
           <div className="go21-teach">
+            <p>接下來 21 天，這是你的私人飲食陪跑空間。</p>
             <p>
-              接下來 21 天，我會陪你一起把飲食慢慢調整好。
-              不用記熱量，也不用每天填一堆表格。
+              吃了什麼、睡得好不好、水喝得怎樣——用自然對話跟我說就好。
+              我會默默掌握今天大概的狀態，陪你慢慢調整。
             </p>
-            <p>吃了什麼、遇到什麼狀況，直接跟我說就好。</p>
           </div>
           <button
             type="button"
@@ -699,7 +705,7 @@ export function Go21App({ token }: { token: string }) {
             disabled={busy || sendLock}
             onClick={() => void startExperience()}
           >
-            開始 Day 1
+            開始第 1 天
           </button>
         </div>
       ) : null}
@@ -710,14 +716,14 @@ export function Go21App({ token }: { token: string }) {
           <ul>
             {ctx.milestones.map((m) => (
               <li key={m.day} className={m.completed ? "is-done" : m.reached ? "is-now" : ""}>
-                Day {m.day} — {m.label}
+                第 {m.day} 天 — {m.label}
                 {m.optional ? "（選用）" : ""}
                 {m.completed ? " ✓" : ""}
               </li>
             ))}
           </ul>
           {ctx.goal ? (
-            <div className="go21-data" style={{ marginTop: "1rem" }}>
+            <div className="go21-data">
               <h3>我的 21 天方向</h3>
               <p>{ctx.goal.primaryDirectionLabel}</p>
               <p>{ctx.goal.personalGoal}</p>
@@ -739,11 +745,44 @@ export function Go21App({ token }: { token: string }) {
               </button>
             </div>
           ) : null}
+          {ctx.dailyTargets?.hasAny ? (
+            <div className="go21-targets-summary">
+              <h3>每日參考目標</h3>
+              <ul className="go21-targets-list">
+                {ctx.dailyTargets.waterMl != null ? (
+                  <li>
+                    <span>水分</span>
+                    <span>約 {ctx.dailyTargets.waterMl} ml</span>
+                  </li>
+                ) : null}
+                {ctx.dailyTargets.caloriesKcal != null ? (
+                  <li>
+                    <span>熱量</span>
+                    <span>約 {ctx.dailyTargets.caloriesKcal} kcal</span>
+                  </li>
+                ) : null}
+                {ctx.dailyTargets.proteinG != null ? (
+                  <li>
+                    <span>蛋白質</span>
+                    <span>約 {ctx.dailyTargets.proteinG} g</span>
+                  </li>
+                ) : null}
+                {ctx.dailyTargets.sleepHours != null ? (
+                  <li>
+                    <span>睡眠</span>
+                    <span>約 {ctx.dailyTargets.sleepHours} 小時</span>
+                  </li>
+                ) : null}
+              </ul>
+              <p className="go21-targets-note">參考用，不是精準計分。對話裡自然提到就好。</p>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       {view === "chat" ? (
         <div className="go21-chat-panel">
+          <DailyStateStrip targets={ctx.dailyTargets} dailyState={ctx.dailyState} />
           {ctx.reminders.length > 0 ? (
             <div className="go21-reminder">
               {ctx.reminders[0]!.message}
@@ -869,7 +908,7 @@ export function Go21App({ token }: { token: string }) {
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 rows={1}
-                placeholder="跟我說說今天吃了什麼…"
+                placeholder="跟我說說今天…"
                 disabled={busy}
                 enterKeyHint="send"
                 onKeyDown={(e) => {
@@ -905,6 +944,70 @@ function resolveGo21ClientLogDate(text: string): string {
   if (/前天/.test(text)) return shift(-2);
   if (/昨天|昨日|昨晚|昨夜/.test(text)) return shift(-1);
   return today;
+}
+
+/** Quiet presence strip — soft cues only; never fake precision bars or remaining kcal. */
+function DailyStateStrip({
+  targets,
+  dailyState,
+}: {
+  targets: Go21DailyTargetsPublicView | null;
+  dailyState: Go21DailyStatePublicView | null;
+}) {
+  if (!targets?.hasAny) return null;
+
+  const cues = dailyState?.cues ?? [];
+  if (cues.length > 0) {
+    return (
+      <div className="go21-daily-strip" aria-label="今日狀態">
+        <div className="go21-daily-strip-inner">
+          {cues.map((cue) => (
+            <span key={`${cue.key}-${cue.label}`} className="go21-daily-cue" data-tone={cue.tone}>
+              <span className="go21-daily-cue-dot" aria-hidden />
+              {cue.label}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const hasWaterSignal =
+    dailyState?.water.ml != null || dailyState?.water.qualitative != null;
+  const hasCalSignal = dailyState?.calories.approxKcal != null;
+  const hasProSignal = dailyState?.protein.approxG != null;
+  const hasSleepSignal =
+    dailyState?.sleep.hours != null || dailyState?.sleep.note != null;
+
+  const presenceKeys = [
+    { key: "水", on: Boolean(hasWaterSignal), show: targets.waterMl != null },
+    { key: "熱", on: Boolean(hasCalSignal), show: targets.caloriesKcal != null },
+    { key: "蛋白", on: Boolean(hasProSignal), show: targets.proteinG != null },
+    { key: "眠", on: Boolean(hasSleepSignal), show: targets.sleepHours != null },
+  ].filter((p) => p.show);
+
+  const anyOn = presenceKeys.some((p) => p.on);
+
+  return (
+    <div className="go21-daily-strip" aria-label="今日狀態">
+      <div className="go21-daily-strip-inner">
+        {anyOn ? (
+          <div className="go21-daily-presence">
+            {presenceKeys.map((p) => (
+              <span key={p.key} data-on={p.on ? "1" : "0"}>
+                {p.key}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="go21-daily-cue" data-tone="quiet">
+            <span className="go21-daily-cue-dot" aria-hidden />
+            今天還可以跟我說說吃喝與睡眠
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function GoalForm({

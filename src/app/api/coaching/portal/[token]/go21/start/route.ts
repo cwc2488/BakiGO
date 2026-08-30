@@ -8,9 +8,9 @@ import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 
 export const runtime = "nodejs";
 
-const WELCOME_MESSAGE = `你好，我是你這 21 天的飲食陪跑教練。
+const WELCOME_MESSAGE = `你好，我是你這 21 天的私人飲食陪跑。
 
-不用記熱量，也不用填一堆表格。吃了什麼、突然嘴饞、還是今天有點撐不住，直接跟我說就好。
+吃了什麼、睡得好不好、水喝得怎樣——用自然對話跟我說就好。我會默默掌握今天大概的狀態，陪你慢慢調整。
 
 準備好的話，先跟我說今天最近一餐吃了什麼，或傳一張照片給我。`;
 
