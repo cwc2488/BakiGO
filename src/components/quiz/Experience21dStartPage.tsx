@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageShell } from "@/components/ui/PageShell";
 import { fetchWithMemberAuth } from "@/lib/quiz/quiz-member-fetch";
-import { ensureCustomerPortalToken, fetchCustomerPortalToken } from "@/lib/cloud/customer-cloud-service";
+import { flushCustomerCloudPushAsync } from "@/lib/cloud/customer-cloud-service";
 import {
   deriveExperience21dSchedule,
   formatExperience21dShortDate,
@@ -64,6 +64,8 @@ export function Experience21dStartPage({
     setError(null);
     setLoading(true);
     try {
+      await flushCustomerCloudPushAsync().catch(() => undefined);
+
       if (mode.kind === "interest") {
         const response = await fetchWithMemberAuth(`/api/quiz/21d/${mode.interestId}/activation`);
         const payload = (await response.json()) as {
@@ -101,14 +103,26 @@ export function Experience21dStartPage({
 
       // Customer mode — id is already known from the route; never leave it empty.
       setCustomerId(mode.customerId);
+      // Pre-sync local customer into cloud so GET/activate see the same row.
+      await fetchWithMemberAuth("/api/coaching/go21/status", {
+        method: "POST",
+        body: JSON.stringify({
+          customerId: mode.customerId,
+          displayName: initialCustomerName || null,
+          ensurePortalToken: false,
+        }),
+      }).catch(() => null);
+
       const response = await fetchWithMemberAuth(
         `/api/coaching/experience-21d?customerId=${encodeURIComponent(mode.customerId)}`,
       );
       const payload = (await response.json()) as {
         error?: string;
+        customerSynced?: boolean;
         customer?: { id: string; displayName: string };
         activeExperience?: ActiveExperience | null;
         activeOtherCoaching?: boolean;
+        portalToken?: string | null;
       };
       if (!response.ok) throw new Error(payload.error ?? "找不到這位顧客");
       setCustomerId(payload.customer?.id ?? mode.customerId);
@@ -146,6 +160,10 @@ export function Experience21dStartPage({
     setBusy(true);
     setError(null);
     try {
+      // Flush local CRM → cloud before server upsert (belt + suspenders).
+      const { flushCustomerCloudPushAsync } = await import("@/lib/cloud/customer-cloud-service");
+      await flushCustomerCloudPushAsync().catch(() => undefined);
+
       const path =
         mode.kind === "interest"
           ? `/api/quiz/21d/${mode.interestId}/activation`
@@ -155,6 +173,9 @@ export function Experience21dStartPage({
         body: JSON.stringify({
           customerId: effectiveCustomerId,
           productReceivedDate: schedule.productReceivedDate,
+          customerProfile: {
+            displayName: customerName || initialCustomerName || null,
+          },
         }),
       });
       const payload = (await response.json()) as {
@@ -163,17 +184,27 @@ export function Experience21dStartPage({
         enrollment?: { id: string };
         schedule?: { startDate: string; plannedEndAt: string };
         customerDisplayName?: string;
+        portalToken?: string;
       };
       if (!response.ok) throw new Error(payload.error ?? "無法啟動 21 天體驗");
       if (payload.customerDisplayName?.trim()) {
         setCustomerName(payload.customerDisplayName.trim());
       }
-      await ensureCustomerPortalToken(effectiveCustomerId).catch(() => undefined);
-      const token = await fetchCustomerPortalToken(effectiveCustomerId).catch(() => null);
-      const go21Link =
-        token && !token.revokedAt
-          ? `${window.location.origin}/c/${token.token}/go21`
-          : null;
+      const tokenFromApi = payload.portalToken?.trim() || null;
+      let go21Link: string | null = tokenFromApi
+        ? `${window.location.origin}/c/${tokenFromApi}/go21`
+        : null;
+      if (!go21Link) {
+        // Fallback — should rarely run now that activation returns portalToken.
+        const { ensureCustomerPortalToken, fetchCustomerPortalToken } = await import(
+          "@/lib/cloud/customer-cloud-service"
+        );
+        await ensureCustomerPortalToken(effectiveCustomerId).catch(() => undefined);
+        const token = await fetchCustomerPortalToken(effectiveCustomerId).catch(() => null);
+        if (token && !token.revokedAt) {
+          go21Link = `${window.location.origin}/c/${token.token}/go21`;
+        }
+      }
       setDone({
         enrollmentId: payload.enrollment?.id ?? "",
         startDate: payload.schedule?.startDate ?? schedule.startDate,
@@ -401,11 +432,22 @@ function AlreadyActiveGo21Panel({
     if (!customerId) return;
     let cancelled = false;
     void (async () => {
-      await ensureCustomerPortalToken(customerId).catch(() => undefined);
-      const token = await fetchCustomerPortalToken(customerId).catch(() => null);
-      if (cancelled) return;
-      if (token && !token.revokedAt) {
-        setGo21Link(`${window.location.origin}/c/${token.token}/go21`);
+      try {
+        const response = await fetchWithMemberAuth(
+          `/api/coaching/go21/status?customerId=${encodeURIComponent(customerId)}`,
+        );
+        const payload = (await response.json()) as {
+          portalToken?: string | null;
+          go21Path?: string | null;
+        };
+        if (cancelled) return;
+        if (payload.go21Path) {
+          setGo21Link(`${window.location.origin}${payload.go21Path}`);
+        } else if (payload.portalToken) {
+          setGo21Link(`${window.location.origin}/c/${payload.portalToken}/go21`);
+        }
+      } catch {
+        // Leave link empty — coach can reopen customer page.
       }
     })();
     return () => {

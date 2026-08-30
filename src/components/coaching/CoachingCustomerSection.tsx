@@ -1,11 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CrmButton, CrmCard, CrmField, CrmSectionTitle } from "@/components/members/ui";
-import {
-  ensureCustomerPortalToken,
-  fetchCustomerPortalToken,
-} from "@/lib/cloud/customer-cloud-service";
 import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetch";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
 import {
@@ -15,16 +12,33 @@ import {
 } from "@/lib/coaching/enrollment-window";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { isExperience21dEnrollment } from "@/lib/coaching/experience-21d";
+import { flushCustomerCloudPushAsync } from "@/lib/cloud/customer-cloud-service";
 import Link from "next/link";
 import {
   COACHING_STATUS_LABELS,
   type CoachingEnrollment,
 } from "@/types/coaching";
 
+const LOAD_TIMEOUT_MS = 12_000;
+
+async function fetchWithTimeout(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = LOAD_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchCoachingWithMemberAuth(path, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 /**
  * Customer detail — Go21 is the default coaching product.
- * Legacy generic coaching start CTA is hidden; APIs/data remain for rollback.
- * Historical non-Go21 enrollments can still be managed and keep their form link.
+ * Status loads via server API (service-role portal token) so the card cannot
+ * hang forever on browser Supabase RLS / getSession.
  */
 export function CoachingCustomerSection({
   customerId,
@@ -33,12 +47,13 @@ export function CoachingCustomerSection({
   customerId: string;
   customerDisplayName: string;
 }) {
+  const router = useRouter();
   const [enrollment, setEnrollment] = useState<CoachingEnrollment | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [portalLink, setPortalLink] = useState<string | null>(null);
   const [go21Link, setGo21Link] = useState<string | null>(null);
+  const [portalLink, setPortalLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedGo21, setCopiedGo21] = useState(false);
   const [editStartDate, setEditStartDate] = useState("");
@@ -47,24 +62,31 @@ export function CoachingCustomerSection({
   const reload = useCallback(async () => {
     if (!isSupabaseConfigured()) {
       setLoading(false);
-      setError("雲端尚未設定，無法使用陪跑功能");
+      setError("雲端尚未設定，無法使用 Baki Go 21");
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      const response = await fetchCoachingWithMemberAuth(
-        `/api/coaching/enrollments?customerId=${encodeURIComponent(customerId)}`,
+      // Best-effort local→cloud flush so activation/status see the customer.
+      await flushCustomerCloudPushAsync().catch(() => undefined);
+
+      const response = await fetchWithTimeout(
+        `/api/coaching/go21/status?customerId=${encodeURIComponent(customerId)}`,
       );
       const payload = (await response.json()) as {
         ok?: boolean;
         enrollment?: CoachingEnrollment | null;
+        isGo21?: boolean;
+        portalToken?: string | null;
+        go21Path?: string | null;
         error?: string;
       };
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error ?? "無法載入陪跑狀態");
+        throw new Error(payload.error ?? "無法載入 Baki Go 21 狀態");
       }
+
       const next = payload.enrollment ?? null;
       setEnrollment(next);
       if (next) {
@@ -78,20 +100,29 @@ export function CoachingCustomerSection({
         setEditPlannedEndAt(end);
       }
 
-      if (next && isExperience21dEnrollment(next)) {
-        await ensureCustomerPortalToken(customerId).catch(() => undefined);
-      }
-
-      const token = await fetchCustomerPortalToken(customerId);
-      if (token && !token.revokedAt) {
-        setPortalLink(`${window.location.origin}/c/${token.token}/coaching`);
-        setGo21Link(`${window.location.origin}/c/${token.token}/go21`);
+      if (payload.go21Path) {
+        setGo21Link(`${window.location.origin}${payload.go21Path}`);
+      } else if (payload.portalToken) {
+        setGo21Link(`${window.location.origin}/c/${payload.portalToken}/go21`);
       } else {
-        setPortalLink(null);
         setGo21Link(null);
       }
+
+      if (payload.portalToken && next && !isExperience21dEnrollment(next)) {
+        setPortalLink(`${window.location.origin}/c/${payload.portalToken}/coaching`);
+      } else {
+        setPortalLink(null);
+      }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "無法載入陪跑狀態");
+      const message =
+        loadError instanceof Error && loadError.name === "AbortError"
+          ? "載入逾時，請下拉重試"
+          : loadError instanceof Error
+            ? loadError.message
+            : "無法載入 Baki Go 21 狀態";
+      setError(message);
+      setEnrollment(null);
+      setGo21Link(null);
     } finally {
       setLoading(false);
     }
@@ -101,12 +132,33 @@ export function CoachingCustomerSection({
     void reload();
   }, [reload]);
 
+  const openActivation = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await flushCustomerCloudPushAsync().catch(() => undefined);
+      // Ensure cloud row exists before navigating (activation also upserts).
+      await fetchWithTimeout("/api/coaching/go21/status", {
+        method: "POST",
+        body: JSON.stringify({
+          customerId,
+          displayName: customerDisplayName,
+          ensurePortalToken: false,
+        }),
+      }).catch(() => null);
+      router.push(`/customers/${encodeURIComponent(customerId)}/start-21d`);
+    } catch (navError) {
+      setError(navError instanceof Error ? navError.message : "無法開啟開通頁");
+      setBusy(false);
+    }
+  };
+
   const saveEnrollmentDates = async () => {
     if (!enrollment) return;
     setBusy(true);
     setError(null);
     try {
-      const response = await fetchCoachingWithMemberAuth(
+      const response = await fetchWithTimeout(
         `/api/coaching/enrollments/${encodeURIComponent(enrollment.id)}`,
         {
           method: "PATCH",
@@ -133,7 +185,7 @@ export function CoachingCustomerSection({
     setBusy(true);
     setError(null);
     try {
-      const response = await fetchCoachingWithMemberAuth(
+      const response = await fetchWithTimeout(
         `/api/coaching/enrollments/${encodeURIComponent(enrollment.id)}`,
         {
           method: "PATCH",
@@ -176,9 +228,16 @@ export function CoachingCustomerSection({
       </p>
 
       {loading ? <p className="text-[0.9375rem] text-[#86868b]">載入中…</p> : null}
-      {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
+      {error ? (
+        <div className="space-y-2">
+          <p className="text-[0.9375rem] text-[#cf1322]">{error}</p>
+          <CrmButton disabled={busy} onClick={() => void reload()} type="button" variant="secondary">
+            重試載入
+          </CrmButton>
+        </div>
+      ) : null}
 
-      {enrollment ? (
+      {!loading && enrollment ? (
         <div className="space-y-3">
           <CrmField label="狀態" value={COACHING_STATUS_LABELS[enrollment.status]} />
           <CrmField
@@ -224,7 +283,6 @@ export function CoachingCustomerSection({
               </CrmButton>
             </div>
           ) : null}
-          {/* Legacy daily-form link only for historical non-Go21 enrollments (rollback). */}
           {!isGo21 && portalLink ? (
             <div className="space-y-2">
               <p className="text-[0.8125rem] font-medium text-[#86868b]">歷史陪跑連結</p>
@@ -265,16 +323,20 @@ export function CoachingCustomerSection({
             </Link>
           ) : null}
         </div>
-      ) : (
+      ) : null}
+
+      {!loading && !enrollment ? (
         <div className="space-y-3">
-          <Link
-            className="flex w-full items-center justify-center rounded-[1rem] bg-[#77b539] px-4 py-3 text-center text-[1rem] font-semibold text-white"
-            href={`/customers/${encodeURIComponent(customerId)}/start-21d`}
+          <CrmButton
+            disabled={busy}
+            onClick={() => void openActivation()}
+            type="button"
+            className="w-full"
           >
-            開通 21 天 AI 陪跑
-          </Link>
+            {busy ? "準備中…" : "開通 21 天 AI 陪跑"}
+          </CrmButton>
         </div>
-      )}
+      ) : null}
     </CrmCard>
   );
 }

@@ -115,6 +115,7 @@ describe("21D-START-01", () => {
     expect(start).not.toContain("program instance");
     expect(src("src/components/coaching/CoachingCustomerSection.tsx")).toContain("開通 21 天 AI 陪跑");
     expect(src("src/components/coaching/CoachingCustomerSection.tsx")).not.toContain("開始一般陪跑");
+    expect(src("src/components/coaching/CoachingCustomerSection.tsx")).toContain("/api/coaching/go21/status");
     expect(src("src/app/c/[token]/coaching/page.tsx")).toContain("redirect");
     expect(src("src/app/c/[token]/coaching/page.tsx")).toContain("/go21");
     expect(src("src/app/customers/[id]/start-21d/page.tsx")).toContain("initialCustomerName");
