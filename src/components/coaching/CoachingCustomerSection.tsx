@@ -2,22 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CrmButton, CrmCard, CrmField, CrmSectionTitle } from "@/components/members/ui";
-import { CoachingPlanConfirmForm } from "@/components/coaching/CoachingPlanConfirmForm";
 import {
   ensureCustomerPortalToken,
   fetchCustomerPortalToken,
 } from "@/lib/cloud/customer-cloud-service";
 import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetch";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
-import {
-  cloneDefaultCoachingPlanSnapshot,
-  DEFAULT_COACHING_PLAN_SNAPSHOT,
-} from "@/lib/coaching/default-instructions";
-import {
-  planDraftToSnapshot,
-  planSnapshotToDraft,
-  type CoachingPlanDraft,
-} from "@/lib/coaching/coaching-plan-draft";
 import {
   defaultPlannedEndDate,
   resolveEnrollmentPlannedEndDate,
@@ -31,11 +21,11 @@ import {
   type CoachingEnrollment,
 } from "@/types/coaching";
 
-function defaultEnrollmentDates() {
-  const startDate = coachingTodayLogDate();
-  return { startDate, plannedEndAt: defaultPlannedEndDate(startDate) };
-}
-
+/**
+ * Customer detail — Go21 is the default coaching product.
+ * Legacy generic coaching start CTA is hidden; APIs/data remain for rollback.
+ * Historical non-Go21 enrollments can still be managed and keep their form link.
+ */
 export function CoachingCustomerSection({
   customerId,
   customerDisplayName,
@@ -47,16 +37,10 @@ export function CoachingCustomerSection({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [goal, setGoal] = useState("");
   const [portalLink, setPortalLink] = useState<string | null>(null);
   const [go21Link, setGo21Link] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedGo21, setCopiedGo21] = useState(false);
-  const [showPlanConfirm, setShowPlanConfirm] = useState(false);
-  const [planDraft, setPlanDraft] = useState<CoachingPlanDraft>(() =>
-    planSnapshotToDraft(cloneDefaultCoachingPlanSnapshot()),
-  );
-  const [{ startDate, plannedEndAt }, setEnrollmentDates] = useState(defaultEnrollmentDates);
   const [editStartDate, setEditStartDate] = useState("");
   const [editPlannedEndAt, setEditPlannedEndAt] = useState("");
 
@@ -83,9 +67,6 @@ export function CoachingCustomerSection({
       }
       const next = payload.enrollment ?? null;
       setEnrollment(next);
-      if (next?.goal) {
-        setGoal(next.goal);
-      }
       if (next) {
         const start = resolveEnrollmentStartDate(next.startedAt) ?? coachingTodayLogDate();
         const end =
@@ -95,6 +76,10 @@ export function CoachingCustomerSection({
           }) ?? defaultPlannedEndDate(start);
         setEditStartDate(start);
         setEditPlannedEndAt(end);
+      }
+
+      if (next && isExperience21dEnrollment(next)) {
+        await ensureCustomerPortalToken(customerId).catch(() => undefined);
       }
 
       const token = await fetchCustomerPortalToken(customerId);
@@ -115,42 +100,6 @@ export function CoachingCustomerSection({
   useEffect(() => {
     void reload();
   }, [reload]);
-
-  const openPlanConfirm = () => {
-    setPlanDraft(planSnapshotToDraft(cloneDefaultCoachingPlanSnapshot()));
-    setEnrollmentDates(defaultEnrollmentDates());
-    setShowPlanConfirm(true);
-    setError(null);
-  };
-
-  const confirmStartCoaching = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const planSnapshot = planDraftToSnapshot(planDraft, DEFAULT_COACHING_PLAN_SNAPSHOT.reportingRules);
-      const response = await fetchCoachingWithMemberAuth("/api/coaching/enrollments", {
-        method: "POST",
-        body: JSON.stringify({
-          customerId,
-          goal: goal.trim() || null,
-          planSnapshot,
-          startDate,
-          plannedEndAt,
-        }),
-      });
-      const payload = (await response.json()) as { ok?: boolean; error?: string };
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error ?? "無法開始陪跑");
-      }
-      await ensureCustomerPortalToken(customerId);
-      setShowPlanConfirm(false);
-      await reload();
-    } catch (startError) {
-      setError(startError instanceof Error ? startError.message : "無法開始陪跑");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const saveEnrollmentDates = async () => {
     if (!enrollment) return;
@@ -221,9 +170,9 @@ export function CoachingCustomerSection({
 
   return (
     <CrmCard className="space-y-4">
-      <CrmSectionTitle>AI 陪跑</CrmSectionTitle>
+      <CrmSectionTitle>Baki Go 21</CrmSectionTitle>
       <p className="text-[0.9375rem] leading-relaxed text-[#636366]">
-        為 {customerDisplayName} 建立每日陪跑。客戶使用既有 Portal 連結，不需建立 member 帳號。
+        為 {customerDisplayName} 開通 21 天 AI 飲食陪跑。客人使用專屬連結進入，不需建立帳號。
       </p>
 
       {loading ? <p className="text-[0.9375rem] text-[#86868b]">載入中…</p> : null}
@@ -275,16 +224,20 @@ export function CoachingCustomerSection({
               </CrmButton>
             </div>
           ) : null}
-          {portalLink ? (
+          {/* Legacy daily-form link only for historical non-Go21 enrollments (rollback). */}
+          {!isGo21 && portalLink ? (
             <div className="space-y-2">
-              <p className="text-[0.8125rem] font-medium text-[#86868b]">
-                {isGo21 ? "一般陪跑連結（舊版表單）" : "陪跑專屬連結"}
-              </p>
+              <p className="text-[0.8125rem] font-medium text-[#86868b]">歷史陪跑連結</p>
               <p className="break-all text-[0.875rem] text-[#1d1d1f]">{portalLink}</p>
               <CrmButton disabled={busy} onClick={() => void copyLink()} type="button" variant="secondary">
                 {copied ? "已複製" : "複製連結給客戶"}
               </CrmButton>
             </div>
+          ) : null}
+          {!isGo21 ? (
+            <p className="text-[0.8125rem] leading-5 text-[#86868b]">
+              這是較早的陪跑紀錄。新開通請使用 Baki Go 21。
+            </p>
           ) : null}
           <div className="grid gap-2 sm:grid-cols-3">
             {enrollment.status === "active" ? (
@@ -303,45 +256,23 @@ export function CoachingCustomerSection({
               </CrmButton>
             ) : null}
           </div>
+          {isGo21 ? (
+            <Link
+              className="flex w-full items-center justify-center rounded-[1rem] border border-[#e5e5ea] px-4 py-3 text-center text-[0.9375rem] font-semibold text-[#1d1d1f]"
+              href={`/coaching/${encodeURIComponent(enrollment.id)}`}
+            >
+              查看陪跑中心
+            </Link>
+          ) : null}
         </div>
-      ) : showPlanConfirm ? (
-        <CoachingPlanConfirmForm
-          busy={busy}
-          customerDisplayName={customerDisplayName}
-          draft={planDraft}
-          goal={goal}
-          onCancel={() => setShowPlanConfirm(false)}
-          onChange={setPlanDraft}
-          onConfirm={() => void confirmStartCoaching()}
-          onPlannedEndAtChange={(value) =>
-            setEnrollmentDates((prev) => ({ ...prev, plannedEndAt: value }))
-          }
-          onStartDateChange={(value) =>
-            setEnrollmentDates((prev) => ({ ...prev, startDate: value }))
-          }
-          plannedEndAt={plannedEndAt}
-          startDate={startDate}
-        />
       ) : (
         <div className="space-y-3">
-          <label className="block space-y-2">
-            <span className="text-[0.875rem] font-medium text-[#636366]">陪跑目標（選填）</span>
-            <input
-              className="w-full rounded-[1rem] border border-[#e5e5ea] px-4 py-3 text-[1rem]"
-              onChange={(event) => setGoal(event.target.value)}
-              placeholder="例如：12 週減脂陪跑"
-              value={goal}
-            />
-          </label>
           <Link
             className="flex w-full items-center justify-center rounded-[1rem] bg-[#77b539] px-4 py-3 text-center text-[1rem] font-semibold text-white"
             href={`/customers/${encodeURIComponent(customerId)}/start-21d`}
           >
             開通 21 天 AI 陪跑
           </Link>
-          <CrmButton disabled={busy || loading} onClick={openPlanConfirm} type="button" variant="secondary">
-            開始一般陪跑
-          </CrmButton>
         </div>
       )}
     </CrmCard>

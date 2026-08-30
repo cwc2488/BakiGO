@@ -108,10 +108,16 @@ describe("21D-START-01", () => {
     expect(detail).toContain("成交後，請建立顧客並啟動 21 天體驗");
     const start = src("src/components/quiz/Experience21dStartPage.tsx");
     expect(start).toContain("21 天從顧客拿到產品的隔天開始。");
-    expect(start).toContain("查看陪跑");
+    expect(start).toContain("查看陪跑中心");
+    expect(start).toContain("effectiveCustomerId");
     expect(start).not.toContain("Enrollment");
     expect(start).not.toContain("lifecycle");
     expect(start).not.toContain("program instance");
+    expect(src("src/components/coaching/CoachingCustomerSection.tsx")).toContain("開通 21 天 AI 陪跑");
+    expect(src("src/components/coaching/CoachingCustomerSection.tsx")).not.toContain("開始一般陪跑");
+    expect(src("src/app/c/[token]/coaching/page.tsx")).toContain("redirect");
+    expect(src("src/app/c/[token]/coaching/page.tsx")).toContain("/go21");
+    expect(src("src/app/customers/[id]/start-21d/page.tsx")).toContain("initialCustomerName");
   });
 
   it("Preview walk is local-only and still uses the real Day 1 / Day 21 helper", () => {

@@ -17,7 +17,8 @@ Consultation Engine remains `experimental_hidden` and is not used by coaching.
 
 ## Customer access
 
-- Reuse existing **`customer_portal_tokens`** and `/c/{token}/coaching`.
+- **Default (Baki Go 21):** `/c/{token}/go21`
+- **Legacy daily form** (`/c/{token}/coaching`) remains for historical non-Go21 enrollments only. Experience-21d enrollments hitting the legacy path are redirected to Go21. Coaches can no longer start new generic 「一般陪跑」 from normal UI; enrollment APIs/data are preserved for rollback.
 - Customers are **not** members and do **not** log in.
 - Coaching data is **cloud-first only** (no localStorage persistence).
 - Customer may report **today / yesterday / day-before-yesterday** only (`Asia/Taipei` calendar days). Server validates the same 3-day allowlist.

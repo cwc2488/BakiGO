@@ -27,18 +27,26 @@ type StartMode =
 export function Experience21dStartPage({
   mode,
   initialCustomerId,
+  initialCustomerName,
 }: {
   mode: StartMode;
   initialCustomerId?: string | null;
+  /** Prefetched display name (avoids 顧客：— while / after load). */
+  initialCustomerName?: string | null;
 }) {
-  const [customerId, setCustomerId] = useState(initialCustomerId ?? "");
-  const [customerName, setCustomerName] = useState("");
+  const seededCustomerId =
+    mode.kind === "customer"
+      ? mode.customerId
+      : (initialCustomerId?.trim() || "");
+  const [customerId, setCustomerId] = useState(seededCustomerId);
+  const [customerName, setCustomerName] = useState(initialCustomerName?.trim() || "");
   const [createHref, setCreateHref] = useState<string | null>(null);
   const [needsCustomer, setNeedsCustomer] = useState(false);
   const [active, setActive] = useState<ActiveExperience | null>(null);
   const [otherCoaching, setOtherCoaching] = useState(false);
   const [productReceivedDate, setProductReceivedDate] = useState(coachingTodayLogDate());
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{
     enrollmentId: string;
@@ -48,58 +56,80 @@ export function Experience21dStartPage({
     go21Link: string | null;
   } | null>(null);
 
+  const effectiveCustomerId =
+    customerId.trim() ||
+    (mode.kind === "customer" ? mode.customerId : seededCustomerId);
+
   const load = useCallback(async () => {
     setError(null);
-    if (mode.kind === "interest") {
-      const response = await fetchWithMemberAuth(`/api/quiz/21d/${mode.interestId}/activation`);
+    setLoading(true);
+    try {
+      if (mode.kind === "interest") {
+        const response = await fetchWithMemberAuth(`/api/quiz/21d/${mode.interestId}/activation`);
+        const payload = (await response.json()) as {
+          error?: string;
+          interest?: { displayName: string; status: string };
+          matchedCustomer?: { id: string; displayName: string } | null;
+          createCustomerHref?: string;
+          activeExperience?: ActiveExperience | null;
+          activeOtherCoaching?: boolean;
+        };
+        if (!response.ok) throw new Error(payload.error ?? "找不到這筆名單");
+        if (payload.interest?.status && payload.interest.status !== "joined") {
+          throw new Error("請先確認成交");
+        }
+        setCustomerName(
+          payload.matchedCustomer?.displayName ||
+            payload.interest?.displayName ||
+            initialCustomerName?.trim() ||
+            "",
+        );
+        setCreateHref(payload.createCustomerHref ?? null);
+        setActive(payload.activeExperience ?? null);
+        setOtherCoaching(Boolean(payload.activeOtherCoaching));
+        if (payload.matchedCustomer?.id) {
+          setCustomerId(payload.matchedCustomer.id);
+          setNeedsCustomer(false);
+        } else if (initialCustomerId) {
+          setCustomerId(initialCustomerId);
+          setNeedsCustomer(false);
+        } else {
+          setNeedsCustomer(true);
+        }
+        return;
+      }
+
+      // Customer mode — id is already known from the route; never leave it empty.
+      setCustomerId(mode.customerId);
+      const response = await fetchWithMemberAuth(
+        `/api/coaching/experience-21d?customerId=${encodeURIComponent(mode.customerId)}`,
+      );
       const payload = (await response.json()) as {
         error?: string;
-        interest?: { displayName: string; status: string };
-        matchedCustomer?: { id: string; displayName: string } | null;
-        createCustomerHref?: string;
+        customer?: { id: string; displayName: string };
         activeExperience?: ActiveExperience | null;
         activeOtherCoaching?: boolean;
       };
-      if (!response.ok) throw new Error(payload.error ?? "找不到這筆名單");
-      if (payload.interest?.status && payload.interest.status !== "joined") {
-        throw new Error("請先確認成交");
-      }
-      setCustomerName(payload.matchedCustomer?.displayName || payload.interest?.displayName || "");
-      setCreateHref(payload.createCustomerHref ?? null);
+      if (!response.ok) throw new Error(payload.error ?? "找不到這位顧客");
+      setCustomerId(payload.customer?.id ?? mode.customerId);
+      setCustomerName(
+        payload.customer?.displayName?.trim() ||
+          initialCustomerName?.trim() ||
+          "",
+      );
       setActive(payload.activeExperience ?? null);
       setOtherCoaching(Boolean(payload.activeOtherCoaching));
-      if (payload.matchedCustomer?.id) {
-        setCustomerId(payload.matchedCustomer.id);
-        setNeedsCustomer(false);
-      } else if (initialCustomerId) {
-        setCustomerId(initialCustomerId);
-        setNeedsCustomer(false);
-      } else {
-        setNeedsCustomer(true);
-      }
-      return;
+      setNeedsCustomer(false);
+    } finally {
+      setLoading(false);
     }
-    const response = await fetchWithMemberAuth(
-      `/api/coaching/experience-21d?customerId=${encodeURIComponent(mode.customerId)}`,
-    );
-    const payload = (await response.json()) as {
-      error?: string;
-      customer?: { id: string; displayName: string };
-      activeExperience?: ActiveExperience | null;
-      activeOtherCoaching?: boolean;
-    };
-    if (!response.ok) throw new Error(payload.error ?? "找不到這位顧客");
-    setCustomerId(payload.customer?.id ?? mode.customerId);
-    setCustomerName(payload.customer?.displayName ?? "");
-    setActive(payload.activeExperience ?? null);
-    setOtherCoaching(Boolean(payload.activeOtherCoaching));
-    setNeedsCustomer(false);
-  }, [initialCustomerId, mode]);
+  }, [initialCustomerId, initialCustomerName, mode]);
 
   useEffect(() => {
-    void load().catch((loadError) =>
-      setError(loadError instanceof Error ? loadError.message : "無法載入"),
-    );
+    void load().catch((loadError) => {
+      setError(loadError instanceof Error ? loadError.message : "無法載入");
+      setLoading(false);
+    });
   }, [load]);
 
   const schedule = useMemo(() => {
@@ -112,7 +142,7 @@ export function Experience21dStartPage({
   }, [productReceivedDate]);
 
   async function activate() {
-    if (!customerId || !schedule) return;
+    if (!effectiveCustomerId || !schedule) return;
     setBusy(true);
     setError(null);
     try {
@@ -123,7 +153,7 @@ export function Experience21dStartPage({
       const response = await fetchWithMemberAuth(path, {
         method: "POST",
         body: JSON.stringify({
-          customerId,
+          customerId: effectiveCustomerId,
           productReceivedDate: schedule.productReceivedDate,
         }),
       });
@@ -132,10 +162,14 @@ export function Experience21dStartPage({
         alreadyActive?: boolean;
         enrollment?: { id: string };
         schedule?: { startDate: string; plannedEndAt: string };
+        customerDisplayName?: string;
       };
       if (!response.ok) throw new Error(payload.error ?? "無法啟動 21 天體驗");
-      await ensureCustomerPortalToken(customerId).catch(() => undefined);
-      const token = await fetchCustomerPortalToken(customerId).catch(() => null);
+      if (payload.customerDisplayName?.trim()) {
+        setCustomerName(payload.customerDisplayName.trim());
+      }
+      await ensureCustomerPortalToken(effectiveCustomerId).catch(() => undefined);
+      const token = await fetchCustomerPortalToken(effectiveCustomerId).catch(() => null);
       const go21Link =
         token && !token.revokedAt
           ? `${window.location.origin}/c/${token.token}/go21`
@@ -154,9 +188,25 @@ export function Experience21dStartPage({
     }
   }
 
-  const backHref = mode.kind === "interest" ? `/quiz/21d/${mode.interestId}` : `/customers/${mode.kind === "customer" ? mode.customerId : customerId}`;
+  const backHref =
+    mode.kind === "interest"
+      ? `/quiz/21d/${mode.interestId}`
+      : `/customers/${mode.customerId}`;
 
-  if (error && !customerName && !needsCustomer && !active) {
+  if (loading && !done) {
+    return (
+      <PageShell title="啟動 21 天體驗" backHref={backHref}>
+        <p className="text-[0.9375rem] text-[#86868b]">載入中…</p>
+        {customerName || effectiveCustomerId ? (
+          <p className="mt-2 text-[0.875rem] text-[#636366]">
+            顧客：{customerName || "載入姓名中…"}
+          </p>
+        ) : null}
+      </PageShell>
+    );
+  }
+
+  if (error && !customerName && !needsCustomer && !active && !effectiveCustomerId) {
     return (
       <PageShell title="啟動 21 天體驗" backHref={backHref}>
         <p className="text-[0.9375rem] text-[#cf1322]">{error}</p>
@@ -171,6 +221,9 @@ export function Experience21dStartPage({
           <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">
             {done.alreadyActive ? "這位顧客目前已在 21 天體驗中" : "21 天體驗已啟動"}
           </p>
+          {customerName ? (
+            <p className="mt-1 text-[0.9375rem] text-[#636366]">顧客：{customerName}</p>
+          ) : null}
           <p className="mt-3 text-[0.9375rem] leading-7 text-[#636366]">
             Day 1：{formatExperience21dShortDate(done.startDate)}
             <br />
@@ -188,19 +241,23 @@ export function Experience21dStartPage({
                 複製連結
               </button>
             </div>
-          ) : null}
+          ) : (
+            <p className="mt-4 text-[0.875rem] leading-6 text-[#cf1322]">
+              體驗已啟動，但專屬連結尚未就緒。請回到客人頁再複製 Baki Go 21 連結。
+            </p>
+          )}
         </section>
         {done.enrollmentId ? (
           <Link
             href={`/coaching/${done.enrollmentId}`}
             className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-[#1d1d1f] text-[0.9375rem] font-semibold text-white"
           >
-            查看陪跑
+            查看陪跑中心
           </Link>
         ) : null}
-        {customerId ? (
+        {effectiveCustomerId ? (
           <Link
-            href={`/customers/${customerId}`}
+            href={`/customers/${effectiveCustomerId}`}
             className="mt-2 flex min-h-12 items-center justify-center rounded-2xl border border-[#e5e5ea] text-[0.9375rem] font-semibold text-[#1d1d1f]"
           >
             回到客人頁
@@ -215,7 +272,8 @@ export function Experience21dStartPage({
       <AlreadyActiveGo21Panel
         active={active}
         backHref={backHref}
-        customerId={customerId || (mode.kind === "customer" ? mode.customerId : "")}
+        customerId={effectiveCustomerId}
+        customerName={customerName}
       />
     );
   }
@@ -223,10 +281,17 @@ export function Experience21dStartPage({
   if (otherCoaching) {
     return (
       <PageShell title="啟動 21 天體驗" backHref={backHref}>
-        <p className="text-[0.9375rem] leading-7 text-[#636366]">這位顧客目前已在陪跑中。</p>
-        <Link href={`/customers/${customerId}`} className="mt-4 block text-center text-[0.875rem] text-[#8a5a66]">
-          查看陪跑
-        </Link>
+        <p className="text-[0.9375rem] leading-7 text-[#636366]">
+          這位顧客目前已有進行中的陪跑紀錄。請先在陪跑中心結束或完成後，再開通 Baki Go 21。
+        </p>
+        {effectiveCustomerId ? (
+          <Link
+            href={`/customers/${effectiveCustomerId}`}
+            className="mt-4 block text-center text-[0.875rem] text-[#8a5a66]"
+          >
+            回到客人頁
+          </Link>
+        ) : null}
       </PageShell>
     );
   }
@@ -237,7 +302,7 @@ export function Experience21dStartPage({
         <section className="rounded-[1.5rem] border border-[#eadfd6] bg-[#fffdf9] p-5">
           <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">成交後，請建立顧客並啟動 21 天體驗</p>
           <p className="mt-2 text-[0.9375rem] leading-7 text-[#636366]">
-            成交只代表這筆名單已確認。要開始陪跑，請先建立顧客。
+            成交只代表這筆名單已確認。要開始 Baki Go 21，請先建立顧客。
           </p>
         </section>
         {createHref ? (
@@ -252,11 +317,15 @@ export function Experience21dStartPage({
     );
   }
 
+  const canActivate = Boolean(effectiveCustomerId && schedule && !busy);
+
   return (
     <PageShell title="啟動 21 天體驗" backHref={backHref}>
       <section className="rounded-[1.5rem] border border-[#eadfd6] bg-[#fffdf9] p-5">
-        <p className="text-[0.75rem] font-semibold tracking-wide text-[#c08a98]">21 天體驗</p>
-        <h2 className="mt-1 text-[1.25rem] font-semibold text-[#1d1d1f]">顧客：{customerName || "—"}</h2>
+        <p className="text-[0.75rem] font-semibold tracking-wide text-[#c08a98]">Baki Go 21</p>
+        <h2 className="mt-1 text-[1.25rem] font-semibold text-[#1d1d1f]">
+          顧客：{customerName || "—"}
+        </h2>
         <p className="mt-3 text-[0.9375rem] leading-7 text-[#636366]">21 天從顧客拿到產品的隔天開始。</p>
 
         <label className="mt-5 block space-y-2">
@@ -298,10 +367,13 @@ export function Experience21dStartPage({
       </section>
 
       {error ? <p className="mt-3 text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
+      {!effectiveCustomerId ? (
+        <p className="mt-3 text-[0.9375rem] text-[#cf1322]">找不到顧客，請從客人頁重新進入。</p>
+      ) : null}
 
       <button
         type="button"
-        disabled={busy || !schedule || !customerId}
+        disabled={!canActivate}
         onClick={() => void activate()}
         className="mt-4 min-h-12 w-full rounded-2xl bg-[#1d1d1f] text-[0.9375rem] font-semibold text-white disabled:opacity-50"
       >
@@ -315,10 +387,12 @@ function AlreadyActiveGo21Panel({
   active,
   backHref,
   customerId,
+  customerName,
 }: {
   active: ActiveExperience;
   backHref: string;
   customerId: string;
+  customerName: string;
 }) {
   const [go21Link, setGo21Link] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -343,6 +417,9 @@ function AlreadyActiveGo21Panel({
     <PageShell title="啟動 21 天體驗" backHref={backHref}>
       <section className="rounded-[1.5rem] border border-[#eadfd6] bg-[#fffdf9] p-5">
         <p className="text-[1.125rem] font-semibold text-[#1d1d1f]">這位顧客目前已在 21 天體驗中</p>
+        {customerName ? (
+          <p className="mt-1 text-[0.9375rem] text-[#636366]">顧客：{customerName}</p>
+        ) : null}
         {active.startDate && active.plannedEndAt ? (
           <p className="mt-3 text-[0.9375rem] leading-7 text-[#636366]">
             Day 1：{formatExperience21dShortDate(active.startDate)}
@@ -372,7 +449,7 @@ function AlreadyActiveGo21Panel({
         href={`/coaching/${active.enrollmentId}`}
         className="mt-4 flex min-h-12 items-center justify-center rounded-2xl bg-[#1d1d1f] text-[0.9375rem] font-semibold text-white"
       >
-        查看陪跑
+        查看陪跑中心
       </Link>
     </PageShell>
   );
