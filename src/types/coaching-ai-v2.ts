@@ -3,7 +3,7 @@ import type { EntityId, ISODateString } from "@/types";
 /** Intensive AI coaching cycle length (product/cost boundary). */
 export const COACHING_AI_V2_CYCLE_DAYS = 21 as const;
 
-export const COACHING_AI_V2_PROMPT_VERSION = "coaching_ai_v3_premium_brain_1" as const;
+export const COACHING_AI_V2_PROMPT_VERSION = "coaching_ai_v3_natural_conversation_1" as const;
 
 export const COACHING_AI_V2_POINT_KEY = "daily_coach_v2" as const;
 export const COACHING_AI_V2_MEMORY_POINT_KEY = "coach_v2_memory_maintenance" as const;

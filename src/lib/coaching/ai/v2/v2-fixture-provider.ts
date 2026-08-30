@@ -15,11 +15,17 @@ import {
 } from "@/lib/go21/coach-intent";
 import { buildGo21TemporalTimeline } from "@/lib/go21/temporal-meal-state";
 import { synthesizeDay21Understanding } from "@/lib/go21/premium-understanding";
+import {
+  composeGo21NaturalConversationalReply,
+  conversationalMovePrefersNaturalAck,
+  detectGo21ConversationalMove,
+} from "@/lib/go21/conversational-move";
 
 /**
  * Context-aware fixture generator for tests/eval without OpenAI.
  * Intentionally varies response shape — not a canned template array shuffle.
  * Reads longitudinalUnderstanding when present (Premium Coaching Brain).
+ * Natural Conversation Layer: understand conversational moves before coaching.
  */
 export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): CoachingAiV2GenerationDraft {
   const { decisionContext, memory, freeMessage, channel } = input;
@@ -47,6 +53,28 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
   if (freeMessage && /機器人|很AI|很制式|像客服|營養課本/.test(freeMessage)) {
     return {
       coachMessage: "被你抓到了 😂 我剛剛講得太像腳本，這句當沒看到，我們照平常聊天。",
+      meta: emptyMeta("casual", day, stage),
+    };
+  }
+
+  // Natural Conversation Layer — understand the move BEFORE coaching
+  const conversational = detectGo21ConversationalMove({
+    freeMessage,
+    recentTurns: memory.recentTurns.map((t) => ({ role: t.role, content: t.content })),
+  });
+  if (conversational && conversationalMovePrefersNaturalAck(conversational.move)) {
+    return {
+      coachMessage: composeGo21NaturalConversationalReply(conversational),
+      meta: emptyMeta(
+        conversational.move === "rejection" ? "acknowledge" : "acknowledge",
+        day,
+        stage,
+      ),
+    };
+  }
+  if (conversational?.move === "continuation") {
+    return {
+      coachMessage: composeGo21NaturalConversationalReply(conversational),
       meta: emptyMeta("casual", day, stage),
     };
   }

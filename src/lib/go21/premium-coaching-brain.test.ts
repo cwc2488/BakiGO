@@ -295,7 +295,7 @@ describe("Go21 Premium Coaching Brain — generation behavior", () => {
     expect(coachingBrainLooksUnscripted(prompt)).toBe(true);
     expect(prompt).toMatch(/長期理解|shareableInsights|越來越懂/);
     expect(prompt).not.toMatch(/acknowledge\s*→\s*advice\s*→\s*question/i);
-    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/premium_brain/);
+    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/premium_brain|natural_conversation/);
   });
 
   it("user prompt injects longitudinalUnderstanding block", () => {
