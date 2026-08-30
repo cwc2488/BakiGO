@@ -164,6 +164,16 @@ export function buildCoachingAiV2UserPrompt(input: {
   } | null;
   /** When true, photo was non-food — social only. */
   visionNonFood?: boolean | null;
+  /** Authoritative current-turn evidence (outranks history for what is shown NOW). */
+  currentTurnEvidence?: {
+    kind: string;
+    hasPhoto: boolean;
+    foodRelevant: boolean | null;
+    imageDescription: string | null;
+    visionSummary: string | null;
+    confidence: string | null;
+    guidance: string;
+  } | null;
 }): string {
   const { generationInput, decisionContext, memory, channel } = input;
   const reportDayRelation = relativeCoachingDayKey(generationInput.logDate) ?? "historical";
@@ -237,24 +247,31 @@ export function buildCoachingAiV2UserPrompt(input: {
   });
 
   // Free-message turns: keep decisionContext as compact internal cues — not a nutrition report to narrate.
+  // Non-food current photo: strip mealFoodsToday so history cannot masquerade as image contents.
+  const stripMealFoodsForNonFood =
+    input.visionNonFood === true || input.currentTurnEvidence?.kind === "image_non_food";
   const compactDecision =
     channel === "free_message"
       ? {
           finalInterventionLevel: decisionContext.finalInterventionLevel,
-          mealFoodsToday: decisionContext.mealObservations.map((o) => ({
-            slot: o.mealSlot,
-            foods: o.observedFoods.slice(0, 6),
-            heavySignals: o.signals
-              .filter((s) =>
-                ["fried_food", "sugary_drink", "starch_concentrated", "late_night"].includes(s),
-              )
-              .slice(0, 3),
-          })),
+          mealFoodsToday: stripMealFoodsForNonFood
+            ? []
+            : decisionContext.mealObservations.map((o) => ({
+                slot: o.mealSlot,
+                foods: o.observedFoods.slice(0, 6),
+                heavySignals: o.signals
+                  .filter((s) =>
+                    ["fried_food", "sugary_drink", "starch_concentrated", "late_night"].includes(s),
+                  )
+                  .slice(0, 3),
+              })),
           customerVoice: decisionContext.customerVoice.map((v) => ({
             key: v.key,
             excerpt: truncate(v.rawExcerpt, 80),
           })),
-          note: "內部線索，不是要你念出營養報告。日常對話請跟 humanCoachReply 走。",
+          note: stripMealFoodsForNonFood
+            ? "本回合影像非餐點：mealFoodsToday 已清空。歷史餐點不可當成這張照片。"
+            : "內部線索，不是要你念出營養報告。日常對話請跟 humanCoachReply 走。",
         }
       : {
           finalInterventionLevel: decisionContext.finalInterventionLevel,
@@ -340,6 +357,7 @@ export function buildCoachingAiV2UserPrompt(input: {
         }
       : null,
     recentVisionObservations: (input.recentVisionObservations ?? []).slice(0, 3),
+    currentTurnEvidence: input.currentTurnEvidence ?? null,
     today: compactToday,
     temporalTimeline: temporalTimeline.promptBlock,
     dailyTargetsState: input.dailyTargetsState
@@ -349,7 +367,8 @@ export function buildCoachingAiV2UserPrompt(input: {
           softCues:
             conversationalMove?.move === "humor_social" ||
             conversationalMove?.move === "meta_ai_tease" ||
-            input.visionNonFood
+            input.visionNonFood ||
+            input.currentTurnEvidence?.kind === "image_non_food"
               ? []
               : input.dailyTargetsState.softCues,
         }
@@ -402,21 +421,24 @@ export function buildCoachingAiV2UserPrompt(input: {
       contradicting: h.contradictingEvidence.slice(0, 3),
     })),
     instructions: [
+      "證據優先序（硬規則）：currentTurnEvidence > 當下對話意圖 > today 已確認狀態 > coachDailyPlan/dailyTargets/goal > recentTurns > longitudinal。歷史只能幫助解讀，不可取代本回合影像／文字語義。",
+      "若 currentTurnEvidence.kind=image_non_food：本張圖不是食物。用 imageDescription 自然回應即可。禁止把 today.meals／temporalTimeline.todayEaten／openPlans／recentVisionObservations 講成「這張照片裡的東西」。禁止估熱量、禁止寫成午餐、禁止計畫完成。",
+      "若 currentTurnEvidence.kind=image_food：以本回合影像觀察為準描述「現在這張」；歷史餐點是較早發生的事。",
       "最高優先：看 conversationalMove 與 humanCoachReply。回覆形狀跟 lengthHint 走；doNotForce 裡的項目這一輪不要預設塞進 coach_message。",
       "若是更正／決定／確認／拒絕／時間更正／答問／接話／玩笑／調侃——先接住對話，短回，不要重播上一輪教練分析，不要加熱量／蛋白質／均衡／加油。",
-      "visionNonFood=true：這張不是餐點。社交回應即可（可吐槽／可笑），禁止估熱量、禁止寫成午餐、禁止計畫完成。",
+      "visionNonFood=true 或 currentTurnEvidence.foodRelevant=false：社交回應即可，禁止營養管線。",
       "coachDailyPlan：教練安排是權威上下文。不要每則背誦。顧客偏離時先理解原因，不要當稽核。AI 不可默默改寫計畫。",
       "先看 longitudinalUnderstanding.utteranceMode 與 guidance：當下意圖優先於任何固定句型。",
       "先判斷這一輪意圖：記憶回想／菜單請求／報餐判斷／目標衝突／堅持想吃／問意見／玩笑／其他。意圖不同，回應就不同。",
       "emergingObservations：只記得，不要對顧客宣稱已抓到模式。shareableInsights：證據夠且這一輪有用才可點出。",
-      "時間線以 temporalTimeline 為準：todayEaten=今天已吃；openPlansForToday=今天仍有效的未來計畫；doNotTreatAsCurrent 禁止講成今晚／今天。",
+      "時間線以 temporalTimeline 為準：todayEaten=今天稍早已吃；openPlansForToday=今天仍有效的未來計畫；doNotTreatAsCurrent 禁止講成今晚／今天。這些都不是「本回合影像內容」。",
       "若顧客問「我跟你說／告訴你我吃了什麼」：只據實回答食物 todayEaten＋明確 eaten 紀錄；不要把 planned／舊提及講成已吃。禁止捏造。",
       "若顧客要菜單／吃什麼好：給可執行選項，並參考 todayEaten＋go21Goal＋coachDailyPlan＋knownPreferences；不要空話或萬用雞胸沙拉口號。",
       "報餐／照片：用今天脈絡＋目標＋教練安排做判斷。對齊短確認；偏離時給一句有觀點的話（可不推／可折衷／必要時一句下一步）。不要空口稱讚偏離目標的食物。護住目標但不每則喊口號，也不要預設「風險＋替代＋鼓勵」。",
-      "dailyTargetsState：內部判斷用水／熱量／蛋白質／睡眠。不要每則報「還差 XX kcal／g／ml」。數字只在這一刻有用才說。禁止「如果晚餐想改成沙拉記得搭配蛋白質這樣會更均衡」這類健康 App 句。睡眠短又嘴饞時，可用睡眠解釋食慾。影像估計不確定，禁止假裝精準。",
+      "dailyTargetsState：內部判斷用水／熱量／蛋白質／睡眠。不要每則報「還差 XX kcal／g／ml」。數字只在這一刻有用才說。禁止「如果晚餐想改成沙拉記得搭配蛋白質這樣會更均衡」這類健康 App 句。睡眠短又嘴饞時，可用睡眠解釋食慾。影像估計不確定，禁止假裝精準。社交／玩笑回合請忽略 softCues。",
       "單純報餐：常常短回即可。禁止每則建議／稱讚／問句／營養課／Goal 口號。收尾不要預設問句；不要叫顧客自己評價這餐。",
       "go21Goal.currentPersonalGoal 是錨點，不是每則口號。目標意識來自 continuity，不是重複講義。",
-      "decisionContext 是內部線索；free_message 時不要把它念成營養報告。",
+      "decisionContext 是內部線索；free_message 時不要把它念成營養報告。非餐點回合不要用 mealFoodsToday 當影像解讀。",
       "近期顧客更正優先於舊影像觀察。",
       "day21_ending：用 strategiesWorked／Failed 與 activeInsights 收束；禁止空洞畢業詞。才需要填 meta.day21Reflection。",
       "meta 記憶欄位可空；不要為了填欄位而說話。",

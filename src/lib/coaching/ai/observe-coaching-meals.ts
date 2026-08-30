@@ -361,6 +361,11 @@ export async function observeCoachingMeals(input: {
   ownerMemberId?: string | null;
   persistTelemetry?: boolean;
   apiKey?: string | null;
+  /**
+   * Go21 realtime: never merge today's text meal heuristics into image observations.
+   * Stale lunch notes (飯糰) must not contaminate a cat photo labeled on the lunch API slot.
+   */
+  preferVisionOnly?: boolean;
 }): Promise<{
   observations: CoachingMealObservation[];
   source: "vision" | "heuristic" | "merged";
@@ -420,6 +425,16 @@ export async function observeCoachingMeals(input: {
         latencyMs: entry.latencyMs,
         status: entry.status,
       });
+    }
+
+    // Vision-only: current image semantics must not inherit today's text meals
+    if (input.preferVisionOnly) {
+      return {
+        observations: vision.observations.map(normalizeMealObservation),
+        source: "vision",
+        usage: vision.usage,
+        latencyMs: vision.latencyMs,
+      };
     }
 
     const bySlot = new Map<string, CoachingMealObservation>();

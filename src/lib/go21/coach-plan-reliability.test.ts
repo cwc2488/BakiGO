@@ -297,7 +297,7 @@ describe("GO21 Coach Daily Plan + conversation reliability", () => {
   });
 
   it("prompt injects coachDailyPlan quietly and blocks health-app salad pack", () => {
-    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/coach_plan/);
+    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/coach_plan|current_turn_evidence/);
     const sys = buildCoachingAiV2SystemPrompt();
     expect(sys).toMatch(/coachDailyPlan|教練每日安排/);
     expect(sys).toMatch(/健康 App|沙拉/);

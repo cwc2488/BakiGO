@@ -40,6 +40,12 @@ export type Go21ChatDiagnostic = {
   errorMessage: string | null;
   errorCategory: Go21AssistantErrorCategory | null;
   providerStatus: number | null;
+  /** Safe pipeline flags — never include photo bytes or free text. */
+  visionRan?: boolean | null;
+  foodRelevant?: boolean | null;
+  currentTurnKind?: string | null;
+  generationOutcome?: "ok" | "failed" | "skipped" | "deterministic" | null;
+  usableCoachMessage?: boolean | null;
 };
 
 const SENSITIVE =
@@ -97,6 +103,11 @@ export function logGo21ChatDiagnostic(
     errorMessage: partial.errorMessage,
     errorCategory: partial.errorCategory,
     providerStatus: partial.providerStatus,
+    visionRan: partial.visionRan ?? null,
+    foodRelevant: partial.foodRelevant ?? null,
+    currentTurnKind: partial.currentTurnKind ?? null,
+    generationOutcome: partial.generationOutcome ?? null,
+    usableCoachMessage: partial.usableCoachMessage ?? null,
   };
   console.error(JSON.stringify(payload));
 }

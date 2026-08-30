@@ -44,6 +44,10 @@ import {
   saveGo21PlanDayRecord,
 } from "@/lib/go21/plan-execution";
 import {
+  buildGo21CurrentTurnEvidence,
+  go21CurrentTurnBlocksNutritionMutation,
+} from "@/lib/go21/current-turn-evidence";
+import {
   compactGo21UnderstandingForAi,
   loadGo21UnderstandingRecord,
   saveGo21UnderstandingRecord,
@@ -243,9 +247,21 @@ export async function POST(
 
     stage = "structured_apply";
     if (relevance !== "out_of_scope") {
+      // Photo turns: do not persist meal-slot mutations until Vision food gate passes.
+      // Text/water/sleep/body still apply when present.
+      const extractedForApply =
+        body.hasPhoto && !message.match(/吃了|喝了|午餐|晚餐|早餐|便當|飯|麵/)
+          ? {
+              ...extracted,
+              mealSlot: null as typeof extracted.mealSlot,
+              mealNote: null as typeof extracted.mealNote,
+              utteranceKind:
+                extracted.utteranceKind === "eaten" ? ("other" as const) : extracted.utteranceKind,
+            }
+          : extracted;
       const applied = await applyGo21StructuredEvent({
         portal,
-        extracted,
+        extracted: extractedForApply,
         rawMessage: message,
       });
       if (applied.errors.length > 0) {
@@ -357,15 +373,51 @@ export async function POST(
       enrollmentId: portal.enrollmentId,
       limit: 4,
     });
-    const recentVisionObservations = [
-      ...(vision.evidenceSummary
+    // Current non-food observation stays conversational; do NOT feed it into
+    // priorVision / todayEaten as meal evidence. Prior visions are history only.
+    const currentVisionForHistory =
+      vision.ran && vision.foodRelevant && vision.evidenceSummary
         ? [{ summary: vision.evidenceSummary, correction: foodCorrection }]
-        : []),
-      ...priorVision.map((v) => ({
-        summary: v.correction?.trim() ? `${v.summary}（顧客更正：${v.correction}）` : v.summary,
-        correction: v.correction,
-      })),
+        : [];
+    const recentVisionObservations = [
+      ...currentVisionForHistory,
+      ...priorVision
+        .filter((v) => !/非餐點/.test(v.summary))
+        .map((v) => ({
+          summary: v.correction?.trim() ? `${v.summary}（顧客更正：${v.correction}）` : v.summary,
+          correction: v.correction,
+        })),
     ].slice(0, 3);
+
+    const currentTurnEvidence = buildGo21CurrentTurnEvidence({
+      hasPhoto: Boolean(body.hasPhoto),
+      customerMessage: message,
+      foodRelevant: body.hasPhoto ? (vision.ran ? vision.foodRelevant : null) : null,
+      imageDescription: vision.foodRelevance?.visibleHint ?? null,
+      visionSummary: vision.evidenceSummary,
+      confidence: vision.foodRelevance
+        ? vision.foodRelevant
+          ? "medium"
+          : "high"
+        : null,
+    });
+
+    logGo21ChatDiagnostic({
+      stage: "vision",
+      correlationId,
+      enrollmentId: enrollmentIdForLog,
+      clientRequestIdPresent,
+      customerPersisted: false,
+      generationStarted: false,
+      assistantPersisted: false,
+      errorName: null,
+      errorMessage: null,
+      errorCategory: null,
+      providerStatus: null,
+      visionRan: vision.ran,
+      foodRelevant: vision.foodRelevant,
+      currentTurnKind: currentTurnEvidence.kind,
+    });
 
     stage = "goal_context";
     let goalConfirmHint: string | null = null;
@@ -461,8 +513,14 @@ export async function POST(
         planItems,
         prior: priorDay,
         logDate: generationInput.logDate,
-        visionIsFood: vision.ran ? vision.foodRelevant : null,
-        visionFoodLabel: vision.foodRelevance?.visibleHint ?? null,
+        visionIsFood:
+          vision.ran && !go21CurrentTurnBlocksNutritionMutation(currentTurnEvidence)
+            ? vision.foodRelevant
+            : false,
+        visionFoodLabel:
+          vision.ran && vision.foodRelevant
+            ? vision.foodRelevance?.visibleHint ?? null
+            : null,
       });
       if (inferred) {
         await saveGo21PlanDayRecord({
@@ -537,6 +595,7 @@ export async function POST(
       generationInput,
       freeMessage: enrichedFreeMessage,
       mealObservations: vision.foodRelevant ? vision.observations : [],
+      currentTurnNonFoodPhoto: go21CurrentTurnBlocksNutritionMutation(currentTurnEvidence),
     });
 
     if (extracted.hungerMentioned && decisionContext.customerVoice.length === 0) {
@@ -660,6 +719,7 @@ export async function POST(
         dailyTargetsState,
         coachDailyPlan,
         visionNonFood: vision.ran && vision.foodRelevant === false,
+        currentTurnEvidence,
         customerAlreadyAccepted: true,
         existingCustomerTurnId: acceptedCustomerTurnId,
       });

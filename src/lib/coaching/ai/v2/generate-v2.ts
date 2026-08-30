@@ -23,6 +23,11 @@ import {
 import { assessCoachingAiV2Safety } from "@/lib/coaching/ai/v2/v2-safety";
 import { generateFixtureV2Draft } from "@/lib/coaching/ai/v2/v2-fixture-provider";
 import { canUseFixtureCoachingAiProvider } from "@/lib/coaching/ai/coaching-ai-provider";
+import {
+  composeGo21NaturalConversationalReply,
+  conversationalMovePrefersNaturalAck,
+  detectGo21ConversationalMove,
+} from "@/lib/go21/conversational-move";
 
 export type GenerateCoachingAiV2Input = {
   generationInput: CoachingGenerationInput;
@@ -88,6 +93,15 @@ export type GenerateCoachingAiV2Input = {
     guidance: string;
   } | null;
   visionNonFood?: boolean | null;
+  currentTurnEvidence?: {
+    kind: string;
+    hasPhoto: boolean;
+    foodRelevant: boolean | null;
+    imageDescription: string | null;
+    visionSummary: string | null;
+    confidence: string | null;
+    guidance: string;
+  } | null;
 };
 
 export type GenerateCoachingAiV2Result = {
@@ -142,6 +156,94 @@ export async function generateCoachingAiV2(
       usedFixture: true,
       observability: baseObservability({
         model: "safety_boundary",
+        memory: input.memory,
+        draft,
+      }),
+    };
+  }
+
+  // Deterministic short-circuit for high-confidence social moves BEFORE OpenAI.
+  // Production regression: meta_ai_tease / humor_social depended on provider and
+  // failed with HTTP 200 + assistantStatus failed. Fixture already short-circuited;
+  // live path must match for reliability.
+  const conversationalMove = detectGo21ConversationalMove({
+    freeMessage: input.freeMessage,
+    recentTurns: input.memory.recentTurns.map((t) => ({ role: t.role, content: t.content })),
+  });
+  if (
+    conversationalMove &&
+    conversationalMovePrefersNaturalAck(conversationalMove.move) &&
+    (conversationalMove.move === "meta_ai_tease" ||
+      conversationalMove.move === "humor_social" ||
+      conversationalMove.move === "acknowledgement" ||
+      conversationalMove.move === "confirmation" ||
+      conversationalMove.move === "rejection")
+  ) {
+    const todayHeavyFoods = listHeavyFromDecision(input.decisionContext);
+    const draft: CoachingAiV2GenerationDraft = {
+      coachMessage: composeGo21NaturalConversationalReply(conversationalMove, {
+        todayHeavyFoods,
+        alreadyHeavyToday: todayHeavyFoods.length > 0,
+      }),
+      meta: {
+        intention: "casual",
+        lifecycleDay: input.memory.lifecycle.dayNumber,
+        lifecycleStage: input.memory.lifecycle.stage,
+        memoryWrites: [],
+        openLoopOps: [],
+        hypothesisOps: [],
+        safetyTriggered: false,
+        escalationSuggested: false,
+        escalationReason: null,
+        day21Reflection: null,
+      },
+    };
+    return {
+      draft,
+      model: "deterministic_conversational",
+      promptVersion: COACHING_AI_V2_PROMPT_VERSION,
+      usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, imageCount: 0 },
+      latencyMs: 0,
+      usedFixture: true,
+      observability: baseObservability({
+        model: "deterministic_conversational",
+        memory: input.memory,
+        draft,
+      }),
+    };
+  }
+
+  // Non-food image with empty/minimal text — reliable social ack without OpenAI
+  if (
+    input.visionNonFood &&
+    input.currentTurnEvidence?.kind === "image_non_food" &&
+    !(input.freeMessage ?? "").replace(/（傳了一張照片）|\[影像觀察[\s\S]*/g, "").trim()
+  ) {
+    const hint = input.currentTurnEvidence.imageDescription;
+    const draft: CoachingAiV2GenerationDraft = {
+      coachMessage: hint && /貓/.test(hint) ? "這個不能吃啦 😂" : "這張看起來不是餐點欸 😂",
+      meta: {
+        intention: "casual",
+        lifecycleDay: input.memory.lifecycle.dayNumber,
+        lifecycleStage: input.memory.lifecycle.stage,
+        memoryWrites: [],
+        openLoopOps: [],
+        hypothesisOps: [],
+        safetyTriggered: false,
+        escalationSuggested: false,
+        escalationReason: null,
+        day21Reflection: null,
+      },
+    };
+    return {
+      draft,
+      model: "deterministic_non_food",
+      promptVersion: COACHING_AI_V2_PROMPT_VERSION,
+      usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, imageCount: 0 },
+      latencyMs: 0,
+      usedFixture: true,
+      observability: baseObservability({
+        model: "deterministic_non_food",
         memory: input.memory,
         draft,
       }),
@@ -212,6 +314,7 @@ export async function generateCoachingAiV2(
               dailyTargetsState: input.dailyTargetsState,
               coachDailyPlan: input.coachDailyPlan,
               visionNonFood: input.visionNonFood,
+              currentTurnEvidence: input.currentTurnEvidence,
             }),
           },
         ],
@@ -398,4 +501,18 @@ function extractLooseCoachMessage(parsed: unknown): string | null {
     if (typeof v === "string" && v.trim()) return v.trim().slice(0, 4000);
   }
   return null;
+}
+
+function listHeavyFromDecision(decision: CoachingDecisionContext): string[] {
+  const out: string[] = [];
+  for (const obs of decision.mealObservations ?? []) {
+    if (
+      obs.signals.some((s) =>
+        ["fried_food", "sugary_drink", "starch_concentrated"].includes(s),
+      )
+    ) {
+      out.push(...obs.observedFoods.slice(0, 2));
+    }
+  }
+  return out.slice(0, 4);
 }

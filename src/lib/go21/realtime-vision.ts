@@ -386,7 +386,13 @@ export async function runGo21RealtimeVision(input: {
     };
   }
 
-  // Ensure generation input references this photo for vision meal notes
+  // Ensure generation input references this photo for vision meal notes.
+  // CRITICAL: do NOT pass today's historical text notes (飯糰 etc.) into Vision —
+  // they bias the model to reinterpret the current image as prior meals.
+  const photoOnlyNote = input.mealSlotUnresolved
+    ? "（照片待確認餐別｜僅觀察影像本身，忽略歷史餐點）"
+    : "（本回合上傳的影像｜僅觀察影像本身）";
+
   const generationInput: CoachingGenerationInput = {
     ...input.generationInput,
     todayContext: {
@@ -396,16 +402,21 @@ export async function runGo21RealtimeVision(input: {
           ? {
               ...m,
               storagePath: resolved.storagePath,
-              textNote:
-                m.textNote ||
-                (input.mealSlotUnresolved ? "（照片待確認餐別）" : null),
+              textNote: photoOnlyNote,
             }
-          : m,
+          : {
+              ...m,
+              // Blind other slots so Vision cannot treat history as current image
+              textNote: null,
+              storagePath: null,
+            },
       ),
+      secondaryMealNotes: [],
+      customerNote: null,
     },
   };
 
-  // If slot was snacks-only, inject a synthetic primary meal row for vision notes
+  // If slot was snacks-only, ensure the primary slot row exists for vision notes
   if (
     !generationInput.todayContext.primaryMeals.some(
       (m) => m.mealSlot === slotForApi && m.storagePath === resolved.storagePath,
@@ -417,9 +428,7 @@ export async function runGo21RealtimeVision(input: {
           ? {
               ...m,
               storagePath: resolved.storagePath,
-              textNote: input.mealSlotUnresolved
-                ? "（照片待確認餐別）"
-                : m.textNote,
+              textNote: photoOnlyNote,
             }
           : m,
     );
@@ -447,9 +456,10 @@ export async function runGo21RealtimeVision(input: {
     preparedMealImages: [prepared],
     ownerMemberId: input.portal.ownerMemberId,
     persistTelemetry: true,
+    preferVisionOnly: true,
   });
 
-  // Real-time path requires actual vision/merged — never treat text heuristics as image evidence.
+  // Real-time path requires actual vision — never treat text heuristics as image evidence.
   if (observed.source === "heuristic") {
     await saveVisionCache({
       storagePath: resolved.storagePath,

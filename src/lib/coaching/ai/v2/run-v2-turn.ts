@@ -65,6 +65,7 @@ export type RunCoachingAiV2TurnInput = {
   dailyTargetsState?: GenerateCoachingAiV2Input["dailyTargetsState"];
   coachDailyPlan?: GenerateCoachingAiV2Input["coachDailyPlan"];
   visionNonFood?: boolean | null;
+  currentTurnEvidence?: GenerateCoachingAiV2Input["currentTurnEvidence"];
   /** Customer turn already durably accepted — skip duplicate Supabase customer insert. */
   customerAlreadyAccepted?: boolean;
   existingCustomerTurnId?: string | null;
@@ -209,6 +210,7 @@ export async function runCoachingAiV2Turn(
     dailyTargetsState: input.dailyTargetsState,
     coachDailyPlan: input.coachDailyPlan,
     visionNonFood: input.visionNonFood,
+    currentTurnEvidence: input.currentTurnEvidence,
   });
 
   let memoryUpdateOutcome: CoachingAiV2Observability["memoryUpdateOutcome"] = "applied";

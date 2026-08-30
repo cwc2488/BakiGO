@@ -20,6 +20,29 @@ const FOODISH_LABEL_RE =
  * Prefer explicit model fields when present; fall back to conservative heuristics.
  * Non-food → no meal evidence, no nutrition estimate, no plan food completion.
  */
+/**
+ * Prefer non-food subject labels over any leftover foodish tokens.
+ * Never let stale meal names win the visible hint for a non-food image.
+ */
+export function pickGo21VisionVisibleHint(
+  observation: CoachingMealObservation | null | undefined,
+): string | null {
+  if (!observation) return null;
+  const foods = observation.observedFoods ?? [];
+  const evidence = observation.evidenceText ?? [];
+  const nonFood =
+    foods.find((f) => NON_FOOD_LABEL_RE.test(f)) ??
+    evidence.find((e) => NON_FOOD_LABEL_RE.test(e));
+  if (nonFood) {
+    const m = nonFood.match(NON_FOOD_LABEL_RE);
+    return m?.[0] ?? nonFood.slice(0, 24);
+  }
+  // Prefer first non-foodish label
+  const clean = foods.find((f) => f.trim() && !FOODISH_LABEL_RE.test(f));
+  if (clean) return clean.slice(0, 40);
+  return foods[0]?.slice(0, 40) ?? evidence[0]?.slice(0, 40) ?? null;
+}
+
 export function assessGo21VisionFoodRelevance(
   observation: CoachingMealObservation | null | undefined,
 ): Go21VisionFoodRelevance {
@@ -41,15 +64,11 @@ export function assessGo21VisionFoodRelevance(
   }).subjectKind;
 
   if (explicit === false || subjectKind === "non_food") {
-    const hint =
-      observation.observedFoods?.[0] ||
-      observation.evidenceText?.[0] ||
-      null;
     return {
       isFoodRelevant: false,
       subjectKind: "non_food",
       reason: "model_non_food",
-      visibleHint: hint,
+      visibleHint: pickGo21VisionVisibleHint(observation),
     };
   }
 
@@ -66,12 +85,13 @@ export function assessGo21VisionFoodRelevance(
   const evidence = (observation.evidenceText ?? []).join(" ");
   const blob = `${foods} ${evidence}`;
 
-  if (NON_FOOD_LABEL_RE.test(blob) && !FOODISH_LABEL_RE.test(blob)) {
+  // Non-food labels win even if foodish tokens somehow co-exist (stale merge residue)
+  if (NON_FOOD_LABEL_RE.test(blob)) {
     return {
       isFoodRelevant: false,
       subjectKind: "non_food",
       reason: "heuristic_non_food_label",
-      visibleHint: observation.observedFoods?.[0] ?? null,
+      visibleHint: pickGo21VisionVisibleHint(observation),
     };
   }
 
@@ -93,7 +113,6 @@ export function assessGo21VisionFoodRelevance(
     };
   }
 
-  // Empty foods + low confidence photo → do not invent meal
   if ((observation.observedFoods ?? []).length === 0) {
     return {
       isFoodRelevant: false,
@@ -103,13 +122,12 @@ export function assessGo21VisionFoodRelevance(
     };
   }
 
-  // Ambiguous labels without food cues — refuse meal pipeline
   if (!FOODISH_LABEL_RE.test(blob)) {
     return {
       isFoodRelevant: false,
       subjectKind: "unclear",
       reason: "no_food_cues",
-      visibleHint: observation.observedFoods?.[0] ?? null,
+      visibleHint: pickGo21VisionVisibleHint(observation),
     };
   }
 

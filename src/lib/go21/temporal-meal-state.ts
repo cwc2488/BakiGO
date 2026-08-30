@@ -220,10 +220,13 @@ export function buildGo21TemporalTimeline(input: {
   for (const vision of input.visionSummaries ?? []) {
     const raw = vision.correction?.trim() || vision.summary?.trim();
     if (!raw) continue;
+    // Non-food / non-meal vision must never become todayEaten
+    if (/非餐點|不是餐點|可見：貓|可見：狗|可見：寵物/.test(raw)) continue;
     const label =
       extractFoodLabels(raw)[0] ??
       raw.replace(/看起來像|像是|像|為|是/g, "").trim().slice(0, 16);
     if (!label) continue;
+    if (/貓|狗|寵物|風景|自拍/.test(label) && !extractFoodLabels(label).length) continue;
     push({
       logDate: generationLogDate,
       mealSlot: null,

@@ -10,14 +10,21 @@ import { assessDailyNutrition } from "@/lib/coaching/ai/assess-daily-nutrition";
  * Lightweight decision context for free-message turns.
  * Seeds meal observations from today's logged meal notes so recall / day-pattern
  * judgment still work when the current utterance is not itself a meal photo.
+ *
+ * When the CURRENT turn is a non-food photo, do NOT merge today's notes into
+ * mealObservations — that lets stale 飯糰 masquerade as current image evidence.
  */
 export function buildMinimalDecisionContextForFreeMessage(input: {
   generationInput: CoachingGenerationInput;
   freeMessage: string;
   mealObservations?: CoachingMealObservation[];
+  /** Structural: current turn photo is not food-relevant. */
+  currentTurnNonFoodPhoto?: boolean;
 }): CoachingDecisionContext {
   const customerVoice = extractCustomerVoiceSignals(input.freeMessage);
-  const fromToday = mealObservationsFromTodayNotes(input.generationInput);
+  const fromToday = input.currentTurnNonFoodPhoto
+    ? []
+    : mealObservationsFromTodayNotes(input.generationInput);
   const mealObservations = [
     ...(input.mealObservations ?? []),
     ...fromToday.filter(
