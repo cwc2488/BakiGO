@@ -55,7 +55,7 @@ describe("Go21 coach intent + memory recall", () => {
     const memory = emptyMemory(9);
     memory.recentTurns = [
       customerTurn("午餐吃了炸麵"),
-      coachTurn("收到，炸麵。以你現在的方向這餐偏重了一點；下一餐先選蛋白質清楚、油炸少一點的會比較穩。"),
+      coachTurn("收到，炸麵。這餐有點兇，下一餐收一點就好。"),
     ];
 
     const recall = generateFixtureV2Draft({
@@ -155,8 +155,8 @@ describe("Go21 coach intent + memory recall", () => {
       freeMessage: "等一下想吃漢堡",
       go21Goal: fatLossGoal(),
     });
-    expect(draft.coachMessage).toMatch(/偏重|換|雞|方向/);
-    expect(draft.coachMessage).not.toMatch(/很讚|好好吃|方向可以/);
+    expect(draft.coachMessage).toMatch(/不推|漢堡|炸/);
+    expect(draft.coachMessage).not.toMatch(/很讚|好好吃|方向可以|蛋白質清楚/);
   });
 
   it("prompts require answering memory questions from history first", () => {
@@ -215,7 +215,7 @@ describe("Go21 coach intent + memory recall", () => {
         personalGoal: "減脂",
         alreadyHeavyToday: true,
       }),
-    ).toMatch(/偏重|雞胸|魚/);
+    ).toMatch(/兇|雞|魚/);
   });
 });
 

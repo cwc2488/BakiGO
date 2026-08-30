@@ -135,7 +135,15 @@ export function go21SystemPromptPrefersConciseDefault(systemPrompt: string): boo
 }
 
 export function go21SystemPromptAllowsTimelyConcreteTip(systemPrompt: string): boolean {
-  return /可執行的建議|一句具體建議|卡住|具體調整／替代|給一個更好的下一步/.test(systemPrompt);
+  return /可執行的建議|一句具體建議|卡住|實際折衷|一句具體下一步|給可執行/.test(systemPrompt);
+}
+
+/** Human coach voice — short, opinionated, not a packed nutrition format. */
+export function go21SystemPromptUsesHumanCoachVoice(systemPrompt: string): boolean {
+  return (
+    /Human Coach Voice|最少、最自然的話|今天我不推/.test(systemPrompt) &&
+    /風險說明.*營養教育.*替代建議|風險→教育→替代|不要每則都塞/.test(systemPrompt)
+  );
 }
 
 export function go21SystemPromptAllowsNoQuestion(systemPrompt: string): boolean {

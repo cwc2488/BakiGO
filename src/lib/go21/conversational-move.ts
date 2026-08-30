@@ -213,14 +213,23 @@ export function conversationalMovePrefersNaturalAck(move: Go21ConversationalMove
   );
 }
 
+export type Go21NaturalReplyContext = {
+  /** Today's already-eaten heavy foods (for opinionated continuation). */
+  todayHeavyFoods?: string[];
+  alreadyHeavyToday?: boolean;
+};
+
 /**
- * Compose a short natural reply for a detected move.
- * Not a rigid template bank — thin helpers that stay human and stop.
+ * Compose a short natural reply for a detected move (fixture / offline path).
+ * Thin helpers that stay human and stop — not a production speech template bank.
+ * Live OpenAI path should follow humanCoachReplyContract, not copy these lines.
  */
 export function composeGo21NaturalConversationalReply(
   result: Go21ConversationalMoveResult,
+  context: Go21NaturalReplyContext = {},
 ): string {
   const food = result.decidedFood ? cleanFood(result.decidedFood) : null;
+  const priorHeavy = context.todayHeavyFoods?.[0] ?? null;
 
   switch (result.move) {
     case "misunderstanding_repair":
@@ -256,13 +265,19 @@ export function composeGo21NaturalConversationalReply(
 
     case "continuation":
       if (food) {
-        // Light opinion only — still not a nutrition lecture
-        if (/雞排|漢堡|炸|鹹酥雞/.test(food)) {
-          return `${food}的話負擔會重一點。你是想換成這個，還是只是問看看？`;
+        // Opinion first — no risk→alt→question pack
+        if (/雞排|漢堡|炸|鹹酥雞|披薩/.test(food)) {
+          if (context.alreadyHeavyToday && priorHeavy) {
+            return `今天我比較不推${food}，你${priorHeavy}已經吃過了 😂`;
+          }
+          if (context.alreadyHeavyToday) {
+            return `今天我比較不推${food}，你前面已經偏炸的了 😂`;
+          }
+          return `你今天真的很想吃炸的齁 😂`;
         }
-        return `${food}也可以啊。`;
+        return `${food}也可以。`;
       }
-      return "你是想換成那個，還是只是問看看？";
+      return "嗯？你是想換成那個嗎。";
 
     case "answer_to_question":
       if (food) return `好，${food}。`;
@@ -282,7 +297,9 @@ export function buildConversationalMovePromptGuidance(
     `confidence=${result.confidence}`,
     result.decidedFood ? `decidedFood=${result.decidedFood}` : null,
     result.temporalHint ? `temporalHint=${result.temporalHint}` : null,
-    "先理解對話動作再決定要不要教練。更正時先認錯並更新理解，不要辯護或重講舊解釋。決定／確認時短回即可，不要加熱量／蛋白質／均衡／加油。",
+    result.move === "continuation"
+      ? "接話：給一句有觀點的話就好（可不推／可折衷／可輕吐槽），不要長篇風險說明＋替代清單＋追問。"
+      : "先理解對話動作再決定要不要教練。更正時先認錯並更新理解，不要辯護或重講舊解釋。決定／確認時短回即可，不要加熱量／蛋白質／均衡／加油。",
   ];
   return bits.filter(Boolean).join("；");
 }

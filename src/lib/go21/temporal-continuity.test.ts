@@ -180,7 +180,7 @@ describe("Go21 temporal continuity", () => {
     });
 
     expect(draft.coachMessage).not.toMatch(/今晚.*漢堡|待會.*漢堡|今晚的漢堡/);
-    expect(draft.coachMessage).toMatch(/炸雞|偏重|收一點|下一餐/);
+    expect(draft.coachMessage).toMatch(/炸雞|兇|收一點|下一餐/);
   });
 
   it("same-day dinner plan stays open after lunch and steers without inventing extra meals", () => {
@@ -254,7 +254,7 @@ describe("Go21 temporal continuity", () => {
       freeMessage: "等一下想吃漢堡",
       go21Goal: fatLossGoal(),
     });
-    expect(draft.coachMessage).toMatch(/漢堡|偏重|待會/);
+    expect(draft.coachMessage).toMatch(/漢堡|不推|炸/);
     expect(draft.coachMessage).not.toMatch(/今晚的漢堡/);
   });
 

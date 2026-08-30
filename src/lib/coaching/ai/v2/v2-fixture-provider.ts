@@ -20,6 +20,7 @@ import {
   conversationalMovePrefersNaturalAck,
   detectGo21ConversationalMove,
 } from "@/lib/go21/conversational-move";
+import { buildGo21HumanCoachReplyContract } from "@/lib/go21/human-coach-voice";
 
 /**
  * Context-aware fixture generator for tests/eval without OpenAI.
@@ -57,6 +58,10 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
     };
   }
 
+  const todayHeavyFoods = listTodayHeavyFoodLabels(input);
+  const alreadyHeavyToday =
+    todayHeavyFoods.length > 0 || hasHeavySignalsToday(decisionContext);
+
   // Natural Conversation Layer — understand the move BEFORE coaching
   const conversational = detectGo21ConversationalMove({
     freeMessage,
@@ -64,18 +69,33 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
   });
   if (conversational && conversationalMovePrefersNaturalAck(conversational.move)) {
     return {
-      coachMessage: composeGo21NaturalConversationalReply(conversational),
-      meta: emptyMeta(
-        conversational.move === "rejection" ? "acknowledge" : "acknowledge",
-        day,
-        stage,
-      ),
+      coachMessage: composeGo21NaturalConversationalReply(conversational, {
+        todayHeavyFoods,
+        alreadyHeavyToday,
+      }),
+      meta: emptyMeta("acknowledge", day, stage),
     };
   }
   if (conversational?.move === "continuation") {
     return {
-      coachMessage: composeGo21NaturalConversationalReply(conversational),
+      coachMessage: composeGo21NaturalConversationalReply(conversational, {
+        todayHeavyFoods,
+        alreadyHeavyToday,
+      }),
       meta: emptyMeta("casual", day, stage),
+    };
+  }
+
+  // Short human turns that aren't always classified as conversational moves
+  const humanShort = matchHumanShortTurnReply(freeMessage, {
+    alreadyHeavyToday,
+    todayHeavyFoods,
+    go21Goal: input.go21Goal,
+  });
+  if (humanShort) {
+    return {
+      coachMessage: humanShort.message,
+      meta: emptyMeta(humanShort.intention, day, stage),
     };
   }
 
@@ -507,7 +527,7 @@ function hasHeavySignalsToday(decision: CoachingDecisionContext): boolean {
 
 /**
  * When the live goal conflicts with today's pattern + the next planned choice,
- * steer with a concrete alternative — no empty praise.
+ * challenge with a clear opinion — alternative optional, no empty praise.
  * Never invent "tonight's hamburger" unless that plan is still open today.
  */
 function matchGoalConflictSteering(input: GenerateCoachingAiV2Input): string | null {
@@ -545,13 +565,93 @@ function matchGoalConflictSteering(input: GenerateCoachingAiV2Input): string | n
     hasHeavySignalsToday(input.decisionContext);
 
   if (planningHeavy && alreadyHeavy && plannedLabel) {
-    return `欸，今天前面已經偏重了，待會再疊${plannedLabel}的話整天會太兇。換個蛋白質清楚一點的選擇會比較貼你現在的方向，例如雞胸堡、生菜包肉或清湯麵。`;
+    const prior = timeline.todayEaten.find((e) => HEAVY_FOOD_RE.test(e.label))?.label;
+    // One beat opinion — alternative optional, not a packed health-app format
+    if (prior) {
+      return `今天我比較不推${plannedLabel}，你${prior}已經吃過了 😂`;
+    }
+    return `今天我比較不推${plannedLabel}，前面已經偏炸的了 😂`;
   }
   if (planningHeavy && alreadyHeavy) {
-    return "欸，今天前面已經偏重了，待會再疊重口味的話整天會太兇。換個蛋白質清楚一點的選擇會比較貼你現在的方向。";
+    return "今天我比較不推再疊炸的，你前面已經吃過了 😂";
   }
   if (planningHeavy) {
-    return "以你現在的減脂方向，待會這餐可以換蛋白質清楚、負擔輕一點的選擇，會比再來一輪重口味穩。";
+    const label = plannedLabel ?? "這個";
+    return `待會想吃${label}啊……今天我比較想讓你選輕一點的。`;
+  }
+  return null;
+}
+
+function listTodayHeavyFoodLabels(input: GenerateCoachingAiV2Input): string[] {
+  const timeline = buildGo21TemporalTimeline({
+    generationLogDate: input.generationInput.logDate,
+    todayMealNotes: input.generationInput.todayContext.primaryMeals.map((m) => ({
+      slot: m.mealSlot,
+      note: m.textNote,
+    })),
+    recentTurns: input.memory.recentTurns.map((t) => ({
+      role: t.role,
+      content: t.content,
+      logDate: t.logDate,
+      metadata: t.metadata,
+    })),
+    visionSummaries: input.recentVisionObservations ?? undefined,
+  });
+  return timeline.todayEaten.filter((e) => HEAVY_FOOD_RE.test(e.label)).map((e) => e.label);
+}
+
+function matchHumanShortTurnReply(
+  freeMessage: string | null | undefined,
+  ctx: {
+    alreadyHeavyToday: boolean;
+    todayHeavyFoods: string[];
+    go21Goal: GenerateCoachingAiV2Input["go21Goal"];
+  },
+): { message: string; intention: CoachingAiV2Intention } | null {
+  const msg = (freeMessage ?? "").trim();
+  if (!msg) return null;
+
+  const contract = buildGo21HumanCoachReplyContract({
+    freeMessage: msg,
+    alreadyHeavyToday: ctx.alreadyHeavyToday,
+    channel: "free_message",
+  });
+
+  if (
+    /^(?:可是我很想吃|我很想吃|好想吃|超想吃|就是想吃)[。.!！～~]*$/u.test(msg) ||
+    /^可是我很想吃/.test(msg)
+  ) {
+    if (ctx.alreadyHeavyToday) {
+      return {
+        message: "哈哈我知道，那至少飲料今天先別再甜的。",
+        intention: "challenge",
+      };
+    }
+    return { message: "想吃就吃一口，別整份爆掉就好。", intention: "acknowledge" };
+  }
+  if (/想放縱|就是想放縱|今天放縱|放縱一下/.test(msg)) {
+    return {
+      message: "可以啊，今天放縱也行，但飲料先別再甜的。",
+      intention: "acknowledge",
+    };
+  }
+  if (/你覺得呢|你覺得怎樣|怎麼看/.test(msg)) {
+    if (ctx.alreadyHeavyToday) {
+      return { message: "以今天來說，我比較不推再炸的。", intention: "challenge" };
+    }
+    return { message: "我覺得可以，但別配甜的。", intention: "educate" };
+  }
+  if (/不要雞胸|我不吃雞胸/.test(msg)) {
+    return { message: "好，雞胸先拿掉，改魚或蛋也行。", intention: "acknowledge" };
+  }
+  if (/^那明天呢|^明天呢/.test(msg)) {
+    return { message: "明天再看，今天先這樣。", intention: "casual" };
+  }
+  if (/^好啦[。.!！～~]*$/.test(msg)) {
+    return { message: "嗯。", intention: "acknowledge" };
+  }
+  if (contract.replyShape === "short_ack" && msg.length <= 6) {
+    return { message: "嗯。", intention: "acknowledge" };
   }
   return null;
 }
@@ -800,7 +900,8 @@ function goalConflictsWithFoodChoice(
 ): string | null {
   if (!isFatLossOrientedGoal(goal)) return null;
   if (!HEAVY_FOOD_RE.test(foodLabel) && !hasHeavySignalsToday(decision)) return null;
-  return `收到，${foodLabel}。以你現在的方向這餐偏重了一點；下一餐先選蛋白質清楚、油炸少一點的會比較穩。`;
+  // Short judgment — no packed “下一餐蛋白質清楚” health-app skeleton
+  return `收到，${foodLabel}。這餐有點兇，下一餐收一點就好。`;
 }
 
 /**
@@ -825,14 +926,14 @@ function buildMealPhotoJudgment(
   if (heavySignals || heavyLabel || level === "off_track" || level === "needs_adjustment") {
     if (fatLoss) {
       if (label) {
-        return `這張看起來是${label}。以你減脂方向，這餐偏重了一點；下一餐先把份量或油炸感收一點就好。`;
+        return `這張看起來是${label}。有點兇，下一餐收一點就好。`;
       }
-      return "這餐看起來偏重了一點。下一餐先把份量收一點就好，不用整天生氣。";
+      return "這餐有點兇，下一餐收一點就好。";
     }
     if (label) {
-      return `這張看起來是${label}。這餐偏重了一點；下一餐先把份量或油炸感收一點就好。`;
+      return `這張看起來是${label}。有點兇，下一餐收一點就好。`;
     }
-    return "這餐看起來偏重了一點。下一餐先把份量收一點就好，不用整天生氣。";
+    return "這餐有點兇，下一餐收一點就好。";
   }
   if (level === "on_track" || decision.mealObservations.some((o) => o.shakeObserved)) {
     if (label) return `看到${label}了，這餐我先記著。`;
@@ -896,14 +997,14 @@ function matchTodayHeavyPatternReply(input: GenerateCoachingAiV2Input): string |
   const heavyEaten = timeline.todayEaten.filter((e) => HEAVY_FOOD_RE.test(e.label));
   const heavyOpen = timeline.openPlansForToday.find((p) => HEAVY_FOOD_RE.test(p.label));
   if (heavyOpen && heavyEaten.length > 0) {
-    return `欸，今天前面已經偏重了，待會再疊${heavyOpen.label}的話整天會太兇。換個蛋白質清楚一點的選擇會比較貼你現在的方向。`;
+    return `今天我比較不推${heavyOpen.label}，你${heavyEaten[0].label}已經吃過了 😂`;
   }
   if (heavyEaten.length >= 2 || (heavyEaten.length >= 1 && hasHeavySignalsToday(input.decisionContext))) {
     const label = heavyEaten[heavyEaten.length - 1]?.label ?? "這餐";
-    return `收到，${label}。今天前面已經偏重了一點；下一餐先把油炸感收一點、蛋白質清楚一點會比較穩。`;
+    return `收到，${label}。今天前面有點兇，下一餐收一點就好。`;
   }
   if (heavyEaten.length === 1) {
-    return `收到，${heavyEaten[0].label}。以你現在的方向這餐偏重了一點；下一餐先選蛋白質清楚、油炸少一點的會比較穩。`;
+    return `收到，${heavyEaten[0].label}。這餐有點兇，下一餐收一點就好。`;
   }
   return null;
 }

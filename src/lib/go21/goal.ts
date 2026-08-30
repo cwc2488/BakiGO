@@ -308,6 +308,6 @@ export function compactGo21GoalForAi(record: Go21GoalRecord | null): {
     originalPersonalGoal: view.originalPersonalGoal,
     wasRefined: view.wasRefined,
     guidance:
-      "Protect the live goal with professional judgment. current personalGoal is the coaching anchor; originalPersonalGoal is history. Do not recite the goal as a mantra. When today's food or plans conflict with the goal (e.g. fat loss + fried + another burger), steer with a concrete alternative — never empty praise. Never invent progress.",
+      "Protect the live goal with professional judgment. current personalGoal is the coaching anchor; originalPersonalGoal is history. Do not recite the goal as a mantra. When today's food or plans conflict with the goal, have a clear opinion (may disagree, may say you wouldn't choose that today, may offer one practical compromise) — never empty praise. A concrete alternative is optional, not a required second paragraph. Never invent progress.",
   };
 }

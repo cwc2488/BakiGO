@@ -295,7 +295,9 @@ describe("Go21 Premium Coaching Brain — generation behavior", () => {
     expect(coachingBrainLooksUnscripted(prompt)).toBe(true);
     expect(prompt).toMatch(/長期理解|shareableInsights|越來越懂/);
     expect(prompt).not.toMatch(/acknowledge\s*→\s*advice\s*→\s*question/i);
-    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/premium_brain|natural_conversation/);
+    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(
+      /premium_brain|natural_conversation|human_coach_voice/,
+    );
   });
 
   it("user prompt injects longitudinalUnderstanding block", () => {
@@ -458,7 +460,7 @@ describe("Go21 Premium Coaching Brain — generation behavior", () => {
         lifecycleStage: "find_patterns",
       }),
     });
-    expect(draft.coachMessage).toMatch(/偏重|換|蛋白質|方向/);
+    expect(draft.coachMessage).toMatch(/不推|漢堡|炸|輕/);
     expect(draft.meta.intention).toBe("challenge");
   });
 

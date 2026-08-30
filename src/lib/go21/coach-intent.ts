@@ -140,12 +140,12 @@ export function formatMenuSuggestionReply(input: {
     /減脂|瘦|體脂|體態/.test(`${input.personalGoal ?? ""}`);
 
   if (input.alreadyHeavyToday && fatLoss) {
-    return "今天前面已經偏重了，這一餐建議：清湯／燙青菜＋雞胸或魚，主食少半碗。少再疊炸物或重口味。";
+    return "今天前面有點兇了，這一餐我推清湯／燙青菜＋雞或魚，主食少半碗。";
   }
   if (fatLoss) {
-    return "這一餐可以這樣選：蛋白質清楚一點（雞胸／魚／蛋）＋蔬菜，主食控制份量。想外食的话選烤的或燙的比較穩。";
+    return "這一餐可以雞／魚／蛋＋蔬菜打底，主食看你餓不餓再加。外食就選烤的或燙的。";
   }
-  return "這一餐可以蛋白質＋蔬菜打底，再依你今天餓不餓決定主食份量。";
+  return "這一餐蛋白質＋蔬菜打底，再依你今天餓不餓決定主食份量。";
 }
 
 function cleanFoodLabel(raw: string): string | null {

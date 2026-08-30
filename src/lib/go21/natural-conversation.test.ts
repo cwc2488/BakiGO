@@ -120,7 +120,7 @@ const fatLossGoal = {
 };
 
 const hamburgerCoachLine =
-  "欸，今天前面已經偏重了，待會再疊漢堡的話整天會太兇。換個蛋白質清楚一點的選擇會比較貼你現在的方向，例如雞胸堡、生菜包肉或清湯麵。";
+  "今天我比較不推漢堡，你炸麵已經吃過了 😂";
 
 describe("Go21 Natural Conversation Layer — move detection", () => {
   it("detects decision when customer says 吃沙拉 after hamburger coaching", () => {
@@ -252,7 +252,7 @@ describe("Go21 Natural Conversation Layer — multi-turn fixture behavior", () =
     expect(no.coachMessage).not.toMatch(/蛋白質|目標邁進/);
   });
 
-  it("still steers on a fresh hamburger plan (coaching still works)", () => {
+  it("still challenges on a fresh hamburger plan without health-app pack", () => {
     const draft = generateFixtureV2Draft({
       generationInput: gi(),
       decisionContext: decisionHeavyLunch(),
@@ -262,11 +262,12 @@ describe("Go21 Natural Conversation Layer — multi-turn fixture behavior", () =
       freeMessage: "等一下想吃漢堡",
       go21Goal: fatLossGoal,
     });
-    expect(draft.coachMessage).toMatch(/偏重|換|雞|方向|蛋白質/);
+    expect(draft.coachMessage).toMatch(/不推|漢堡|炸/);
+    expect(draft.coachMessage).not.toMatch(/蛋白質清楚|雞胸堡|朝著目標邁進/);
     expect(draft.meta.intention).toBe("challenge");
   });
 
-  it("continuation 那雞排呢 gets a light opinion, not a full SOP lecture", () => {
+  it("continuation 那雞排呢 gets a short opinion, not a full SOP lecture", () => {
     const draft = generateFixtureV2Draft({
       generationInput: gi(),
       decisionContext: decisionHeavyLunch(),
@@ -277,10 +278,12 @@ describe("Go21 Natural Conversation Layer — multi-turn fixture behavior", () =
       go21Goal: fatLossGoal,
     });
     expect(draft.coachMessage).toMatch(/雞排/);
-    expect(draft.coachMessage).not.toMatch(/朝著目標邁進|更好地控制整體熱量|考慮搭配一些蛋白質/);
+    expect(draft.coachMessage).toMatch(/不推|想吃炸/);
+    expect(draft.coachMessage).not.toMatch(/朝著目標邁進|更好地控制整體熱量|考慮搭配一些蛋白質|你是想換成/);
+    expect(draft.coachMessage.length).toBeLessThan(45);
   });
 
-  it("user prompt surfaces conversationalMove for the live model", () => {
+  it("user prompt surfaces conversationalMove + humanCoachReply for the live model", () => {
     const user = buildCoachingAiV2UserPrompt({
       generationInput: gi(),
       decisionContext: decisionHeavyLunch(),
@@ -295,16 +298,18 @@ describe("Go21 Natural Conversation Layer — multi-turn fixture behavior", () =
     const parsed = JSON.parse(user);
     expect(parsed.conversationalMove.move).toBe("decision");
     expect(parsed.conversationalMove.decidedFood).toMatch(/沙拉/);
+    expect(parsed.humanCoachReply.replyShape).toBe("one_beat");
     expect(user).toMatch(/先接住對話/);
   });
 
-  it("system prompt prioritizes conversational understanding and bans health-app defaults", () => {
+  it("system prompt prioritizes conversational understanding and human coach voice", () => {
     const sys = buildCoachingAiV2SystemPrompt();
     expect(coachingBrainLooksUnscripted(sys)).toBe(true);
     expect(sys).toMatch(/對話動作|先理解對話/);
     expect(sys).toMatch(/朝著目標邁進|考慮搭配一些蛋白質|更好地控制整體熱量/);
-    expect(sys).toMatch(/吃沙拉/);
-    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/natural_conversation/);
+    expect(sys).toMatch(/吃沙拉|那雞排呢/);
+    expect(sys).toMatch(/Human Coach Voice|今天我不推|今天我比較不推/);
+    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/human_coach_voice/);
   });
 
   it("health-app voice detector flags SOP phrases", () => {

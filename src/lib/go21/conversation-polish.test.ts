@@ -38,7 +38,7 @@ describe("Go21 conversation polish", () => {
       channel: "free_message",
       freeMessage: "現在十一點超想吃",
     });
-    expect(user).toMatch(/可執行選項|據實回答食物|具體調整|護住目標|一句具體建議/);
+    expect(user).toMatch(/可執行選項|據實回答食物|護住目標|一句有觀點|humanCoachReply/);
   });
 
   it("allows stopping without a trailing question; meal photos prefer judgment", () => {
@@ -127,13 +127,13 @@ describe("Go21 conversation polish", () => {
         guidance: "protect goal",
       },
     });
-    expect(draft.coachMessage).toMatch(/偏重|收一點|記著/);
-    expect(draft.coachMessage).not.toMatch(/你覺得|哪裡跟前幾天|我先不搶答/);
+    expect(draft.coachMessage).toMatch(/兇|收一點|記著/);
+    expect(draft.coachMessage).not.toMatch(/你覺得|哪裡跟前幾天|我先不搶答|蛋白質清楚/);
     expect(coachMessageEndsWithQuestion(draft.coachMessage)).toBe(false);
     expect(coachMessageHasEmptyFoodPraise(draft.coachMessage)).toBe(false);
   });
 
-  it("fat loss + fried earlier + planned hamburger steers toward a better choice", () => {
+  it("fat loss + fried earlier + planned hamburger challenges without health-app pack", () => {
     const draft = generateFixtureV2Draft({
       generationInput: minimalGi(),
       decisionContext: {
@@ -176,10 +176,11 @@ describe("Go21 conversation polish", () => {
         guidance: "protect goal",
       },
     });
-    expect(draft.coachMessage).toMatch(/偏重|換|雞|沙拉|蛋白質|方向/);
-    expect(draft.coachMessage).not.toMatch(/很讚|好好吃|方向可以/);
+    expect(draft.coachMessage).toMatch(/不推|漢堡|炸/);
+    expect(draft.coachMessage).not.toMatch(/很讚|好好吃|方向可以|蛋白質清楚|雞胸堡/);
     expect(coachMessageHasEmptyFoodPraise(draft.coachMessage)).toBe(false);
     expect(coachMessageEndsWithQuestion(draft.coachMessage)).toBe(false);
+    expect(draft.coachMessage.length).toBeLessThan(50);
   });
 
   it("autonomy on-track does not quiz the customer about the meal", () => {
