@@ -11,6 +11,10 @@ import { toCoachingApiErrorMessage } from "@/lib/coaching/coaching-api-error";
 import { isExperience21dEnrollment } from "@/lib/coaching/experience-21d";
 import { resolveEnrollmentStartDate } from "@/lib/coaching/enrollment-window";
 import { createSupabaseServiceClient } from "@/lib/supabase/service-client";
+import {
+  ensureCustomerPortalTokenServiceRole,
+  ensureOwnedCloudCustomer,
+} from "@/lib/go21/ensure-cloud-customer";
 
 export const runtime = "nodejs";
 
@@ -26,18 +30,39 @@ export async function GET(request: Request) {
   const supabase = createSupabaseServiceClient();
   const { data: customer } = await supabase
     .from("customers")
-    .select("id, display_name")
+    .select("id, display_name, deleted_at")
     .eq("id", customerId)
     .eq("owner_member_id", memberId)
     .maybeSingle();
-  if (!customer) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  // Not yet in cloud (local CRM race) — do not 403; activation POST will upsert.
+  if (!customer || customer.deleted_at) {
+    return NextResponse.json({
+      ok: true,
+      customerSynced: false,
+      customer: { id: customerId, displayName: "" },
+      activeExperience: null,
+      activeOtherCoaching: false,
+      enrollment: null,
+      portalToken: null,
+    });
+  }
 
   const active = await getActiveEnrollmentForCustomer({
     customerId,
     ownerMemberId: memberId,
   });
+
+  let portalToken: string | null = null;
+  try {
+    portalToken = (await ensureCustomerPortalTokenServiceRole(customerId)).token;
+  } catch {
+    portalToken = null;
+  }
+
   return NextResponse.json({
     ok: true,
+    customerSynced: true,
     customer: { id: String(customer.id), displayName: String(customer.display_name) },
     activeExperience:
       active && isExperience21dEnrollment(active)
@@ -50,6 +75,7 @@ export async function GET(request: Request) {
         : null,
     activeOtherCoaching: Boolean(active && !isExperience21dEnrollment(active)),
     enrollment: active ? serializeCoachingEnrollment(active) : null,
+    portalToken,
   });
 }
 
@@ -64,6 +90,29 @@ export async function POST(request: Request) {
       customerId?: string;
       productReceivedDate?: string;
       interestId?: string | null;
+      customerProfile?: {
+        displayName?: string | null;
+        phone?: string | null;
+        lineId?: string | null;
+        heightCm?: number | null;
+        sex?: string | null;
+        birthYear?: number | null;
+        birthDate?: string | null;
+      } | null;
+      dailyTargets?: {
+        waterMl?: number | null;
+        caloriesKcal?: number | null;
+        proteinG?: number | null;
+        sleepHours?: number | null;
+      } | null;
+      coachPlan?: {
+        items: Array<{
+          period: string;
+          name: string;
+          amount?: string | null;
+          instruction?: string | null;
+        }>;
+      } | null;
     };
     if (!body.customerId?.trim() || !body.productReceivedDate?.trim()) {
       return NextResponse.json({ error: "customerId and productReceivedDate required." }, { status: 400 });
@@ -73,6 +122,9 @@ export async function POST(request: Request) {
       customerId: body.customerId.trim(),
       productReceivedDate: body.productReceivedDate.trim(),
       interestId: body.interestId?.trim() || null,
+      customerProfile: body.customerProfile ?? null,
+      dailyTargets: body.dailyTargets ?? null,
+      coachPlan: body.coachPlan ?? null,
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

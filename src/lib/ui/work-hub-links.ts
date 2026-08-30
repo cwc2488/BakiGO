@@ -26,7 +26,7 @@ export const SIMPLE_QUICK_LINKS = [
   { href: "/customers", title: "顧客" },
   { href: "/calendar", title: "行事曆" },
   { href: "/daily-action", title: "今日行動" },
-  { href: "/coaching", title: "陪跑" },
+  { href: "/coaching", title: "陪跑中心" },
   { href: "/learning", title: "學習" },
   { href: "/quiz/21d", title: "心理測驗" },
 ] as const;
@@ -38,7 +38,7 @@ export const WORK_HUB_LINKS = MY_WORLD_SECONDARY_LINKS;
 export const SIDE_NAV_EXTRA_LINKS = [
   { href: "/quiz/21d", title: "心理測驗", icon: APP_ICON.hub.pipeline, waitingBadge: true },
   { href: "/radar", title: "今日推薦", icon: APP_ICON.hub.pipeline },
-  { href: "/coaching", title: "陪跑", icon: APP_ICON.hub.pipeline },
+  { href: "/coaching", title: "陪跑中心", icon: APP_ICON.hub.pipeline },
   { href: "/retail-pipeline", title: "名單", icon: APP_ICON.hub.pipeline },
   { href: "/goals", title: "目標", icon: APP_ICON.hub.goals },
   { href: "/organization", title: "組織", icon: APP_ICON.hub.organization },

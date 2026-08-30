@@ -36,6 +36,15 @@ export async function POST(request: Request, context: Ctx) {
     const body = (await request.json()) as {
       customerId?: string;
       productReceivedDate?: string;
+      customerProfile?: {
+        displayName?: string | null;
+        phone?: string | null;
+        lineId?: string | null;
+        heightCm?: number | null;
+        sex?: string | null;
+        birthYear?: number | null;
+        birthDate?: string | null;
+      } | null;
     };
     if (!body.customerId?.trim() || !body.productReceivedDate?.trim()) {
       return NextResponse.json({ error: "customerId and productReceivedDate required." }, { status: 400 });
@@ -45,6 +54,7 @@ export async function POST(request: Request, context: Ctx) {
       customerId: body.customerId.trim(),
       productReceivedDate: body.productReceivedDate.trim(),
       interestId: id,
+      customerProfile: body.customerProfile ?? null,
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

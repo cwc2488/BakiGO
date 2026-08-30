@@ -53,6 +53,9 @@ export type LoadedCoachingGenerationContext = {
   recentLogs: CoachingDailyLogDetail[];
   /** Active structured directives for logDate — reuse for CD verification. */
   activeStructuredDirectives: StructuredCoachDirective[];
+  /** Enrollment timestamps for V2 lifecycle. */
+  enrollmentStartedAt: string | null;
+  enrollmentPlannedEndAt: string | null;
 };
 
 /**
@@ -169,6 +172,8 @@ export async function loadAuthoritativeCoachingGenerationInput(input: {
     todayLog,
     recentLogs,
     activeStructuredDirectives,
+    enrollmentStartedAt: enrollment.startedAt ?? null,
+    enrollmentPlannedEndAt: enrollment.plannedEndAt ?? null,
   };
 }
 

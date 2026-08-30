@@ -95,6 +95,14 @@
     {
       "path": "/api/radar/jobs/process",
       "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/coaching/go21/reminders/process",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/coaching/go21/reminders/process",
+      "schedule": "0 10 * * *"
     }
   ]
 }

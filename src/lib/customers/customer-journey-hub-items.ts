@@ -49,8 +49,8 @@ export const CUSTOMER_JOURNEY_HUB_ITEMS: CustomerJourneyHubItem[] = [
   },
   {
     href: "/coaching",
-    title: "陪跑",
-    desc: "今天誰需要我？",
+    title: "陪跑中心",
+    desc: "今天誰需要關注？",
     iconHref: "/coaching",
   },
   {

@@ -181,7 +181,8 @@ describe("RADAR-AUTO-01 route contracts", () => {
     const vercel = JSON.parse(src("vercel.json")) as {
       crons: Array<{ path: string; schedule: string }>;
     };
-    expect(vercel.crons).toEqual([...RADAR_HOBBY_DAILY_CRONS]);
+    const radarCrons = vercel.crons.filter((cron) => cron.path.startsWith("/api/radar/"));
+    expect(radarCrons).toEqual([...RADAR_HOBBY_DAILY_CRONS]);
     expect(vercel.crons[0]).toEqual({
       path: "/api/radar/jobs/daily-pipeline",
       schedule: "0 22 * * *",
@@ -190,6 +191,9 @@ describe("RADAR-AUTO-01 route contracts", () => {
       true,
     );
     expect(vercel.crons.filter((cron) => cron.path === "/api/radar/jobs/process").length).toBeGreaterThanOrEqual(23);
+    expect(
+      vercel.crons.some((cron) => cron.path === "/api/coaching/go21/reminders/process"),
+    ).toBe(true);
     for (const cron of vercel.crons) {
       const parts = cron.schedule.split(" ");
       expect(parts).toHaveLength(5);

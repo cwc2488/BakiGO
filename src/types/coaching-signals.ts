@@ -57,6 +57,7 @@ export type CoachingMealObservationSignal = (typeof COACHING_MEAL_OBSERVATION_SI
 /**
  * Structured meal vision observation.
  * Observations may include uncertainties — never invent calories/macros.
+ * isFoodRelevant / subjectKind gate non-food images out of meal/nutrition pipelines.
  */
 export type CoachingMealObservation = {
   mealSlot: "breakfast" | "lunch" | "dinner";
@@ -77,6 +78,13 @@ export type CoachingMealObservation = {
   uncertainties?: string[];
   confidence?: "high" | "medium" | "low";
   followUpQuestion?: string | null;
+  /**
+   * Whether the image is reasonably food/beverage/nutrition relevant.
+   * false → do not create meal evidence, nutrition estimates, or plan food completion.
+   */
+  isFoodRelevant?: boolean | null;
+  /** Coarse subject kind from vision (optional; gate uses with isFoodRelevant). */
+  subjectKind?: "food" | "beverage" | "non_food" | "unclear" | null;
 };
 
 export const COACHING_CUSTOMER_VOICE_KEYS = [

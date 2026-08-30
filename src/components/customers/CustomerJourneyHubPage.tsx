@@ -82,7 +82,7 @@ export default function CustomerJourneyHubPage() {
     <PageShell
       showBack={false}
       title="顧客"
-      subtitle="名單 → 顧客 → 陪跑 → 轉介紹"
+      subtitle="名單 → 顧客 → 陪跑中心 → 轉介紹"
       variant="plain"
     >
       <div className="mx-auto max-w-lg space-y-3 px-4 pb-8 pt-2">

@@ -1,0 +1,82 @@
+import { NextResponse } from "next/server";
+import { isSupabaseServiceConfigured, createSupabaseServiceClient } from "@/lib/supabase/service-client";
+import { toCoachingApiErrorMessage } from "@/lib/coaching/coaching-api-error";
+import { CoachingServiceError } from "@/lib/coaching/coaching-service";
+import { markGo21Started, loadGo21PortalBundle, requireGo21Portal } from "@/lib/go21/go21-portal";
+import { getSharedInMemoryV2Store } from "@/lib/coaching/ai/v2/memory-store";
+import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
+
+export const runtime = "nodejs";
+
+const WELCOME_MESSAGE = `你好，我是你這 21 天的私人飲食陪跑。
+
+吃了什麼、睡得好不好、水喝得怎樣——用自然對話跟我說就好。我會默默掌握今天大概的狀態，陪你慢慢調整。
+
+準備好的話，先跟我說今天最近一餐吃了什麼，或傳一張照片給我。`;
+
+/** Idempotent customer start + seed welcome turn. */
+export async function POST(
+  _request: Request,
+  context: { params: Promise<{ token: string }> },
+) {
+  if (!isSupabaseServiceConfigured()) {
+    return NextResponse.json({ error: "Service unavailable." }, { status: 503 });
+  }
+  try {
+    const { token } = await context.params;
+    const { portal, enrollment } = await requireGo21Portal(token);
+    const result = await markGo21Started(portal.enrollmentId);
+
+    if (!result.already) {
+      // Seed welcome as coach turn (DB + in-memory)
+      const store = getSharedInMemoryV2Store();
+      await store.ensureActiveCycle({
+        enrollmentId: portal.enrollmentId,
+        customerId: portal.customerId,
+        ownerMemberId: portal.ownerMemberId,
+        enrollmentStartedAt: String(enrollment.started_at).slice(0, 10),
+      });
+      await store.appendTurn({
+        enrollmentId: portal.enrollmentId,
+        customerId: portal.customerId,
+        ownerMemberId: portal.ownerMemberId,
+        logDate: coachingTodayLogDate(),
+        role: "coach",
+        channel: "system",
+        content: WELCOME_MESSAGE,
+        intention: "encourage",
+        metadata: { kind: "go21_welcome" },
+      });
+
+      try {
+        const supabase = createSupabaseServiceClient();
+        await supabase.from("coaching_ai_turns").insert({
+          enrollment_id: portal.enrollmentId,
+          customer_id: portal.customerId,
+          owner_member_id: portal.ownerMemberId,
+          log_date: coachingTodayLogDate(),
+          role: "coach",
+          channel: "system",
+          content: WELCOME_MESSAGE,
+          intention: "encourage",
+          metadata: { kind: "go21_welcome" },
+        });
+      } catch {
+        // migration may be pending
+      }
+    }
+
+    const bundle = await loadGo21PortalBundle(token);
+    return NextResponse.json({
+      ok: true,
+      already: result.already,
+      startedAt: result.startedAt,
+      welcomeMessage: WELCOME_MESSAGE,
+      dayNumber: bundle.dayNumber,
+    });
+  } catch (error) {
+    const message = toCoachingApiErrorMessage(error, "無法開始 21 天陪跑");
+    const status = error instanceof CoachingServiceError ? error.status : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}

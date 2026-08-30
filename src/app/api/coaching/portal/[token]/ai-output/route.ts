@@ -133,6 +133,9 @@ export async function GET(
       customer:
         output.status === "completed" && output.outputJson
           ? {
+              coach_message:
+                (output.outputJson.customer as { coach_message?: string | null }).coach_message ??
+                null,
               encouragement: output.outputJson.customer.encouragement,
               today_feedback: output.outputJson.customer.today_feedback,
               daily_food_summary: output.outputJson.customer.daily_food_summary,

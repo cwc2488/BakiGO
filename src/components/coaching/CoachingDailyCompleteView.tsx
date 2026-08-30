@@ -275,7 +275,7 @@ export function CoachingDailyCompleteView({
       </CrmCard>
 
       <CrmCard className="space-y-3">
-        <h3 className="text-[1.0625rem] font-semibold text-[#1d1d1f]">AI 個人化分析</h3>
+        <h3 className="text-[1.0625rem] font-semibold text-[#1d1d1f]">AI 陪跑教練</h3>
         {aiState === "analyzing" ? (
           <div className="space-y-2 rounded-[1rem] bg-[#fafafa] px-4 py-5 text-[0.9375rem] leading-relaxed text-[#636366]">
             <p>正在進一步分析你的飲食與今天的紀錄，完成後會自動補上。</p>
@@ -289,6 +289,12 @@ export function CoachingDailyCompleteView({
         ) : null}
         {aiState === "ready" && customerFeedback ? (
           <div className="space-y-4 text-left text-[0.9375rem] leading-relaxed text-[#1d1d1f]">
+            {customerFeedback.coach_message?.trim() ? (
+              <div className="space-y-3">
+                <p className="whitespace-pre-wrap text-[#1d1d1f]">{customerFeedback.coach_message}</p>
+              </div>
+            ) : (
+              <>
             <p>{customerFeedback.encouragement}</p>
             {customerFeedback.customer_voice_response ? (
               <p className="rounded-[1rem] bg-[#f7faf5] px-4 py-3 text-[#1d1d1f]">
@@ -350,6 +356,8 @@ export function CoachingDailyCompleteView({
                 <p className="mt-2 text-[0.875rem] text-[#636366]">{customerFeedback.follow_up_for_tomorrow}</p>
               ) : null}
             </div>
+              </>
+            )}
           </div>
         ) : null}
       </CrmCard>

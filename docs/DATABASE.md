@@ -800,7 +800,7 @@ Member (coach)
 | `coaching_enrollments` | Active/paused/completed coaching relationship; plan snapshot + onboarding state. `started_at` = Day 1 authority; `planned_end_at` (034) = inclusive planned end (default start+89 days); `ended_at` = actual completion timestamp |
 | `coaching_daily_logs` | One row per enrollment per `log_date` (Asia/Taipei). Sleep: `sleep_bedtime`, `sleep_wake_time`; `sleep_duration` computed on save. Soft-delete: `deleted_at` / `deleted_by` (037); default queries exclude deleted rows. Active unique is `(enrollment_id, log_date) WHERE deleted_at IS NULL`. |
 | `coaching_meal_entries` | Meal slot rows linked to daily log |
-| `coaching_meal_photos` | Storage path refs for meal photos (private bucket) |
+| `coaching_meal_photos` | Storage path refs for meal photos (private bucket); optional `vision_observation_json` cache (`067`) for real-time + daily reuse |
 
 **Migration `028_coaching_sleep_times.sql`:** adds `sleep_bedtime`, `sleep_wake_time` to `coaching_daily_logs`.
 
@@ -831,7 +831,42 @@ Member (coach)
 
 **Reuse:** `customers`, `members`, `customer_portal_tokens`, `body_composition_records`, `customer_progress_photos` (read-only in coach detail).
 
-### AI Coaching Phase 3d — Coach Action Memory
+### AI Coaching V2 — 21-day freeform (`064_coaching_ai_v2.sql`)
+
+| Table | Purpose |
+|-------|---------|
+| `coaching_ai_cycles` | Intensive 21-day AI coaching cycle per enrollment |
+| `coaching_ai_memory` | Durable compact coaching memory |
+| `coaching_ai_open_loops` | Unfinished coaching threads |
+| `coaching_ai_hypotheses` | Revisable probabilistic interpretations |
+| `coaching_ai_turns` | Bounded conversational turns |
+| `coaching_ai_day21_reflections` | Personalized end-of-cycle synthesis |
+
+**RLS:** Owner-member SELECT only. Mutations via service-role APIs. Additive / non-destructive.
+
+Customer-facing freeform message lives in `coaching_ai_outputs.output_json.customer.coach_message` when V2 is enabled.
+
+### Baki Go 21 — customer chat surface (`065_coaching_go21.sql`, `066_go21_reminder_uniqueness.sql`, `068_go21_goal.sql`, `069_go21_understanding.sql`, `070_go21_daily_targets.sql`, `071_go21_coach_daily_plan.sql`)
+
+| Change | Purpose |
+|--------|---------|
+| `coaching_ai_reminders` | Reminder intents (daily / open-loop / measurement / experiment / reengagement). Delivery channel separate; in-app first. |
+| `coaching_enrollments.go21_started_at` | Idempotent customer “開始我的 21 天陪跑” marker |
+| `066` uniqueness | Measurement/daily kinds: one per Taipei day; open_loop allows multiple via `related_open_loop_id` |
+| `coaching_enrollments.go21_goal_json` | Durable 21-day goal record |
+| `coaching_enrollments.go21_understanding_json` | Premium Coaching Brain — longitudinal personal understanding (evidence, confidence, revisable) |
+| `coaching_enrollments.go21_daily_targets_json` | Coach-set daily water/calories/protein/sleep targets for Go21 enrollment (optional; existing enrollments compatible) |
+| `coaching_daily_logs.nutrition_estimate_json` | Optional soft calorie/protein estimates for the day (uncertain bands; never fake precision) |
+| `coaching_enrollments.go21_coach_plan_json` | Coach-prescribed daily plan items (period/name/amount/instruction/recurrence); AI must not silently rewrite |
+| `coaching_daily_logs.go21_plan_day_json` | Inferred plan execution for the log date (completions / intentional skips); evidence-based |
+
+**Security:** Customer entry via existing opaque `customer_portal_tokens` at `/c/{token}/go21`. Go21 routes enforce experience-21d eligibility. No guessable customer IDs in URLs.
+
+**Delivery:** `POST/GET /api/coaching/go21/reminders/process` (cron secret) + on-open delivery in Go21 context.
+
+**Docs:** `docs/GO21.md`
+
+
 
 **Status:** Applied migration `031_coaching_coach_actions.sql`. Coach-only internal memory.
 
