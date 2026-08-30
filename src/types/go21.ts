@@ -401,3 +401,123 @@ export const GO21_DAILY_TARGET_PRESETS = [
     sleepHours: 8,
   },
 ] as const;
+
+/** Coach Daily Plan — periods (generic, not brand-specific). */
+export const GO21_COACH_PLAN_PERIODS = [
+  "breakfast",
+  "morning",
+  "lunch",
+  "afternoon",
+  "dinner",
+  "evening",
+  "night",
+  "anytime",
+  "other",
+] as const;
+export type Go21CoachPlanPeriod = (typeof GO21_COACH_PLAN_PERIODS)[number];
+
+export const GO21_COACH_PLAN_PERIOD_LABELS: Record<Go21CoachPlanPeriod, string> = {
+  breakfast: "早餐",
+  morning: "早上",
+  lunch: "午餐",
+  afternoon: "下午",
+  dinner: "晚餐",
+  evening: "傍晚",
+  night: "睡前",
+  anytime: "不限時段",
+  other: "其他",
+};
+
+export type Go21CoachPlanSource = "activation" | "coach_edit";
+
+/** Single coach-prescribed plan item — name/amount are free text (coach data). */
+export type Go21CoachPlanItem = {
+  id: string;
+  period: Go21CoachPlanPeriod;
+  name: string;
+  amount: string | null;
+  instruction: string | null;
+  /** "daily" | "weekdays" | "weekends" | ISO weekday numbers 1=Mon…7=Sun */
+  recurrence: "daily" | "weekdays" | "weekends" | number[];
+  sortOrder: number;
+  enabled: boolean;
+};
+
+export type Go21CoachPlanSnapshot = {
+  items: Go21CoachPlanItem[];
+  setAt: string;
+  source: Go21CoachPlanSource;
+  /** Inclusive Taipei log date this snapshot takes effect (null = standing). */
+  effectiveFrom: string | null;
+};
+
+export type Go21CoachPlanHistoryEntry = {
+  at: string;
+  plan: Go21CoachPlanSnapshot;
+  reason: string;
+};
+
+export type Go21CoachPlanRecord = {
+  version: 1;
+  current: Go21CoachPlanSnapshot;
+  history: Go21CoachPlanHistoryEntry[];
+};
+
+export type Go21CoachPlanPublicView = {
+  items: Go21CoachPlanItem[];
+  setAt: string;
+  source: Go21CoachPlanSource;
+  effectiveFrom: string | null;
+  hasAny: boolean;
+};
+
+/** Per-day inferred execution — separate from coach-prescribed plan. */
+export type Go21PlanDayItemState = {
+  itemId: string;
+  status: "unknown" | "completed" | "skipped_intentional" | "missed" | "adjusted";
+  evidence: string | null;
+  confidence: "low" | "medium" | "high";
+  note: string | null;
+  updatedAt: string;
+};
+
+export type Go21PlanDayRecord = {
+  version: 1;
+  logDate: string;
+  /** Snapshot of plan item ids/names that applied this day (for history). */
+  appliedItemIds: string[];
+  items: Go21PlanDayItemState[];
+  updatedAt: string;
+};
+
+/** Quiet AI compact for coach plan + today execution. */
+export type Go21CoachPlanForAi = {
+  items: Array<{
+    id: string;
+    period: Go21CoachPlanPeriod;
+    periodLabel: string;
+    name: string;
+    amount: string | null;
+    instruction: string | null;
+  }>;
+  today: Array<{
+    itemId: string;
+    status: Go21PlanDayItemState["status"];
+    evidence: string | null;
+    confidence: string;
+  }>;
+  guidance: string;
+};
+
+/** Sensible empty starter rows for activation — coach fills names freely. */
+export const GO21_COACH_PLAN_STARTER_ITEMS: Array<{
+  period: Go21CoachPlanPeriod;
+  name: string;
+  amount: string | null;
+}> = [
+  { period: "breakfast", name: "", amount: null },
+  { period: "lunch", name: "", amount: null },
+  { period: "afternoon", name: "", amount: null },
+  { period: "dinner", name: "", amount: null },
+];
+

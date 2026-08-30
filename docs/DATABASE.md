@@ -846,7 +846,7 @@ Member (coach)
 
 Customer-facing freeform message lives in `coaching_ai_outputs.output_json.customer.coach_message` when V2 is enabled.
 
-### Baki Go 21 — customer chat surface (`065_coaching_go21.sql`, `066_go21_reminder_uniqueness.sql`, `068_go21_goal.sql`, `069_go21_understanding.sql`, `070_go21_daily_targets.sql`)
+### Baki Go 21 — customer chat surface (`065_coaching_go21.sql`, `066_go21_reminder_uniqueness.sql`, `068_go21_goal.sql`, `069_go21_understanding.sql`, `070_go21_daily_targets.sql`, `071_go21_coach_daily_plan.sql`)
 
 | Change | Purpose |
 |--------|---------|
@@ -857,6 +857,8 @@ Customer-facing freeform message lives in `coaching_ai_outputs.output_json.custo
 | `coaching_enrollments.go21_understanding_json` | Premium Coaching Brain — longitudinal personal understanding (evidence, confidence, revisable) |
 | `coaching_enrollments.go21_daily_targets_json` | Coach-set daily water/calories/protein/sleep targets for Go21 enrollment (optional; existing enrollments compatible) |
 | `coaching_daily_logs.nutrition_estimate_json` | Optional soft calorie/protein estimates for the day (uncertain bands; never fake precision) |
+| `coaching_enrollments.go21_coach_plan_json` | Coach-prescribed daily plan items (period/name/amount/instruction/recurrence); AI must not silently rewrite |
+| `coaching_daily_logs.go21_plan_day_json` | Inferred plan execution for the log date (completions / intentional skips); evidence-based |
 
 **Security:** Customer entry via existing opaque `customer_portal_tokens` at `/c/{token}/go21`. Go21 routes enforce experience-21d eligibility. No guessable customer IDs in URLs.
 

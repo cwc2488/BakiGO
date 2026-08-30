@@ -25,6 +25,11 @@ import {
   saveGo21DailyTargets,
 } from "@/lib/go21/daily-targets";
 import {
+  buildGo21CoachPlanSnapshot,
+  loadGo21CoachPlanRecord,
+  saveGo21CoachPlan,
+} from "@/lib/go21/coach-plan";
+import {
   createSupabaseServiceClient,
   isSupabaseServiceConfigured,
 } from "@/lib/supabase/service-client";
@@ -225,6 +230,16 @@ export async function activateExperience21d(input: {
     proteinG?: number | null;
     sleepHours?: number | null;
   } | null;
+  /** Optional coach-prescribed daily plan items (generic; not brand-specific). */
+  coachPlan?: {
+    items: Array<{
+      period: string;
+      name: string;
+      amount?: string | null;
+      instruction?: string | null;
+      recurrence?: "daily" | "weekdays" | "weekends" | number[];
+    }>;
+  } | null;
 }): Promise<{
   alreadyActive: boolean;
   enrollment: ReturnType<typeof serializeCoachingEnrollment>;
@@ -273,6 +288,15 @@ export async function activateExperience21d(input: {
           customerId: input.customerId,
           ownerMemberId: input.ownerMemberId,
           dailyTargets: input.dailyTargets,
+        });
+      }
+      if (input.coachPlan?.items?.length) {
+        await maybeSaveActivationCoachPlan({
+          enrollmentId: existing.id,
+          customerId: input.customerId,
+          ownerMemberId: input.ownerMemberId,
+          coachPlan: input.coachPlan,
+          effectiveFrom: schedule.startDate,
         });
       }
       return {
@@ -342,6 +366,15 @@ export async function activateExperience21d(input: {
       dailyTargets: input.dailyTargets,
     });
   }
+  if (input.coachPlan?.items?.length) {
+    await maybeSaveActivationCoachPlan({
+      enrollmentId: enrollment.id,
+      customerId: input.customerId,
+      ownerMemberId: input.ownerMemberId,
+      coachPlan: input.coachPlan,
+      effectiveFrom: schedule.startDate,
+    });
+  }
 
   return {
     alreadyActive: false,
@@ -391,6 +424,41 @@ async function maybeSaveActivationTargets(input: {
     });
   } catch {
     // Targets column may be missing pre-070 — activation must still succeed.
+  }
+}
+
+async function maybeSaveActivationCoachPlan(input: {
+  enrollmentId: string;
+  customerId: string;
+  ownerMemberId: string;
+  coachPlan: {
+    items: Array<{
+      period: string;
+      name: string;
+      amount?: string | null;
+      instruction?: string | null;
+      recurrence?: "daily" | "weekdays" | "weekends" | number[];
+    }>;
+  };
+  effectiveFrom: string;
+}): Promise<void> {
+  try {
+    const snapshot = buildGo21CoachPlanSnapshot({
+      items: input.coachPlan.items,
+      source: "activation",
+      effectiveFrom: input.effectiveFrom,
+    });
+    const prior = await loadGo21CoachPlanRecord(input.enrollmentId);
+    await saveGo21CoachPlan({
+      enrollmentId: input.enrollmentId,
+      customerId: input.customerId,
+      ownerMemberId: input.ownerMemberId,
+      snapshot,
+      reason: "activation",
+      prior,
+    });
+  } catch {
+    // Plan column may be missing pre-071 — activation must still succeed.
   }
 }
 

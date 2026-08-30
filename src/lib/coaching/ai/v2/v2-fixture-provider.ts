@@ -250,6 +250,18 @@ export function generateFixtureV2Draft(input: GenerateCoachingAiV2Input): Coachi
 
   // Photo / vision observation — useful judgment when cues exist; no self-eval quiz
   if (freeMessage && /\[影像觀察/.test(freeMessage)) {
+    // Non-food photo — social only, never meal pipeline language
+    if (/非餐點/.test(freeMessage) || /可見：貓|可見：狗|可見：寵物/.test(freeMessage)) {
+      const hint = freeMessage.match(/可見：([^\n｜|]+)/)?.[1]?.trim();
+      return {
+        coachMessage: hint
+          ? /貓/.test(hint)
+            ? "這個不能吃啦 😂"
+            : `這張看起來不是餐點欸 😂（${hint}）`
+          : "這張看起來不是餐點欸 😂",
+        meta: emptyMeta("casual", day, stage),
+      };
+    }
     const food = extractVisionFoodLabel(freeMessage);
     const mealJudgment = buildMealPhotoJudgment(decisionContext, food, input.go21Goal);
     if (mealJudgment) {
@@ -585,6 +597,27 @@ function matchGoalConflictSteering(input: GenerateCoachingAiV2Input): string | n
   if (planningHeavy && alreadyHeavy) {
     return "今天我比較不推再疊炸的，你前面已經吃過了 😂";
   }
+
+  // Coach Daily Plan quiet context — dinner was prescribed; don't police, one useful beat
+  const dinnerPlan = input.coachDailyPlan?.items.find(
+    (i) => i.period === "dinner" || i.periodLabel === "晚餐",
+  );
+  if (
+    dinnerPlan &&
+    /晚上|晚餐|今晚/.test(msg) &&
+    /想吃|想喝|改|聚餐|不喝|不吃|雞排|漢堡|炸/.test(msg)
+  ) {
+    const planLabel = dinnerPlan.amount
+      ? `${dinnerPlan.name} ${dinnerPlan.amount}`
+      : dinnerPlan.name;
+    if (/聚餐|先不|今天不|不喝|不吃/.test(msg)) {
+      return `好，今天晚餐先不照原本的「${planLabel}」。聚餐就聚餐，我先記著。`;
+    }
+    if (HEAVY_FOOD_RE.test(msg)) {
+      return `今天晚餐原本是${planLabel}喔 😂\n真的很想吃的話，我先看你今天前面吃得怎麼樣。`;
+    }
+  }
+
   if (planningHeavy) {
     const label = plannedLabel ?? "這個";
     return `待會想吃${label}啊……今天我比較想讓你選輕一點的。`;

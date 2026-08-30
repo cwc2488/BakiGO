@@ -284,6 +284,7 @@ export function CoachingCustomerSection({
             </div>
           ) : null}
           {isGo21 ? <Go21TargetsEditor customerId={customerId} disabled={busy} /> : null}
+          {isGo21 ? <Go21PlanEditor customerId={customerId} disabled={busy} /> : null}
           {!isGo21 && portalLink ? (
             <div className="space-y-2">
               <p className="text-[0.8125rem] font-medium text-[#86868b]">歷史陪跑連結</p>
@@ -464,6 +465,151 @@ function Go21TargetsEditor({
       </div>
       <CrmButton disabled={disabled || saving} onClick={() => void save()} type="button" variant="secondary">
         {saving ? "儲存中…" : "儲存每日目標"}
+      </CrmButton>
+      {msg ? <p className="text-[0.8125rem] text-[#636366]">{msg}</p> : null}
+    </div>
+  );
+}
+
+function Go21PlanEditor({
+  customerId,
+  disabled,
+}: {
+  customerId: string;
+  disabled?: boolean;
+}) {
+  const [rows, setRows] = useState<
+    Array<{ period: string; name: string; amount: string; id?: string }>
+  >([
+    { period: "breakfast", name: "", amount: "" },
+    { period: "lunch", name: "", amount: "" },
+    { period: "afternoon", name: "", amount: "" },
+    { period: "dinner", name: "", amount: "" },
+  ]);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetchWithTimeout(
+          `/api/coaching/go21/plan?customerId=${encodeURIComponent(customerId)}`,
+        );
+        const payload = (await res.json()) as {
+          plan?: {
+            items?: Array<{
+              id: string;
+              period: string;
+              name: string;
+              amount: string | null;
+            }>;
+          } | null;
+        };
+        if (cancelled || !res.ok) {
+          if (!cancelled) setLoaded(true);
+          return;
+        }
+        if (payload.plan?.items?.length) {
+          const byPeriod = new Map(payload.plan.items.map((i) => [i.period, i]));
+          setRows((prev) =>
+            prev.map((r) => {
+              const hit = byPeriod.get(r.period);
+              return hit
+                ? {
+                    period: r.period,
+                    name: hit.name,
+                    amount: hit.amount ?? "",
+                    id: hit.id,
+                  }
+                : r;
+            }),
+          );
+        }
+        setLoaded(true);
+      } catch {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId]);
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const items = rows
+        .filter((r) => r.name.trim())
+        .map((r, i) => ({
+          id: r.id,
+          period: r.period,
+          name: r.name.trim(),
+          amount: r.amount.trim() || null,
+          sortOrder: i,
+        }));
+      if (items.length === 0) throw new Error("請至少填一項安排");
+      const res = await fetchWithTimeout("/api/coaching/go21/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId, items, source: "coach_edit" }),
+      });
+      const payload = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(payload.error ?? "無法儲存");
+      setMsg("已更新每日安排");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "無法儲存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!loaded) {
+    return <p className="text-[0.8125rem] text-[#86868b]">載入每日安排…</p>;
+  }
+
+  const labels: Record<string, string> = {
+    breakfast: "早餐",
+    lunch: "午餐",
+    afternoon: "下午",
+    dinner: "晚餐",
+  };
+
+  return (
+    <div className="space-y-3 rounded-[1rem] border border-[#e4ebe0] bg-white p-3">
+      <p className="text-[0.8125rem] font-medium text-[#5a7a3a]">每日執行安排</p>
+      <p className="text-[0.75rem] leading-5 text-[#86868b]">
+        教練開的一日節奏。改了不會重開 21 天；歷史天數仍依當時安排理解。
+      </p>
+      <div className="space-y-2">
+        {rows.map((row, index) => (
+          <div key={row.period} className="grid grid-cols-[3.5rem_1fr_4.5rem] gap-2">
+            <span className="self-center text-[0.75rem] text-[#86868b]">{labels[row.period] ?? row.period}</span>
+            <input
+              className="rounded-[0.75rem] border border-[#e5e5ea] px-3 py-2 text-[0.9375rem]"
+              placeholder="項目名稱"
+              value={row.name}
+              onChange={(e) => {
+                const value = e.target.value;
+                setRows((rs) => rs.map((r, i) => (i === index ? { ...r, name: value } : r)));
+              }}
+            />
+            <input
+              className="rounded-[0.75rem] border border-[#e5e5ea] px-2 py-2 text-[0.875rem]"
+              placeholder="份量"
+              value={row.amount}
+              onChange={(e) => {
+                const value = e.target.value;
+                setRows((rs) => rs.map((r, i) => (i === index ? { ...r, amount: value } : r)));
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      <CrmButton disabled={disabled || saving} onClick={() => void save()} type="button" variant="secondary">
+        {saving ? "儲存中…" : "儲存每日安排"}
       </CrmButton>
       {msg ? <p className="text-[0.8125rem] text-[#636366]">{msg}</p> : null}
     </div>

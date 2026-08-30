@@ -339,6 +339,15 @@ export function extractGo21TurnSignals(input: {
   if (/蛋白質.*少|蛋白不夠|沒吃什麼肉|幾乎沒蛋白質/.test(msg)) {
     push("low_protein_stated", msg.slice(0, 80));
   }
+  if (/聚餐|應酬|先不喝|今天不喝|今天不吃/.test(msg) && /計畫|奶昔|安排|原本/.test(msg) === false) {
+    // Intentional social deviation language — soft signal only
+    if (/聚餐|應酬|先不|今天不/.test(msg)) {
+      push("plan_deviation_stated", msg.slice(0, 80));
+    }
+  }
+  if (/早上的.*喝完|午餐.*吃完|照安排|有照做/.test(msg)) {
+    push("plan_adherence_stated", msg.slice(0, 80));
+  }
   if (
     signals.some((s) => s.signal === "evening_craving" || s.signal === "evening_overeating") &&
     /睡|失眠|熬夜/.test(msg)

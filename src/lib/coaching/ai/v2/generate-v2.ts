@@ -70,6 +70,24 @@ export type GenerateCoachingAiV2Input = {
     softCues: string[];
     guidance: string;
   } | null;
+  coachDailyPlan?: {
+    items: Array<{
+      id: string;
+      period: string;
+      periodLabel: string;
+      name: string;
+      amount: string | null;
+      instruction: string | null;
+    }>;
+    today: Array<{
+      itemId: string;
+      status: string;
+      evidence: string | null;
+      confidence: string;
+    }>;
+    guidance: string;
+  } | null;
+  visionNonFood?: boolean | null;
 };
 
 export type GenerateCoachingAiV2Result = {
@@ -192,6 +210,8 @@ export async function generateCoachingAiV2(
               recentVisionObservations: input.recentVisionObservations,
               longitudinalUnderstanding: input.longitudinalUnderstanding,
               dailyTargetsState: input.dailyTargetsState,
+              coachDailyPlan: input.coachDailyPlan,
+              visionNonFood: input.visionNonFood,
             }),
           },
         ],
@@ -214,7 +234,10 @@ export async function generateCoachingAiV2(
     try {
       parsedJson = JSON.parse(raw);
     } catch {
-      throw new Error("OpenAI V2 coach returned non-JSON content");
+      // Salvage: sometimes models wrap JSON or add prose — try extract object
+      const salvaged = salvageJsonObject(raw);
+      if (!salvaged) throw new Error("OpenAI V2 coach returned non-JSON content");
+      parsedJson = salvaged;
     }
 
     const parsed = parseCoachingAiV2Generation(parsedJson, {
@@ -222,7 +245,45 @@ export async function generateCoachingAiV2(
       lifecycleStage: input.memory.lifecycle.stage,
     });
     if (!parsed.ok) {
-      throw new Error(`OpenAI V2 coach schema invalid: ${parsed.error}`);
+      // Last-chance: if coach_message exists as string, accept with empty meta
+      const looseMessage = extractLooseCoachMessage(parsedJson);
+      if (!looseMessage) {
+        throw new Error(`OpenAI V2 coach schema invalid: ${parsed.error}`);
+      }
+      const draft = {
+        coachMessage: looseMessage,
+        meta: {
+          intention: "casual" as const,
+          lifecycleDay: input.memory.lifecycle.dayNumber,
+          lifecycleStage: input.memory.lifecycle.stage,
+          memoryWrites: [],
+          openLoopOps: [],
+          hypothesisOps: [],
+          safetyTriggered: false,
+          escalationSuggested: false,
+          escalationReason: null,
+          day21Reflection: null,
+        },
+      };
+      const usageParsed = parseOpenAiChatCompletionUsage(json);
+      return {
+        draft,
+        model: getCoachingDailyAiModelId(),
+        promptVersion: COACHING_AI_V2_PROMPT_VERSION,
+        usage: {
+          inputTokens: usageParsed?.inputTokens ?? 0,
+          cachedInputTokens: usageParsed?.cachedInputTokens ?? 0,
+          outputTokens: usageParsed?.outputTokens ?? 0,
+          imageCount: 0,
+        },
+        latencyMs: Date.now() - started,
+        usedFixture: false,
+        observability: baseObservability({
+          model: getCoachingDailyAiModelId(),
+          memory: input.memory,
+          draft,
+        }),
+      };
     }
 
     if (safety.escalate) {
@@ -312,4 +373,29 @@ export function logCoachingAiV2Observability(
       output_tokens: obs.outputTokens,
     }),
   );
+}
+
+/** Extract a JSON object from messy model output (prose wrappers / code fences). */
+function salvageJsonObject(raw: string): unknown | null {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced?.[1]?.trim() || trimmed;
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    return JSON.parse(candidate.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+function extractLooseCoachMessage(parsed: unknown): string | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  const o = parsed as Record<string, unknown>;
+  for (const key of ["coach_message", "coachMessage", "message", "reply"]) {
+    const v = o[key];
+    if (typeof v === "string" && v.trim()) return v.trim().slice(0, 4000);
+  }
+  return null;
 }

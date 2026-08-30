@@ -16,6 +16,8 @@ export const GO21_CONVERSATIONAL_MOVES = [
   "temporal_correction",
   "answer_to_question",
   "acknowledgement",
+  "humor_social",
+  "meta_ai_tease",
 ] as const;
 
 export type Go21ConversationalMove = (typeof GO21_CONVERSATIONAL_MOVES)[number];
@@ -61,6 +63,12 @@ const SHORT_FOOD_CHOICE_RE =
 
 const MISUNDERSTAND_RE = /你沒聽懂|聽不懂嗎|講清楚|我不是這個意思|你誤會/u;
 
+const META_AI_TEASE_RE =
+  /是不是不能開玩笑|不能開玩笑|你聽不懂玩笑|開玩笑也不行|你很嚴肅|太認真了吧|只會講飲食|只會講營養|你是機器人嗎/u;
+
+const HUMOR_SOCIAL_RE =
+  /哈哈哈+|呵呵+|嘿+|好玩|好笑|逗你|跟你開玩笑|開個玩笑|鬧著玩|玩啦|騙你的|亂傳的|只是開玩笑/u;
+
 export type Go21RecentTurnLike = {
   role: string;
   content: string;
@@ -90,6 +98,30 @@ export function detectGo21ConversationalMove(input: {
       decidedFood: extractFoodMention(msg),
       temporalHint: extractTemporalHint(msg),
       reason: "customer_says_misunderstood",
+      priorCoachWasCoachingFood,
+    };
+  }
+
+  // Meta tease about AI / joking after a miss (e.g. cat photo treated as food)
+  if (META_AI_TEASE_RE.test(msg)) {
+    return {
+      move: "meta_ai_tease",
+      confidence: "high",
+      decidedFood: null,
+      temporalHint: null,
+      reason: "teasing_ai_or_asking_if_jokes_ok",
+      priorCoachWasCoachingFood,
+    };
+  }
+
+  // Light humor / social banter — zero nutrition this turn
+  if (HUMOR_SOCIAL_RE.test(msg) && msg.length <= 40 && !/熱量|蛋白質|減脂|菜單/.test(msg)) {
+    return {
+      move: "humor_social",
+      confidence: "high",
+      decidedFood: null,
+      temporalHint: null,
+      reason: "humor_or_social_banter",
       priorCoachWasCoachingFood,
     };
   }
@@ -209,7 +241,9 @@ export function conversationalMovePrefersNaturalAck(move: Go21ConversationalMove
     move === "rejection" ||
     move === "acknowledgement" ||
     move === "temporal_correction" ||
-    move === "answer_to_question"
+    move === "answer_to_question" ||
+    move === "humor_social" ||
+    move === "meta_ai_tease"
   );
 }
 
@@ -282,6 +316,12 @@ export function composeGo21NaturalConversationalReply(
     case "answer_to_question":
       if (food) return `好，${food}。`;
       return "好，我知道了。";
+
+    case "meta_ai_tease":
+      return "可以開玩笑啊 😂 剛剛是我太認真了。";
+
+    case "humor_social":
+      return "哈哈好啦 😂";
   }
 }
 
@@ -290,16 +330,18 @@ export function buildConversationalMovePromptGuidance(
   result: Go21ConversationalMoveResult | null,
 ): string | null {
   if (!result) {
-    return "先判斷這一輪是不是對話動作（更正／決定／確認／拒絕／接話／時間更正）。若是，先接住對話，不要重播上一輪教練分析。";
+    return "先判斷這一輪是不是對話動作（更正／決定／確認／拒絕／接話／時間更正／玩笑／調侃）。若是，先接住對話，不要重播上一輪教練分析。";
   }
   const bits = [
     `conversationalMove=${result.move}`,
     `confidence=${result.confidence}`,
     result.decidedFood ? `decidedFood=${result.decidedFood}` : null,
     result.temporalHint ? `temporalHint=${result.temporalHint}` : null,
-    result.move === "continuation"
-      ? "接話：給一句有觀點的話就好（可不推／可折衷／可輕吐槽），不要長篇風險說明＋替代清單＋追問。"
-      : "先理解對話動作再決定要不要教練。更正時先認錯並更新理解，不要辯護或重講舊解釋。決定／確認時短回即可，不要加熱量／蛋白質／均衡／加油。",
+    result.move === "meta_ai_tease" || result.move === "humor_social"
+      ? "這一輪是玩笑／社交／調侃：用一句人話接住即可，禁止營養建議、Goal、每日目標、計畫背誦。"
+      : result.move === "continuation"
+        ? "接話：給一句有觀點的話就好（可不推／可折衷／可輕吐槽），不要長篇風險說明＋替代清單＋追問。"
+        : "先理解對話動作再決定要不要教練。更正時先認錯並更新理解，不要辯護或重講舊解釋。決定／確認時短回即可，不要加熱量／蛋白質／均衡／加油。",
   ];
   return bits.filter(Boolean).join("；");
 }

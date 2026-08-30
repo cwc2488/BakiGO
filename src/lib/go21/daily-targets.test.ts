@@ -253,7 +253,7 @@ describe("Go21 AI uses targets naturally without nagging", () => {
     });
     expect(user).toMatch(/dailyTargetsState/);
     expect(user).toMatch(/Do not nag|不要每則報/);
-    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/daily_targets/);
+    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/daily_targets|coach_plan/);
   });
 
   it("fixture menu uses soft protein cue when calories ok", () => {

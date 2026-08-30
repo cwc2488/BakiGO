@@ -34,6 +34,16 @@ import {
 import { buildGo21CoachGenerationContext } from "@/lib/go21/coach-context";
 import { loadGo21TodayDailyState } from "@/lib/go21/load-daily-state";
 import {
+  compactGo21CoachPlanForAi,
+  loadGo21CoachPlanRecord,
+  resolveGo21CoachPlanForDate,
+} from "@/lib/go21/coach-plan";
+import {
+  inferGo21PlanExecutionFromMessage,
+  loadGo21PlanDayRecord,
+  saveGo21PlanDayRecord,
+} from "@/lib/go21/plan-execution";
+import {
   compactGo21UnderstandingForAi,
   loadGo21UnderstandingRecord,
   saveGo21UnderstandingRecord,
@@ -314,6 +324,8 @@ export async function POST(
       evidenceSummary: null,
       source: "none",
       usage: { inputTokens: 0, outputTokens: 0, imageCount: 0 },
+      foodRelevant: false,
+      foodRelevance: null,
     };
 
     stage = "vision";
@@ -427,6 +439,7 @@ export async function POST(
     let longitudinalUnderstanding: ReturnType<typeof compactGo21UnderstandingForAi> = null;
     let dailyTargetsState: Awaited<ReturnType<typeof loadGo21TodayDailyState>>["forAi"] | null =
       null;
+    let coachDailyPlan: ReturnType<typeof compactGo21CoachPlanForAi> = null;
     try {
       const todayState = await loadGo21TodayDailyState({
         enrollmentId: portal.enrollmentId,
@@ -435,6 +448,35 @@ export async function POST(
       dailyTargetsState = todayState.forAi;
     } catch {
       dailyTargetsState = null;
+    }
+    try {
+      const planRecord = await loadGo21CoachPlanRecord(portal.enrollmentId);
+      const planItems = resolveGo21CoachPlanForDate(planRecord, generationInput.logDate);
+      const priorDay = await loadGo21PlanDayRecord({
+        enrollmentId: portal.enrollmentId,
+        logDate: generationInput.logDate,
+      });
+      const inferred = inferGo21PlanExecutionFromMessage({
+        message: customerDisplayContent,
+        planItems,
+        prior: priorDay,
+        logDate: generationInput.logDate,
+        visionIsFood: vision.ran ? vision.foodRelevant : null,
+        visionFoodLabel: vision.foodRelevance?.visibleHint ?? null,
+      });
+      if (inferred) {
+        await saveGo21PlanDayRecord({
+          enrollmentId: portal.enrollmentId,
+          logDate: generationInput.logDate,
+          record: inferred,
+        });
+      }
+      coachDailyPlan = compactGo21CoachPlanForAi({
+        planItems,
+        dayRecord: inferred ?? priorDay,
+      });
+    } catch {
+      coachDailyPlan = null;
     }
     try {
       const priorUnderstanding = await loadGo21UnderstandingRecord(portal.enrollmentId);
@@ -494,7 +536,7 @@ export async function POST(
     const decisionContext = buildMinimalDecisionContextForFreeMessage({
       generationInput,
       freeMessage: enrichedFreeMessage,
-      mealObservations: vision.observations,
+      mealObservations: vision.foodRelevant ? vision.observations : [],
     });
 
     if (extracted.hungerMentioned && decisionContext.customerVoice.length === 0) {
@@ -616,6 +658,8 @@ export async function POST(
         recentVisionObservations,
         longitudinalUnderstanding,
         dailyTargetsState,
+        coachDailyPlan,
+        visionNonFood: vision.ran && vision.foodRelevant === false,
         customerAlreadyAccepted: true,
         existingCustomerTurnId: acceptedCustomerTurnId,
       });

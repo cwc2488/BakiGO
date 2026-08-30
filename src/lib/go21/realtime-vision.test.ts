@@ -19,6 +19,8 @@ const emptyVision = (overrides: Partial<Go21RealtimeVisionResult> = {}): Go21Rea
   evidenceSummary: null,
   source: "none",
   usage: { inputTokens: 0, outputTokens: 0, imageCount: 0 },
+  foodRelevant: false,
+  foodRelevance: null,
   ...overrides,
 });
 

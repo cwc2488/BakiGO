@@ -13,6 +13,11 @@ import { parseCoachingMealPhotoPath } from "@/lib/coaching/ai/validate-coaching-
 import type { CoachingGenerationInput, PreparedCoachingMealImage } from "@/types/coaching-ai";
 import type { CoachingMealObservation } from "@/types/coaching-signals";
 import type { CoachingMealSlot, PrimaryMealSlot } from "@/types/coaching";
+import {
+  assessGo21VisionFoodRelevance,
+  buildGo21NonFoodEvidenceSummary,
+  type Go21VisionFoodRelevance,
+} from "@/lib/go21/vision-food-relevance";
 
 export type Go21RealtimeVisionResult = {
   ran: boolean;
@@ -27,6 +32,9 @@ export type Go21RealtimeVisionResult = {
   evidenceSummary: string | null;
   source: "vision" | "heuristic" | "merged" | "cache" | "none";
   usage: { inputTokens: number; outputTokens: number; imageCount: number };
+  /** Food relevance gate — false blocks meal/nutrition/plan-food pipelines. */
+  foodRelevant: boolean;
+  foodRelevance: Go21VisionFoodRelevance | null;
 };
 
 /**
@@ -193,6 +201,43 @@ function toVisionApiSlot(slot: string | null): PrimaryMealSlot {
   return "lunch";
 }
 
+/**
+ * Apply food-relevance gate to an observation set.
+ * Non-food → empty meal observations + non-food evidence summary.
+ */
+export function gateGo21VisionObservations(input: {
+  observations: CoachingMealObservation[];
+  mealSlotUnresolved: boolean;
+  mealSlotResolved: PrimaryMealSlot | null;
+}): Pick<
+  Go21RealtimeVisionResult,
+  "observations" | "evidenceSummary" | "foodRelevant" | "foodRelevance" | "mealSlotResolved"
+> {
+  const primary = input.observations[0] ?? null;
+  const relevance = assessGo21VisionFoodRelevance(primary);
+  if (!relevance.isFoodRelevant) {
+    return {
+      observations: [],
+      evidenceSummary: buildGo21NonFoodEvidenceSummary(relevance),
+      foodRelevant: false,
+      foodRelevance: relevance,
+      mealSlotResolved: null,
+    };
+  }
+  return {
+    observations: input.mealSlotUnresolved ? [] : input.observations,
+    evidenceSummary: primary
+      ? buildEvidenceSummary(
+          input.mealSlotUnresolved ? [primary] : input.observations,
+          input.mealSlotUnresolved,
+        )
+      : null,
+    foodRelevant: true,
+    foodRelevance: relevance,
+    mealSlotResolved: input.mealSlotUnresolved ? null : input.mealSlotResolved,
+  };
+}
+
 function buildEvidenceSummary(
   observations: CoachingMealObservation[],
   mealSlotUnresolved: boolean,
@@ -244,6 +289,8 @@ export async function runGo21RealtimeVision(input: {
     evidenceSummary: null,
     source: "none",
     usage: { inputTokens: 0, outputTokens: 0, imageCount: 0 },
+    foodRelevant: false,
+    foodRelevance: null,
   };
 
   let resolved;
@@ -281,21 +328,21 @@ export async function runGo21RealtimeVision(input: {
         ...cached.observation,
         mealSlot: slotForApi,
       };
+      const gated = gateGo21VisionObservations({
+        observations: [obs],
+        mealSlotUnresolved: input.mealSlotUnresolved,
+        mealSlotResolved: input.mealSlotUnresolved ? null : slotForApi,
+      });
       return {
         ran: true,
         reusedCache: true,
         failed: false,
         failureReason: null,
         storagePath: resolved.storagePath,
-        mealSlotResolved: input.mealSlotUnresolved ? null : slotForApi,
         mealSlotUnresolved: input.mealSlotUnresolved,
-        observations: input.mealSlotUnresolved ? [] : [obs],
-        evidenceSummary: buildEvidenceSummary(
-          [obs],
-          input.mealSlotUnresolved,
-        ),
         source: "cache",
         usage: { inputTokens: 0, outputTokens: 0, imageCount: 0 },
+        ...gated,
       };
     }
   }
@@ -440,26 +487,26 @@ export async function runGo21RealtimeVision(input: {
     });
   }
 
+  const gated = gateGo21VisionObservations({
+    observations: primaryObs ? [primaryObs] : observed.observations,
+    mealSlotUnresolved: input.mealSlotUnresolved,
+    mealSlotResolved: input.mealSlotUnresolved ? null : slotForApi,
+  });
+
   return {
     ran: true,
     reusedCache: false,
     failed: false,
     failureReason: null,
     storagePath: resolved.storagePath,
-    mealSlotResolved: input.mealSlotUnresolved ? null : slotForApi,
     mealSlotUnresolved: input.mealSlotUnresolved,
-    // Even when slot unresolved, keep observation for coaching context via evidenceSummary;
-    // do not attach to mealObservations as a fabricated primary meal.
-    observations: input.mealSlotUnresolved ? [] : observed.observations,
-    evidenceSummary: primaryObs
-      ? buildEvidenceSummary([primaryObs], input.mealSlotUnresolved)
-      : null,
     source: observed.source,
     usage: {
       inputTokens: observed.usage.inputTokens,
       outputTokens: observed.usage.outputTokens,
       imageCount: observed.usage.imageCount,
     },
+    ...gated,
   };
 }
 
@@ -469,14 +516,23 @@ export function composeGo21VisionFreeMessage(input: {
   hasPhoto: boolean;
   vision: Go21RealtimeVisionResult;
 }): string {
+  const nonFood = input.vision.ran && input.vision.foodRelevant === false;
   const base =
     input.customerMessage.trim() ||
-    (input.hasPhoto ? "（傳了一張餐點照片）" : "");
+    (input.hasPhoto
+      ? nonFood
+        ? "（傳了一張照片）"
+        : "（傳了一張餐點照片）"
+      : "");
 
   if (!input.vision.ran) return base;
 
   if (input.vision.failed) {
     return `${base}\n\n[系統] 照片已收到，但這次影像理解未成功；請顧客用文字補充主要吃了什麼。`;
+  }
+
+  if (nonFood && input.vision.evidenceSummary) {
+    return `${base}\n\n[影像觀察｜非餐點]\n${input.vision.evidenceSummary}`;
   }
 
   if (input.vision.evidenceSummary) {

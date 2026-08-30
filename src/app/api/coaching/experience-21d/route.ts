@@ -105,6 +105,14 @@ export async function POST(request: Request) {
         proteinG?: number | null;
         sleepHours?: number | null;
       } | null;
+      coachPlan?: {
+        items: Array<{
+          period: string;
+          name: string;
+          amount?: string | null;
+          instruction?: string | null;
+        }>;
+      } | null;
     };
     if (!body.customerId?.trim() || !body.productReceivedDate?.trim()) {
       return NextResponse.json({ error: "customerId and productReceivedDate required." }, { status: 400 });
@@ -116,6 +124,7 @@ export async function POST(request: Request) {
       interestId: body.interestId?.trim() || null,
       customerProfile: body.customerProfile ?? null,
       dailyTargets: body.dailyTargets ?? null,
+      coachPlan: body.coachPlan ?? null,
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

@@ -12,7 +12,8 @@ import {
   isIsoDate,
 } from "@/lib/coaching/experience-21d";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
-import { GO21_DAILY_TARGET_PRESETS } from "@/types/go21";
+import { GO21_DAILY_TARGET_PRESETS, GO21_COACH_PLAN_PERIOD_LABELS } from "@/types/go21";
+import type { Go21CoachPlanPeriod } from "@/types/go21";
 
 type ActiveExperience = {
   enrollmentId: string;
@@ -26,6 +27,12 @@ type DailyTargetsDraft = {
   caloriesKcal: number;
   proteinG: number;
   sleepHours: number;
+};
+
+type PlanRowDraft = {
+  period: Go21CoachPlanPeriod;
+  name: string;
+  amount: string;
 };
 
 type StartMode =
@@ -60,6 +67,12 @@ export function Experience21dStartPage({
     sleepHours: GO21_DAILY_TARGET_PRESETS[1].sleepHours,
   });
   const [presetId, setPresetId] = useState<string>("standard");
+  const [planRows, setPlanRows] = useState<PlanRowDraft[]>([
+    { period: "breakfast", name: "", amount: "" },
+    { period: "lunch", name: "正常飲食", amount: "" },
+    { period: "afternoon", name: "", amount: "" },
+    { period: "dinner", name: "", amount: "" },
+  ]);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -196,6 +209,15 @@ export function Experience21dStartPage({
             caloriesKcal: targets.caloriesKcal,
             proteinG: targets.proteinG,
             sleepHours: targets.sleepHours,
+          },
+          coachPlan: {
+            items: planRows
+              .filter((r) => r.name.trim())
+              .map((r) => ({
+                period: r.period,
+                name: r.name.trim(),
+                amount: r.amount.trim() || null,
+              })),
           },
         }),
       });
@@ -494,6 +516,51 @@ export function Experience21dStartPage({
               }}
             />
           </label>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-[1.5rem] border border-[#e4ebe0] bg-white p-5">
+        <p className="text-[0.75rem] font-semibold tracking-wide text-[#5a7a3a]">每日執行安排</p>
+        <h3 className="mt-1 text-[1.0625rem] font-semibold text-[#1d1d1f]">教練開的一日節奏</h3>
+        <p className="mt-2 text-[0.875rem] leading-6 text-[#636366]">
+          自由填寫即可（餐點、飲品、補充品…）。留空的時段不寫入。啟動後仍可改，不會重開 21 天。
+        </p>
+        <div className="mt-4 space-y-3">
+          {planRows.map((row, index) => (
+            <div key={row.period} className="grid grid-cols-[4.5rem_1fr_5.5rem] items-end gap-2">
+              <span className="pb-2.5 text-[0.8125rem] font-medium text-[#5a7a3a]">
+                {GO21_COACH_PLAN_PERIOD_LABELS[row.period]}
+              </span>
+              <label className="space-y-1">
+                <span className="sr-only">項目</span>
+                <input
+                  className="min-h-11 w-full rounded-xl border border-[#e4ebe0] bg-[#fafcfa] px-3 text-[0.9375rem]"
+                  placeholder="例如：正常飲食／飲品／指定項目"
+                  value={row.name}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setPlanRows((rows) =>
+                      rows.map((r, i) => (i === index ? { ...r, name: value } : r)),
+                    );
+                  }}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="sr-only">份量</span>
+                <input
+                  className="min-h-11 w-full rounded-xl border border-[#e4ebe0] bg-[#fafcfa] px-2 text-[0.875rem]"
+                  placeholder="份量"
+                  value={row.amount}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setPlanRows((rows) =>
+                      rows.map((r, i) => (i === index ? { ...r, amount: value } : r)),
+                    );
+                  }}
+                />
+              </label>
+            </div>
+          ))}
         </div>
       </section>
 

@@ -35,7 +35,7 @@ export type Go21HumanCoachReplyContract = {
 };
 
 const HEALTH_APP_STRUCTURE_RE =
-  /(?:偏離|影響|偏重).{0,40}(?:目標|減脂).{0,80}(?:搭配|建議|可以選|換成).{0,80}(?:蛋白質|蔬菜|沙拉).{0,80}(?:保護|護住|邁進|加油)?/u;
+  /(?:偏離|影響|偏重).{0,40}(?:目標|減脂).{0,80}(?:搭配|建議|可以選|換成).{0,80}(?:蛋白質|蔬菜|沙拉).{0,80}(?:保護|護住|邁進|加油)?|如果(?:晚餐)?想改成沙拉.{0,40}蛋白質|會幫助更均衡|記得選擇搭配一些蛋白質/u;
 
 const PACKED_COACHING_BEATS_RE =
   /(?:以你|以減脂|對你的目標).{0,30}(?:偏重|影響|負擔).{0,60}(?:下一餐|建議|換成|可以選).{0,60}(?:蛋白質|雞胸|蔬菜|清淡)/u;
@@ -84,6 +84,9 @@ export function buildGo21HumanCoachReplyContract(input: {
     "收尾問句",
     "每日目標數字報告",
     "還差多少 kcal／g／ml",
+    "背誦教練每日安排",
+    "任務完成率／達標失敗用語",
+    "如果想改成沙拉記得搭配蛋白質",
   ];
 
   if (input.channel === "day21") {
@@ -133,6 +136,15 @@ export function buildGo21HumanCoachReplyContract(input: {
           doNotForce: baseDoNotForce,
           may: ["一句接住", "停住"],
           guidance: "短確認／拒絕／嗯——一句接住就停。不要重播上一輪分析。",
+        };
+      case "humor_social":
+      case "meta_ai_tease":
+        return {
+          replyShape: "one_beat",
+          lengthHint: "one_sentence",
+          doNotForce: [...baseDoNotForce, "任何飲食建議", "Goal", "每日目標", "教練計畫"],
+          may: ["開玩笑", "承認剛剛太認真", "當人聊天", "停住"],
+          guidance: "玩笑／調侃／社交——一句人話即可。這一輪零營養。",
         };
       case "decision":
       case "correction":

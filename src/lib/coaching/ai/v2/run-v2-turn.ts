@@ -63,6 +63,8 @@ export type RunCoachingAiV2TurnInput = {
   /** Premium Coaching Brain — durable personal understanding for this enrollment. */
   longitudinalUnderstanding?: Go21LongitudinalUnderstandingForAi | null;
   dailyTargetsState?: GenerateCoachingAiV2Input["dailyTargetsState"];
+  coachDailyPlan?: GenerateCoachingAiV2Input["coachDailyPlan"];
+  visionNonFood?: boolean | null;
   /** Customer turn already durably accepted — skip duplicate Supabase customer insert. */
   customerAlreadyAccepted?: boolean;
   existingCustomerTurnId?: string | null;
@@ -205,6 +207,8 @@ export async function runCoachingAiV2Turn(
     recentVisionObservations: input.recentVisionObservations,
     longitudinalUnderstanding: input.longitudinalUnderstanding,
     dailyTargetsState: input.dailyTargetsState,
+    coachDailyPlan: input.coachDailyPlan,
+    visionNonFood: input.visionNonFood,
   });
 
   let memoryUpdateOutcome: CoachingAiV2Observability["memoryUpdateOutcome"] = "applied";

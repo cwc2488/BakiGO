@@ -309,7 +309,7 @@ describe("Go21 Natural Conversation Layer — multi-turn fixture behavior", () =
     expect(sys).toMatch(/朝著目標邁進|考慮搭配一些蛋白質|更好地控制整體熱量/);
     expect(sys).toMatch(/吃沙拉|那雞排呢/);
     expect(sys).toMatch(/Human Coach Voice|今天我不推|今天我比較不推/);
-    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/human_coach_voice|daily_targets/);
+    expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(/human_coach_voice|daily_targets|coach_plan/);
   });
 
   it("health-app voice detector flags SOP phrases", () => {

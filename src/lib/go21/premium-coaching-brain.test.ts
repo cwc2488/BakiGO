@@ -296,7 +296,7 @@ describe("Go21 Premium Coaching Brain — generation behavior", () => {
     expect(prompt).toMatch(/長期理解|shareableInsights|越來越懂/);
     expect(prompt).not.toMatch(/acknowledge\s*→\s*advice\s*→\s*question/i);
     expect(COACHING_AI_V2_PROMPT_VERSION).toMatch(
-      /premium_brain|natural_conversation|human_coach_voice|daily_targets/,
+      /premium_brain|natural_conversation|human_coach_voice|daily_targets|coach_plan/,
     );
   });
 
