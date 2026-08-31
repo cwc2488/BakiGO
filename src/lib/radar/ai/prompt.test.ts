@@ -42,6 +42,8 @@ describe("AI Radar prompt vs structured output", () => {
     expect(system).toContain("need_state");
     expect(system).toContain("market_role");
     expect(system).toContain("recommendation_reason_zh");
+    expect(system).toContain("SEMANTIC v1.3");
+    expect(system).toContain("ACTUAL GAP");
   });
 
   it("passes the corpus ids the model may cite", () => {

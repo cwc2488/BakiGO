@@ -415,7 +415,7 @@ describe("RADAR-FEEDBACK-01", () => {
         },
       } as never,
     });
-    expect(context.semantic_version).toBe("RADAR-SEMANTIC-01");
+    expect(context.semantic_version).toBe("RADAR-SEMANTIC-V1.3");
     expect(context.need_owner).toBe("self");
     expect(context.primary_language).toBe("zh-Hant");
     expect(context.candidate_region?.city).toBe("台中市");
