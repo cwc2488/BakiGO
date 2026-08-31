@@ -380,14 +380,19 @@ function conformUnderstanding(
   const help_seeking =
     typeof understanding.help_seeking === "string" ? understanding.help_seeking : "unknown";
 
-  // RADAR-SEMANTIC-V1.3: in_progress_with_gap requires an actual gap signal.
-  // Continuing activity / maintenance without frustration, failed attempts,
-  // help-seeking, or a concrete unmet gap is coerced downward to none.
+  // RADAR-SEMANTIC-V1.3: in_progress_with_gap requires independently
+  // demonstrated ACTUAL GAP signals. Model-generated unresolved_gap text is
+  // never self-validating — success/maintenance often invents optimization
+  // phrases like "希望進一步改善體態" while help_seeking stays none.
   if (state === "in_progress_with_gap") {
+    const hasPain = pain_points.some((item) => item.trim().length > 0);
+    const hasAttempts = attempts.some((item) => item.trim().length > 0);
     const hasActualGap =
-      (typeof unresolved_gap === "string" && unresolved_gap.trim().length > 0) ||
       help_seeking === "explicit" ||
-      (help_seeking === "implicit" && pain_points.some((item) => item.trim().length > 0));
+      (help_seeking === "implicit" && hasPain) ||
+      // Stagnation pattern: effort underway + separate pain/obstacle field
+      // (not the free-text unresolved_gap alone).
+      (hasAttempts && hasPain);
     if (!hasActualGap) {
       understanding.need_state = "none";
       state = "none";

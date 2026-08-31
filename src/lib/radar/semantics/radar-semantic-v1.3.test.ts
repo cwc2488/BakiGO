@@ -231,13 +231,33 @@ describe("RADAR-SEMANTIC-V1.3 anonymized fixtures A–I", () => {
 });
 
 describe("RADAR-SEMANTIC-V1.3 conformance gap guardrail", () => {
-  it("does not coerce in_progress_with_gap when unresolved_gap is present", () => {
+  it("does not treat unresolved_gap alone as self-validating evidence", () => {
     const conformed = applyExtractionConformance(
       extractionWithUnderstanding({
         need_state: "in_progress_with_gap",
-        unresolved_gap: "體脂下不來",
+        unresolved_gap: "希望進一步改善體態",
         help_seeking: "none",
         pain_points: [],
+        attempts: ["成功減重後持續重訓"],
+      }),
+    );
+    const understandingOut = (
+      conformed.data as { candidate_understanding: CandidateUnderstanding }
+    ).candidate_understanding;
+    expect(understandingOut.need_state).toBe("none");
+    expect(understandingOut.unresolved_gap).toBeNull();
+    expect(conformed.actions).toContain("understanding_gap_required");
+    expect(evaluateSemanticEligibility(understandingOut).eligible).toBe(false);
+  });
+
+  it("keeps real stagnation when attempts + pain_points support the gap", () => {
+    const conformed = applyExtractionConformance(
+      extractionWithUnderstanding({
+        need_state: "in_progress_with_gap",
+        unresolved_gap: "體重卡住兩個月",
+        help_seeking: "none",
+        pain_points: ["體重卡住"],
+        attempts: ["控制飲食三個月"],
       }),
     );
     const understandingOut = (
@@ -245,6 +265,7 @@ describe("RADAR-SEMANTIC-V1.3 conformance gap guardrail", () => {
     ).candidate_understanding;
     expect(understandingOut.need_state).toBe("in_progress_with_gap");
     expect(conformed.actions).not.toContain("understanding_gap_required");
+    expect(evaluateSemanticEligibility(understandingOut).eligible).toBe(true);
   });
 
   it("provider-only teaching still downgrades needs modules", () => {
@@ -260,5 +281,110 @@ describe("RADAR-SEMANTIC-V1.3 conformance gap guardrail", () => {
     const root = conformed.data as { needs: { availability: string } };
     expect(root.needs.availability).toBe("unknown");
     expect(conformed.actions).toContain("understanding_third_party_downgraded");
+  });
+});
+
+describe("RADAR-SEMANTIC-V1.3 self-validating gap loophole fixtures", () => {
+  function afterConformance(overrides: Partial<CandidateUnderstanding>) {
+    const conformed = applyExtractionConformance(extractionWithUnderstanding(overrides));
+    const understandingOut = (
+      conformed.data as { candidate_understanding: CandidateUnderstanding }
+    ).candidate_understanding;
+    return {
+      conformed,
+      understanding: understandingOut,
+      eligibility: evaluateSemanticEligibility(understandingOut),
+    };
+  }
+
+  it("1. successful weight loss + continued shaping + invented optimization gap → not eligible", () => {
+    const { understanding: u, eligibility, conformed } = afterConformance({
+      need_owner: "self",
+      need_state: "in_progress_with_gap",
+      market_role: "consumer",
+      attempts: ["已成功減重10公斤", "持續重訓維持"],
+      unresolved_gap: "希望進一步改善體態",
+      help_seeking: "none",
+      pain_points: [],
+      recommendation_reason_zh: "希望進一步改善體態",
+    });
+    expect(conformed.actions).toContain("understanding_gap_required");
+    expect(u.need_state).toBe("none");
+    expect(u.unresolved_gap).toBeNull();
+    expect(eligibility.eligible).toBe(false);
+  });
+
+  it("2. body fat already reduced + invented continue-lowering gap → not automatically eligible", () => {
+    const { understanding: u, eligibility } = afterConformance({
+      need_owner: "self",
+      need_state: "in_progress_with_gap",
+      market_role: "consumer",
+      attempts: ["體脂已經顯著下降", "目前持續雕塑"],
+      unresolved_gap: "希望繼續降低體脂",
+      help_seeking: "none",
+      pain_points: [],
+    });
+    expect(u.need_state).toBe("none");
+    expect(eligibility.eligible).toBe(false);
+  });
+
+  it("3. regular athlete training + invented optimization gap → not eligible", () => {
+    const { understanding: u, eligibility } = afterConformance({
+      need_owner: "self",
+      need_state: "in_progress_with_gap",
+      market_role: "consumer",
+      attempts: ["每週練跑備賽", "規律重訓"],
+      unresolved_gap: "希望再提升成績與體能",
+      help_seeking: "none",
+      pain_points: [],
+    });
+    expect(u.need_state).toBe("none");
+    expect(eligibility.eligible).toBe(false);
+  });
+
+  it("4. real stagnation despite attempts → eligible", () => {
+    const { understanding: u, eligibility } = afterConformance({
+      need_owner: "self",
+      need_state: "in_progress_with_gap",
+      market_role: "consumer",
+      attempts: ["控制飲食三個月"],
+      unresolved_gap: "體重卡住兩個月",
+      help_seeking: "none",
+      pain_points: ["體重卡住兩個月"],
+    });
+    expect(u.need_state).toBe("in_progress_with_gap");
+    expect(eligibility.eligible).toBe(true);
+    expect(eligibility.reason).toBe("self_in_progress_with_gap");
+  });
+
+  it("5. explicit help after failed methods → eligible", () => {
+    const { understanding: u, eligibility } = afterConformance({
+      need_owner: "self",
+      need_state: "in_progress_with_gap",
+      market_role: "consumer",
+      attempts: ["試了很多方法"],
+      unresolved_gap: "還是瘦不下來",
+      help_seeking: "explicit",
+      pain_points: ["還是瘦不下來"],
+    });
+    expect(u.need_state).toBe("in_progress_with_gap");
+    expect(eligibility.eligible).toBe(true);
+  });
+
+  it("6. provider with separate genuine SELF unresolved obstacle → preserved", () => {
+    const { understanding: u, eligibility, conformed } = afterConformance({
+      need_owner: "self",
+      need_state: "in_progress_with_gap",
+      market_role: "provider",
+      attempts: ["自己也在減脂"],
+      unresolved_gap: "最後五公斤怎麼減都減不掉",
+      help_seeking: "explicit",
+      pain_points: ["自己最後五公斤卡住"],
+      recommendation_reason_zh: "本人最後五公斤卡住且明確求助",
+    });
+    expect(conformed.actions).not.toContain("understanding_gap_required");
+    expect(u.need_state).toBe("in_progress_with_gap");
+    expect(eligibility.eligible).toBe(true);
+    expect(eligibility.personal_need).toBe(true);
   });
 });
