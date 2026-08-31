@@ -16,7 +16,6 @@ import {
   resolveVpTargetAmount,
   VP_TARGET_KEYS,
 } from "@/lib/business-engine/rules/vp";
-import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import { createEventRepository } from "@/lib/repositories/event-repository";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import { resolveMonthlyProductVpFromEvents } from "@/lib/retail-house/downline-product-vp";
@@ -28,15 +27,21 @@ import type {
 import type { EntityId, YearMonth } from "@/types";
 import type { BakiEvent } from "@/types/baki-event";
 
+/** Opaque metrics object from loadMemberMetrics — kept structural to avoid circular imports. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type OrganizationEnrichmentMetrics = any;
+
 export type OrganizationMetricsLoader = (
   memberId: EntityId,
   storage: StorageAdapter,
   supplementalEvents?: BakiEvent[],
-) => MemberComputedMetrics | null;
+) => OrganizationEnrichmentMetrics | null;
 
 export type OrganizationQualificationHelpers = {
-  resolveQualificationLabel: (member: Member, metrics: MemberComputedMetrics) => string;
-  buildNextQualification: (metrics: MemberComputedMetrics) => OrganizationNextQualificationView;
+  resolveQualificationLabel: (member: Member, metrics: OrganizationEnrichmentMetrics) => string;
+  buildNextQualification: (
+    metrics: OrganizationEnrichmentMetrics,
+  ) => OrganizationNextQualificationView;
 };
 
 function resolveMonthlyVpTarget(): number | null {
@@ -93,7 +98,7 @@ export function mergeCloudTreeWithLocalMetrics(
     const supplementalEvents = getDownlineEvents(node.member.memberId, downlineCache);
     const metricsMemberId = localMember?.id ?? node.member.memberId;
 
-    let metrics: MemberComputedMetrics | null = null;
+    let metrics: OrganizationEnrichmentMetrics | null = null;
     try {
       if (loadMetrics && (localMember || supplementalEvents.length > 0)) {
         metrics = loadMetrics(metricsMemberId, storage, supplementalEvents);
