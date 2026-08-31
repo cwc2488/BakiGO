@@ -81,14 +81,14 @@ describe("SECURITY — Migration 072 downline RLS data_key allowlist", () => {
 
   it("contract matrix — documented intended outcomes", () => {
     // A → B allowlisted keys: allowed by downline policy when B ∈ A's hierarchy
-    const allowedForSponsor = new Set(DOWNLINE_APP_DATA_KEY_ALLOWLIST);
+    const allowedForSponsor: ReadonlySet<string> = new Set(DOWNLINE_APP_DATA_KEY_ALLOWLIST);
     expect(allowedForSponsor.has(STORAGE_KEYS.retailTransactions)).toBe(true);
     expect(allowedForSponsor.has(STORAGE_KEYS.bakiEvents)).toBe(true);
     expect(allowedForSponsor.has(STORAGE_KEYS.retailPipelineLeads)).toBe(true);
 
     // A → B calendar / unknown: denied by downline policy (own-only)
     expect(allowedForSponsor.has(STORAGE_KEYS.calendarEvents)).toBe(false);
-    expect(allowedForSponsor.has("baki-go:future-unknown-key" as never)).toBe(false);
+    expect(allowedForSponsor.has("baki-go:future-unknown-key")).toBe(false);
 
     // B → B calendar: via select_own (not this policy) — migration must leave it intact
     expect(migrationSql()).not.toMatch(/drop policy.*member_app_data_select_own/i);
