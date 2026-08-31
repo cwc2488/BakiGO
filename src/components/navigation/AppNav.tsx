@@ -6,44 +6,48 @@ import { useMemo } from "react";
 
 import { MemberAvatar } from "@/components/members/MemberAvatar";
 import { AppIcon, type AppIconName } from "@/components/ui/AppIcon";
-import {
-  IconHome,
-  IconOrganization,
-  IconRetailHouse,
-  IconDailyAction,
-  ROUTE_ICON_COMPONENTS,
-  type QuickLinkHref,
-} from "@/components/ui/BrandIcons";
+import { NAV_ICONS, ROUTE_ICON_COMPONENTS, type NavHref, type QuickLinkHref } from "@/components/ui/BrandIcons";
 import { getMemberAvatarUrl, getMemberDisplayName } from "@/lib/mission-control/format";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
-import { PARTNER_V2_NAV_ITEMS } from "@/lib/partner-v2/partner-navigation";
+import { SIDE_NAV_EXTRA_LINKS } from "@/lib/ui/work-hub-links";
 import { QuizPartnerNavBadge } from "@/components/quiz/QuizPartnerNavBadge";
 
-const NAV_ICON_MAP = {
-  "/": IconHome,
-  "/retail-house": IconRetailHouse,
-  "/daily-action": IconDailyAction,
-  "/organization": IconOrganization,
-} as const;
+/** UX-1：我的｜顧客｜行事曆 */
+const NAV_ITEMS = [
+  { href: "/", label: "我的", shortLabel: "我的" },
+  { href: "/customers", label: "顧客", shortLabel: "顧客" },
+  { href: "/calendar", label: "行事曆", shortLabel: "行事曆" },
+] as const satisfies ReadonlyArray<{ href: NavHref; label: string; shortLabel: string }>;
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") {
     return (
       pathname === "/" ||
       pathname === "/profile" ||
-      pathname === "/monthly-progress" ||
-      pathname === "/partners" ||
-      pathname.startsWith("/partners/")
+      pathname === "/daily-action" ||
+      pathname.startsWith("/goals") ||
+      pathname.startsWith("/president-road") ||
+      pathname.startsWith("/organization") ||
+      pathname.startsWith("/members") ||
+      pathname.startsWith("/retail-house") ||
+      pathname.startsWith("/leaderboard") ||
+      pathname.startsWith("/learning") ||
+      pathname.startsWith("/promotions") ||
+      pathname.startsWith("/events") ||
+      pathname.startsWith("/pre-meeting-graphic") ||
+      pathname.startsWith("/recognition") ||
+      pathname.startsWith("/admin")
     );
   }
-  if (href === "/retail-house") {
-    return pathname === "/retail-house" || pathname.startsWith("/retail-house/");
-  }
-  if (href === "/daily-action") {
-    return pathname === "/daily-action" || pathname.startsWith("/daily-action");
-  }
-  if (href === "/organization") {
-    return pathname === "/organization" || pathname.startsWith("/organization");
+  if (href === "/customers") {
+    return (
+      pathname === "/customers" ||
+      pathname.startsWith("/customers/") ||
+      pathname.startsWith("/coaching") ||
+      pathname.startsWith("/retail-pipeline") ||
+      pathname.startsWith("/quiz") ||
+      pathname.startsWith("/consultation")
+    );
   }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -53,12 +57,12 @@ function NavLink({
   pathname,
   layout,
 }: {
-  item: (typeof PARTNER_V2_NAV_ITEMS)[number];
+  item: (typeof NAV_ITEMS)[number];
   pathname: string;
   layout: "bottom" | "side";
 }) {
   const active = isActive(pathname, item.href);
-  const Icon = NAV_ICON_MAP[item.href as keyof typeof NAV_ICON_MAP] ?? IconHome;
+  const Icon = NAV_ICONS[item.href];
 
   if (layout === "side") {
     return (
@@ -82,15 +86,14 @@ function NavLink({
         active ? "text-[var(--brand-primary-dark)]" : "text-[var(--brand-text-muted)] hover:text-[var(--brand-text)]"
       }`}
       href={item.href}
-      aria-current={active ? "page" : undefined}
     >
       <span
         className={`h-0.5 w-7 rounded-full transition-colors ${
           active ? "bg-[var(--brand-primary)]" : "bg-transparent"
         }`}
       />
-      <Icon size={26} />
-      <span className="text-[0.6875rem] font-semibold leading-tight">{item.shortLabel}</span>
+      <Icon size={28} />
+      <span className="text-[0.75rem] font-semibold leading-tight">{item.shortLabel}</span>
     </Link>
   );
 }
@@ -137,15 +140,6 @@ function SideExtraLink({
   );
 }
 
-/** Desktop side nav secondary links — calendar, customers, profile. */
-const SIDE_NAV_SECONDARY = [
-  { href: "/customers", title: "顧客", icon: "hub.pipeline" as AppIconName },
-  { href: "/calendar", title: "行事曆", icon: "hub.calendar" as AppIconName },
-  { href: "/profile", title: "個人設定", icon: "page.profile" as AppIconName },
-  { href: "/quiz/21d", title: "心理測驗", icon: "hub.pipeline" as AppIconName, waitingBadge: true },
-  { href: "/coaching", title: "陪跑", icon: "hub.pipeline" as AppIconName },
-] as const;
-
 export function AppSideNav() {
   const pathname = usePathname();
   const storage = useMemo(() => createLocalStorageAdapter(), []);
@@ -161,22 +155,22 @@ export function AppSideNav() {
             <p className="truncate text-[0.875rem] font-semibold text-[#1d1d1f] group-hover:text-[var(--brand-primary-dark)]">
               {displayName}
             </p>
-            <p className="text-[0.75rem] text-[#86868b]">首頁</p>
+            <p className="text-[0.75rem] text-[#86868b]">我的</p>
           </div>
         </Link>
       </div>
 
       <nav aria-label="主要功能" className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3">
-        {PARTNER_V2_NAV_ITEMS.map((item) => (
+        {NAV_ITEMS.map((item) => (
           <NavLink key={item.href} item={item} layout="side" pathname={pathname} />
         ))}
 
         <div className="my-2 border-t border-[var(--brand-border)]" />
 
         <p className="mb-1 hidden px-3 text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-[#86868b] lg:block">
-          工具
+          快捷
         </p>
-        {SIDE_NAV_SECONDARY.map((item) => (
+        {SIDE_NAV_EXTRA_LINKS.map((item) => (
           <SideExtraLink
             key={item.href}
             href={item.href}
@@ -199,8 +193,8 @@ export function AppBottomNav() {
       aria-label="主要功能"
       className="fixed inset-x-0 bottom-0 z-[100] border-t border-[var(--brand-border)] bg-[var(--brand-surface)]/98 backdrop-blur-md [transform:translateZ(0)] supports-[padding:max(0px)]:pb-[max(0px,env(safe-area-inset-bottom))] md:hidden"
     >
-      <div className="mx-auto grid max-w-lg grid-cols-4">
-        {PARTNER_V2_NAV_ITEMS.map((item) => (
+      <div className="mx-auto grid max-w-lg grid-cols-3">
+        {NAV_ITEMS.map((item) => (
           <NavLink key={item.href} item={item} layout="bottom" pathname={pathname} />
         ))}
       </div>

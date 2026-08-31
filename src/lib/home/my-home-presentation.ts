@@ -232,30 +232,34 @@ export function buildHomeProgressView(
   };
 }
 
-/**
- * Partner App V2 — legacy home entries removed from product surface.
- * Routes remain accessible for deep links / admin; data preserved.
- */
-
 export type HomeBusinessEntry = {
   href: string;
   title: string;
   iconKey: "goals" | "organization" | "retail" | "leaderboard" | "learning";
 };
 
-/** @deprecated V2 — empty; core features live in bottom nav. */
-export const MY_HOME_BUSINESS_ENTRIES: HomeBusinessEntry[] = [];
+/** Max 5 primary business navigation entries. */
+export const MY_HOME_BUSINESS_ENTRIES: HomeBusinessEntry[] = [
+  { href: "/goals", title: "目標與升級", iconKey: "goals" },
+  { href: "/organization", title: "我的組織", iconKey: "organization" },
+  { href: "/retail-house", title: "零售屋", iconKey: "retail" },
+  { href: "/leaderboard", title: "排行與表揚", iconKey: "leaderboard" },
+  { href: "/learning", title: "學習", iconKey: "learning" },
+];
 
 export type HomeMoreEntry = {
   href: string;
   title: string;
 };
 
-/** V2 — profile & admin only; legacy partner tools hidden from home surface. */
 export const MY_HOME_MORE_ENTRIES: HomeMoreEntry[] = [
-  { href: "/profile", title: "個人資料／設定" },
+  { href: "/daily-action", title: "今日行動" },
+  { href: "/president-road", title: "晉升之路" },
+  { href: "/members", title: "夥伴關懷" },
   { href: "/promotions", title: "活動／促銷" },
+  { href: "/events", title: "活動紀錄" },
   { href: "/pre-meeting-graphic", title: "會前會圖" },
+  { href: "/profile", title: "個人資料／設定" },
 ];
 
 export const CROSS_WORLD_HREFS = ["/customers", "/calendar", "/coaching"] as const;

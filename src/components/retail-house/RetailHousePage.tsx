@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { buildRetailHouseView } from "@/lib/retail-house/build-retail-house-view";
 import {
   resolveRetailHouseDateRange,
@@ -17,11 +16,8 @@ import {
 import {
   getMemberAvatarUrl,
   getMemberDisplayName,
-  loadMemberMetrics,
   loadMissionControlMetrics,
 } from "@/lib/mission-control/format";
-import { fetchDownlineCloudData, getDownlineEvents } from "@/lib/cloud/downline-cloud-data";
-import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import { RetailHouseDateRangeSelector } from "@/components/retail-house/RetailHouseDateRangeSelector";
 import { RetailTransactionEditSheet } from "@/components/retail-house/RetailTransactionEditSheet";
@@ -310,7 +306,6 @@ function RetailHouseView({
   dateRange,
   presentationMode,
   editingItem,
-  readOnly = false,
   onDateRangeChange,
   onEnterPresentationMode,
   onExitPresentationMode,
@@ -322,7 +317,6 @@ function RetailHouseView({
   dateRange: RetailHouseDateRange;
   presentationMode: boolean;
   editingItem: RetailReportLineItem | null;
-  readOnly?: boolean;
   onDateRangeChange: (range: RetailHouseDateRange) => void;
   onEnterPresentationMode: () => void;
   onExitPresentationMode: () => void;
@@ -394,22 +388,14 @@ function RetailHouseView({
         title="零售屋"
         titleIcon={APP_ICON.page.retailHouse}
       >
-        {!readOnly ? (
-          <Link
-            className="inline-flex min-h-10 items-center rounded-full border border-[var(--pv2-border-subtle)] bg-[var(--pv2-surface)] px-4 text-[0.875rem] font-semibold text-[var(--pv2-brand-primary-dark)]"
-            href="/partners"
-          >
-            我的夥伴 →
-          </Link>
-        ) : null}
         <RetailHouseDateRangeSelector onChange={onDateRangeChange} value={dateRange} />
-        {!readOnly ? <RetailTransactionForm onMetricsChange={onMetricsChange} /> : null}
+        <RetailTransactionForm onMetricsChange={onMetricsChange} />
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:grid-rows-2 lg:gap-5">
           {orderedQuadrants.map((quadrant) => (
             <QuadrantPanel
               key={quadrant.key}
-              onEditItem={readOnly ? undefined : onEditItem}
+              onEditItem={onEditItem}
               presentationMode={false}
               quadrant={quadrant}
             />
@@ -422,15 +408,13 @@ function RetailHouseView({
           yearMonth={snapshot.yearMonth}
         />
 
-        {!readOnly ? (
-          <button
-            className="w-full rounded-[1.75rem] bg-[#1d1d1f] px-6 py-5 text-[1.0625rem] font-semibold text-white shadow-[0_12px_40px_rgba(0,0,0,0.12)] transition-transform duration-200 active:scale-[0.98]"
-            onClick={onEnterPresentationMode}
-            type="button"
-          >
-            <IconLabel icon={APP_ICON.action.presentation}>簡報模式</IconLabel>
-          </button>
-        ) : null}
+        <button
+          className="w-full rounded-[1.75rem] bg-[#1d1d1f] px-6 py-5 text-[1.0625rem] font-semibold text-white shadow-[0_12px_40px_rgba(0,0,0,0.12)] transition-transform duration-200 active:scale-[0.98]"
+          onClick={onEnterPresentationMode}
+          type="button"
+        >
+          <IconLabel icon={APP_ICON.action.presentation}>簡報模式</IconLabel>
+        </button>
       </PageShell>
 
       {editingItem ? (
@@ -444,14 +428,7 @@ function RetailHouseView({
   );
 }
 
-export default function RetailHousePage({
-  viewMemberId,
-  readOnly = false,
-}: {
-  viewMemberId?: string;
-  readOnly?: boolean;
-} = {}) {
-  const storage = useMemo(() => createLocalStorageAdapter(), []);
+export default function RetailHousePage() {
   const [metrics, setMetrics] = useState<MemberComputedMetrics | null>(null);
   const [presentationMode, setPresentationMode] = useState(false);
   const [dateRange, setDateRange] = useState<RetailHouseDateRange>(() =>
@@ -461,24 +438,9 @@ export default function RetailHousePage({
 
   useEffect(() => {
     queueMicrotask(() => {
-      if (viewMemberId) {
-        void fetchDownlineCloudData([viewMemberId], resolveAuthenticatedMemberId(storage))
-          .then((cache) => {
-            const supplemental = getDownlineEvents(viewMemberId, cache);
-            setMetrics(
-              loadMemberMetrics(viewMemberId, storage, supplemental, { includeMapUniverse: false }),
-            );
-          })
-          .catch(() => {
-            setMetrics(
-              loadMemberMetrics(viewMemberId, storage, undefined, { includeMapUniverse: false }),
-            );
-          });
-        return;
-      }
-      setMetrics(loadMissionControlMetrics(undefined, storage, undefined, { includeMapUniverse: false }));
+      setMetrics(loadMissionControlMetrics());
     });
-  }, [viewMemberId, storage]);
+  }, []);
 
   if (!metrics) {
     return (
@@ -500,7 +462,6 @@ export default function RetailHousePage({
       onExitPresentationMode={() => setPresentationMode(false)}
       onMetricsChange={setMetrics}
       presentationMode={presentationMode}
-      readOnly={readOnly}
     />
   );
 }

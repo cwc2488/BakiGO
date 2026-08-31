@@ -390,7 +390,7 @@ function DailyActionView({
         <GreetingHeader
           avatarUrl={avatarUrl}
           displayName={displayName}
-          subtitle={`${formatDisplayDate(snapshot.referenceDate)} · 超級聯賽`}
+          subtitle={`${formatDisplayDate(snapshot.referenceDate)} · 今日行動`}
         />
       }
     >
