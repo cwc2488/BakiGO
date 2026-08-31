@@ -7,7 +7,6 @@ import {
   restoreCloudSession,
 } from "@/lib/auth/auth-service";
 import { getCloudBackgroundSyncVersion } from "@/lib/auth/cloud-sync";
-import { ensureOwnRetailTransactionsReconciled } from "@/lib/cloud/reconcile-retail-transactions";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { AuthSession } from "@/types/auth";
 import type { Member } from "@/types/member";
@@ -42,23 +41,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
 
     try {
+      // Session restore starts background cloud sync (members + retail + app-data).
+      // Do NOT await Retail House reconciliation on the auth-critical path —
+      // that blocked first paint with duplicate cloud merges.
       const restored = await restoreCloudSession(storage);
       const nextSession = restored ?? getCurrentSession(storage);
-      // Await retail legacy upload on every authenticated bootstrap
-      // (refresh / PWA / restored session) — do not rely on fire-and-forget sync alone.
-      if (nextSession?.memberId) {
-        try {
-          await ensureOwnRetailTransactionsReconciled({
-            storage,
-            memberId: nextSession.memberId,
-          });
-        } catch (error) {
-          console.error("[retail_house] retail_reconcile_bootstrap_failure", {
-            memberId: nextSession.memberId,
-            error,
-          });
-        }
-      }
       setSession(nextSession);
       setMember(nextSession ? getCurrentMember(storage) : null);
       setCloudSyncVersion(getCloudBackgroundSyncVersion());

@@ -1,5 +1,7 @@
 export const STORAGE_KEYS = {
   retailTransactions: "baki-go:retail-transactions",
+  /** Durable delete markers so merge-first cloud sync cannot resurrect RH rows. */
+  retailTransactionDeletionTombstones: "baki-go:retail-transaction-deletion-tombstones",
   computedMetrics: "baki-go:computed-metrics",
   bakiEvents: "baki-go:baki-events",
   eventsMigrated: "baki-go:events-migrated",

@@ -1,6 +1,5 @@
 import { syncCustomersOnLogin } from "@/lib/cloud/customer-cloud-service";
 import { syncGoogleCalendarConnectionOnLogin } from "@/lib/cloud/google-calendar-cloud-service";
-import { ensureOwnRetailTransactionsReconciled } from "@/lib/cloud/reconcile-retail-transactions";
 import { syncAppDataOnLogin } from "@/lib/cloud/sync-app-data-on-login";
 import { syncCloudMembersToLocalStorage } from "@/lib/cloud/sync-cloud-members-to-local";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
@@ -13,19 +12,18 @@ export type CloudAuthMember = {
   email: string;
 };
 
-/** Pull latest org + member data from Supabase after auth is established. */
+/**
+ * Pull latest org + member data from Supabase after auth is established.
+ *
+ * Retail House reconciliation runs once inside syncAppDataOnLogin — do not
+ * call ensureOwnRetailTransactionsReconciled again here (startup duplicate).
+ */
 export async function syncCloudAuthData(
   storage: StorageAdapter,
   member: CloudAuthMember,
 ): Promise<void> {
   try {
     await syncCloudMembersToLocalStorage(storage);
-    // Retail legacy upload is awaited first so Production receives the row
-    // even if later parallel sync steps are slow or fail.
-    await ensureOwnRetailTransactionsReconciled({
-      storage,
-      memberId: member.id,
-    });
     await Promise.all([
       syncAppDataOnLogin(storage, member.id),
       syncCustomersOnLogin(storage, member.id),

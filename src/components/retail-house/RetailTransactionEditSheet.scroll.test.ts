@@ -33,10 +33,10 @@ describe("RetailTransactionEditSheet — scroll lock + layout", () => {
   });
 });
 
-describe("restoreCloudSession — awaited sync", () => {
-  it("awaits cloud sync instead of fire-and-forget background sync", () => {
+describe("restoreCloudSession — non-blocking sync", () => {
+  it("starts background cloud sync instead of blocking first paint on retail", () => {
     const auth = src("src/lib/auth/auth-service.ts");
-    expect(auth).toContain("awaitSync: true");
-    expect(auth).not.toMatch(/restoreCloudSession[\s\S]*awaitSync:\s*false/);
+    expect(auth).toContain("awaitSync: false");
+    expect(auth).not.toMatch(/restoreCloudSession[\s\S]*awaitSync:\s*true/);
   });
 });

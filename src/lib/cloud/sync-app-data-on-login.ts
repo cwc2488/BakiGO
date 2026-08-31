@@ -17,6 +17,37 @@ import {
 } from "@/lib/calendar/calendar-event-deletion-tombstones";
 import type { EntityId } from "@/types";
 
+function mergeRetailTombstonePayloads(
+  localRaw: string | null,
+  cloudRaw: string | null,
+): string {
+  const byId = new Map<string, { transactionId: string; memberId: string; deletedAt: string }>();
+  const ingest = (raw: string | null) => {
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return;
+      for (const row of parsed) {
+        if (!row || typeof row !== "object") continue;
+        const item = row as { transactionId?: string; memberId?: string; deletedAt?: string };
+        if (typeof item.transactionId === "string" && item.transactionId.length > 0) {
+          byId.set(item.transactionId, {
+            transactionId: item.transactionId,
+            memberId: typeof item.memberId === "string" ? item.memberId : "",
+            deletedAt:
+              typeof item.deletedAt === "string" ? item.deletedAt : new Date().toISOString(),
+          });
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+  ingest(cloudRaw);
+  ingest(localRaw);
+  return JSON.stringify([...byId.values()]);
+}
+
 /**
  * Pull cloud app data on login; upload local data when cloud is empty.
  *
@@ -62,6 +93,12 @@ export async function syncAppDataOnLogin(
     }
 
     for (const key of SYNCABLE_STORAGE_KEYS) {
+      // bakiEvents is reconciled together with retailTransactions — never
+      // blind-hydrate cloud events over local (would resurrect deletes).
+      if (key === STORAGE_KEYS.bakiEvents) {
+        continue;
+      }
+
       if (key === STORAGE_KEYS.retailTransactions) {
         const cloudRow = cloudByKey.get(key);
         const cloudBakiRow = cloudByKey.get(STORAGE_KEYS.bakiEvents);
@@ -86,6 +123,16 @@ export async function syncAppDataOnLogin(
             tombstoneIds,
           );
           const mergedRaw = JSON.stringify(merged);
+          storage.setItem(key, mergedRaw);
+          await pushCloudAppDataKeys({
+            memberId,
+            entries: [{ dataKey: key, rawValue: mergedRaw }],
+          });
+        } else if (key === STORAGE_KEYS.retailTransactionDeletionTombstones) {
+          const mergedRaw = mergeRetailTombstonePayloads(
+            storage.getItem(key),
+            serializeCloudPayload(cloudRow.payload),
+          );
           storage.setItem(key, mergedRaw);
           await pushCloudAppDataKeys({
             memberId,

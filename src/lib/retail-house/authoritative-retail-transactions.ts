@@ -21,6 +21,10 @@ import {
   alignDownlineEventsToOwnerMemberId,
   sanitizeBakiEventsForProductVp,
 } from "@/lib/retail-house/downline-product-vp";
+import {
+  filterOutRetailTombstonedIds,
+  readRetailTransactionDeletionTombstoneIds,
+} from "@/lib/retail-house/retail-transaction-deletion-tombstones";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { BakiEvent } from "@/types/baki-event";
@@ -297,12 +301,20 @@ export function loadAuthoritativeRetailTransactionsFromSnapshots(input: {
   ownerMemberId: EntityId;
   bakiEventsRaw: string | null;
   retailTransactionsRaw: string | null;
+  tombstoneIds?: ReadonlySet<EntityId>;
 }): AuthoritativeRetailTransactionsResult {
-  const eventRows = resolveLocalEventsForOwnReconciliation(
-    parseBakiEventsRaw(input.bakiEventsRaw),
-    input.ownerMemberId,
+  const tombstoneIds = input.tombstoneIds ?? new Set<EntityId>();
+  const eventRows = filterOutRetailTombstonedIds(
+    resolveLocalEventsForOwnReconciliation(
+      parseBakiEventsRaw(input.bakiEventsRaw),
+      input.ownerMemberId,
+    ),
+    tombstoneIds,
   );
-  const legacyAll = parseLegacyRetailTransactionsRaw(input.retailTransactionsRaw);
+  const legacyAll = filterOutRetailTombstonedIds(
+    parseLegacyRetailTransactionsRaw(input.retailTransactionsRaw),
+    tombstoneIds,
+  );
   const { localOwned } = resolveLocalRowsForOwnReconciliation({
     ownerMemberId: input.ownerMemberId,
     localAll: legacyAll,
@@ -342,6 +354,7 @@ export function loadAuthoritativeRetailTransactions(
       ownerMemberId: memberId,
       bakiEventsRaw: storage.getItem(STORAGE_KEYS.bakiEvents),
       retailTransactionsRaw: storage.getItem(STORAGE_KEYS.retailTransactions),
+      tombstoneIds: readRetailTransactionDeletionTombstoneIds(storage),
     });
   } catch (error) {
     console.error("[retail_house] authoritative_load_failure", { memberId, error });
