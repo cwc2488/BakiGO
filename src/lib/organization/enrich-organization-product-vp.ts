@@ -2,13 +2,13 @@
  * Organization tree enrichment with canonical Product VP.
  * Isolated from core org snapshot fetch so enrichment failures cannot blank the page.
  *
- * Intentionally avoids importing organization-selectors / member-service / app-config
- * (circular APP_IDS init). Callers inject qualification helpers when needed.
+ * Product VP comes only from the authoritative Retail House read layer
+ * (events ∪ legacy retailTransactions) — never from qualification metrics.vp.
  */
 
 import {
   getDownlineEvents,
-  getDownlineMonthlyProductVpBatch,
+  getDownlineMonthlyProductVpBatchResults,
   type DownlineCloudDataCache,
 } from "@/lib/cloud/downline-cloud-data";
 import {
@@ -16,9 +16,11 @@ import {
   resolveVpTargetAmount,
   VP_TARGET_KEYS,
 } from "@/lib/business-engine/rules/vp";
-import { createEventRepository } from "@/lib/repositories/event-repository";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
-import { resolveMonthlyProductVpFromEvents } from "@/lib/retail-house/downline-product-vp";
+import {
+  getAuthoritativeMonthlyProductVp,
+  type ProductVpReadResult,
+} from "@/lib/retail-house/authoritative-retail-transactions";
 import type { Member } from "@/types/member";
 import type {
   OrganizationNextQualificationView,
@@ -51,34 +53,52 @@ function resolveMonthlyVpTarget(): number | null {
   );
 }
 
+function toProductVpStatus(
+  result: ProductVpReadResult | undefined,
+): "ready" | "empty" | "error" {
+  if (!result || result.status === "error") {
+    return "error";
+  }
+  if (result.status === "empty") {
+    return "empty";
+  }
+  return "ready";
+}
+
 /**
- * Product VP for org nodes comes from Retail House transaction events —
- * viewer: local events; downline: cloud batch projection (not metrics.vp).
- * Never throws — returns 0 on enrichment failure.
+ * Product VP for org nodes — viewer: local authoritative RH; downline: cloud batch.
+ * Never throws. Distinguishes real 0 (ready/empty) from read error.
  */
 export function resolveNodeProductVp(input: {
   memberId: EntityId;
   viewerId: EntityId;
   yearMonth: YearMonth;
-  downlineProductVp: Map<EntityId, number>;
+  downlineProductVp: Map<EntityId, ProductVpReadResult>;
   storage: StorageAdapter;
-}): number {
+}): { monthlyVp: number; productVpStatus: "ready" | "empty" | "error" } {
   try {
     if (input.memberId === input.viewerId) {
-      const localEvents = createEventRepository(input.storage).getByMemberId(input.memberId);
-      return resolveMonthlyProductVpFromEvents({
+      const result = getAuthoritativeMonthlyProductVp({
+        storage: input.storage,
         memberId: input.memberId,
         yearMonth: input.yearMonth,
-        events: localEvents,
       });
+      return {
+        monthlyVp: result.monthlyTotal ?? 0,
+        productVpStatus: toProductVpStatus(result),
+      };
     }
-    return input.downlineProductVp.get(input.memberId) ?? 0;
+    const result = input.downlineProductVp.get(input.memberId);
+    return {
+      monthlyVp: result?.monthlyTotal ?? 0,
+      productVpStatus: toProductVpStatus(result),
+    };
   } catch (error) {
     console.error("[organization] product_vp_node_failure", {
       memberId: input.memberId,
       error,
     });
-    return 0;
+    return { monthlyVp: 0, productVpStatus: "error" };
   }
 }
 
@@ -88,7 +108,7 @@ export function mergeCloudTreeWithLocalMetrics(
   storage: StorageAdapter,
   viewerId: EntityId,
   yearMonth: YearMonth,
-  downlineProductVp: Map<EntityId, number>,
+  downlineProductVp: Map<EntityId, ProductVpReadResult>,
   downlineCache?: DownlineCloudDataCache,
   loadMetrics?: OrganizationMetricsLoader,
   qualificationHelpers?: OrganizationQualificationHelpers,
@@ -112,7 +132,7 @@ export function mergeCloudTreeWithLocalMetrics(
     }
 
     const monthlyVpTarget = resolveMonthlyVpTarget();
-    const monthlyVp = resolveNodeProductVp({
+    const { monthlyVp, productVpStatus } = resolveNodeProductVp({
       memberId: node.member.memberId,
       viewerId,
       yearMonth,
@@ -124,8 +144,14 @@ export function mergeCloudTreeWithLocalMetrics(
       ...node.member,
       memberNumber: node.member.memberNumber || localMember?.herbalifeMemberId || "",
       monthlyVp,
+      productVpStatus,
       monthlyVpTarget,
-      metMonthlyVp2500: monthlyVpTarget !== null ? monthlyVp >= monthlyVpTarget : false,
+      metMonthlyVp2500:
+        productVpStatus === "error"
+          ? false
+          : monthlyVpTarget !== null
+            ? monthlyVp >= monthlyVpTarget
+            : false,
       qualificationLabel:
         localMember && metrics && qualificationHelpers
           ? qualificationHelpers.resolveQualificationLabel(localMember, metrics)
@@ -161,6 +187,7 @@ export function mergeCloudTreeWithLocalMetrics(
       member: {
         ...node.member,
         monthlyVp: node.member.monthlyVp ?? 0,
+        productVpStatus: "error",
       },
       children: node.children.map((child) =>
         mergeCloudTreeWithLocalMetrics(
@@ -180,7 +207,7 @@ export function mergeCloudTreeWithLocalMetrics(
 }
 
 /**
- * Enrich organization roots with downline Product VP.
+ * Enrich organization roots with downline Product VP from authoritative RH sources.
  * Safe: never throws; returns roots with best-effort VP.
  */
 export function enrichOrganizationRootsWithProductVp(input: {
@@ -194,9 +221,9 @@ export function enrichOrganizationRootsWithProductVp(input: {
   loadMetrics?: OrganizationMetricsLoader;
   qualificationHelpers?: OrganizationQualificationHelpers;
 }): OrganizationTreeNode[] {
-  let downlineProductVp = new Map<EntityId, number>();
+  let downlineProductVp = new Map<EntityId, ProductVpReadResult>();
   try {
-    downlineProductVp = getDownlineMonthlyProductVpBatch(
+    downlineProductVp = getDownlineMonthlyProductVpBatchResults(
       input.downlineIds.filter((id) => id !== input.viewerId),
       input.yearMonth,
       input.downlineCache,

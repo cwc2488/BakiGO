@@ -104,15 +104,21 @@ export function OrganizationMemberDetail({
       <div className="mt-5 rounded-[1rem] bg-[var(--brand-bg)] px-4 py-4">
         <p className="text-[0.75rem] font-medium text-[var(--brand-text-muted)]">本月 VP</p>
         <p className="mt-1 text-[1.5rem] font-semibold tabular-nums tracking-tight text-[var(--brand-text)]">
-          {member.monthlyVp.toLocaleString("zh-Hant")}
-          {member.monthlyVpTarget !== null ? (
-            <span className="text-[0.9375rem] font-normal text-[var(--brand-text-muted)]">
-              {" "}
-              / {member.monthlyVpTarget.toLocaleString("zh-Hant")}
-            </span>
-          ) : null}
+          {member.productVpStatus === "error" ? (
+            <span className="text-[1.125rem] font-medium text-[var(--brand-text-muted)]">—</span>
+          ) : (
+            <>
+              {member.monthlyVp.toLocaleString("zh-Hant")}
+              {member.monthlyVpTarget !== null ? (
+                <span className="text-[0.9375rem] font-normal text-[var(--brand-text-muted)]">
+                  {" "}
+                  / {member.monthlyVpTarget.toLocaleString("zh-Hant")}
+                </span>
+              ) : null}
+            </>
+          )}
         </p>
-        {monthlyVpPercent !== null ? (
+        {monthlyVpPercent !== null && member.productVpStatus !== "error" ? (
           <div className="mt-3">
             <ProgressBar color="var(--brand-primary)" height="h-1" percent={monthlyVpPercent} />
             <p className="mt-1.5 text-[0.75rem] font-medium text-[var(--brand-text-muted)]">
@@ -121,7 +127,9 @@ export function OrganizationMemberDetail({
           </div>
         ) : null}
         <p className="mt-2 text-[0.75rem] leading-relaxed text-[var(--brand-hint)]">
-          以零售屋本月產品 VP 為準
+          {member.productVpStatus === "error"
+            ? "零售屋產品 VP 暫時無法讀取"
+            : "以零售屋本月產品 VP 為準"}
         </p>
       </div>
 

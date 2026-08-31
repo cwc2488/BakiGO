@@ -52,6 +52,10 @@ import type { EventCenterResult } from "@/types/event-center";
 import { applyMemberStateFromEvents } from "@/lib/event-center/resolve-member-state";
 import { projectEventsForEngines } from "@/lib/event-center/project-events";
 import { calculateMonthlyProductVp } from "@/lib/retail-house/canonical-product-vp";
+import {
+  loadAuthoritativeRetailTransactions,
+  resolveAuthoritativeRetailTransactionsFromPayloads,
+} from "@/lib/retail-house/authoritative-retail-transactions";
 import { loadPointRedemptions } from "@/lib/repositories/point-redemption-repository";
 import { createEventRepository } from "@/lib/repositories/event-repository";
 import { buildRetailWeeklyReport } from "./build-retail-weekly-report";
@@ -193,12 +197,30 @@ export function recalculateMemberMetrics(
     members,
   });
   const vp = toLegacyVpResult(vpEngineResult);
+  // Product VP uses authoritative RH records (local events ∪ legacy retailTransactions),
+  // then overlays supplemental cloud events for downline metrics paths.
+  const localAuthoritative = loadAuthoritativeRetailTransactions(storage, input.memberId);
+  const supplementalOnly = input.supplementalEvents ?? [];
+  const cloudOverlay =
+    supplementalOnly.length > 0
+      ? resolveAuthoritativeRetailTransactionsFromPayloads({
+          ownerMemberId: input.memberId,
+          events: supplementalOnly,
+          legacyTransactions: [],
+        }).transactions
+      : [];
+  const productVpById = new Map(
+    localAuthoritative.transactions.map((transaction) => [transaction.id, transaction]),
+  );
+  for (const transaction of cloudOverlay) {
+    productVpById.set(transaction.id, transaction);
+  }
   const productVp = {
     yearMonth,
     monthlyTotal: calculateMonthlyProductVp({
       memberId: input.memberId,
       yearMonth,
-      transactions: memberTransactions,
+      transactions: [...productVpById.values()],
     }),
   };
 

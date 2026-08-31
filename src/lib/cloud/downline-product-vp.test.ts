@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { RETAIL_TRANSACTION_TYPE_KEYS } from "@/lib/business-engine/rules/keys";
 import {
+  buildDownlineEntry,
   getDownlineMonthlyProductVp,
   getDownlineMonthlyProductVpBatch,
   type DownlineCloudDataCache,
-  type DownlineMemberCloudData,
 } from "@/lib/cloud/downline-cloud-data";
 import { calculateMonthlyProductVp } from "@/lib/retail-house/canonical-product-vp";
 import {
@@ -48,13 +48,7 @@ function txEvent(
 }
 
 function cacheFromEvents(memberId: string, events: BakiEvent[]): DownlineCloudDataCache {
-  const aligned = alignDownlineEventsToOwnerMemberId(events, memberId);
-  const entry: DownlineMemberCloudData = {
-    events: aligned,
-    pipelineLeads: [],
-    retailTransactions: projectRetailTransactionsFromEvents(aligned),
-  };
-  return new Map([[memberId, entry]]);
+  return new Map([[memberId, buildDownlineEntry(memberId, events, [], [])]]);
 }
 
 function downlineAFixtureEvents(memberId = DOWNLINE_A): BakiEvent[] {
@@ -175,18 +169,12 @@ describe("downline Retail House Product VP pipeline", () => {
 
   it("batches many downlines without N independent full-history paths", () => {
     const cache: DownlineCloudDataCache = new Map([
-      [
-        DOWNLINE_A,
-        {
-          events: alignDownlineEventsToOwnerMemberId(downlineAFixtureEvents(), DOWNLINE_A),
-          pipelineLeads: [],
-          retailTransactions: projectRetailTransactionsFromEvents(downlineAFixtureEvents()),
-        },
-      ],
+      [DOWNLINE_A, buildDownlineEntry(DOWNLINE_A, downlineAFixtureEvents(), [], [])],
       [
         DOWNLINE_B,
-        {
-          events: [
+        buildDownlineEntry(
+          DOWNLINE_B,
+          [
             txEvent({
               id: "b1",
               memberId: DOWNLINE_B,
@@ -196,18 +184,9 @@ describe("downline Retail House Product VP pipeline", () => {
               retailVp: 20,
             }),
           ],
-          pipelineLeads: [],
-          retailTransactions: projectRetailTransactionsFromEvents([
-            txEvent({
-              id: "b1",
-              memberId: DOWNLINE_B,
-              eventTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.NEW_CUSTOMER_NTD,
-              eventDate: "2026-08-01",
-              value: 1000,
-              retailVp: 20,
-            }),
-          ]),
-        },
+          [],
+          [],
+        ),
       ],
     ]);
 
@@ -216,21 +195,9 @@ describe("downline Retail House Product VP pipeline", () => {
     expect(batch.get(DOWNLINE_B)).toBe(20);
   });
 
-  it("merges local + cloud events without duplicating ids", () => {
-    const local = [txEvent({
-      id: "c1",
-      memberId: DOWNLINE_A,
-      eventTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.NEW_CUSTOMER_NTD,
-      eventDate: "2026-08-05",
-      value: 3000,
-      retailVp: 100,
-    })];
-    const cloud = downlineAFixtureEvents();
-    expect(mergeBakiEventsById(local, cloud)).toHaveLength(3);
-  });
-
-  it("documents downline sync keys include Retail House event stream", () => {
+  it("documents downline sync keys include Retail House event + legacy stores", () => {
     expect(STORAGE_KEYS.bakiEvents).toBe("baki-go:baki-events");
+    expect(STORAGE_KEYS.retailTransactions).toBe("baki-go:retail-transactions");
   });
 });
 

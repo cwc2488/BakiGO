@@ -185,7 +185,7 @@ function orgNode(
 
 describe("organization load resilience (Product VP enrichment)", () => {
   it("A. normal organization + Product VP → organization loads with 325", () => {
-    const entry = buildDownlineEntry(DOWNLINE_A, fixture325(), []);
+    const entry = buildDownlineEntry(DOWNLINE_A, fixture325(), [], []);
     const cache: DownlineCloudDataCache = new Map([[DOWNLINE_A, entry]]);
     const roots = [
       orgNode(VIEWER, "Upline", [orgNode(DOWNLINE_A, "Downline A")]),
@@ -208,7 +208,7 @@ describe("organization load resilience (Product VP enrichment)", () => {
 
   it("B. one downline has no Retail House data → organization loads", () => {
     const cache: DownlineCloudDataCache = new Map([
-      [DOWNLINE_A, buildDownlineEntry(DOWNLINE_A, [], [])],
+      [DOWNLINE_A, buildDownlineEntry(DOWNLINE_A, [], [], [])],
     ]);
     const enriched = enrichOrganizationRootsWithProductVp({
       roots: [orgNode(VIEWER, "Upline", [orgNode(DOWNLINE_A, "A")])],
@@ -224,7 +224,7 @@ describe("organization load resilience (Product VP enrichment)", () => {
 
   it("C. malformed legacy Retail metadata / null holes → organization loads", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const entry = buildDownlineEntry(DOWNLINE_A, productionLegacyCrashBlob(DOWNLINE_A), []);
+    const entry = buildDownlineEntry(DOWNLINE_A, productionLegacyCrashBlob(DOWNLINE_A), [], []);
     const cache: DownlineCloudDataCache = new Map([[DOWNLINE_A, entry]]);
 
     expect(() =>
@@ -246,8 +246,8 @@ describe("organization load resilience (Product VP enrichment)", () => {
   });
 
   it("D. legacy memberId in cloud blob → organization loads and VP aligns", () => {
-    const entry = buildDownlineEntry(DOWNLINE_A, fixture325(LEGACY_LOCAL_ID), []);
-    expect(entry.events.every((e) => e.memberId === DOWNLINE_A)).toBe(true);
+    const entry = buildDownlineEntry(DOWNLINE_A, fixture325(LEGACY_LOCAL_ID), [], []);
+    expect(entry.retailTransactions.every((t) => t.memberId === DOWNLINE_A)).toBe(true);
     expect(getDownlineMonthlyProductVp(DOWNLINE_A, "2026-08", new Map([[DOWNLINE_A, entry]]))).toBe(
       325,
     );
@@ -267,6 +267,7 @@ describe("organization load resilience (Product VP enrichment)", () => {
         }),
       ],
       [],
+      [],
     );
     const enriched = enrichOrganizationRootsWithProductVp({
       roots: [orgNode(VIEWER, "Upline", [orgNode(DOWNLINE_A, "A")])],
@@ -281,7 +282,7 @@ describe("organization load resilience (Product VP enrichment)", () => {
   });
 
   it("F. Product VP > 0 appears on organization node", () => {
-    const entry = buildDownlineEntry(DOWNLINE_A, fixture325(), []);
+    const entry = buildDownlineEntry(DOWNLINE_A, fixture325(), [], []);
     const enriched = enrichOrganizationRootsWithProductVp({
       roots: [orgNode(VIEWER, "Upline", [orgNode(DOWNLINE_A, "A")])],
       members: [],
@@ -298,8 +299,8 @@ describe("organization load resilience (Product VP enrichment)", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     // Mixed: B empty, A has crash-blob + valid VP
     const cache: DownlineCloudDataCache = new Map([
-      [DOWNLINE_A, buildDownlineEntry(DOWNLINE_A, productionLegacyCrashBlob(DOWNLINE_A), [])],
-      [DOWNLINE_B, buildDownlineEntry(DOWNLINE_B, [null, undefined, "x"] as never[], [])],
+      [DOWNLINE_A, buildDownlineEntry(DOWNLINE_A, productionLegacyCrashBlob(DOWNLINE_A), [], [])],
+      [DOWNLINE_B, buildDownlineEntry(DOWNLINE_B, [null, undefined, "x"] as never[], [], [])],
     ]);
 
     const enriched = enrichOrganizationRootsWithProductVp({
@@ -363,8 +364,8 @@ describe("organization load resilience (Product VP enrichment)", () => {
 
   it("batch still returns 325 for healthy member beside broken sibling", () => {
     const cache: DownlineCloudDataCache = new Map([
-      [DOWNLINE_A, buildDownlineEntry(DOWNLINE_A, fixture325(), [])],
-      [DOWNLINE_B, buildDownlineEntry(DOWNLINE_B, productionLegacyCrashBlob(DOWNLINE_B), [])],
+      [DOWNLINE_A, buildDownlineEntry(DOWNLINE_A, fixture325(), [], [])],
+      [DOWNLINE_B, buildDownlineEntry(DOWNLINE_B, productionLegacyCrashBlob(DOWNLINE_B), [], [])],
     ]);
     const batch = getDownlineMonthlyProductVpBatch([DOWNLINE_A, DOWNLINE_B], "2026-08", cache);
     expect(batch.get(DOWNLINE_A)).toBe(325);

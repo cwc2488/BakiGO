@@ -1,6 +1,5 @@
-import { createEventRepository } from "@/lib/repositories/event-repository";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
-import { projectEventsForEngines } from "@/lib/event-center/project-events";
+import { loadAuthoritativeRetailTransactions } from "@/lib/retail-house/authoritative-retail-transactions";
 import { buildRetailWeeklyReport } from "@/lib/services/build-retail-weekly-report";
 import { buildRetailHouseSnapshot } from "@/lib/retail-house/retail-house-selectors";
 import type { RetailHouseDateRange } from "@/lib/retail-house/retail-house-date-range";
@@ -10,17 +9,17 @@ import { toYearMonthFromDate } from "@/lib/config/app-config";
 
 /**
  * Builds a Retail House presentation snapshot for the selected date range.
- * Engine monthly totals still come from metrics; period items are filtered client-side.
+ *
+ * Transactions come from the authoritative RH read layer (events ∪ legacy
+ * retailTransactions) — same source Partner Detail / Organization Product VP use.
  */
 export function buildRetailHouseView(
   metrics: MemberComputedMetrics,
   range: RetailHouseDateRange,
   storage: StorageAdapter,
 ): RetailHouseSnapshot {
-  const repository = createEventRepository(storage);
-  const memberEvents = repository.getByMemberId(metrics.memberId);
-  const projected = projectEventsForEngines(memberEvents);
-  const memberTransactions = projected.transactions.filter(
+  const authoritative = loadAuthoritativeRetailTransactions(storage, metrics.memberId);
+  const memberTransactions = authoritative.transactions.filter(
     (transaction) => transaction.memberId === metrics.memberId,
   );
 
