@@ -4,7 +4,7 @@ import { AppIcon, routeIcon, type AppIconName } from "./AppIcon";
 import { ROUTE_ICON_COMPONENTS, type QuickLinkHref } from "./BrandIcons";
 
 export const PAGE_GRADIENT_CLASS =
-  "bg-[linear-gradient(180deg,#f0faf3_0%,#f5faf6_48%,#e8f8ee_100%)]";
+  "bg-[linear-gradient(180deg,#f7faf8_0%,#f5faf6_55%,#f3f8f4_100%)]";
 
 export function BrandCard({
   children,
@@ -17,11 +17,11 @@ export function BrandCard({
 }) {
   const surface =
     variant === "shadow"
-      ? "home-card animate-fade-in shadow-[0_8px_40px_rgba(0,0,0,0.04)] backdrop-blur-sm bg-[var(--brand-surface)]/90"
-      : "border border-[var(--brand-border)] bg-[var(--brand-surface)]";
+      ? "border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] shadow-[0_1px_2px_rgba(29,29,31,0.04)]"
+      : "border border-[var(--brand-border)]/80 bg-[var(--brand-surface)]";
 
   return (
-    <section className={`rounded-[1.75rem] p-6 sm:p-7 ${surface} ${className}`}>
+    <section className={`rounded-[1.25rem] p-5 sm:p-6 ${surface} ${className}`}>
       {children}
     </section>
   );
