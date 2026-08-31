@@ -89,12 +89,12 @@ function NavLink({
       href={item.href}
     >
       <span
-        className={`h-0.5 w-7 rounded-full transition-colors ${
+        className={`h-0.5 w-6 rounded-full transition-colors ${
           active ? "bg-[var(--brand-primary)]" : "bg-transparent"
         }`}
       />
-      <Icon size={28} />
-      <span className="text-[0.75rem] font-semibold leading-tight">{item.shortLabel}</span>
+      <Icon size={24} />
+      <span className="text-[0.6875rem] font-semibold leading-tight tracking-wide">{item.shortLabel}</span>
     </Link>
   );
 }
@@ -192,7 +192,7 @@ export function AppBottomNav() {
   return (
     <nav
       aria-label="主要功能"
-      className="app-bottom-nav md:hidden"
+      className="fixed inset-x-0 bottom-0 z-[100] border-t border-[var(--brand-border)] bg-[var(--brand-surface)]/98 backdrop-blur-md [transform:translateZ(0)] supports-[padding:max(0px)]:pb-[max(0px,env(safe-area-inset-bottom))] md:hidden"
     >
       <div className="mx-auto grid max-w-lg grid-cols-3">
         {NAV_ITEMS.map((item) => (

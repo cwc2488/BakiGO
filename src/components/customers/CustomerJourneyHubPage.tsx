@@ -5,62 +5,54 @@ import { PageShell } from "@/components/ui/PageShell";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { ROUTE_ICON_COMPONENTS } from "@/components/ui/BrandIcons";
+import { QuizPartnerNavBadge } from "@/components/quiz/QuizPartnerNavBadge";
 import {
   CUSTOMER_JOURNEY_HUB_ITEMS,
   type CustomerJourneyHubItem,
 } from "@/lib/customers/customer-journey-hub-items";
-import { QuizPartnerNavBadge } from "@/components/quiz/QuizPartnerNavBadge";
 
 function HubLinkCard({ item }: { item: CustomerJourneyHubItem }) {
   const Icon = (item.iconHref ? ROUTE_ICON_COMPONENTS[item.iconHref] : null) ?? null;
-  const badge = item.locked
-    ? (item.lockLabel ?? "即將開放")
-    : item.comingSoon
-      ? item.title.includes("Radar")
-        ? "開發中"
-        : "建置中"
-      : null;
+  const badge = item.locked ? (item.lockLabel ?? "即將開放") : null;
+
   const content = (
     <>
-      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--brand-primary-muted)] text-[var(--brand-primary-dark)]">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[0.75rem] bg-[var(--brand-primary-muted)] text-[var(--brand-primary-dark)]">
         {Icon ? (
-          <Icon size={26} />
+          <Icon size={22} />
         ) : (
-          <AppIcon name={item.iconName ?? APP_ICON.mood.empty} size={26} />
+          <AppIcon name={item.iconName ?? APP_ICON.mood.empty} size={22} />
         )}
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="min-w-0 text-[1rem] font-semibold break-words text-[#1d1d1f] [overflow-wrap:anywhere]">
+          <span className="min-w-0 text-[0.9375rem] font-semibold break-words text-[var(--brand-text)] [overflow-wrap:anywhere]">
             {item.title}
           </span>
           {item.waitingBadge ? <QuizPartnerNavBadge /> : null}
           {badge ? (
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ${
-                item.locked
-                  ? "bg-[#fff7e6] text-[#b54708]"
-                  : "bg-[#f5f5f7] text-[#86868b]"
-              }`}
-            >
-              {item.locked ? `🔒 ${badge}` : badge}
+            <span className="shrink-0 rounded-full bg-[#fff7e6] px-2 py-0.5 text-[0.6875rem] font-semibold text-[#b54708]">
+              🔒 {badge}
             </span>
           ) : null}
         </span>
-        <span className="mt-0.5 block min-w-0 text-[0.8125rem] break-words text-[#86868b] [overflow-wrap:anywhere]">
+        <span className="mt-0.5 block min-w-0 text-[0.8125rem] break-words text-[var(--brand-text-muted)] [overflow-wrap:anywhere]">
           {item.desc}
         </span>
       </span>
+      {!item.locked && item.href ? (
+        <span aria-hidden className="text-[0.875rem] text-[var(--brand-hint)]">
+          ›
+        </span>
+      ) : null}
     </>
   );
 
-  if (item.locked || item.comingSoon || !item.href) {
+  if (item.locked || !item.href) {
     return (
       <div
         aria-disabled="true"
-        className={`flex min-h-12 min-w-0 items-center gap-3 rounded-2xl border border-dashed border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5 ${
-          item.locked ? "opacity-90" : "opacity-80"
-        }`}
+        className="flex min-h-[3.25rem] min-w-0 items-center gap-3.5 px-4 py-3 opacity-90"
       >
         {content}
       </div>
@@ -69,7 +61,7 @@ function HubLinkCard({ item }: { item: CustomerJourneyHubItem }) {
 
   return (
     <Link
-      className="flex min-h-12 min-w-0 items-center gap-3 rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5 transition-colors active:bg-[var(--brand-primary-muted)]"
+      className="flex min-h-[3.25rem] min-w-0 items-center gap-3.5 px-4 py-3 transition-colors active:bg-[var(--brand-primary-muted)]"
       href={item.href}
     >
       {content}
@@ -79,20 +71,20 @@ function HubLinkCard({ item }: { item: CustomerJourneyHubItem }) {
 
 export default function CustomerJourneyHubPage() {
   return (
-    <PageShell
-      showBack={false}
-      title="顧客"
-      subtitle="名單 → 顧客 → 陪跑中心 → 轉介紹"
-      variant="plain"
-    >
-      <div className="mx-auto max-w-lg space-y-3 px-4 pb-8 pt-2">
-        {CUSTOMER_JOURNEY_HUB_ITEMS.map((item) => (
-          <HubLinkCard key={item.title} item={item} />
+    <PageShell showBack={false} subtitle="名單 → 顧客 → 陪跑 → 轉介紹" title="顧客" variant="plain">
+      <div className="overflow-hidden rounded-[1.25rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] shadow-[0_1px_2px_rgba(29,29,31,0.04)]">
+        {CUSTOMER_JOURNEY_HUB_ITEMS.map((item, index) => (
+          <div
+            key={item.title}
+            className={index > 0 ? "border-t border-[var(--brand-border)]/70" : undefined}
+          >
+            <HubLinkCard item={item} />
+          </div>
         ))}
-        <p className="pt-4 text-center text-[0.8125rem] text-[#86868b]">
-          待聯絡／正在接觸可在「我的名單」裡篩選；這裡只保留主入口。
-        </p>
       </div>
+      <p className="pt-2 text-center text-[0.75rem] leading-relaxed text-[var(--brand-hint)]">
+        待聯絡／正在接觸可在「我的名單」裡篩選
+      </p>
     </PageShell>
   );
 }

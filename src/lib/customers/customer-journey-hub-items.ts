@@ -25,7 +25,7 @@ export const CUSTOMER_JOURNEY_HUB_ITEMS: CustomerJourneyHubItem[] = [
   {
     href: "/radar",
     title: "AI Radar",
-    desc: "尋找新名單",
+    desc: "智慧找人",
     iconName: APP_ICON.section.aiAnalysis,
   },
   {
@@ -37,8 +37,8 @@ export const CUSTOMER_JOURNEY_HUB_ITEMS: CustomerJourneyHubItem[] = [
   {
     href: "/quiz/21d",
     title: "心理測驗",
-    desc: "21 天名單・分享測驗・成效",
-    iconHref: "/quiz/hub",
+    desc: "分享測驗，聯絡想了解 21 天的人",
+    iconHref: "/quiz/21d",
     waitingBadge: true,
   },
   {
@@ -49,8 +49,8 @@ export const CUSTOMER_JOURNEY_HUB_ITEMS: CustomerJourneyHubItem[] = [
   },
   {
     href: "/coaching",
-    title: "陪跑中心",
-    desc: "今天誰需要關注？",
+    title: "陪跑",
+    desc: "今天誰需要我？",
     iconHref: "/coaching",
   },
   {

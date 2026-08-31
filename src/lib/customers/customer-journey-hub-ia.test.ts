@@ -9,24 +9,14 @@ describe("CustomerJourneyHub IA", () => {
     expect(titles.join(" ")).not.toMatch(/待聯絡|正在接觸/);
   });
 
-  it("keeps AI Radar connected to /radar", () => {
-    const radar = CUSTOMER_JOURNEY_HUB_ITEMS.find((item) => item.title === "AI Radar");
-    expect(radar).toMatchObject({
-      href: "/radar",
-      title: "AI Radar",
-      desc: "尋找新名單",
-    });
-    expect(radar?.comingSoon).toBeFalsy();
-  });
-
-  it("wires 心理測驗 to the canonical Partner Hub at /quiz/21d", () => {
+  it("keeps a clickable 心理測驗 partner entry after 我的名單", () => {
     const titles = CUSTOMER_JOURNEY_HUB_ITEMS.map((item) => item.title);
     expect(titles).toEqual([
       "AI Radar",
       "我的名單",
       "心理測驗",
       "我的顧客",
-      "陪跑中心",
+      "陪跑",
       "轉介紹中心",
     ]);
 
@@ -34,12 +24,21 @@ describe("CustomerJourneyHub IA", () => {
     expect(quiz).toMatchObject({
       href: "/quiz/21d",
       title: "心理測驗",
-      desc: "21 天名單・分享測驗・成效",
+      desc: "分享測驗，聯絡想了解 21 天的人",
+      iconHref: "/quiz/21d",
       waitingBadge: true,
     });
     expect(quiz?.comingSoon).toBeFalsy();
     expect(quiz?.locked).toBeFalsy();
-    expect(quiz?.href).toBe("/quiz/21d");
-    expect(quiz?.href).not.toBe("/quiz/hub");
+    expect(quiz?.href).toBeTruthy();
+  });
+
+  it("keeps AI Radar active with href and no comingSoon", () => {
+    const radar = CUSTOMER_JOURNEY_HUB_ITEMS.find((item) => item.title === "AI Radar");
+    expect(radar).toMatchObject({
+      href: "/radar",
+      desc: "智慧找人",
+    });
+    expect(radar?.comingSoon).toBeFalsy();
   });
 });
