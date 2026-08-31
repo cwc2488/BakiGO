@@ -53,9 +53,23 @@ describe("SECURITY — Migration 072 downline RLS data_key allowlist", () => {
       expect(policy).toContain(`'${key}'`);
     }
     expect(policy).toContain("member_id in (");
-    expect(policy).toContain("with recursive downline as");
+    expect(policy).toContain("with recursive downline(id, member_number) as");
     expect(policy).toContain("organization_relationships");
     expect(policy).toContain("sponsor_member_number");
+  });
+
+  it("uses Production-valid recursive CTE (one downline ref + LATERAL edges)", () => {
+    const policy = extractDownlinePolicyBody(migrationSql());
+    // Must use LATERAL edge subquery — not two sibling UNION arms that each join downline.
+    expect(policy).toMatch(/join\s+lateral\s*\(/i);
+    expect(policy).toContain("from downline parent");
+    // Count recursive joins to downline in the recursive term: exactly one "from downline parent".
+    const fromDownlineParent = policy.match(/from\s+downline\s+parent/gi) ?? [];
+    expect(fromDownlineParent).toHaveLength(1);
+    // Forbidden invalid shape: second recursive arm joining downline via child.sponsor...
+    expect(policy).not.toMatch(
+      /union\s+select\s+child\.id,\s*child\.member_number\s+from\s+public\.members\s+child\s+join\s+downline/i,
+    );
   });
 
   it("sponsor A cannot read B calendar / tombstones / future unknown keys via downline policy", () => {

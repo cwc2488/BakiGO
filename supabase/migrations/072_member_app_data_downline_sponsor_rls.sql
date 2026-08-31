@@ -14,6 +14,10 @@
 -- Calendar, settings, and any future unknown data_key remain OWN-only.
 -- Own full access continues via member_app_data_select_own (unchanged).
 --
+-- Recursive CTE shape: ONE recursive reference to `downline`, with relationship
+-- and sponsor edges combined inside a LATERAL subquery. (A second UNION branch
+-- that also joins `downline` is rejected by PostgreSQL as 42P19.)
+--
 -- Also backfill missing relationship rows from sponsor_member_number so both
 -- UI and RLS share one durable edge source (idempotent; Production expect ~0).
 
@@ -43,25 +47,30 @@ create policy "member_app_data_select_downline"
       'baki-go:retail-pipeline-leads'
     )
     and member_id in (
-      with recursive downline as (
+      with recursive downline(id, member_number) as (
+        -- Non-recursive seed: authenticated viewer
         select m.id, m.member_number
         from public.members m
         where lower(m.email) = lower(auth.jwt() ->> 'email')
 
         union
 
-        -- Explicit org relationship edges
+        -- Single recursive reference to downline; edges via LATERAL UNION
         select child.id, child.member_number
-        from public.organization_relationships rel
-        join downline parent on rel.parent_member_number = parent.member_number
-        join public.members child on child.member_number = rel.child_member_number
+        from downline parent
+        join lateral (
+          select rel.child_member_number
+          from public.organization_relationships rel
+          where rel.parent_member_number = parent.member_number
 
-        union
+          union
 
-        -- Sponsor field edges (same source Organization tree uses)
-        select child.id, child.member_number
-        from public.members child
-        join downline parent on child.sponsor_member_number = parent.member_number
+          select sponsored.member_number
+          from public.members sponsored
+          where sponsored.sponsor_member_number = parent.member_number
+        ) edge on true
+        join public.members child
+          on child.member_number = edge.child_member_number
       )
       select id from downline
     )

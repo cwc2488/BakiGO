@@ -202,7 +202,8 @@ describe("REQUIRED — Production-shaped Product VP 2338.85 end-to-end", () => {
     expect(sql).toContain("'baki-go:baki-events'");
     expect(sql).toContain("'baki-go:retail-transactions'");
     expect(sql).toContain("'baki-go:retail-pipeline-leads'");
-    expect(sql).toContain("data_key in (");
+    expect(sql).toContain("with recursive downline(id, member_number) as");
+    expect(sql).toMatch(/join\s+lateral\s*\(/i);
     expect(sql).not.toContain("'baki-go:calendar-events'");
   });
 });
