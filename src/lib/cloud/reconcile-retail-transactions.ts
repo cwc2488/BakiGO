@@ -1,15 +1,17 @@
 /**
- * Own-data reconciliation: local legacy `baki-go:retail-transactions`
- * → member_app_data (authenticated member only).
+ * Own-data reconciliation: local `baki-go:retail-transactions`
+ * → authenticated member's member_app_data.
  *
- * Production root cause: zero cloud rows for this key. Historical data lived
- * only on device localStorage. Adding the key to SYNCABLE_STORAGE_KEYS alone
- * did not upload Production history because:
- * 1) Production never ran that build (not promoted)
- * 2) Debounced sync only fires on setItem — untouched historical keys never push
- * 3) Blind cloud hydration can overwrite local with [] when an empty cloud row exists
+ * SYNC ROOT CAUSE (Production still 0 rows after prior patch):
+ * 1) restoreCloudSession used awaitSync:false — sync was fire-and-forget and
+ *    easy to miss / fail silently on restored sessions (most real usage).
+ * 2) Reconciliation filtered local rows by exact memberId === auth UUID.
+ *    Legacy device rows often carry a stale local memberId → localCount 0 →
+ *    no upsert even when localStorage has the history Own RH reads.
+ * 3) Debounced SyncingStorageAdapter push never fires for untouched keys.
  *
- * This module is merge-first and never replaces non-empty local with empty cloud.
+ * This module: merge-first, claim device legacy to auth memberId, awaited
+ * upsert, never wipe non-empty local with empty cloud.
  */
 
 import {
@@ -23,6 +25,16 @@ import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { EntityId } from "@/types";
 import type { RetailTransaction } from "@/types/retail-transaction";
 
+/** Exact runtime key used by RetailRepository — do not invent alternatives. */
+export const RETAIL_TRANSACTIONS_STORAGE_KEY = STORAGE_KEYS.retailTransactions;
+
+export type RetailReconcileStatus =
+  | "success"
+  | "no_local_data"
+  | "unauthorized"
+  | "write_error"
+  | "skipped";
+
 export interface RetailTransactionsCloudPort {
   /** null = row missing in member_app_data; otherwise raw payload. */
   fetchPayload: (memberId: EntityId) => Promise<unknown | null>;
@@ -35,8 +47,9 @@ export interface RetailReconciliationDiagnostics {
   cloudCount: number;
   mergedCount: number;
   uploaded: boolean;
-  status: "success" | "failure" | "skipped";
+  status: RetailReconcileStatus;
   reason?: string;
+  claimedLegacyMemberIds?: boolean;
 }
 
 export interface RetailReconciliationResult {
@@ -44,23 +57,21 @@ export interface RetailReconciliationResult {
   diagnostics: RetailReconciliationDiagnostics;
 }
 
-function logReconciliation(
-  event: "retail_reconciliation_start" | "retail_reconciliation_success" | "retail_reconciliation_failure",
-  diagnostics: Partial<RetailReconciliationDiagnostics> & { memberId: EntityId },
+function logRetail(
+  event:
+    | "retail_reconcile_invoked"
+    | "retail_reconcile_local_loaded"
+    | "retail_reconcile_cloud_loaded"
+    | "retail_reconcile_write_attempt"
+    | "retail_reconcile_write_success"
+    | "retail_reconcile_write_failure",
+  payload: Record<string, unknown> | RetailReconciliationDiagnostics,
 ): void {
-  if (process.env.NODE_ENV === "test" && event !== "retail_reconciliation_failure") {
+  if (process.env.NODE_ENV === "test" && !event.endsWith("failure")) {
     return;
   }
-  const logger = event === "retail_reconciliation_failure" ? console.error : console.info;
-  logger(`[retail_house] ${event}`, {
-    memberId: diagnostics.memberId,
-    localCount: diagnostics.localCount,
-    cloudCount: diagnostics.cloudCount,
-    mergedCount: diagnostics.mergedCount,
-    uploaded: diagnostics.uploaded,
-    status: diagnostics.status,
-    reason: diagnostics.reason,
-  });
+  const logger = event.endsWith("failure") ? console.error : console.info;
+  logger(`[retail_house] ${event}`, payload);
 }
 
 function parseTransactionArray(raw: unknown): RetailTransaction[] {
@@ -125,9 +136,55 @@ function fingerprintOwnedTransactions(rows: readonly RetailTransaction[]): strin
     .join("|");
 }
 
+function claimAsOwner(
+  row: RetailTransaction,
+  ownerMemberId: EntityId,
+): RetailTransaction {
+  return {
+    ...row,
+    memberId: ownerMemberId,
+    metadata: row.metadata ? { ...row.metadata } : row.metadata,
+  };
+}
+
+/**
+ * Resolve which local rows belong in the authenticated member's cloud blob.
+ * If none match auth UUID but local history exists, claim device legacy rows
+ * (stale local memberId — Production failure mode).
+ */
+export function resolveLocalRowsForOwnReconciliation(input: {
+  ownerMemberId: EntityId;
+  localAll: readonly RetailTransaction[];
+}): {
+  localOwned: RetailTransaction[];
+  localOthers: RetailTransaction[];
+  claimedLegacyMemberIds: boolean;
+} {
+  const matching = input.localAll.filter((row) => row.memberId === input.ownerMemberId);
+  const nonMatching = input.localAll.filter((row) => row.memberId !== input.ownerMemberId);
+
+  if (matching.length > 0) {
+    return {
+      localOwned: matching.map((row) => claimAsOwner(row, input.ownerMemberId)),
+      localOthers: nonMatching,
+      claimedLegacyMemberIds: false,
+    };
+  }
+
+  if (nonMatching.length > 0) {
+    return {
+      localOwned: nonMatching.map((row) => claimAsOwner(row, input.ownerMemberId)),
+      localOthers: [],
+      claimedLegacyMemberIds: true,
+    };
+  }
+
+  return { localOwned: [], localOthers: [], claimedLegacyMemberIds: false };
+}
+
 /**
  * Deterministic merge by stable transaction id.
- * Same id: newer updatedAt wins; ties prefer `preferred` (cloud when merging local∪cloud).
+ * Same id: newer updatedAt wins; ties prefer cloud.
  */
 export function mergeRetailTransactionStores(input: {
   ownerMemberId: EntityId;
@@ -137,14 +194,7 @@ export function mergeRetailTransactionStores(input: {
   const byId = new Map<string, RetailTransaction>();
 
   const consider = (row: RetailTransaction, preferIncomingOnTie: boolean) => {
-    if (row.memberId !== input.ownerMemberId) {
-      return;
-    }
-    const owned: RetailTransaction = {
-      ...row,
-      memberId: input.ownerMemberId,
-      metadata: row.metadata ? { ...row.metadata } : row.metadata,
-    };
+    const owned = claimAsOwner(row, input.ownerMemberId);
     const existing = byId.get(owned.id);
     if (!existing) {
       byId.set(owned.id, owned);
@@ -164,7 +214,6 @@ export function mergeRetailTransactionStores(input: {
     }
   };
 
-  // Cloud first (tie → keep cloud), then local (newer local wins).
   for (const row of input.cloud) {
     consider(row, true);
   }
@@ -179,7 +228,7 @@ export function createDefaultRetailTransactionsCloudPort(): RetailTransactionsCl
   return {
     async fetchPayload(memberId) {
       const rows = await fetchCloudAppData(memberId);
-      const row = rows.find((entry) => entry.dataKey === STORAGE_KEYS.retailTransactions);
+      const row = rows.find((entry) => entry.dataKey === RETAIL_TRANSACTIONS_STORAGE_KEY);
       return row ? row.payload : null;
     },
     async upsertPayload(memberId, transactions) {
@@ -187,7 +236,7 @@ export function createDefaultRetailTransactionsCloudPort(): RetailTransactionsCl
         memberId,
         entries: [
           {
-            dataKey: STORAGE_KEYS.retailTransactions,
+            dataKey: RETAIL_TRANSACTIONS_STORAGE_KEY,
             rawValue: JSON.stringify(transactions),
           },
         ],
@@ -215,35 +264,56 @@ export async function reconcileOwnRetailTransactions(input: {
 }): Promise<RetailReconciliationResult> {
   const memberId = input.memberId;
 
+  logRetail("retail_reconcile_invoked", {
+    memberId,
+    storageKey: RETAIL_TRANSACTIONS_STORAGE_KEY,
+  });
+
   if (!isCloudDatabaseMemberId(memberId)) {
-    return {
-      transactions: [],
-      diagnostics: {
-        memberId,
-        localCount: 0,
-        cloudCount: 0,
-        mergedCount: 0,
-        uploaded: false,
-        status: "skipped",
-        reason: "non_cloud_member_id",
-      },
+    const diagnostics: RetailReconciliationDiagnostics = {
+      memberId,
+      localCount: 0,
+      cloudCount: 0,
+      mergedCount: 0,
+      uploaded: false,
+      status: "unauthorized",
+      reason: "non_cloud_member_id",
     };
+    logRetail("retail_reconcile_write_failure", diagnostics);
+    return { transactions: [], diagnostics };
   }
 
   const localRaw =
     input.localRawSnapshot !== undefined
       ? input.localRawSnapshot
-      : input.storage.getItem(STORAGE_KEYS.retailTransactions);
+      : input.storage.getItem(RETAIL_TRANSACTIONS_STORAGE_KEY);
   const localAll = parseTransactionArray(localRaw);
-  const localOwned = localAll.filter((row) => row.memberId === memberId);
-  const localOthers = localAll.filter((row) => row.memberId !== memberId);
+  const { localOwned, localOthers, claimedLegacyMemberIds } =
+    resolveLocalRowsForOwnReconciliation({
+      ownerMemberId: memberId,
+      localAll,
+    });
 
-  logReconciliation("retail_reconciliation_start", {
+  logRetail("retail_reconcile_local_loaded", {
     memberId,
     localCount: localOwned.length,
-    uploaded: false,
-    status: "success",
+    rawLocalCount: localAll.length,
+    claimedLegacyMemberIds,
   });
+
+  if (localOwned.length === 0) {
+    const diagnostics: RetailReconciliationDiagnostics = {
+      memberId,
+      localCount: 0,
+      cloudCount: 0,
+      mergedCount: 0,
+      uploaded: false,
+      status: "no_local_data",
+      reason: "empty_local",
+      claimedLegacyMemberIds,
+    };
+    return { transactions: [], diagnostics };
+  }
 
   const port = input.cloudPort ?? createDefaultRetailTransactionsCloudPort();
 
@@ -252,18 +322,17 @@ export async function reconcileOwnRetailTransactions(input: {
     cloudPayload =
       input.cloudPayload !== undefined ? input.cloudPayload : await port.fetchPayload(memberId);
   } catch (error) {
-    // Failure safety: keep local intact.
     const diagnostics: RetailReconciliationDiagnostics = {
       memberId,
       localCount: localOwned.length,
       cloudCount: 0,
       mergedCount: localOwned.length,
       uploaded: false,
-      status: "failure",
+      status: "write_error",
       reason: "cloud_fetch_failed",
+      claimedLegacyMemberIds,
     };
-    logReconciliation("retail_reconciliation_failure", diagnostics);
-    console.error("[retail_house] retail_reconciliation_failure", { memberId, error });
+    logRetail("retail_reconcile_write_failure", { ...diagnostics, error });
     return { transactions: localOwned, diagnostics };
   }
 
@@ -273,7 +342,13 @@ export async function reconcileOwnRetailTransactions(input: {
       : typeof cloudPayload === "string"
         ? cloudPayload
         : serializeCloudPayload(cloudPayload),
-  ).filter((row) => row.memberId === memberId);
+  ).map((row) => claimAsOwner(row, memberId));
+
+  logRetail("retail_reconcile_cloud_loaded", {
+    memberId,
+    cloudCount: cloudOwned.length,
+    cloudMissing: cloudPayload === null || cloudPayload === undefined,
+  });
 
   const mergedOwned = mergeRetailTransactionStores({
     ownerMemberId: memberId,
@@ -289,44 +364,61 @@ export async function reconcileOwnRetailTransactions(input: {
       cloudCount: cloudOwned.length,
       mergedCount: localOwned.length,
       uploaded: false,
-      status: "failure",
+      status: "write_error",
       reason: "refused_empty_merge",
+      claimedLegacyMemberIds,
     };
-    logReconciliation("retail_reconciliation_failure", diagnostics);
+    logRetail("retail_reconcile_write_failure", diagnostics);
     return { transactions: localOwned, diagnostics };
   }
 
   const localNext = [...localOthers, ...mergedOwned];
-  const previousLocalRaw = input.storage.getItem(STORAGE_KEYS.retailTransactions);
+  const previousLocalRaw = input.storage.getItem(RETAIL_TRANSACTIONS_STORAGE_KEY);
   const nextLocalRaw = JSON.stringify(localNext);
-
-  // Persist merged local without going through empty overwrite.
   if (previousLocalRaw !== nextLocalRaw) {
-    input.storage.setItem(STORAGE_KEYS.retailTransactions, nextLocalRaw);
-  } else if (localOwned.length > 0 && !previousLocalRaw) {
-    input.storage.setItem(STORAGE_KEYS.retailTransactions, nextLocalRaw);
+    input.storage.setItem(RETAIL_TRANSACTIONS_STORAGE_KEY, nextLocalRaw);
   }
 
-  let uploaded = false;
-  try {
-    const cloudMissing = cloudPayload === null || cloudPayload === undefined;
-    const needsUpload =
-      mergedOwned.length > 0 &&
-      (cloudMissing ||
-        fingerprintOwnedTransactions(cloudOwned) !== fingerprintOwnedTransactions(mergedOwned));
+  const cloudMissing = cloudPayload === null || cloudPayload === undefined;
+  const needsUpload =
+    mergedOwned.length > 0 &&
+    (cloudMissing ||
+      fingerprintOwnedTransactions(cloudOwned) !== fingerprintOwnedTransactions(mergedOwned));
 
-    if (needsUpload) {
-      await port.upsertPayload(memberId, mergedOwned);
-      uploaded = true;
-    }
+  if (!needsUpload) {
+    return {
+      transactions: mergedOwned,
+      diagnostics: {
+        memberId,
+        localCount: localOwned.length,
+        cloudCount: cloudOwned.length,
+        mergedCount: mergedOwned.length,
+        uploaded: false,
+        status: "success",
+        reason: "already_in_sync",
+        claimedLegacyMemberIds,
+      },
+    };
+  }
+
+  logRetail("retail_reconcile_write_attempt", {
+    memberId,
+    localCount: localOwned.length,
+    cloudCount: cloudOwned.length,
+    mergedCount: mergedOwned.length,
+  });
+
+  try {
+    await port.upsertPayload(memberId, mergedOwned);
   } catch (error) {
-    // Restore local snapshot if we somehow emptied — should not happen.
     if (localOwned.length > 0) {
-      const current = parseTransactionArray(input.storage.getItem(STORAGE_KEYS.retailTransactions));
+      const current = parseTransactionArray(
+        input.storage.getItem(RETAIL_TRANSACTIONS_STORAGE_KEY),
+      );
       const currentOwned = current.filter((row) => row.memberId === memberId);
       if (currentOwned.length === 0) {
         input.storage.setItem(
-          STORAGE_KEYS.retailTransactions,
+          RETAIL_TRANSACTIONS_STORAGE_KEY,
           JSON.stringify([...localOthers, ...localOwned]),
         );
       }
@@ -337,11 +429,11 @@ export async function reconcileOwnRetailTransactions(input: {
       cloudCount: cloudOwned.length,
       mergedCount: mergedOwned.length,
       uploaded: false,
-      status: "failure",
+      status: "write_error",
       reason: "cloud_upsert_failed",
+      claimedLegacyMemberIds,
     };
-    logReconciliation("retail_reconciliation_failure", diagnostics);
-    console.error("[retail_house] retail_reconciliation_failure", { memberId, error });
+    logRetail("retail_reconcile_write_failure", { ...diagnostics, error });
     return { transactions: mergedOwned, diagnostics };
   }
 
@@ -350,17 +442,33 @@ export async function reconcileOwnRetailTransactions(input: {
     localCount: localOwned.length,
     cloudCount: cloudOwned.length,
     mergedCount: mergedOwned.length,
-    uploaded,
+    uploaded: true,
     status: "success",
+    claimedLegacyMemberIds,
   };
-  logReconciliation("retail_reconciliation_success", diagnostics);
+  logRetail("retail_reconcile_write_success", diagnostics);
   return { transactions: mergedOwned, diagnostics };
 }
 
 /**
- * Guard used by login sync: apply cloud retail payload only via merge reconciliation.
- * Never call storage.setItem(retailTransactions, "[]") from empty cloud.
+ * Authenticated app bootstrap entry — must be awaited.
+ * Safe to call on every restore / login / PWA launch.
  */
+export async function ensureOwnRetailTransactionsReconciled(input: {
+  storage: StorageAdapter;
+  memberId: EntityId;
+  cloudPort?: RetailTransactionsCloudPort;
+}): Promise<RetailReconciliationResult> {
+  const localRawSnapshot = input.storage.getItem(RETAIL_TRANSACTIONS_STORAGE_KEY);
+  return reconcileOwnRetailTransactions({
+    storage: input.storage,
+    memberId: input.memberId,
+    localRawSnapshot,
+    cloudPort: input.cloudPort,
+  });
+}
+
+/** Alias used by login sync — same merge-first path. */
 export async function reconcileRetailTransactionsDuringLoginSync(input: {
   storage: StorageAdapter;
   memberId: EntityId;

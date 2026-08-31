@@ -29,7 +29,8 @@ export function RetailTransactionEditSheet({
   const [customerPhone, setCustomerPhone] = useState(item.customerPhone ?? "");
   const [value, setValue] = useState(String(item.amount));
   const [retailVp, setRetailVp] = useState(
-    item.points != null && item.points > 0 ? String(item.points) : "",
+    // Preserve 0 VP (教練課) — do not coerce zero to empty via truthy checks.
+    item.points != null && Number.isFinite(item.points) ? String(item.points) : "",
   );
   const [note, setNote] = useState(item.note ?? "");
   const [error, setError] = useState<string | null>(null);
