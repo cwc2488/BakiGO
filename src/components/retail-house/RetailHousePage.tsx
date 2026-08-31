@@ -328,10 +328,11 @@ function RetailHouseView({
   onCloseEdit: () => void;
 }) {
   const storage = useMemo(() => createLocalStorageAdapter(), []);
-  const snapshot = useMemo(
-    () => buildRetailHouseView(metrics, dateRange, storage),
-    [metrics, dateRange, storage, listEpoch],
-  );
+  const snapshot = useMemo(() => {
+    // listEpoch is an intentional rebuild token after create/update/delete.
+    void listEpoch;
+    return buildRetailHouseView(metrics, dateRange, storage);
+  }, [metrics, dateRange, storage, listEpoch]);
   const displayName = getMemberDisplayName();
   const avatarUrl = getMemberAvatarUrl();
   const rangeLabel = formatReportDateRange(snapshot.weekStartDate, snapshot.weekEndDate);
