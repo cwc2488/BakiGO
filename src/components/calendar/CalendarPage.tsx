@@ -20,7 +20,11 @@ import { MonthDayAgenda } from "@/components/calendar/MonthDayAgenda";
 import { WeekDayStrip } from "@/components/calendar/WeekDayStrip";
 import { WeekView } from "@/components/calendar/WeekView";
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
-import { inferCalendarActivityTypeFromTitle } from "@/lib/calendar/calendar-activity-types";
+import {
+  inferCalendarActivityTypeFromTitle,
+  CALENDAR_CATEGORY_KEYS,
+  resolveCalendarCategoryKey,
+} from "@/lib/calendar/calendar-activity-types";
 import {
   attendanceFromExpandedSharedEvent,
   attendanceToCalendarEvent,
@@ -1105,7 +1109,7 @@ export default function CalendarPage() {
         onClose={closeEventForm}
         onDelete={formMode === "edit" ? () => void handleDelete() : undefined}
         onSubmit={() => void handleSubmit()}
-        open={formOpen}
+        open={formOpen && recurrenceScopeMode === null}
         personalLogContext={personalLogContext}
         readOnly={formReadOnly}
         sharedContext={formSharedContext}

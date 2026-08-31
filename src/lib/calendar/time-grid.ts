@@ -10,6 +10,12 @@ export interface WallClockDateTime {
 
 const WALL_CLOCK_RE = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}):(\d{2}))?/;
 
+/** Maximum side-by-side columns before collapsing into "+N more". */
+export const TIMED_EVENT_MAX_VISIBLE_COLUMNS = 3;
+
+/** Minimum readable card width (% of day column). */
+export const TIMED_EVENT_MIN_WIDTH_PERCENT = 24;
+
 /** 直接解析字串，不經 Date，避免瀏覽器時區造成位置偏移 */
 export function parseWallClockDateTime(value: string): WallClockDateTime | null {
   const match = value.trim().match(WALL_CLOCK_RE);
@@ -155,6 +161,23 @@ export interface TimedEventLayout {
   heightPx: number;
   leftPercent: number;
   widthPercent: number;
+  column: number;
+  columnSpan: number;
+  maxConcurrent: number;
+}
+
+export interface TimedEventOverflowCluster {
+  id: string;
+  topPx: number;
+  heightPx: number;
+  leftPercent: number;
+  widthPercent: number;
+  events: ExpandedCalendarEvent[];
+}
+
+export interface TimedEventsLayoutResult {
+  layouts: TimedEventLayout[];
+  overflowClusters: TimedEventOverflowCluster[];
 }
 
 type LayoutItem = {
@@ -165,48 +188,55 @@ type LayoutItem = {
   endMin: number;
   column: number;
   columnSpan: number;
-  totalColumns: number;
+  maxConcurrent: number;
 };
 
-function eventsOverlap(left: LayoutItem, right: LayoutItem): boolean {
+function eventsOverlap(left: Pick<LayoutItem, "startMin" | "endMin">, right: Pick<LayoutItem, "startMin" | "endMin">): boolean {
   return left.startMin < right.endMin && left.endMin > right.startMin;
 }
 
-function mergeOverlapClusters(items: LayoutItem[]): LayoutItem[][] {
-  const clusters: LayoutItem[][] = items.map((item) => [item]);
+function countConcurrentAt(items: LayoutItem[], minute: number): number {
+  return items.filter((item) => item.startMin <= minute && item.endMin > minute).length;
+}
 
-  let merged = true;
-  while (merged) {
-    merged = false;
-    for (let index = 0; index < clusters.length; index += 1) {
-      for (let otherIndex = index + 1; otherIndex < clusters.length; otherIndex += 1) {
-        const overlaps = clusters[index].some((left) =>
-          clusters[otherIndex].some((right) => eventsOverlap(left, right)),
-        );
-        if (overlaps) {
-          clusters[index] = [...clusters[index], ...clusters[otherIndex]];
-          clusters.splice(otherIndex, 1);
-          merged = true;
-          break;
-        }
-      }
-      if (merged) {
-        break;
-      }
+function maxConcurrentDuring(item: LayoutItem, items: LayoutItem[]): number {
+  const boundaries = new Set<number>([item.startMin, item.endMin]);
+  for (const other of items) {
+    if (eventsOverlap(item, other)) {
+      boundaries.add(Math.max(item.startMin, other.startMin));
+      boundaries.add(Math.min(item.endMin, other.endMin));
     }
   }
 
-  return clusters;
+  let max = 1;
+  for (const minute of boundaries) {
+    if (minute >= item.startMin && minute < item.endMin) {
+      max = Math.max(max, countConcurrentAt(items, minute));
+    }
+  }
+  return max;
 }
 
-/** Apple 行事曆風格：重疊行程自動並排 */
+function canExpandIntoColumn(item: LayoutItem, column: number, items: LayoutItem[]): boolean {
+  return !items.some(
+    (other) =>
+      other !== item &&
+      other.column === column &&
+      eventsOverlap(item, other),
+  );
+}
+
+/**
+ * Interval-based overlap layout: columns are assigned greedily, but width is
+ * derived from per-event max concurrency (not the whole transitive cluster).
+ */
 export function layoutTimedEvents(
   events: ExpandedCalendarEvent[],
   dayDate: string,
   intervalMinutes: CalendarSlotInterval,
-): TimedEventLayout[] {
+): TimedEventsLayoutResult {
   if (events.length === 0) {
-    return [];
+    return { layouts: [], overflowClusters: [] };
   }
 
   const items: LayoutItem[] = events.map((event) => {
@@ -224,50 +254,103 @@ export function layoutTimedEvents(
       endMin,
       column: 0,
       columnSpan: 1,
-      totalColumns: 1,
+      maxConcurrent: 1,
     };
   });
 
   items.sort((left, right) => left.startMin - right.startMin || right.endMin - left.endMin);
 
-  for (const cluster of mergeOverlapClusters(items)) {
-    const columnEnds: number[] = [];
+  const columnEnds: number[] = [];
+  for (const item of items) {
+    let column = columnEnds.findIndex((endMin) => endMin <= item.startMin);
+    if (column === -1) {
+      column = columnEnds.length;
+      columnEnds.push(item.endMin);
+    } else {
+      columnEnds[column] = item.endMin;
+    }
+    item.column = column;
+  }
 
-    for (const item of cluster.sort((left, right) => left.startMin - right.startMin || right.endMin - left.endMin)) {
-      let column = columnEnds.findIndex((endMin) => endMin <= item.startMin);
-      if (column === -1) {
-        column = columnEnds.length;
-        columnEnds.push(item.endMin);
-      } else {
-        columnEnds[column] = item.endMin;
+  for (const item of items) {
+    item.maxConcurrent = maxConcurrentDuring(item, items);
+    let columnSpan = 1;
+    for (let column = item.column + 1; column < item.maxConcurrent; column += 1) {
+      if (!canExpandIntoColumn(item, column, items)) {
+        break;
       }
-      item.column = column;
+      columnSpan += 1;
+    }
+    item.columnSpan = columnSpan;
+  }
+
+  const visibleLayouts: TimedEventLayout[] = [];
+  const overflowItems: LayoutItem[] = [];
+
+  for (const item of items) {
+    const widthPercent = (item.columnSpan / item.maxConcurrent) * 100;
+    const leftPercent = (item.column / item.maxConcurrent) * 100;
+    const exceedsColumnCap = item.column >= TIMED_EVENT_MAX_VISIBLE_COLUMNS;
+    const tooNarrow = widthPercent < TIMED_EVENT_MIN_WIDTH_PERCENT && item.maxConcurrent > 1;
+
+    if (exceedsColumnCap || tooNarrow) {
+      overflowItems.push(item);
+      continue;
     }
 
-    const totalColumns = Math.max(1, columnEnds.length);
-    for (const item of cluster) {
-      item.totalColumns = totalColumns;
-      let columnSpan = 1;
-      for (let column = item.column + 1; column < totalColumns; column += 1) {
-        const blocked = cluster.some(
-          (other) => other.column === column && eventsOverlap(item, other),
-        );
-        if (blocked) {
-          break;
-        }
-        columnSpan += 1;
-      }
-      item.columnSpan = columnSpan;
+    visibleLayouts.push({
+      event: item.event,
+      topPx: item.topPx,
+      heightPx: item.heightPx,
+      leftPercent,
+      widthPercent,
+      column: item.column,
+      columnSpan: item.columnSpan,
+      maxConcurrent: item.maxConcurrent,
+    });
+  }
+
+  const overflowClusters = buildOverflowClusters(overflowItems);
+
+  return { layouts: visibleLayouts, overflowClusters };
+}
+
+function buildOverflowClusters(items: LayoutItem[]): TimedEventOverflowCluster[] {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const sorted = [...items].sort((left, right) => left.startMin - right.startMin);
+  const clusters: LayoutItem[][] = [];
+
+  for (const item of sorted) {
+    const cluster = clusters.find((group) =>
+      group.some((member) => eventsOverlap(member, item)),
+    );
+    if (cluster) {
+      cluster.push(item);
+    } else {
+      clusters.push([item]);
     }
   }
 
-  return items.map((item) => ({
-    event: item.event,
-    topPx: item.topPx,
-    heightPx: item.heightPx,
-    leftPercent: (item.column / item.totalColumns) * 100,
-    widthPercent: (item.columnSpan / item.totalColumns) * 100,
-  }));
+  return clusters.map((cluster, index) => {
+    const topPx = Math.min(...cluster.map((item) => item.topPx));
+    const bottomPx = Math.max(...cluster.map((item) => item.topPx + item.heightPx));
+    const maxConcurrent = Math.max(...cluster.map((item) => item.maxConcurrent));
+    const slotColumn = Math.min(TIMED_EVENT_MAX_VISIBLE_COLUMNS - 1, maxConcurrent - 1);
+    const widthPercent = 100 / maxConcurrent;
+    const leftPercent = slotColumn * widthPercent;
+
+    return {
+      id: `overflow-${index}-${cluster.map((item) => item.event.occurrenceId).join("-")}`,
+      topPx,
+      heightPx: Math.max(28, bottomPx - topPx),
+      leftPercent,
+      widthPercent,
+      events: cluster.map((item) => item.event),
+    };
+  });
 }
 
 export function slotIndexToTime(dayDate: string, slotIndex: number, intervalMinutes: CalendarSlotInterval): string {
