@@ -88,6 +88,14 @@ const RECORDABLE_ACTIVITY_TYPES: EventTypeDefinition[] = [
     requiresValue: false,
     recordGroup: "daily",
   },
+  {
+    key: "meeting",
+    category: "activity",
+    label: "會議",
+    description: "會議（行事曆分類）",
+    requiresValue: false,
+    recordGroup: "meeting",
+  },
   ...MEETING_KEY_LIST.map((key: MeetingKey) => ({
     key,
     category: "activity" as const,
