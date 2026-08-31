@@ -15,8 +15,11 @@ import {
   expandedEventToFormValues,
 } from "@/components/calendar/EventFormModal";
 import {
+  getEventCardDensity,
+  groupLayoutSegmentsByEvent,
   layoutTimedEvents,
-  TIMED_EVENT_MAX_VISIBLE_COLUMNS,
+  TIMED_EVENT_MIN_TAP_WIDTH_PX,
+  TIMED_EVENT_MOBILE_TRACK_PX,
 } from "@/lib/calendar/time-grid";
 import {
   CALENDAR_EVENT_COLOR_OPTIONS,
@@ -145,19 +148,23 @@ describe("Calendar V2 — colors", () => {
 describe("Calendar V2 — overlap layout", () => {
   const day = "2026-08-31";
 
+  function uniqueEventIds(result: ReturnType<typeof layoutTimedEvents>): string[] {
+    return [...new Set(result.segments.map((segment) => segment.event.occurrenceId))];
+  }
+
   it("lays out a single event at full width", () => {
-    const { layouts } = layoutTimedEvents(
+    const result = layoutTimedEvents(
       [makeExpandedEvent({ occurrenceId: "a", title: "A", startAt: `${day}T19:00`, endAt: `${day}T20:00` })],
       day,
       60,
     );
-    expect(layouts).toHaveLength(1);
-    expect(layouts[0].widthPercent).toBe(100);
-    expect(layouts[0].leftPercent).toBe(0);
+    expect(result.segments).toHaveLength(1);
+    expect(result.segments[0].widthPercent).toBe(100);
+    expect(result.segments[0].leftPercent).toBe(0);
   });
 
   it("lays out two overlapping events side by side", () => {
-    const { layouts } = layoutTimedEvents(
+    const result = layoutTimedEvents(
       [
         makeExpandedEvent({ occurrenceId: "a", title: "A", startAt: `${day}T19:00`, endAt: `${day}T20:00` }),
         makeExpandedEvent({ occurrenceId: "b", title: "B", startAt: `${day}T19:00`, endAt: `${day}T20:00` }),
@@ -165,14 +172,14 @@ describe("Calendar V2 — overlap layout", () => {
       day,
       60,
     );
-    expect(layouts).toHaveLength(2);
-    expect(layouts[0].maxConcurrent).toBe(2);
-    expect(layouts[1].maxConcurrent).toBe(2);
-    expect(layouts[0].widthPercent + layouts[1].widthPercent).toBeCloseTo(100, 1);
+    expect(uniqueEventIds(result)).toHaveLength(2);
+    expect(result.overflowClusters).toHaveLength(0);
+    const widths = result.segments.map((segment) => segment.widthPercent);
+    expect(widths.every((width) => width === 50)).toBe(true);
   });
 
-  it("reclaims width after partial overlap ends", () => {
-    const { layouts } = layoutTimedEvents(
+  it("reclaims width after partial overlap ends via segment width changes", () => {
+    const result = layoutTimedEvents(
       [
         makeExpandedEvent({ occurrenceId: "a", title: "A", startAt: `${day}T19:00`, endAt: `${day}T20:00` }),
         makeExpandedEvent({ occurrenceId: "b", title: "B", startAt: `${day}T19:00`, endAt: `${day}T21:00` }),
@@ -182,41 +189,85 @@ describe("Calendar V2 — overlap layout", () => {
       day,
       60,
     );
-    const eventD = layouts.find((layout) => layout.event.occurrenceId === "d");
-    expect(eventD).toBeDefined();
-    expect(eventD!.maxConcurrent).toBeLessThan(4);
-    expect(eventD!.widthPercent).toBeGreaterThan(25);
+    const eventDSegments = result.segments.filter((segment) => segment.event.occurrenceId === "d");
+    expect(eventDSegments.length).toBeGreaterThan(0);
+    expect(eventDSegments.some((segment) => segment.widthPercent > 25)).toBe(true);
   });
 
-  it("does not assign four equal columns for the canonical overlap example", () => {
-    const { layouts } = layoutTimedEvents(
+  it("renders all five events inline for the real-world evening overlap pattern", () => {
+    const result = layoutTimedEvents(
       [
-        makeExpandedEvent({ occurrenceId: "a", title: "A", startAt: `${day}T19:00`, endAt: `${day}T20:00` }),
-        makeExpandedEvent({ occurrenceId: "b", title: "B", startAt: `${day}T19:00`, endAt: `${day}T21:00` }),
-        makeExpandedEvent({ occurrenceId: "c", title: "C", startAt: `${day}T19:30`, endAt: `${day}T20:30` }),
-        makeExpandedEvent({ occurrenceId: "d", title: "D", startAt: `${day}T20:00`, endAt: `${day}T21:00` }),
+        makeExpandedEvent({ occurrenceId: "a", title: "台中 HOM", startAt: `${day}T19:00`, endAt: `${day}T21:00` }),
+        makeExpandedEvent({ occurrenceId: "b", title: "純伶", startAt: `${day}T19:00`, endAt: `${day}T20:00` }),
+        makeExpandedEvent({ occurrenceId: "c", title: "幸芬", startAt: `${day}T19:00`, endAt: `${day}T20:00` }),
+        makeExpandedEvent({
+          occurrenceId: "d",
+          title: "中壢商機-肇銘推廣",
+          startAt: `${day}T19:30`,
+          endAt: `${day}T21:30`,
+        }),
+        makeExpandedEvent({ occurrenceId: "e", title: "美珠姐", startAt: `${day}T20:00`, endAt: `${day}T21:00` }),
       ],
       day,
       60,
     );
-    const maxConcurrentValues = layouts.map((layout) => layout.maxConcurrent);
-    expect(Math.max(...maxConcurrentValues)).toBeLessThan(4);
+
+    expect(uniqueEventIds(result)).toHaveLength(5);
+    expect(result.overflowClusters).toHaveLength(0);
+    expect(result.segments.some((segment) => segment.event.title === "中壢商機-肇銘推廣")).toBe(true);
+
+    const at1930 = result.segments.filter(
+      (segment) => segment.event.startAt <= `${day}T19:30` && segment.event.endAt > `${day}T19:30`,
+    );
+    expect(new Set(at1930.map((segment) => segment.event.occurrenceId)).size).toBeGreaterThanOrEqual(4);
   });
 
-  it("collapses 5+ concurrent events into overflow clusters", () => {
-    const events = Array.from({ length: 5 }, (_, index) =>
+  it("renders 2 through 6 simultaneous events inline without overflow", () => {
+    for (const count of [2, 3, 4, 5, 6]) {
+      const events = Array.from({ length: count }, (_, index) =>
+        makeExpandedEvent({
+          occurrenceId: `e${index}`,
+          title: `Event ${index}`,
+          startAt: `${day}T19:00`,
+          endAt: `${day}T20:00`,
+        }),
+      );
+      const result = layoutTimedEvents(events, day, 60);
+      expect(uniqueEventIds(result)).toHaveLength(count);
+      expect(result.overflowClusters).toHaveLength(0);
+    }
+  });
+
+  it("uses compact card density for narrow overlap columns", () => {
+    const result = layoutTimedEvents(
+      Array.from({ length: 5 }, (_, index) =>
+        makeExpandedEvent({
+          occurrenceId: `e${index}`,
+          title: `Event ${index}`,
+          startAt: `${day}T19:00`,
+          endAt: `${day}T20:00`,
+        }),
+      ),
+      day,
+      60,
+    );
+    const densities = result.segments.map((segment) => getEventCardDensity(segment.widthPercent));
+    expect(densities.every((density) => density === "narrow" || density === "minimal")).toBe(true);
+  });
+
+  it("only overflows when cards would be narrower than the tap threshold", () => {
+    const extremeCount = Math.ceil(TIMED_EVENT_MOBILE_TRACK_PX / TIMED_EVENT_MIN_TAP_WIDTH_PX) + 1;
+    const events = Array.from({ length: extremeCount }, (_, index) =>
       makeExpandedEvent({
-        occurrenceId: `e${index}`,
-        title: `Event ${index}`,
+        occurrenceId: `x${index}`,
+        title: `Extreme ${index}`,
         startAt: `${day}T19:00`,
         endAt: `${day}T20:00`,
       }),
     );
-    const { layouts, overflowClusters } = layoutTimedEvents(events, day, 60);
-    expect(layouts.length).toBeLessThan(5);
-    expect(overflowClusters.length).toBeGreaterThan(0);
-    expect(overflowClusters[0].events.length).toBeGreaterThan(0);
-    expect(TIMED_EVENT_MAX_VISIBLE_COLUMNS).toBe(3);
+    const result = layoutTimedEvents(events, day, 60);
+    expect(result.overflowClusters.length).toBeGreaterThan(0);
+    expect(uniqueEventIds(result).length).toBeLessThan(extremeCount);
   });
 
   it("produces deterministic layout across repeated calls", () => {
@@ -228,6 +279,18 @@ describe("Calendar V2 — overlap layout", () => {
     const first = layoutTimedEvents(events, day, 60);
     const second = layoutTimedEvents(events, day, 60);
     expect(first).toEqual(second);
+  });
+
+  it("groups segments by event for rendering", () => {
+    const events = [
+      makeExpandedEvent({ occurrenceId: "a", title: "A", startAt: `${day}T19:00`, endAt: `${day}T21:00` }),
+      makeExpandedEvent({ occurrenceId: "b", title: "B", startAt: `${day}T19:00`, endAt: `${day}T20:00` }),
+      makeExpandedEvent({ occurrenceId: "c", title: "C", startAt: `${day}T19:30`, endAt: `${day}T21:30` }),
+    ];
+    const { segments } = layoutTimedEvents(events, day, 60);
+    const groups = groupLayoutSegmentsByEvent(segments);
+    expect(groups.size).toBe(3);
+    expect(groups.get("a")!.length).toBeGreaterThanOrEqual(1);
   });
 });
 
