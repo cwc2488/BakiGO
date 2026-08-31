@@ -32,4 +32,13 @@ describe("CustomerJourneyHub IA", () => {
     expect(quiz?.locked).toBeFalsy();
     expect(quiz?.href).toBeTruthy();
   });
+
+  it("keeps AI Radar active with href and no comingSoon", () => {
+    const radar = CUSTOMER_JOURNEY_HUB_ITEMS.find((item) => item.title === "AI Radar");
+    expect(radar).toMatchObject({
+      href: "/radar",
+      desc: "智慧找人",
+    });
+    expect(radar?.comingSoon).toBeFalsy();
+  });
 });
