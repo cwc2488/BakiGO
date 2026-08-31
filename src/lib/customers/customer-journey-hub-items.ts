@@ -38,7 +38,7 @@ export const CUSTOMER_JOURNEY_HUB_ITEMS: CustomerJourneyHubItem[] = [
     href: "/quiz/21d",
     title: "心理測驗",
     desc: "分享測驗，聯絡想了解 21 天的人",
-    iconHref: "/quiz/21d",
+    iconHref: "/quiz/hub",
     waitingBadge: true,
   },
   {
