@@ -1,26 +1,33 @@
 "use client";
 
 import { getCurrentMember, getCurrentSession } from "@/lib/auth/auth-service";
-import {
-  canAdjustDownlineRank,
-  getVisibleMembers,
-} from "@/lib/auth/organization-access";
+import { canAdjustDownlineRank } from "@/lib/auth/organization-access";
 import { fetchCloudOrganizationData } from "@/lib/cloud/cloud-member-service";
 import { buildViewerCloudOrganizationSnapshot } from "@/lib/cloud/build-cloud-organization-tree";
 import {
   collectMemberIdsFromTree,
   fetchDownlineCloudData,
   getDownlineEvents,
+  getDownlineMonthlyProductVpBatch,
+  resolveYearMonthFromReferenceDate,
   type DownlineCloudDataCache,
 } from "@/lib/cloud/downline-cloud-data";
 import { syncCloudMembersToLocalStorage } from "@/lib/cloud/sync-cloud-members-to-local";
 import { todayISODate } from "@/lib/config/app-config";
 import { loadAllMembers } from "@/lib/members/member-service";
 import { loadMemberMetrics } from "@/lib/mission-control/format";
-import { findMemberSubtree } from "@/lib/organization/organization-selectors";
+import {
+  buildOrganizationNextQualificationView,
+  findMemberSubtree,
+  resolveMonthlyVpTarget,
+  resolveOrganizationQualificationLabel,
+} from "@/lib/organization/organization-selectors";
+import { createEventRepository } from "@/lib/repositories/event-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import { resolveMonthlyProductVpFromEvents } from "@/lib/retail-house/downline-product-vp";
 import type { OrganizationCenterSnapshot, OrganizationTreeNode } from "@/types/organization-center";
 import type { Member } from "@/types/member";
+import type { EntityId, YearMonth } from "@/types";
 import { PageShell } from "@/components/ui/PageShell";
 import { PageErrorState, PageLoadingState } from "@/components/ui/PageStates";
 import { APP_ICON } from "@/lib/ui/app-icons";
@@ -34,39 +41,81 @@ import {
 
 type LoadState = "loading" | "ready" | "error";
 
+/**
+ * Product VP for org nodes comes from Retail House transaction events —
+ * viewer: local events; downline: cloud batch projection (not metrics.vp).
+ */
+function resolveNodeProductVp(input: {
+  memberId: EntityId;
+  viewerId: EntityId;
+  yearMonth: YearMonth;
+  downlineProductVp: Map<EntityId, number>;
+  storage: ReturnType<typeof createLocalStorageAdapter>;
+}): number {
+  if (input.memberId === input.viewerId) {
+    const localEvents = createEventRepository(input.storage).getByMemberId(input.memberId);
+    return resolveMonthlyProductVpFromEvents({
+      memberId: input.memberId,
+      yearMonth: input.yearMonth,
+      events: localEvents,
+    });
+  }
+  return input.downlineProductVp.get(input.memberId) ?? 0;
+}
+
 function mergeCloudTreeWithLocalMetrics(
   node: OrganizationTreeNode,
   members: Member[],
   storage: ReturnType<typeof createLocalStorageAdapter>,
+  viewerId: EntityId,
+  yearMonth: YearMonth,
+  downlineProductVp: Map<EntityId, number>,
   downlineCache?: DownlineCloudDataCache,
 ): OrganizationTreeNode {
   const localMember = members.find((member) => member.id === node.member.memberId);
   const supplementalEvents = getDownlineEvents(node.member.memberId, downlineCache);
-  const metrics = localMember
-    ? loadMemberMetrics(localMember.id, storage, supplementalEvents)
-    : supplementalEvents.length > 0
-      ? loadMemberMetrics(node.member.memberId, storage, supplementalEvents)
+  const metricsMemberId = localMember?.id ?? node.member.memberId;
+  const metrics =
+    localMember || supplementalEvents.length > 0
+      ? loadMemberMetrics(metricsMemberId, storage, supplementalEvents)
       : null;
 
-  const mergedMember = metrics
-    ? {
-        ...node.member,
-        memberNumber: node.member.memberNumber || localMember?.herbalifeMemberId || "",
-        monthlyVp: metrics.productVp?.monthlyTotal ?? metrics.vp.totalVp,
-        metMonthlyVp2500: node.member.monthlyVpTarget
-          ? (metrics.productVp?.monthlyTotal ?? metrics.vp.totalVp) >=
-            node.member.monthlyVpTarget
-          : false,
-      }
-    : {
-        ...node.member,
-        memberNumber: node.member.memberNumber || localMember?.herbalifeMemberId || "",
-      };
+  const monthlyVpTarget = resolveMonthlyVpTarget();
+  const monthlyVp = resolveNodeProductVp({
+    memberId: node.member.memberId,
+    viewerId,
+    yearMonth,
+    downlineProductVp,
+    storage,
+  });
+
+  const mergedMember = {
+    ...node.member,
+    memberNumber: node.member.memberNumber || localMember?.herbalifeMemberId || "",
+    monthlyVp,
+    monthlyVpTarget,
+    metMonthlyVp2500: monthlyVpTarget !== null ? monthlyVp >= monthlyVpTarget : false,
+    qualificationLabel:
+      localMember && metrics
+        ? resolveOrganizationQualificationLabel(localMember, metrics)
+        : node.member.qualificationLabel,
+    nextQualification: metrics
+      ? buildOrganizationNextQualificationView(metrics)
+      : node.member.nextQualification,
+  };
 
   return {
     member: mergedMember,
     children: node.children.map((child) =>
-      mergeCloudTreeWithLocalMetrics(child, members, storage, downlineCache),
+      mergeCloudTreeWithLocalMetrics(
+        child,
+        members,
+        storage,
+        viewerId,
+        yearMonth,
+        downlineProductVp,
+        downlineCache,
+      ),
     ),
   };
 }
@@ -105,22 +154,38 @@ export default function OrganizationCenterPage() {
         return;
       }
 
+      const referenceDate = todayISODate();
+      const yearMonth = resolveYearMonthFromReferenceDate(referenceDate);
+
       const cloudSnapshot = buildViewerCloudOrganizationSnapshot({
         viewerMemberNumber: viewerCloud.memberNumber,
         members: cloudMembers,
         relationships,
-        referenceDate: todayISODate(),
+        referenceDate,
       });
 
       const localMembers = loadAllMembers(storage);
-      const visibleMembers = getVisibleMembers(viewer, localMembers);
 
       const downlineIds = cloudSnapshot.roots.flatMap((root) => collectMemberIdsFromTree(root));
       const cloudCache = await fetchDownlineCloudData(downlineIds, session.memberId);
       setDownlineCache(cloudCache);
 
+      const downlineProductVp = getDownlineMonthlyProductVpBatch(
+        downlineIds.filter((id) => id !== session.memberId),
+        yearMonth,
+        cloudCache,
+      );
+
       const mergedRoots = cloudSnapshot.roots.map((root) =>
-        mergeCloudTreeWithLocalMetrics(root, visibleMembers, storage, cloudCache),
+        mergeCloudTreeWithLocalMetrics(
+          root,
+          localMembers,
+          storage,
+          session.memberId,
+          yearMonth,
+          downlineProductVp,
+          cloudCache,
+        ),
       );
 
       const nextSnapshot: OrganizationCenterSnapshot = {
@@ -198,28 +263,28 @@ export default function OrganizationCenterPage() {
       title={PARTNER_LABELS.organization}
       titleIcon={APP_ICON.page.organization}
     >
+      <section className="home-section">
+        <OrganizationTreeDiagram
+          expandedIds={expandedIds}
+          onExpandAll={expandAll}
+          onSelectMember={setSelectedMemberId}
+          onToggleExpand={toggleExpanded}
+          roots={snapshot.roots}
+          selectedMemberId={selectedMemberId}
+        />
+      </section>
+
+      {selectedNode ? (
         <section className="home-section">
-          <OrganizationTreeDiagram
-            expandedIds={expandedIds}
-            onExpandAll={expandAll}
-            onSelectMember={setSelectedMemberId}
-            onToggleExpand={toggleExpanded}
-            roots={snapshot.roots}
-            selectedMemberId={selectedMemberId}
+          <OrganizationMemberDetail
+            key={selectedNode.member.memberId}
+            canAdjustRank={canAdjustSelectedRank}
+            downlineEvents={getDownlineEvents(selectedNode.member.memberId, downlineCache)}
+            member={selectedNode.member}
+            onRankAdjusted={() => void load()}
           />
         </section>
-
-        {selectedNode ? (
-          <section className="home-section">
-            <OrganizationMemberDetail
-              key={selectedNode.member.memberId}
-              canAdjustRank={canAdjustSelectedRank}
-              downlineEvents={getDownlineEvents(selectedNode.member.memberId, downlineCache)}
-              member={selectedNode.member}
-              onRankAdjusted={() => void load()}
-            />
-          </section>
-        ) : null}
+      ) : null}
     </PageShell>
   );
 }

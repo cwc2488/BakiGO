@@ -43,7 +43,8 @@ function createId(): string {
   return `event-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function transactionToEvent(transaction: RetailTransaction): BakiEvent {
+/** Maps a RetailTransaction (incl. legacy store) onto a BakiEvent — preserves metadata.retailVp. */
+export function migrateRetailTransactionToBakiEvent(transaction: RetailTransaction): BakiEvent {
   return {
     id: transaction.id,
     createdAt: transaction.createdAt,
@@ -56,6 +57,7 @@ function transactionToEvent(transaction: RetailTransaction): BakiEvent {
     value: transaction.amount,
     retailHouseKey: transaction.retailHouseKey,
     metadata: {
+      ...(transaction.metadata ?? {}),
       customerName: transaction.customerName,
       currencyCode: transaction.currencyCode,
       note: transaction.note,
@@ -143,7 +145,7 @@ export class LocalStorageEventRepository implements EventRepository {
       return;
     }
 
-    const migrated = legacyTransactions.map(transactionToEvent);
+    const migrated = legacyTransactions.map(migrateRetailTransactionToBakiEvent);
     this.storage.setItem(STORAGE_KEYS.bakiEvents, JSON.stringify(migrated));
     this.storage.setItem(STORAGE_KEYS.eventsMigrated, "true");
   }

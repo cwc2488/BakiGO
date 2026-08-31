@@ -10,6 +10,7 @@ import {
 import { isCustomerTransactionType } from "@/lib/retail-house/resolve-transaction-points";
 import { createEventRepository } from "@/lib/repositories/event-repository";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
+import { flushPendingCloudSync } from "@/lib/repositories/syncing-storage-adapter";
 import {
   recalculateMemberMetrics,
   type MemberComputedMetrics,
@@ -131,6 +132,7 @@ export function updateRetailTransactionForCurrentMember(
       event.metadata as Record<string, unknown> | undefined,
     ),
   });
+  flushPendingCloudSync();
 
   return recalculateMemberMetrics(
     {
@@ -148,6 +150,7 @@ export function deleteRetailTransactionForCurrentMember(
   const memberId = resolveAuthenticatedMemberId(storage);
   const { repository, event } = assertOwnedTransactionEvent(eventId, memberId, storage);
   repository.delete(eventId);
+  flushPendingCloudSync();
 
   return recalculateMemberMetrics(
     {
@@ -184,6 +187,7 @@ export function createRetailTransactionForCurrentMember(
     retailHouseKey: APP_IDS.defaultRetailHouseKey,
     metadata: buildTransactionMetadata(input),
   });
+  flushPendingCloudSync();
 
   return recalculateMemberMetrics(
     {
