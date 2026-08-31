@@ -21,8 +21,7 @@ import {
   alignDownlineEventsToOwnerMemberId,
   sanitizeBakiEventsForProductVp,
 } from "@/lib/retail-house/downline-product-vp";
-import { createEventRepository } from "@/lib/repositories/event-repository";
-import { createRetailRepository } from "@/lib/repositories/retail-repository";
+import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { BakiEvent } from "@/types/baki-event";
 import type { EntityId, YearMonth } from "@/types";
@@ -196,23 +195,132 @@ export function resolveAuthoritativeRetailTransactionsFromPayloads(input: {
   });
 }
 
+function claimAsOwnerRow(
+  row: RetailTransaction,
+  ownerMemberId: EntityId,
+): RetailTransaction {
+  return {
+    ...row,
+    memberId: ownerMemberId,
+    metadata: row.metadata ? { ...row.metadata } : row.metadata,
+  };
+}
+
+/**
+ * Resolve which local legacy rows belong to the authenticated member's cloud blob.
+ * If none match auth UUID but local history exists, claim device legacy rows.
+ */
+export function resolveLocalRowsForOwnReconciliation(input: {
+  ownerMemberId: EntityId;
+  localAll: readonly RetailTransaction[];
+}): {
+  localOwned: RetailTransaction[];
+  localOthers: RetailTransaction[];
+  claimedLegacyMemberIds: boolean;
+} {
+  const matching = input.localAll.filter((row) => row.memberId === input.ownerMemberId);
+  const nonMatching = input.localAll.filter((row) => row.memberId !== input.ownerMemberId);
+
+  if (matching.length > 0) {
+    return {
+      localOwned: matching.map((row) => claimAsOwnerRow(row, input.ownerMemberId)),
+      localOthers: nonMatching,
+      claimedLegacyMemberIds: false,
+    };
+  }
+
+  if (nonMatching.length > 0) {
+    return {
+      localOwned: nonMatching.map((row) => claimAsOwnerRow(row, input.ownerMemberId)),
+      localOthers: [],
+      claimedLegacyMemberIds: true,
+    };
+  }
+
+  return { localOwned: [], localOthers: [], claimedLegacyMemberIds: false };
+}
+
+/** Parse raw bakiEvents localStorage payload. */
+function parseBakiEventsRaw(raw: string | null): BakiEvent[] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as BakiEvent[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Own-device event claim: match auth UUID first; if none, claim all local
+ * transaction events (stale member-default / pre-cloud ids).
+ */
+export function resolveLocalEventsForOwnReconciliation(
+  events: readonly BakiEvent[],
+  ownerMemberId: EntityId,
+): BakiEvent[] {
+  const transactionEvents = events.filter((event) => event.eventCategory === "transaction");
+  const matching = transactionEvents.filter((event) => event.memberId === ownerMemberId);
+  if (matching.length > 0) {
+    return matching;
+  }
+  return transactionEvents;
+}
+
+/**
+ * Authoritative local read from pre-hydration snapshots (login bootstrap gate).
+ */
+export function loadAuthoritativeRetailTransactionsFromSnapshots(input: {
+  ownerMemberId: EntityId;
+  bakiEventsRaw: string | null;
+  retailTransactionsRaw: string | null;
+}): AuthoritativeRetailTransactionsResult {
+  const eventRows = resolveLocalEventsForOwnReconciliation(
+    parseBakiEventsRaw(input.bakiEventsRaw),
+    input.ownerMemberId,
+  );
+  const legacyAll = parseLegacyRetailTransactionsRaw(input.retailTransactionsRaw);
+  const { localOwned } = resolveLocalRowsForOwnReconciliation({
+    ownerMemberId: input.ownerMemberId,
+    localAll: legacyAll,
+  });
+  return resolveAuthoritativeRetailTransactionsFromPayloads({
+    ownerMemberId: input.ownerMemberId,
+    events: eventRows,
+    legacyTransactions: localOwned,
+  });
+}
+
+function parseLegacyRetailTransactionsRaw(raw: string | null): RetailTransaction[] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(isUsableRetailTransaction);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Local authoritative read — same records Own Retail House must use.
- * Events (current) + legacy retailTransactions store.
+ * Events (current) + legacy retailTransactions store, with device claim.
  */
 export function loadAuthoritativeRetailTransactions(
   storage: StorageAdapter,
   memberId: EntityId,
 ): AuthoritativeRetailTransactionsResult {
   try {
-    const events = createEventRepository(storage).getByMemberId(memberId);
-    const legacy = createRetailRepository(storage)
-      .getAll()
-      .filter((row) => row.memberId === memberId);
-    return resolveAuthoritativeRetailTransactionsFromPayloads({
+    return loadAuthoritativeRetailTransactionsFromSnapshots({
       ownerMemberId: memberId,
-      events,
-      legacyTransactions: legacy,
+      bakiEventsRaw: storage.getItem(STORAGE_KEYS.bakiEvents),
+      retailTransactionsRaw: storage.getItem(STORAGE_KEYS.retailTransactions),
     });
   } catch (error) {
     console.error("[retail_house] authoritative_load_failure", { memberId, error });

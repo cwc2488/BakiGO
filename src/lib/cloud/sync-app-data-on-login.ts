@@ -35,8 +35,9 @@ export async function syncAppDataOnLogin(
   try {
     await awaitPendingCloudSync();
 
-    // HARD GATE: capture local legacy RH before any cloud hydration can wipe it.
+    // HARD GATE: capture local authoritative RH sources before cloud hydration can wipe them.
     const retailTransactionsLocalSnapshot = storage.getItem(STORAGE_KEYS.retailTransactions);
+    const bakiEventsLocalSnapshot = storage.getItem(STORAGE_KEYS.bakiEvents);
 
     const cloudRows = await fetchCloudAppData(memberId);
     const cloudByKey = new Map(cloudRows.map((row) => [row.dataKey, row]));
@@ -54,7 +55,8 @@ export async function syncAppDataOnLogin(
         storage,
         memberId,
         cloudPayload: null,
-        localRawSnapshot: retailTransactionsLocalSnapshot,
+        localRetailRawSnapshot: retailTransactionsLocalSnapshot,
+        localBakiEventsRawSnapshot: bakiEventsLocalSnapshot,
       });
       return;
     }
@@ -62,11 +64,14 @@ export async function syncAppDataOnLogin(
     for (const key of SYNCABLE_STORAGE_KEYS) {
       if (key === STORAGE_KEYS.retailTransactions) {
         const cloudRow = cloudByKey.get(key);
+        const cloudBakiRow = cloudByKey.get(STORAGE_KEYS.bakiEvents);
         await reconcileRetailTransactionsDuringLoginSync({
           storage,
           memberId,
-          cloudPayload: cloudRow ? cloudRow.payload : null,
-          localRawSnapshot: retailTransactionsLocalSnapshot,
+          cloudRetailPayload: cloudRow ? cloudRow.payload : null,
+          cloudBakiEventsPayload: cloudBakiRow ? cloudBakiRow.payload : null,
+          localRetailRawSnapshot: retailTransactionsLocalSnapshot,
+          localBakiEventsRawSnapshot: bakiEventsLocalSnapshot,
         });
         continue;
       }

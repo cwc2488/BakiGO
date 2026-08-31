@@ -1,17 +1,11 @@
 /**
- * Own-data reconciliation: local `baki-go:retail-transactions`
+ * Own-data reconciliation: local authoritative RH (bakiEvents ∪ retailTransactions)
  * → authenticated member's member_app_data.
  *
- * SYNC ROOT CAUSE (Production still 0 rows after prior patch):
- * 1) restoreCloudSession used awaitSync:false — sync was fire-and-forget and
- *    easy to miss / fail silently on restored sessions (most real usage).
- * 2) Reconciliation filtered local rows by exact memberId === auth UUID.
- *    Legacy device rows often carry a stale local memberId → localCount 0 →
- *    no upsert even when localStorage has the history Own RH reads.
- * 3) Debounced SyncingStorageAdapter push never fires for untouched keys.
- *
- * This module: merge-first, claim device legacy to auth memberId, awaited
- * upsert, never wipe non-empty local with empty cloud.
+ * Production failure modes addressed:
+ * 1) restoreCloudSession was fire-and-forget — race with bootstrap reconcile.
+ * 2) Reconcile only read raw retailTransactions; Own RH VP often lives in bakiEvents.
+ * 3) Stale local memberId on device rows filtered out before upload.
  */
 
 import {
@@ -20,25 +14,39 @@ import {
   serializeCloudPayload,
 } from "@/lib/cloud/cloud-app-data-service";
 import { isCloudDatabaseMemberId } from "@/lib/cloud/cloud-member-ids";
+import {
+  loadAuthoritativeRetailTransactionsFromSnapshots,
+  resolveAuthoritativeRetailTransactionsFromPayloads,
+  resolveLocalEventsForOwnReconciliation,
+  resolveLocalRowsForOwnReconciliation,
+} from "@/lib/retail-house/authoritative-retail-transactions";
+import { mergeBakiEventsById } from "@/lib/retail-house/downline-product-vp";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
+import type { BakiEvent } from "@/types/baki-event";
 import type { EntityId } from "@/types";
 import type { RetailTransaction } from "@/types/retail-transaction";
 
+export { resolveLocalRowsForOwnReconciliation } from "@/lib/retail-house/authoritative-retail-transactions";
+
 /** Exact runtime key used by RetailRepository — do not invent alternatives. */
 export const RETAIL_TRANSACTIONS_STORAGE_KEY = STORAGE_KEYS.retailTransactions;
+export const BAKI_EVENTS_STORAGE_KEY = STORAGE_KEYS.bakiEvents;
 
 export type RetailReconcileStatus =
   | "success"
   | "no_local_data"
+  | "already_synced"
   | "unauthorized"
   | "write_error"
+  | "parse_failed"
   | "skipped";
 
 export interface RetailTransactionsCloudPort {
-  /** null = row missing in member_app_data; otherwise raw payload. */
-  fetchPayload: (memberId: EntityId) => Promise<unknown | null>;
-  upsertPayload: (memberId: EntityId, transactions: RetailTransaction[]) => Promise<void>;
+  fetchRetailPayload: (memberId: EntityId) => Promise<unknown | null>;
+  fetchBakiEventsPayload: (memberId: EntityId) => Promise<unknown | null>;
+  upsertRetailPayload: (memberId: EntityId, transactions: RetailTransaction[]) => Promise<void>;
+  upsertBakiEventsPayload: (memberId: EntityId, payload: unknown) => Promise<void>;
 }
 
 export interface RetailReconciliationDiagnostics {
@@ -46,7 +54,9 @@ export interface RetailReconciliationDiagnostics {
   localCount: number;
   cloudCount: number;
   mergedCount: number;
+  localEventCount: number;
   uploaded: boolean;
+  uploadedEvents: boolean;
   status: RetailReconcileStatus;
   reason?: string;
   claimedLegacyMemberIds?: boolean;
@@ -90,6 +100,24 @@ function parseTransactionArray(raw: unknown): RetailTransaction[] {
     return [];
   }
   return value.filter(isUsableRetailTransaction);
+}
+
+function parseBakiEventsArray(raw: unknown): BakiEvent[] {
+  if (raw == null) {
+    return [];
+  }
+  let value: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      value = JSON.parse(raw) as unknown;
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value as BakiEvent[];
 }
 
 function isUsableRetailTransaction(value: unknown): value is RetailTransaction {
@@ -136,6 +164,13 @@ function fingerprintOwnedTransactions(rows: readonly RetailTransaction[]): strin
     .join("|");
 }
 
+function fingerprintEvents(events: readonly BakiEvent[]): string {
+  return [...events]
+    .map((event) => `${event.id}:${String(event.updatedAt ?? "")}:${event.value}`)
+    .sort()
+    .join("|");
+}
+
 function claimAsOwner(
   row: RetailTransaction,
   ownerMemberId: EntityId,
@@ -147,39 +182,15 @@ function claimAsOwner(
   };
 }
 
-/**
- * Resolve which local rows belong in the authenticated member's cloud blob.
- * If none match auth UUID but local history exists, claim device legacy rows
- * (stale local memberId — Production failure mode).
- */
-export function resolveLocalRowsForOwnReconciliation(input: {
-  ownerMemberId: EntityId;
-  localAll: readonly RetailTransaction[];
-}): {
-  localOwned: RetailTransaction[];
-  localOthers: RetailTransaction[];
-  claimedLegacyMemberIds: boolean;
-} {
-  const matching = input.localAll.filter((row) => row.memberId === input.ownerMemberId);
-  const nonMatching = input.localAll.filter((row) => row.memberId !== input.ownerMemberId);
-
-  if (matching.length > 0) {
-    return {
-      localOwned: matching.map((row) => claimAsOwner(row, input.ownerMemberId)),
-      localOthers: nonMatching,
-      claimedLegacyMemberIds: false,
-    };
-  }
-
-  if (nonMatching.length > 0) {
-    return {
-      localOwned: nonMatching.map((row) => claimAsOwner(row, input.ownerMemberId)),
-      localOthers: [],
-      claimedLegacyMemberIds: true,
-    };
-  }
-
-  return { localOwned: [], localOthers: [], claimedLegacyMemberIds: false };
+function claimEventsAsOwner(
+  events: readonly BakiEvent[],
+  ownerMemberId: EntityId,
+): BakiEvent[] {
+  return events.map((event) => ({
+    ...event,
+    memberId: ownerMemberId,
+    metadata: event.metadata ? { ...event.metadata } : event.metadata,
+  }));
 }
 
 /**
@@ -226,12 +237,17 @@ export function mergeRetailTransactionStores(input: {
 
 export function createDefaultRetailTransactionsCloudPort(): RetailTransactionsCloudPort {
   return {
-    async fetchPayload(memberId) {
+    async fetchRetailPayload(memberId) {
       const rows = await fetchCloudAppData(memberId);
       const row = rows.find((entry) => entry.dataKey === RETAIL_TRANSACTIONS_STORAGE_KEY);
       return row ? row.payload : null;
     },
-    async upsertPayload(memberId, transactions) {
+    async fetchBakiEventsPayload(memberId) {
+      const rows = await fetchCloudAppData(memberId);
+      const row = rows.find((entry) => entry.dataKey === BAKI_EVENTS_STORAGE_KEY);
+      return row ? row.payload : null;
+    },
+    async upsertRetailPayload(memberId, transactions) {
       await pushCloudAppDataKeys({
         memberId,
         entries: [
@@ -242,31 +258,66 @@ export function createDefaultRetailTransactionsCloudPort(): RetailTransactionsCl
         ],
       });
     },
+    async upsertBakiEventsPayload(memberId, payload) {
+      await pushCloudAppDataKeys({
+        memberId,
+        entries: [
+          {
+            dataKey: BAKI_EVENTS_STORAGE_KEY,
+            rawValue: typeof payload === "string" ? payload : JSON.stringify(payload),
+          },
+        ],
+      });
+    },
   };
 }
 
+function parseBakiEventsRaw(raw: string | null): BakiEvent[] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as BakiEvent[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function serializePayload(raw: unknown | null | undefined): unknown {
+  if (raw === null || raw === undefined) {
+    return [];
+  }
+  if (typeof raw === "string") {
+    return raw;
+  }
+  return serializeCloudPayload(raw);
+}
+
 /**
- * Merge-first reconciliation for authenticated member's OWN retailTransactions.
+ * Merge-first reconciliation for authenticated member's OWN retail data.
+ * Reads authoritative local (bakiEvents ∪ retailTransactions) — never raw legacy only.
  * Never writes [] over non-empty local. Never accepts a foreign memberId target.
  */
 export async function reconcileOwnRetailTransactions(input: {
   storage: StorageAdapter;
   /** Authenticated member — the only allowed cloud write target. */
   memberId: EntityId;
-  /**
-   * Optional pre-fetched cloud payload from login sync.
-   * `undefined` → fetch via port; `null` → row missing; otherwise use payload.
-   */
+  /** @deprecated Use cloudRetailPayload */
   cloudPayload?: unknown | null;
+  cloudRetailPayload?: unknown | null;
+  cloudBakiEventsPayload?: unknown | null;
   /** Snapshot taken BEFORE any cloud hydration could overwrite local. */
   localRawSnapshot?: string | null;
+  localRetailRawSnapshot?: string | null;
+  localBakiEventsRawSnapshot?: string | null;
   cloudPort?: RetailTransactionsCloudPort;
 }): Promise<RetailReconciliationResult> {
   const memberId = input.memberId;
 
   logRetail("retail_reconcile_invoked", {
     memberId,
-    storageKey: RETAIL_TRANSACTIONS_STORAGE_KEY,
+    storageKeys: [RETAIL_TRANSACTIONS_STORAGE_KEY, BAKI_EVENTS_STORAGE_KEY],
   });
 
   if (!isCloudDatabaseMemberId(memberId)) {
@@ -275,7 +326,9 @@ export async function reconcileOwnRetailTransactions(input: {
       localCount: 0,
       cloudCount: 0,
       mergedCount: 0,
+      localEventCount: 0,
       uploaded: false,
+      uploadedEvents: false,
       status: "unauthorized",
       reason: "non_cloud_member_id",
     };
@@ -283,21 +336,38 @@ export async function reconcileOwnRetailTransactions(input: {
     return { transactions: [], diagnostics };
   }
 
-  const localRaw =
-    input.localRawSnapshot !== undefined
-      ? input.localRawSnapshot
-      : input.storage.getItem(RETAIL_TRANSACTIONS_STORAGE_KEY);
-  const localAll = parseTransactionArray(localRaw);
-  const { localOwned, localOthers, claimedLegacyMemberIds } =
-    resolveLocalRowsForOwnReconciliation({
-      ownerMemberId: memberId,
-      localAll,
-    });
+  const retailRawSnapshot =
+    input.localRetailRawSnapshot ??
+    input.localRawSnapshot ??
+    input.storage.getItem(RETAIL_TRANSACTIONS_STORAGE_KEY);
+  const bakiEventsRawSnapshot =
+    input.localBakiEventsRawSnapshot ??
+    input.storage.getItem(BAKI_EVENTS_STORAGE_KEY);
+
+  const localAuthoritative = loadAuthoritativeRetailTransactionsFromSnapshots({
+    ownerMemberId: memberId,
+    bakiEventsRaw: bakiEventsRawSnapshot,
+    retailTransactionsRaw: retailRawSnapshot,
+  });
+
+  const legacyAll = parseTransactionArray(retailRawSnapshot);
+  const { localOthers, claimedLegacyMemberIds } = resolveLocalRowsForOwnReconciliation({
+    ownerMemberId: memberId,
+    localAll: legacyAll,
+  });
+
+  const localOwnedEvents = resolveLocalEventsForOwnReconciliation(
+    parseBakiEventsRaw(bakiEventsRawSnapshot),
+    memberId,
+  );
+  const localOwned = localAuthoritative.transactions;
 
   logRetail("retail_reconcile_local_loaded", {
     memberId,
     localCount: localOwned.length,
-    rawLocalCount: localAll.length,
+    localEventCount: localOwnedEvents.length,
+    rawLegacyCount: legacyAll.length,
+    sourceSelected: localAuthoritative.diagnostics.sourceSelected,
     claimedLegacyMemberIds,
   });
 
@@ -307,9 +377,11 @@ export async function reconcileOwnRetailTransactions(input: {
       localCount: 0,
       cloudCount: 0,
       mergedCount: 0,
+      localEventCount: localOwnedEvents.length,
       uploaded: false,
+      uploadedEvents: false,
       status: "no_local_data",
-      reason: "empty_local",
+      reason: "empty_authoritative_local",
       claimedLegacyMemberIds,
     };
     return { transactions: [], diagnostics };
@@ -317,17 +389,30 @@ export async function reconcileOwnRetailTransactions(input: {
 
   const port = input.cloudPort ?? createDefaultRetailTransactionsCloudPort();
 
-  let cloudPayload: unknown | null;
+  const cloudRetailPayloadInput =
+    input.cloudRetailPayload !== undefined
+      ? input.cloudRetailPayload
+      : input.cloudPayload;
+  let cloudRetailPayload: unknown | null;
+  let cloudBakiEventsPayload: unknown | null;
   try {
-    cloudPayload =
-      input.cloudPayload !== undefined ? input.cloudPayload : await port.fetchPayload(memberId);
+    cloudRetailPayload =
+      cloudRetailPayloadInput !== undefined
+        ? cloudRetailPayloadInput
+        : await port.fetchRetailPayload(memberId);
+    cloudBakiEventsPayload =
+      input.cloudBakiEventsPayload !== undefined
+        ? input.cloudBakiEventsPayload
+        : await port.fetchBakiEventsPayload(memberId);
   } catch (error) {
     const diagnostics: RetailReconciliationDiagnostics = {
       memberId,
       localCount: localOwned.length,
       cloudCount: 0,
       mergedCount: localOwned.length,
+      localEventCount: localOwnedEvents.length,
       uploaded: false,
+      uploadedEvents: false,
       status: "write_error",
       reason: "cloud_fetch_failed",
       claimedLegacyMemberIds,
@@ -336,18 +421,21 @@ export async function reconcileOwnRetailTransactions(input: {
     return { transactions: localOwned, diagnostics };
   }
 
-  const cloudOwned = parseTransactionArray(
-    cloudPayload === null || cloudPayload === undefined
-      ? []
-      : typeof cloudPayload === "string"
-        ? cloudPayload
-        : serializeCloudPayload(cloudPayload),
-  ).map((row) => claimAsOwner(row, memberId));
+  const cloudEvents = parseBakiEventsArray(serializePayload(cloudBakiEventsPayload));
+  const cloudAuthoritative = resolveAuthoritativeRetailTransactionsFromPayloads({
+    ownerMemberId: memberId,
+    events: cloudEvents,
+    legacyTransactions: parseTransactionArray(serializePayload(cloudRetailPayload)),
+  });
+  const cloudOwned = cloudAuthoritative.transactions;
 
   logRetail("retail_reconcile_cloud_loaded", {
     memberId,
     cloudCount: cloudOwned.length,
-    cloudMissing: cloudPayload === null || cloudPayload === undefined,
+    cloudEventCount: cloudEvents.length,
+    cloudMissing:
+      (cloudRetailPayload === null || cloudRetailPayload === undefined) &&
+      (cloudBakiEventsPayload === null || cloudBakiEventsPayload === undefined),
   });
 
   const mergedOwned = mergeRetailTransactionStores({
@@ -363,7 +451,9 @@ export async function reconcileOwnRetailTransactions(input: {
       localCount: localOwned.length,
       cloudCount: cloudOwned.length,
       mergedCount: localOwned.length,
+      localEventCount: localOwnedEvents.length,
       uploaded: false,
+      uploadedEvents: false,
       status: "write_error",
       reason: "refused_empty_merge",
       claimedLegacyMemberIds,
@@ -379,13 +469,25 @@ export async function reconcileOwnRetailTransactions(input: {
     input.storage.setItem(RETAIL_TRANSACTIONS_STORAGE_KEY, nextLocalRaw);
   }
 
-  const cloudMissing = cloudPayload === null || cloudPayload === undefined;
-  const needsUpload =
+  const cloudRetailMissing =
+    cloudRetailPayload === null || cloudRetailPayload === undefined;
+  const needsRetailUpload =
     mergedOwned.length > 0 &&
-    (cloudMissing ||
+    (cloudRetailMissing ||
       fingerprintOwnedTransactions(cloudOwned) !== fingerprintOwnedTransactions(mergedOwned));
 
-  if (!needsUpload) {
+  const mergedEvents = mergeBakiEventsById(
+    cloudEvents,
+    claimEventsAsOwner(localOwnedEvents, memberId),
+  );
+  const cloudEventsMissing =
+    cloudBakiEventsPayload === null || cloudBakiEventsPayload === undefined;
+  const needsEventsUpload =
+    localOwnedEvents.length > 0 &&
+    (cloudEventsMissing ||
+      fingerprintEvents(cloudEvents) !== fingerprintEvents(mergedEvents));
+
+  if (!needsRetailUpload && !needsEventsUpload) {
     return {
       transactions: mergedOwned,
       diagnostics: {
@@ -393,7 +495,9 @@ export async function reconcileOwnRetailTransactions(input: {
         localCount: localOwned.length,
         cloudCount: cloudOwned.length,
         mergedCount: mergedOwned.length,
+        localEventCount: localOwnedEvents.length,
         uploaded: false,
+        uploadedEvents: false,
         status: "success",
         reason: "already_in_sync",
         claimedLegacyMemberIds,
@@ -406,10 +510,22 @@ export async function reconcileOwnRetailTransactions(input: {
     localCount: localOwned.length,
     cloudCount: cloudOwned.length,
     mergedCount: mergedOwned.length,
+    needsRetailUpload,
+    needsEventsUpload,
   });
 
+  let uploaded = false;
+  let uploadedEvents = false;
+
   try {
-    await port.upsertPayload(memberId, mergedOwned);
+    if (needsRetailUpload) {
+      await port.upsertRetailPayload(memberId, mergedOwned);
+      uploaded = true;
+    }
+    if (needsEventsUpload) {
+      await port.upsertBakiEventsPayload(memberId, mergedEvents);
+      uploadedEvents = true;
+    }
   } catch (error) {
     if (localOwned.length > 0) {
       const current = parseTransactionArray(
@@ -428,7 +544,9 @@ export async function reconcileOwnRetailTransactions(input: {
       localCount: localOwned.length,
       cloudCount: cloudOwned.length,
       mergedCount: mergedOwned.length,
-      uploaded: false,
+      localEventCount: localOwnedEvents.length,
+      uploaded,
+      uploadedEvents,
       status: "write_error",
       reason: "cloud_upsert_failed",
       claimedLegacyMemberIds,
@@ -442,7 +560,9 @@ export async function reconcileOwnRetailTransactions(input: {
     localCount: localOwned.length,
     cloudCount: cloudOwned.length,
     mergedCount: mergedOwned.length,
-    uploaded: true,
+    localEventCount: localOwnedEvents.length,
+    uploaded,
+    uploadedEvents,
     status: "success",
     claimedLegacyMemberIds,
   };
@@ -459,11 +579,13 @@ export async function ensureOwnRetailTransactionsReconciled(input: {
   memberId: EntityId;
   cloudPort?: RetailTransactionsCloudPort;
 }): Promise<RetailReconciliationResult> {
-  const localRawSnapshot = input.storage.getItem(RETAIL_TRANSACTIONS_STORAGE_KEY);
+  const localRetailRawSnapshot = input.storage.getItem(RETAIL_TRANSACTIONS_STORAGE_KEY);
+  const localBakiEventsRawSnapshot = input.storage.getItem(BAKI_EVENTS_STORAGE_KEY);
   return reconcileOwnRetailTransactions({
     storage: input.storage,
     memberId: input.memberId,
-    localRawSnapshot,
+    localRetailRawSnapshot,
+    localBakiEventsRawSnapshot,
     cloudPort: input.cloudPort,
   });
 }
@@ -472,15 +594,23 @@ export async function ensureOwnRetailTransactionsReconciled(input: {
 export async function reconcileRetailTransactionsDuringLoginSync(input: {
   storage: StorageAdapter;
   memberId: EntityId;
-  cloudPayload: unknown | null;
-  localRawSnapshot: string | null;
+  cloudPayload?: unknown | null;
+  cloudRetailPayload?: unknown | null;
+  cloudBakiEventsPayload?: unknown | null;
+  localRawSnapshot?: string | null;
+  localRetailRawSnapshot?: string | null;
+  localBakiEventsRawSnapshot?: string | null;
   cloudPort?: RetailTransactionsCloudPort;
 }): Promise<RetailReconciliationResult> {
   return reconcileOwnRetailTransactions({
     storage: input.storage,
     memberId: input.memberId,
     cloudPayload: input.cloudPayload,
+    cloudRetailPayload: input.cloudRetailPayload ?? input.cloudPayload,
+    cloudBakiEventsPayload: input.cloudBakiEventsPayload,
     localRawSnapshot: input.localRawSnapshot,
+    localRetailRawSnapshot: input.localRetailRawSnapshot ?? input.localRawSnapshot,
+    localBakiEventsRawSnapshot: input.localBakiEventsRawSnapshot,
     cloudPort: input.cloudPort,
   });
 }

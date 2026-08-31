@@ -263,7 +263,7 @@ export async function restoreCloudSession(
     id: cloudMember.id,
     memberNumber: cloudMember.memberNumber,
     email: cloudMember.email,
-  }, { awaitSync: false });
+  }, { awaitSync: true });
 }
 
 export async function logoutAccount(
