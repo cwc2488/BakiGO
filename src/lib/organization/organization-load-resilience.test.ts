@@ -398,6 +398,3 @@ describe("canonical Product VP still 325→350→250 after resilience", () => {
     );
   });
 });
-
-// silence unused Member import if lint complains — keep for fixture extensibility
-void (null as Member | null);
