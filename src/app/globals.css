@@ -14,6 +14,30 @@
   --brand-text-muted: #86868b;
   --brand-hint: #aeaeb2;
 
+  /* Partner App V2 semantic tokens */
+  --pv2-bg: var(--brand-bg);
+  --pv2-surface: var(--brand-surface);
+  --pv2-surface-elevated: #f7faf8;
+  --pv2-border-subtle: var(--brand-border);
+  --pv2-text-primary: var(--brand-text);
+  --pv2-text-secondary: var(--brand-text-secondary);
+  --pv2-text-muted: var(--brand-text-muted);
+  --pv2-brand-primary: var(--brand-primary);
+  --pv2-brand-primary-dark: var(--brand-primary-dark);
+  --pv2-brand-primary-muted: var(--brand-primary-muted);
+  --pv2-success: #248a3d;
+  --pv2-success-muted: #e8f8ee;
+  --pv2-warning: #b45309;
+  --pv2-danger: #dc2626;
+  --pv2-info: #0369a1;
+  --pv2-text-hero: clamp(2rem, 8vw, 2.5rem);
+  --pv2-radius-sm: 0.75rem;
+  --pv2-radius-md: 1rem;
+  --pv2-radius-lg: 1.25rem;
+  --pv2-shadow-sm: 0 1px 2px rgba(29, 29, 31, 0.04);
+  --pv2-space-page: 1.25rem;
+  --pv2-space-section: 1.25rem;
+
   --background: var(--brand-bg);
   --foreground: var(--brand-text);
   --home-shadow: 0 8px 40px rgba(36, 138, 61, 0.06);
