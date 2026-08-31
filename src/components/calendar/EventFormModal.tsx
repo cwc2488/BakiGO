@@ -7,15 +7,18 @@ import {
   MobileDismissibleSheetHandle,
 } from "@/components/ui/MobileDismissibleSheet";
 import {
-  CALENDAR_OTHER_ACTIVITY_KEY,
-  getCalendarDailyActivityTypes,
-  getCalendarMeetingActivityTypes,
-  getCalendarSelectableActivityTypes,
+  CALENDAR_CATEGORY_KEYS,
+  getCalendarCategoryDefaultColor,
+  getCalendarSelectableCategories,
+  normalizeCalendarCategoryKeyForSave,
+  resolveCalendarCategoryKey,
 } from "@/lib/calendar/calendar-activity-types";
 import { DEFAULT_CALENDAR_REMINDER_MINUTES } from "@/lib/calendar/calendar-reminder-options";
 import { ReminderOptionsField } from "@/components/calendar/ReminderOptionsField";
 import {
+  CALENDAR_EVENT_COLOR_OPTIONS,
   CALENDAR_EVENT_COLORS,
+  normalizeCalendarEventColor,
   type CalendarEvent,
   type CalendarEventColor,
   type ExpandedCalendarEvent,
@@ -70,8 +73,8 @@ export function buildDefaultFormValues(date: string, startTime = "09:00"): Event
     startTime,
     endTime: addHoursToTime(startTime, 1),
     allDay: false,
-    color: "green",
-    activityTypeKey: CALENDAR_OTHER_ACTIVITY_KEY,
+    color: getCalendarCategoryDefaultColor(CALENDAR_CATEGORY_KEYS.MEETING),
+    activityTypeKey: CALENDAR_CATEGORY_KEYS.MEETING,
     recurrenceFrequency: "none",
     recurrenceCustomUnit: "weekly",
     recurrenceInterval: 1,
@@ -82,6 +85,7 @@ export function buildDefaultFormValues(date: string, startTime = "09:00"): Event
 }
 
 export function eventToFormValues(event: CalendarEvent): EventFormValues {
+  const categoryKey = resolveCalendarCategoryKey(event.activityTypeKey);
   return {
     title: event.title,
     notes: event.notes ?? "",
@@ -90,8 +94,8 @@ export function eventToFormValues(event: CalendarEvent): EventFormValues {
     startTime: event.startAt.slice(11, 16),
     endTime: event.endAt.slice(11, 16),
     allDay: event.allDay,
-    color: event.color,
-    activityTypeKey: event.activityTypeKey ?? CALENDAR_OTHER_ACTIVITY_KEY,
+    color: normalizeCalendarEventColor(event.color, getCalendarCategoryDefaultColor(categoryKey)),
+    activityTypeKey: categoryKey,
     recurrenceFrequency: event.recurrence.frequency,
     recurrenceCustomUnit: event.recurrence.customUnit ?? "weekly",
     recurrenceInterval: event.recurrence.interval,
@@ -102,6 +106,7 @@ export function eventToFormValues(event: CalendarEvent): EventFormValues {
 }
 
 export function expandedEventToFormValues(event: ExpandedCalendarEvent): EventFormValues {
+  const categoryKey = resolveCalendarCategoryKey(event.activityTypeKey);
   return {
     title: event.title,
     notes: event.notes ?? "",
@@ -110,8 +115,8 @@ export function expandedEventToFormValues(event: ExpandedCalendarEvent): EventFo
     startTime: event.startAt.slice(11, 16),
     endTime: event.endAt.slice(11, 16),
     allDay: event.allDay,
-    color: event.color,
-    activityTypeKey: event.activityTypeKey ?? CALENDAR_OTHER_ACTIVITY_KEY,
+    color: normalizeCalendarEventColor(event.color, getCalendarCategoryDefaultColor(categoryKey)),
+    activityTypeKey: categoryKey,
     recurrenceFrequency: "none",
     recurrenceCustomUnit: "weekly",
     recurrenceInterval: 1,
@@ -134,7 +139,7 @@ export function formValuesToPayload(values: EventFormValues) {
     endAt,
     allDay: values.allDay,
     color: values.color,
-    activityTypeKey: values.activityTypeKey,
+    activityTypeKey: normalizeCalendarCategoryKeyForSave(values.activityTypeKey),
     recurrence: {
       frequency: values.recurrenceFrequency,
       interval: Math.max(1, values.recurrenceInterval),
@@ -257,49 +262,35 @@ function applyRecurrencePreset(
   };
 }
 
-function ActivityTypeSelect({
+function CategorySelect({
   value,
   onChange,
   disabled = false,
 }: {
   value: string;
-  onChange: (next: string) => void;
+  onChange: (next: string, defaultColor: CalendarEventColor) => void;
   disabled?: boolean;
 }) {
-  const dailyTypes = getCalendarDailyActivityTypes();
-  const meetingTypes = getCalendarMeetingActivityTypes();
-  const otherType = getCalendarSelectableActivityTypes().find(
-    (type) => type.key === CALENDAR_OTHER_ACTIVITY_KEY,
-  );
+  const categories = getCalendarSelectableCategories();
+  const resolved = resolveCalendarCategoryKey(value);
 
   return (
     <label className="block space-y-2">
-      <span className="text-[0.875rem] font-medium text-[#636366]">行程種類</span>
+      <span className="text-[0.875rem] font-medium text-[#636366]">事件分類</span>
       <select
         className="w-full rounded-xl border border-[var(--cal-border)] px-4 py-3 disabled:bg-[var(--cal-primary-muted)] disabled:text-[var(--cal-text)]"
         disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
+        onChange={(event) => {
+          const nextKey = event.target.value;
+          onChange(nextKey, getCalendarCategoryDefaultColor(nextKey));
+        }}
+        value={resolved}
       >
-        <optgroup label="日常">
-          {dailyTypes.map((type) => (
-            <option key={type.key} value={type.key}>
-              {type.label}
-            </option>
-          ))}
-        </optgroup>
-        <optgroup label="會議">
-          {meetingTypes.map((type) => (
-            <option key={type.key} value={type.key}>
-              {type.label}
-            </option>
-          ))}
-        </optgroup>
-        {otherType ? (
-          <optgroup label="其他">
-            <option value={otherType.key}>{otherType.label}</option>
-          </optgroup>
-        ) : null}
+        {categories.map((category) => (
+          <option key={category.key} value={category.key}>
+            {category.label}
+          </option>
+        ))}
       </select>
     </label>
   );
@@ -348,7 +339,6 @@ export function EventFormModal({
   onClose,
   onSubmit,
   onDelete,
-  onCopy,
 }: {
   open: boolean;
   mode: "create" | "edit" | "view";
@@ -360,7 +350,6 @@ export function EventFormModal({
   onClose: () => void;
   onSubmit: () => void;
   onDelete?: () => void;
-  onCopy?: () => void;
 }) {
   const title =
     mode === "create" ? "新增行程" : mode === "view" ? "共用行程" : "編輯行程";
@@ -403,8 +392,10 @@ export function EventFormModal({
             />
           </label>
 
-          <ActivityTypeSelect
-            onChange={(activityTypeKey) => onChange({ ...values, activityTypeKey })}
+          <CategorySelect
+            onChange={(activityTypeKey, defaultColor) =>
+              onChange({ ...values, activityTypeKey, color: defaultColor })
+            }
             value={values.activityTypeKey}
           />
 
@@ -486,17 +477,17 @@ export function EventFormModal({
 
           {!readOnly ? (
             <div>
-              <p className="text-[0.875rem] font-medium text-[#636366]">顏色</p>
+              <p className="text-[0.875rem] font-medium text-[#636366]">事件顏色</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {(Object.keys(CALENDAR_EVENT_COLORS) as CalendarEventColor[]).map((color) => (
+                {CALENDAR_EVENT_COLOR_OPTIONS.map((color) => (
                   <button
                     key={color}
                     aria-label={CALENDAR_EVENT_COLORS[color].label}
-                    className={`h-8 w-8 rounded-full border-2 ${
-                      values.color === color ? "border-[#1d1d1f]" : "border-transparent"
+                    className={`h-8 w-8 rounded-full border-2 transition-transform active:scale-95 ${
+                      values.color === color ? "border-[#1d1d1f] ring-2 ring-[#1d1d1f]/10" : "border-transparent"
                     }`}
                     onClick={() => onChange({ ...values, color })}
-                    style={{ backgroundColor: CALENDAR_EVENT_COLORS[color].bg }}
+                    style={{ backgroundColor: CALENDAR_EVENT_COLORS[color].accent }}
                     type="button"
                   />
                 ))}
@@ -664,15 +655,6 @@ export function EventFormModal({
             >
               {mode === "create" ? "新增" : "儲存"}
             </button>
-            {mode === "edit" && onCopy ? (
-              <button
-                className="w-full rounded-xl border border-[var(--cal-border)] bg-[var(--cal-surface)] px-4 py-3 text-[0.9375rem] font-semibold text-[#1d1d1f]"
-                onClick={onCopy}
-                type="button"
-              >
-                複製事件
-              </button>
-            ) : null}
             {mode === "edit" && onDelete ? (
               <button
                 className="w-full rounded-xl border border-[#ff375f] px-4 py-3 text-[0.9375rem] font-semibold text-[#ff375f]"

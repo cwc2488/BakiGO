@@ -14,15 +14,17 @@ import {
   validateEventFormValues,
   type SharedEventFormContext,
 } from "@/components/calendar/EventFormModal";
-import { CopyEventDatesSheet } from "@/components/calendar/CopyEventDatesSheet";
-import { buildCopiedEventPayloads } from "@/lib/calendar/copy-event-to-dates";
 import { GoogleCalendarPanel } from "@/components/calendar/GoogleCalendarPanel";
 import { MonthView } from "@/components/calendar/MonthView";
 import { MonthDayAgenda } from "@/components/calendar/MonthDayAgenda";
 import { WeekDayStrip } from "@/components/calendar/WeekDayStrip";
 import { WeekView } from "@/components/calendar/WeekView";
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
-import { inferCalendarActivityTypeFromTitle } from "@/lib/calendar/calendar-activity-types";
+import {
+  inferCalendarActivityTypeFromTitle,
+  CALENDAR_CATEGORY_KEYS,
+  resolveCalendarCategoryKey,
+} from "@/lib/calendar/calendar-activity-types";
 import {
   attendanceFromExpandedSharedEvent,
   attendanceToCalendarEvent,
@@ -151,7 +153,6 @@ export default function CalendarPage() {
   const [formMode, setFormMode] = useState<"create" | "edit" | "view">("create");
   const [formReadOnly, setFormReadOnly] = useState(false);
   const [formValues, setFormValues] = useState(() => buildDefaultFormValues(getTodayDateString()));
-  const [copyOpen, setCopyOpen] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [editingOccurrence, setEditingOccurrence] = useState<ExpandedCalendarEvent | null>(null);
   const [recurrenceScopeMode, setRecurrenceScopeMode] = useState<"edit" | "delete" | null>(null);
@@ -810,40 +811,6 @@ export default function CalendarPage() {
     }
   }
 
-  async function handleCopyToDates(targetDates: string[]) {
-    if (targetDates.length === 0) {
-      return;
-    }
-
-    const repository = createCalendarEventRepository(storage);
-    const payloads = buildCopiedEventPayloads(formValues, targetDates);
-    let googleWarning: string | null = null;
-
-    try {
-      for (const payload of payloads) {
-        const created = repository.create({ memberId, ...payload });
-        const warning = await syncToGoogleWithWarning(created, "create");
-        if (warning) {
-          googleWarning = warning;
-        }
-      }
-      await awaitPendingCloudSync();
-      setCopyOpen(false);
-      setFormOpen(false);
-      resetCalendarInteraction();
-      setStatusMessage(
-        googleWarning
-          ? `已複製 ${payloads.length} 筆行程（${googleWarning}）`
-          : `已複製 ${payloads.length} 筆行程`,
-      );
-    } catch (caught) {
-      setStatusMessage(caught instanceof Error ? caught.message : "複製失敗");
-    } finally {
-      reloadEvents();
-      void refreshCalendarReminderSchedule(storage);
-    }
-  }
-
   async function handleRecurrenceScopeConfirm(scope: RecurrenceEditScope) {
     try {
       if (recurrenceScopeMode === "delete") {
@@ -1140,22 +1107,13 @@ export default function CalendarPage() {
         mode={formMode}
         onChange={handleFormChange}
         onClose={closeEventForm}
-        onCopy={formMode === "edit" && !formReadOnly ? () => setCopyOpen(true) : undefined}
         onDelete={formMode === "edit" ? () => void handleDelete() : undefined}
         onSubmit={() => void handleSubmit()}
-        open={formOpen}
+        open={formOpen && recurrenceScopeMode === null}
         personalLogContext={personalLogContext}
         readOnly={formReadOnly}
         sharedContext={formSharedContext}
         values={formValues}
-      />
-
-      <CopyEventDatesSheet
-        onClose={() => setCopyOpen(false)}
-        onConfirm={handleCopyToDates}
-        open={copyOpen}
-        sourceDate={formValues.date}
-        title={formValues.title}
       />
 
       <RecurrenceScopeModal

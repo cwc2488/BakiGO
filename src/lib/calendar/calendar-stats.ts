@@ -1,11 +1,17 @@
 import {
-  CALENDAR_OTHER_ACTIVITY_KEY,
   getCalendarActivityTypeGroup,
   getCalendarActivityTypeLabel,
+  resolveCalendarCategoryKey,
 } from "@/lib/calendar/calendar-activity-types";
 import { parseLocalDateTime } from "@/lib/calendar/time-grid";
 import { expandEventsForRange } from "@/lib/calendar/recurrence";
-import type { CalendarEvent, CalendarEventColor, ExpandedCalendarEvent } from "@/types/calendar-event";
+import {
+  CALENDAR_EVENT_COLORS,
+  normalizeCalendarEventColor,
+  type CalendarEvent,
+  type CalendarEventColor,
+  type ExpandedCalendarEvent,
+} from "@/types/calendar-event";
 import { isSharedGoogleCalendarId } from "@/lib/calendar/shared-calendars";
 
 export interface CalendarStatsQuery {
@@ -29,21 +35,10 @@ export interface CalendarStatsResult {
   events: ExpandedCalendarEvent[];
 }
 
-const COLOR_KEYS: CalendarEventColor[] = [
-  "blue",
-  "green",
-  "orange",
-  "red",
-  "purple",
-  "teal",
-  "gray",
-];
-
 function emptyColorCounts(): Record<CalendarEventColor, number> {
-  return Object.fromEntries(COLOR_KEYS.map((key) => [key, 0])) as Record<
-    CalendarEventColor,
-    number
-  >;
+  return Object.fromEntries(
+    Object.keys(CALENDAR_EVENT_COLORS).map((key) => [key, 0]),
+  ) as Record<CalendarEventColor, number>;
 }
 
 function eventDurationHours(event: ExpandedCalendarEvent): number {
@@ -90,11 +85,12 @@ export function buildCalendarStats(
   let attendedSharedCount = 0;
 
   for (const event of expanded) {
-    byColor[event.color] += 1;
+    const normalizedColor = normalizeCalendarEventColor(event.color);
+    byColor[normalizedColor] = (byColor[normalizedColor] ?? 0) + 1;
     sourceIds.add(event.sourceEventId);
 
-    const activityKey = event.activityTypeKey ?? CALENDAR_OTHER_ACTIVITY_KEY;
-    activityCountMap.set(activityKey, (activityCountMap.get(activityKey) ?? 0) + 1);
+    const categoryKey = resolveCalendarCategoryKey(event.activityTypeKey);
+    activityCountMap.set(categoryKey, (activityCountMap.get(categoryKey) ?? 0) + 1);
 
     if (event.attendedFromShared) {
       attendedSharedCount += 1;
