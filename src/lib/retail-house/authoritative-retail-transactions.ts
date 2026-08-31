@@ -76,21 +76,42 @@ function logProductVpRead(diagnostics: AuthoritativeRetailLoadDiagnostics): void
   });
 }
 
+function coerceFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
 function isUsableRetailTransaction(value: unknown): value is RetailTransaction {
   if (!value || typeof value !== "object") {
     return false;
   }
-  const row = value as Partial<RetailTransaction>;
-  return (
-    typeof row.id === "string" &&
-    row.id.length > 0 &&
-    typeof row.memberId === "string" &&
-    row.memberId.length > 0 &&
-    typeof row.transactionTypeKey === "string" &&
-    typeof row.transactionDate === "string" &&
-    row.transactionDate.length >= 7 &&
-    typeof row.amount === "number"
-  );
+  const row = value as Partial<RetailTransaction> & { amount?: unknown };
+  const amount = coerceFiniteNumber(row.amount);
+  if (amount === null) {
+    return false;
+  }
+  if (
+    typeof row.id !== "string" ||
+    row.id.length === 0 ||
+    typeof row.memberId !== "string" ||
+    row.memberId.length === 0 ||
+    typeof row.transactionTypeKey !== "string" ||
+    typeof row.transactionDate !== "string" ||
+    row.transactionDate.length < 7
+  ) {
+    return false;
+  }
+  // Normalize string amounts onto the object so downstream VP math stays numeric.
+  (row as { amount: number }).amount = amount;
+  return true;
 }
 
 function sanitizeLegacyRetailTransactions(

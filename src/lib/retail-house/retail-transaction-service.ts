@@ -8,6 +8,7 @@ import {
   type RetailTransactionMutationInput,
 } from "@/lib/retail-house/retail-transaction-validation";
 import { createEventRepository } from "@/lib/repositories/event-repository";
+import { createRetailRepository } from "@/lib/repositories/retail-repository";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import { flushPendingCloudSync } from "@/lib/repositories/syncing-storage-adapter";
 import {
@@ -70,6 +71,58 @@ function buildTransactionMetadata(
   return next;
 }
 
+/**
+ * Own RH list reads events ∪ legacy retailTransactions.
+ * Mutations must update/delete BOTH stores or deleted/edited cards resurface.
+ */
+function syncLegacyRetailTransactionMirror(
+  storage: StorageAdapter,
+  eventId: EntityId,
+  patch:
+    | { kind: "delete" }
+    | {
+        kind: "update";
+        memberId: EntityId;
+        eventTypeKey: string;
+        eventDate: ISODateString;
+        value: number;
+        metadata: Record<string, unknown>;
+      },
+): void {
+  const retailRepository = createRetailRepository(storage);
+  if (patch.kind === "delete") {
+    retailRepository.delete(eventId);
+    return;
+  }
+
+  const existing = retailRepository.getById(eventId);
+  if (!existing) {
+    return;
+  }
+
+  const customerName =
+    typeof patch.metadata.customerName === "string"
+      ? patch.metadata.customerName
+      : existing.customerName;
+  const currencyCode =
+    typeof patch.metadata.currencyCode === "string"
+      ? patch.metadata.currencyCode
+      : existing.currencyCode;
+  const note =
+    typeof patch.metadata.note === "string" ? patch.metadata.note : existing.note;
+
+  retailRepository.update(eventId, {
+    memberId: patch.memberId,
+    transactionTypeKey: patch.eventTypeKey,
+    transactionDate: patch.eventDate,
+    amount: patch.value,
+    customerName,
+    currencyCode,
+    note,
+    metadata: patch.metadata,
+  });
+}
+
 export function updateRetailTransactionForCurrentMember(
   eventId: EntityId,
   input: RetailTransactionMutationInput,
@@ -82,14 +135,23 @@ export function updateRetailTransactionForCurrentMember(
   }
 
   const { repository, event } = assertOwnedTransactionEvent(eventId, memberId, storage);
+  const metadata = buildTransactionMetadata(
+    input,
+    event.metadata as Record<string, unknown> | undefined,
+  );
   repository.update(eventId, {
     eventTypeKey: input.eventTypeKey,
     eventDate: validated.eventDate,
     value: input.value,
-    metadata: buildTransactionMetadata(
-      input,
-      event.metadata as Record<string, unknown> | undefined,
-    ),
+    metadata,
+  });
+  syncLegacyRetailTransactionMirror(storage, eventId, {
+    kind: "update",
+    memberId,
+    eventTypeKey: input.eventTypeKey,
+    eventDate: validated.eventDate,
+    value: input.value,
+    metadata,
   });
   flushPendingCloudSync();
 
@@ -109,6 +171,8 @@ export function deleteRetailTransactionForCurrentMember(
   const memberId = resolveAuthenticatedMemberId(storage);
   const { repository, event } = assertOwnedTransactionEvent(eventId, memberId, storage);
   repository.delete(eventId);
+  // Authoritative RH merge resurrects legacy rows when events are deleted alone.
+  syncLegacyRetailTransactionMirror(storage, eventId, { kind: "delete" });
   flushPendingCloudSync();
 
   return recalculateMemberMetrics(

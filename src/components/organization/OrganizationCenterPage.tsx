@@ -96,6 +96,7 @@ export default function OrganizationCenterPage() {
         console.error("[organization] downline_cloud_failure", error);
         cloudCache = new Map();
       }
+      // Enrich from the local cloudCache variable — never from prior React state.
       setDownlineCache(cloudCache);
 
       // —— Stage 3: Product VP enrichment (isolated — never blanks org) ——
@@ -128,6 +129,8 @@ export default function OrganizationCenterPage() {
         computedAt: cloudSnapshot.computedAt,
       };
 
+      // Replace snapshot atomically so selectedNode (derived via useMemo) always
+      // reads post-enrichment monthlyVp — never a pre-enrichment 0 placeholder.
       setSnapshot(nextSnapshot);
       setViewer(viewer);
       setAllMembers(localMembers);

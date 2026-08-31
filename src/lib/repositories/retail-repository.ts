@@ -5,7 +5,10 @@ import { STORAGE_KEYS } from "./storage-keys";
 export interface RetailRepository {
   getAll(): RetailTransaction[];
   getByMemberId(memberId: EntityId): RetailTransaction[];
+  getById(id: EntityId): RetailTransaction | null;
   create(input: RetailTransactionCreateInput): RetailTransaction;
+  update(id: EntityId, patch: Partial<RetailTransaction>): RetailTransaction | null;
+  delete(id: EntityId): boolean;
 }
 
 function parseTransactions(raw: string | null): RetailTransaction[] {
@@ -39,6 +42,10 @@ export class LocalStorageRetailRepository implements RetailRepository {
     return this.getAll().filter((transaction) => transaction.memberId === memberId);
   }
 
+  getById(id: EntityId): RetailTransaction | null {
+    return this.getAll().find((transaction) => transaction.id === id) ?? null;
+  }
+
   create(input: RetailTransactionCreateInput): RetailTransaction {
     const now = new Date().toISOString();
     const transaction: RetailTransaction = {
@@ -51,6 +58,39 @@ export class LocalStorageRetailRepository implements RetailRepository {
     const next = [...this.getAll(), transaction];
     this.storage.setItem(STORAGE_KEYS.retailTransactions, JSON.stringify(next));
     return transaction;
+  }
+
+  update(id: EntityId, patch: Partial<RetailTransaction>): RetailTransaction | null {
+    const all = this.getAll();
+    const index = all.findIndex((transaction) => transaction.id === id);
+    if (index < 0) {
+      return null;
+    }
+    const current = all[index]!;
+    const updated: RetailTransaction = {
+      ...current,
+      ...patch,
+      id: current.id,
+      createdAt: current.createdAt,
+      updatedAt: new Date().toISOString(),
+      metadata: patch.metadata
+        ? { ...(current.metadata ?? {}), ...patch.metadata }
+        : current.metadata,
+    };
+    const next = [...all];
+    next[index] = updated;
+    this.storage.setItem(STORAGE_KEYS.retailTransactions, JSON.stringify(next));
+    return updated;
+  }
+
+  delete(id: EntityId): boolean {
+    const all = this.getAll();
+    const next = all.filter((transaction) => transaction.id !== id);
+    if (next.length === all.length) {
+      return false;
+    }
+    this.storage.setItem(STORAGE_KEYS.retailTransactions, JSON.stringify(next));
+    return true;
   }
 }
 
