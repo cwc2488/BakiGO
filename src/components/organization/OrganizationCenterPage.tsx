@@ -23,7 +23,6 @@ import type { OrganizationCenterSnapshot, OrganizationTreeNode } from "@/types/o
 import type { Member } from "@/types/member";
 import { PageShell } from "@/components/ui/PageShell";
 import { PageErrorState, PageLoadingState } from "@/components/ui/PageStates";
-import { IconLabel } from "@/components/ui/AppIcon";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -53,14 +52,11 @@ function mergeCloudTreeWithLocalMetrics(
     ? {
         ...node.member,
         memberNumber: node.member.memberNumber || localMember?.herbalifeMemberId || "",
-        monthlyVp: metrics.vp.totalVp,
+        monthlyVp: metrics.productVp?.monthlyTotal ?? metrics.vp.totalVp,
         metMonthlyVp2500: node.member.monthlyVpTarget
-          ? metrics.vp.totalVp >= node.member.monthlyVpTarget
+          ? (metrics.productVp?.monthlyTotal ?? metrics.vp.totalVp) >=
+            node.member.monthlyVpTarget
           : false,
-        monthlyPoints: metrics.gamification.points.monthlyPoints,
-        lifetimePoints: metrics.gamification.points.lifetimePoints,
-        availablePoints: metrics.gamification.points.availablePoints,
-        streakMultiplier: metrics.gamification.points.streakMultiplier,
       }
     : {
         ...node.member,
@@ -215,13 +211,6 @@ export default function OrganizationCenterPage() {
 
         {selectedNode ? (
           <section className="home-section">
-            {selectedMemberId === viewer?.id ? (
-              <p className="mb-3 rounded-2xl bg-[var(--brand-primary-muted)] px-4 py-3 text-[0.875rem] text-[#636366]">
-                <IconLabel icon={APP_ICON.action.redeem}>
-                  點選組織圖中的下線夥伴，即可為其兌換積分（支援所有世代）。
-                </IconLabel>
-              </p>
-            ) : null}
             <OrganizationMemberDetail
               key={selectedNode.member.memberId}
               canAdjustRank={canAdjustSelectedRank}

@@ -51,6 +51,7 @@ import type { RetailWeeklyReport } from "@/types/retail-weekly-report";
 import type { EventCenterResult } from "@/types/event-center";
 import { applyMemberStateFromEvents } from "@/lib/event-center/resolve-member-state";
 import { projectEventsForEngines } from "@/lib/event-center/project-events";
+import { calculateMonthlyProductVp } from "@/lib/retail-house/canonical-product-vp";
 import { loadPointRedemptions } from "@/lib/repositories/point-redemption-repository";
 import { createEventRepository } from "@/lib/repositories/event-repository";
 import { buildRetailWeeklyReport } from "./build-retail-weekly-report";
@@ -76,6 +77,13 @@ import {
 } from "@/lib/learning-resources/recommend-learning-resources";
 import type { MemberGoalActionStep } from "@/types/member-goal";
 
+/** Retail House Product VP for the business month — not legacy reward 積分. */
+export interface ProductVpMetrics {
+  yearMonth: YearMonth;
+  /** Canonical monthly Product VP from Retail House records. */
+  monthlyTotal: number;
+}
+
 export interface MemberComputedMetrics {
   memberId: EntityId;
   yearMonth: YearMonth;
@@ -83,6 +91,8 @@ export interface MemberComputedMetrics {
   retailHouse: RetailHouseResult;
   monthlyChallenge: MonthlyChallengeProgress;
   vp: VpResult;
+  /** Canonical Product VP (Retail House). Prefer this for 「本月 VP」 displays. */
+  productVp: ProductVpMetrics;
   map: MapProgressResult;
   nextSteps: NextStep[];
   qualificationResults: QualificationResult[];
@@ -183,6 +193,14 @@ export function recalculateMemberMetrics(
     members,
   });
   const vp = toLegacyVpResult(vpEngineResult);
+  const productVp = {
+    yearMonth,
+    monthlyTotal: calculateMonthlyProductVp({
+      memberId: input.memberId,
+      yearMonth,
+      transactions: memberTransactions,
+    }),
+  };
 
   const retailHouse = calculateRetailHouse({
     memberId: input.memberId,
@@ -316,6 +334,7 @@ export function recalculateMemberMetrics(
     retailHouse,
     monthlyChallenge,
     vp,
+    productVp,
     map,
     nextSteps,
     qualificationResults,

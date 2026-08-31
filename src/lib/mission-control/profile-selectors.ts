@@ -67,7 +67,7 @@ export function selectBusinessMetrics(
   return {
     monthlyTransactions: house?.transactionCount ?? 0,
     monthlyRetailAmount: house?.totalAmount ?? 0,
-    monthlyVp: metrics.vp.totalVp,
+    monthlyVp: metrics.productVp?.monthlyTotal ?? metrics.vp.totalVp,
     newCustomer: findCategoryMonthlyTotal(
       metrics,
       RETAIL_TRANSACTION_TYPE_KEYS.NEW_CUSTOMER_NTD,

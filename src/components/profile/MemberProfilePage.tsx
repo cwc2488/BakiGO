@@ -95,8 +95,8 @@ function BasicInfoSection({ metrics }: { metrics: MemberComputedMetrics }) {
 
 function GrowthSection({ metrics }: { metrics: MemberComputedMetrics }) {
   const challenge = metrics.monthlyChallenge;
-  const points = metrics.gamification.points;
   const streak = metrics.gamification.streak;
+  const productVp = metrics.productVp?.monthlyTotal ?? metrics.vp.totalVp;
 
   return (
     <ProfileCard>
@@ -113,9 +113,8 @@ function GrowthSection({ metrics }: { metrics: MemberComputedMetrics }) {
           <ProgressBar percent={challenge.overallProgressPercent} />
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
-          <MetricTile label="本月積分" value={points.monthlyPoints} />
-          <MetricTile label="可兌換" value={points.availablePoints} unit="分" />
+        <div className="grid grid-cols-2 gap-2">
+          <MetricTile label="本月 VP" value={productVp} />
           <MetricTile label="連續天數" value={streak.currentStreak} unit="天" />
         </div>
       </div>

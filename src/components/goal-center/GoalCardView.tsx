@@ -19,7 +19,7 @@ export function GoalCardView({ goal }: { goal: GoalCard }) {
         </div>
         {goal.rewardXP > 0 ? (
           <span className="shrink-0 text-[0.8125rem] font-semibold text-[#ff375f]">
-            +{goal.rewardXP} 積分
+            +{goal.rewardXP} XP
           </span>
         ) : null}
       </div>

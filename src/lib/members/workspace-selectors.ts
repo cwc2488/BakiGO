@@ -93,7 +93,7 @@ export function buildMemberTimeline(
         kind: "mission",
         label: mission.title,
         eventDate: metrics.missions.referenceDate,
-        subtitle: `+${mission.xp} 積分`,
+        subtitle: `+${mission.xp} XP`,
       });
     });
 
