@@ -3,7 +3,7 @@ import type { AiRadarExtractionV1 } from "../extraction/schema";
 import type { RadarFeedbackEvaluationContext } from "./types";
 
 /** Semantic release tag frozen into feedback rows for future quality reports. */
-export const RADAR_FEEDBACK_SEMANTIC_VERSION = "RADAR-SEMANTIC-01" as const;
+export const RADAR_FEEDBACK_SEMANTIC_VERSION = "RADAR-SEMANTIC-V1.3" as const;
 
 export function buildRadarFeedbackEvaluationContext(input: {
   pipeline_run_id: string | null;

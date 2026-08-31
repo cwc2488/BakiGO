@@ -156,7 +156,7 @@ describe("RADAR-SEMANTIC-01", () => {
     expect(result.personal_need).toBe(false);
   });
 
-  it("7. coach/provider with self unresolved need is ineligible (peer exclusion)", () => {
+  it("7. coach/provider with independently evidenced self unresolved need stays eligible (v1.3)", () => {
     const result = evaluateSemanticEligibility(
       understanding({
         need_owner: "self",
@@ -164,13 +164,14 @@ describe("RADAR-SEMANTIC-01", () => {
         market_role: "mixed",
         pain_points: ["自己最近胖8公斤"],
         unresolved_gap: "怎麼減都減不掉",
+        help_seeking: "explicit",
       }),
     );
-    expect(result.eligible).toBe(false);
-    expect(result.reason).toBe("known_mixed_provider");
+    expect(result.eligible).toBe(true);
+    expect(result.reason).toBe("self_unresolved_need");
   });
 
-  it("7b. known provider is ineligible even with self in_progress_with_gap", () => {
+  it("7b. known provider with self in_progress_with_gap stays eligible when gap is real", () => {
     const result = evaluateSemanticEligibility(
       understanding({
         need_owner: "self",
@@ -178,10 +179,25 @@ describe("RADAR-SEMANTIC-01", () => {
         market_role: "provider",
         pain_points: ["自己體重卡住"],
         unresolved_gap: "學員有進步自己沒進步",
+        help_seeking: "implicit",
+      }),
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.reason).toBe("self_in_progress_with_gap");
+  });
+
+  it("7c. provider teaching with no self unmet need is ineligible", () => {
+    const result = evaluateSemanticEligibility(
+      understanding({
+        need_owner: "general",
+        need_state: "none",
+        market_role: "provider",
+        unresolved_gap: null,
+        help_seeking: "none",
       }),
     );
     expect(result.eligible).toBe(false);
-    expect(result.reason).toBe("known_provider");
+    expect(result.reason).toBe("general_topic");
   });
 
   it("8. Korean recent corpus is language-ineligible", () => {

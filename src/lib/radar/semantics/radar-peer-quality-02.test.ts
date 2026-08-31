@@ -58,30 +58,33 @@ describe("RADAR-PEER-QUALITY-02 semantic peer matrix", () => {
     ).toBe(false);
   });
 
-  it("health provider with own unresolved fat-loss goal → reject", () => {
+  it("health provider with independently evidenced own unresolved fat-loss goal → eligible", () => {
     const result = evaluateSemanticEligibility(
       understanding({
         need_owner: "self",
         need_state: "unresolved",
         market_role: "provider",
         pain_points: ["自己也想減脂"],
+        unresolved_gap: "自己怎麼減都減不掉",
       }),
     );
-    expect(result.eligible).toBe(false);
-    expect(result.reason).toBe("known_provider");
+    expect(result.eligible).toBe(true);
+    expect(result.reason).toBe("self_unresolved_need");
   });
 
-  it("trainer complaining about own plateau → reject if provider identity established", () => {
+  it("trainer with own plateau gap may survive when self need is separate from teaching", () => {
     const result = evaluateSemanticEligibility(
       understanding({
         need_owner: "self",
         need_state: "in_progress_with_gap",
         market_role: "provider",
         unresolved_gap: "自己訓練也卡住",
+        help_seeking: "implicit",
+        pain_points: ["自己體重卡住"],
       }),
     );
-    expect(result.eligible).toBe(false);
-    expect(result.reason).toBe("known_provider");
+    expect(result.eligible).toBe(true);
+    expect(result.reason).toBe("self_in_progress_with_gap");
   });
 
   it("ordinary consumer complaining about plateau → eligible", () => {
@@ -147,198 +150,182 @@ describe("RADAR-PEER-QUALITY-02 semantic peer matrix", () => {
     expect(result.reason).not.toMatch(/provider|mixed/);
   });
 
-  it("mixed provider/consumer with material service activity → reject", () => {
+  it("mixed provider/consumer with genuine self unmet need → eligible (v1.3)", () => {
     const result = evaluateSemanticEligibility(
       understanding({
         need_owner: "self",
         need_state: "unresolved",
         market_role: "mixed",
+        pain_points: ["自己最後五公斤減不掉"],
+        unresolved_gap: "需要幫助",
+        help_seeking: "explicit",
+      }),
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.reason).toBe("self_unresolved_need");
+  });
+
+  it("provider teaching only (no self unmet need) → reject", () => {
+    const result = evaluateSemanticEligibility(
+      understanding({
+        need_owner: "general",
+        need_state: "none",
+        market_role: "provider",
+        unresolved_gap: null,
+        help_seeking: "none",
+        recommendation_reason_zh: null,
       }),
     );
     expect(result.eligible).toBe(false);
-    expect(result.reason).toBe("known_mixed_provider");
+    expect(result.reason).toBe("general_topic");
   });
 });
 
 /**
- * Offline simulation of 2026-08-26 visible recommendations.
- * Understanding fields are reconstructed from stored card why + public evidence
- * (Production DB service role unavailable as Sensitive placeholder).
- * Does not write anything.
+ * Offline semantic-label simulation (anonymized).
+ * v1.3: eligibility keeps genuine SELF unmet need even when market_role is
+ * provider/mixed; pure teaching / client stories stay out.
  */
-describe("RADAR-PEER-QUALITY-02 today 2026-08-26 eligibility simulation", () => {
+describe("RADAR-PEER-QUALITY-02 v1.3 eligibility simulation", () => {
   const today = [
     {
-      user: "wan._.zh",
+      id: "anon_mixed_business",
       human: "B" as const,
       understanding: understanding({
         market_role: "mixed",
-        need_owner: "self",
-        need_state: "in_progress_with_gap",
-        recommendation_reason_zh: "經營運動事業並減脂",
+        need_owner: "general",
+        need_state: "none",
+        recommendation_reason_zh: null,
       }),
-      caused_by_provider_self_rule: true,
     },
     {
-      user: "wan.0711",
+      id: "anon_provider_promo",
       human: "B" as const,
       understanding: understanding({
         market_role: "provider",
-        need_owner: "self",
-        need_state: "unresolved",
-        recommendation_reason_zh: "推廣居家運動",
+        need_owner: "general",
+        need_state: "none",
+        recommendation_reason_zh: null,
       }),
-      caused_by_provider_self_rule: true,
     },
     {
-      user: "prettygirllyyyyy",
+      id: "anon_ambiguous",
       human: "C" as const,
       understanding: understanding({
         market_role: "unknown",
         need_owner: "self",
         need_state: "in_progress_with_gap",
+        unresolved_gap: "體脂卡住",
+        help_seeking: "implicit",
+        pain_points: ["減脂停滯"],
       }),
-      caused_by_provider_self_rule: false,
     },
     {
-      user: "evelyn.huangg",
+      id: "anon_consumer_gap",
       human: "A" as const,
       understanding: understanding({
         market_role: "consumer",
         need_owner: "self",
         need_state: "in_progress_with_gap",
+        unresolved_gap: "體重卡關",
+        help_seeking: "implicit",
+        pain_points: ["瘦不下來"],
       }),
-      caused_by_provider_self_rule: false,
     },
     {
-      user: "ostri_123",
+      id: "anon_consumer_unresolved",
       human: "A" as const,
       understanding: understanding({
         market_role: "consumer",
         need_owner: "self",
         need_state: "unresolved",
       }),
-      caused_by_provider_self_rule: false,
     },
     {
-      user: "big_johnny_chung",
+      id: "anon_provider_teaching_as_self_mislabel_fixed",
       human: "B" as const,
       understanding: understanding({
         market_role: "provider",
-        need_owner: "self",
-        need_state: "in_progress_with_gap",
-        recommendation_reason_zh: "教學問答與體態維持",
+        need_owner: "general",
+        need_state: "none",
+        recommendation_reason_zh: null,
       }),
-      caused_by_provider_self_rule: true,
     },
     {
-      user: "nnnmmm0903",
-      human: "B" as const,
+      id: "anon_provider_genuine_self",
+      human: "A" as const,
       understanding: understanding({
         market_role: "provider",
         need_owner: "self",
         need_state: "unresolved",
-        recommendation_reason_zh: "推廣兒茶素出貨",
+        pain_points: ["我自己最後五公斤減不掉"],
+        unresolved_gap: "需要幫助",
+        help_seeking: "explicit",
       }),
-      caused_by_provider_self_rule: true,
     },
     {
-      user: "lou2chj",
+      id: "anon_consumer_ok_1",
       human: "A" as const,
       understanding: understanding({ market_role: "consumer" }),
-      caused_by_provider_self_rule: false,
     },
     {
-      user: "angelawen124",
+      id: "anon_consumer_ok_2",
       human: "A" as const,
       understanding: understanding({ market_role: "consumer" }),
-      caused_by_provider_self_rule: false,
     },
     {
-      user: "fog_lijiahao",
+      id: "anon_resolved",
       human: "D" as const,
       understanding: understanding({
         market_role: "consumer",
         need_state: "resolved",
       }),
-      caused_by_provider_self_rule: false,
     },
     {
-      user: "wangcj.bill",
+      id: "anon_consumer_ok_3",
       human: "A" as const,
       understanding: understanding({ market_role: "consumer" }),
-      caused_by_provider_self_rule: false,
     },
     {
-      user: "btssu.ga0309",
+      id: "anon_third_party",
       human: "D" as const,
       understanding: understanding({
         need_owner: "third_party",
         need_state: "none",
         market_role: "consumer",
       }),
-      caused_by_provider_self_rule: false,
     },
     {
-      user: "80526kiki",
+      id: "anon_unknown_role",
       human: "C" as const,
       understanding: understanding({ market_role: "unknown" }),
-      caused_by_provider_self_rule: false,
     },
     {
-      user: "lina19990628",
+      id: "anon_consumer_ok_4",
       human: "A" as const,
       understanding: understanding({ market_role: "consumer" }),
-      caused_by_provider_self_rule: false,
     },
   ];
 
-  function oldLogicWouldKeep(u: CandidateUnderstanding): boolean {
-    // Pre-PEER-QUALITY-02: provider/mixed allowed when SELF unresolved/in_progress.
-    if (u.need_owner === "third_party" || u.need_owner === "general") return false;
-    if (u.need_state === "resolved" || u.need_state === "none" || u.need_owner === "unknown") {
-      return false;
-    }
-    if (
-      u.market_role === "provider" &&
-      !(
-        u.need_owner === "self" &&
-        (u.need_state === "unresolved" || u.need_state === "in_progress_with_gap")
-      )
-    ) {
-      return false;
-    }
-    return (
-      u.need_owner === "self" &&
-      (u.need_state === "unresolved" || u.need_state === "in_progress_with_gap")
-    );
-  }
-
-  it("new logic removes known peers without removing genuine consumers in the audit set", () => {
+  it("rejects pure peers without removing genuine self needs (including provider+self)", () => {
     const changes = today.map((row) => {
-      const oldKeep = oldLogicWouldKeep(row.understanding);
       const neu = evaluateSemanticEligibility(row.understanding);
       return {
-        user: row.user,
+        id: row.id,
         human: row.human,
-        oldKeep,
-        newKeep: neu.eligible,
+        keep: neu.eligible,
         reason: neu.reason,
-        caused_by_provider_self_rule: row.caused_by_provider_self_rule,
       };
     });
 
-    const peersRemoved = changes.filter((c) => c.oldKeep && !c.newKeep && c.human === "B");
-    const consumersRemoved = changes.filter((c) => c.oldKeep && !c.newKeep && c.human === "A");
-    const ambiguousRemoved = changes.filter((c) => c.oldKeep && !c.newKeep && c.human === "C");
+    const peersKept = changes.filter((c) => c.human === "B" && c.keep);
+    const consumersRemoved = changes.filter((c) => c.human === "A" && !c.keep);
+    const genuineProviderKept = changes.find((c) => c.id === "anon_provider_genuine_self");
 
-    expect(peersRemoved.map((c) => c.user).sort()).toEqual(
-      ["big_johnny_chung", "nnnmmm0903", "wan._.zh", "wan.0711"].sort(),
-    );
+    expect(peersKept).toEqual([]);
     expect(consumersRemoved).toEqual([]);
-    expect(ambiguousRemoved).toEqual([]);
-    expect(changes.filter((c) => c.caused_by_provider_self_rule && c.oldKeep && !c.newKeep)).toHaveLength(
-      4,
-    );
+    expect(genuineProviderKept?.keep).toBe(true);
+    expect(changes.find((c) => c.id === "anon_resolved")?.keep).toBe(false);
+    expect(changes.find((c) => c.id === "anon_third_party")?.keep).toBe(false);
   });
 });

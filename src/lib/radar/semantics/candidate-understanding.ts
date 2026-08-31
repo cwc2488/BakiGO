@@ -1,5 +1,5 @@
 /**
- * RADAR-SEMANTIC-01 — structured candidate understanding.
+ * RADAR-SEMANTIC — structured candidate understanding (v1.3 eligibility).
  *
  * Topic signals are not enough. Eligibility is decided from ownership, journey
  * state, role, language, and evidence — not keyword frequency.
@@ -108,11 +108,14 @@ export function hasPersonalConsumerNeed(understanding: CandidateUnderstanding): 
 }
 
 /**
- * Radar prospects consumers with an unresolved self need — not industry peers.
+ * Radar prospects people with a genuine SELF unmet need.
  *
- * Known provider / materially mixed provider-service activity is ineligible even
- * when the person also has a genuine personal weight/fitness goal. Unknown role
- * is not auto-excluded; consumer follows normal need/state evaluation.
+ * RADAR-SEMANTIC-V1.3: provider / mixed role alone is NOT a hard reject.
+ * Provider teaching/selling evidence must not invent self need — but when
+ * separate first-person self unresolved / in_progress_with_gap evidence exists,
+ * the candidate may remain eligible (Week-1 human positives included provider/mixed).
+ * known_provider / known_mixed_provider remain in the reason union for frozen
+ * historical feedback rows; new evaluations no longer emit them.
  */
 export function evaluateSemanticEligibility(
   understanding: CandidateUnderstanding | null | undefined,
@@ -169,27 +172,11 @@ export function evaluateSemanticEligibility(
     };
   }
   if (understanding.need_state === "none" || understanding.need_owner === "unknown") {
+    const providerOnly =
+      understanding.market_role === "provider" || understanding.market_role === "mixed";
     return {
       eligible: false,
-      reason: "no_personal_need",
-      language_eligible: true,
-      personal_need: false,
-    };
-  }
-
-  // RADAR-PEER-QUALITY-02: peer/provider status wins over personal self-need.
-  if (understanding.market_role === "provider") {
-    return {
-      eligible: false,
-      reason: "known_provider",
-      language_eligible: true,
-      personal_need: false,
-    };
-  }
-  if (understanding.market_role === "mixed") {
-    return {
-      eligible: false,
-      reason: "known_mixed_provider",
+      reason: providerOnly ? "provider_without_self_need" : "no_personal_need",
       language_eligible: true,
       personal_need: false,
     };
@@ -210,9 +197,11 @@ export function evaluateSemanticEligibility(
       understanding.need_state === "in_progress_with_gap");
 
   if (!personal_need) {
+    const providerOnly =
+      understanding.market_role === "provider" || understanding.market_role === "mixed";
     return {
       eligible: false,
-      reason: "no_personal_need",
+      reason: providerOnly ? "provider_without_self_need" : "no_personal_need",
       language_eligible: true,
       personal_need: false,
     };
