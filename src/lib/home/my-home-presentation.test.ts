@@ -38,6 +38,7 @@ function mockMetrics(
     retailHouse: {} as MemberComputedMetrics["retailHouse"],
     monthlyChallenge: {} as MemberComputedMetrics["monthlyChallenge"],
     vp: { memberId: "m1", yearMonth: "2026-08", totalVp: 720, byType: [] },
+    productVp: { yearMonth: "2026-08", monthlyTotal: 720 },
     map: {
       memberId: "m1",
       yearMonth: "2026-08",

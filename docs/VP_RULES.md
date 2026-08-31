@@ -125,6 +125,23 @@ Qualification Engine 讀取 **Qualification VP**（來自 VPSnapshot），不直
 | `retail_new_member_vp` | 新會員 VP 交易 | 1 |
 | `retail_returning_member_vp` | 舊會員 VP 交易 | 1 |
 
+### Product VP（零售屋顯示用「本月 VP」）
+
+夥伴前台「本月 VP」（我的進度、夥伴詳情、組織圖）使用 **Retail House Product VP**：
+
+`src/lib/retail-house/canonical-product-vp.ts`
+
+計算語意（與零售屋同一批交易紀錄）：
+
+- `new_member_vp` / `returning_member_vp` → 使用 `amount`
+- `new_customer_ntd` / `returning_customer_ntd` → 使用使用者填寫的 `metadata.retailVp`
+- 軟刪除/void → 不計入
+- 月份鍵 = 交易日 `YYYY-MM`（與 `isInYearMonth` / 零售屋一致）
+
+此 Product VP **不是** legacy reward 積分（gamification points）。
+
+Qualification / Promotion Engine 仍讀 VP Rule Engine 的 member VP sources（本節表格）；顯示層「本月 VP」則以 Product VP 為準，確保與零售屋一致。
+
 ---
 
 ## 10. Rule Missing

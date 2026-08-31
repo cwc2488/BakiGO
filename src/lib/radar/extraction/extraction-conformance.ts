@@ -40,6 +40,7 @@ export const CONFORMANCE_ACTIONS = [
   "understanding_language_aligned",
   "understanding_reason_filled",
   "understanding_third_party_downgraded",
+  "understanding_gap_required",
 ] as const;
 
 export type ConformanceAction = (typeof CONFORMANCE_ACTIONS)[number];
@@ -366,15 +367,53 @@ function conformUnderstanding(
   }
 
   const owner = understanding.need_owner;
-  const state = understanding.need_state;
+  let state = understanding.need_state;
   const role = understanding.market_role;
-  // Peer/provider activity blocks prospecting even with a genuine SELF need.
+  const pain_points = asArray(understanding.pain_points).filter(
+    (item): item is string => typeof item === "string",
+  );
+  const attempts = asArray(understanding.attempts).filter(
+    (item): item is string => typeof item === "string",
+  );
+  const unresolved_gap =
+    typeof understanding.unresolved_gap === "string" ? understanding.unresolved_gap : null;
+  const help_seeking =
+    typeof understanding.help_seeking === "string" ? understanding.help_seeking : "unknown";
+
+  // RADAR-SEMANTIC-V1.3: in_progress_with_gap requires independently
+  // demonstrated ACTUAL GAP signals. Model-generated unresolved_gap text is
+  // never self-validating — success/maintenance often invents optimization
+  // phrases like "希望進一步改善體態" while help_seeking stays none.
+  if (state === "in_progress_with_gap") {
+    const hasPain = pain_points.some((item) => item.trim().length > 0);
+    const hasAttempts = attempts.some((item) => item.trim().length > 0);
+    const hasActualGap =
+      help_seeking === "explicit" ||
+      (help_seeking === "implicit" && hasPain) ||
+      // Stagnation pattern: effort underway + separate pain/obstacle field
+      // (not the free-text unresolved_gap alone).
+      (hasAttempts && hasPain);
+    if (!hasActualGap) {
+      understanding.need_state = "none";
+      state = "none";
+      understanding.unresolved_gap = null;
+      understanding.recommendation_reason_zh = null;
+      actions.push("understanding_gap_required");
+    }
+  }
+
+  // Provider/mixed role alone is NOT "no personal need". Downgrade only when
+  // ownership/state shows third-party, general education, resolved success,
+  // or no self unmet need — preserving genuine provider+self Week-1 positives.
+  const hasSelfUnmetNeed =
+    owner === "self" && (state === "unresolved" || state === "in_progress_with_gap");
   const noPersonalNeed =
     owner === "third_party" ||
     owner === "general" ||
     state === "resolved" ||
-    role === "provider" ||
-    role === "mixed";
+    state === "none" ||
+    owner === "unknown" ||
+    !hasSelfUnmetNeed;
 
   if (noPersonalNeed) {
     if (isRec(root.change_window) && isRec(root.change_window.change_intent)) {
@@ -391,7 +430,7 @@ function conformUnderstanding(
     if (isRec(root.needs) && root.needs.availability === "available") {
       root.needs = {
         availability: "unknown",
-        reasoning: "personal need not evidenced after ownership/state/role review",
+        reasoning: "personal need not evidenced after ownership/state review",
       };
       actions.push("understanding_third_party_downgraded");
     }
@@ -404,14 +443,9 @@ function conformUnderstanding(
     need_state: pickEnum(state, NEED_STATES, "unknown"),
     market_role: pickEnum(role, MARKET_ROLES, "unknown"),
     need_category: pickEnum(understanding.need_category, NEED_CATEGORIES, "none"),
-    pain_points: asArray(understanding.pain_points).filter(
-      (item): item is string => typeof item === "string",
-    ),
-    attempts: asArray(understanding.attempts).filter(
-      (item): item is string => typeof item === "string",
-    ),
-    unresolved_gap:
-      typeof understanding.unresolved_gap === "string" ? understanding.unresolved_gap : null,
+    pain_points,
+    attempts,
+    unresolved_gap,
     recommendation_reason_zh:
       typeof understanding.recommendation_reason_zh === "string"
         ? understanding.recommendation_reason_zh

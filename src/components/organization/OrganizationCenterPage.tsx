@@ -1,29 +1,31 @@
 "use client";
 
 import { getCurrentMember, getCurrentSession } from "@/lib/auth/auth-service";
-import {
-  canAdjustDownlineRank,
-  getVisibleMembers,
-} from "@/lib/auth/organization-access";
+import { canAdjustDownlineRank } from "@/lib/auth/organization-access";
 import { fetchCloudOrganizationData } from "@/lib/cloud/cloud-member-service";
 import { buildViewerCloudOrganizationSnapshot } from "@/lib/cloud/build-cloud-organization-tree";
 import {
   collectMemberIdsFromTree,
   fetchDownlineCloudData,
   getDownlineEvents,
+  resolveYearMonthFromReferenceDate,
   type DownlineCloudDataCache,
 } from "@/lib/cloud/downline-cloud-data";
 import { syncCloudMembersToLocalStorage } from "@/lib/cloud/sync-cloud-members-to-local";
 import { todayISODate } from "@/lib/config/app-config";
 import { loadAllMembers } from "@/lib/members/member-service";
+import { enrichOrganizationRootsWithProductVp } from "@/lib/organization/enrich-organization-product-vp";
+import {
+  buildOrganizationNextQualificationView,
+  findMemberSubtree,
+  resolveOrganizationQualificationLabel,
+} from "@/lib/organization/organization-selectors";
 import { loadMemberMetrics } from "@/lib/mission-control/format";
-import { findMemberSubtree } from "@/lib/organization/organization-selectors";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
-import type { OrganizationCenterSnapshot, OrganizationTreeNode } from "@/types/organization-center";
+import type { OrganizationCenterSnapshot } from "@/types/organization-center";
 import type { Member } from "@/types/member";
 import { PageShell } from "@/components/ui/PageShell";
 import { PageErrorState, PageLoadingState } from "@/components/ui/PageStates";
-import { IconLabel } from "@/components/ui/AppIcon";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -34,46 +36,6 @@ import {
 } from "./OrganizationTreeDiagram";
 
 type LoadState = "loading" | "ready" | "error";
-
-function mergeCloudTreeWithLocalMetrics(
-  node: OrganizationTreeNode,
-  members: Member[],
-  storage: ReturnType<typeof createLocalStorageAdapter>,
-  downlineCache?: DownlineCloudDataCache,
-): OrganizationTreeNode {
-  const localMember = members.find((member) => member.id === node.member.memberId);
-  const supplementalEvents = getDownlineEvents(node.member.memberId, downlineCache);
-  const metrics = localMember
-    ? loadMemberMetrics(localMember.id, storage, supplementalEvents)
-    : supplementalEvents.length > 0
-      ? loadMemberMetrics(node.member.memberId, storage, supplementalEvents)
-      : null;
-
-  const mergedMember = metrics
-    ? {
-        ...node.member,
-        memberNumber: node.member.memberNumber || localMember?.herbalifeMemberId || "",
-        monthlyVp: metrics.vp.totalVp,
-        metMonthlyVp2500: node.member.monthlyVpTarget
-          ? metrics.vp.totalVp >= node.member.monthlyVpTarget
-          : false,
-        monthlyPoints: metrics.gamification.points.monthlyPoints,
-        lifetimePoints: metrics.gamification.points.lifetimePoints,
-        availablePoints: metrics.gamification.points.availablePoints,
-        streakMultiplier: metrics.gamification.points.streakMultiplier,
-      }
-    : {
-        ...node.member,
-        memberNumber: node.member.memberNumber || localMember?.herbalifeMemberId || "",
-      };
-
-  return {
-    member: mergedMember,
-    children: node.children.map((child) =>
-      mergeCloudTreeWithLocalMetrics(child, members, storage, downlineCache),
-    ),
-  };
-}
 
 export default function OrganizationCenterPage() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
@@ -90,6 +52,7 @@ export default function OrganizationCenterPage() {
       const storage = createLocalStorageAdapter();
       const session = getCurrentSession(storage);
       if (!session) {
+        console.error("[organization] organization_fetch_failure", "missing_session");
         setLoadState("error");
         return;
       }
@@ -98,34 +61,65 @@ export default function OrganizationCenterPage() {
 
       const viewer = getCurrentMember(storage);
       if (!viewer) {
+        console.error("[organization] organization_fetch_failure", "missing_viewer");
         setLoadState("error");
         return;
       }
 
+      // —— Stage 1: core organization (must succeed for page to load) ——
       const { members: cloudMembers, relationships } = await fetchCloudOrganizationData();
       const viewerCloud = cloudMembers.find((member) => member.id === session.memberId);
       if (!viewerCloud) {
+        console.error("[organization] organization_fetch_failure", "viewer_not_in_cloud");
         setLoadState("error");
         return;
       }
+
+      const referenceDate = todayISODate();
+      const yearMonth = resolveYearMonthFromReferenceDate(referenceDate);
 
       const cloudSnapshot = buildViewerCloudOrganizationSnapshot({
         viewerMemberNumber: viewerCloud.memberNumber,
         members: cloudMembers,
         relationships,
-        referenceDate: todayISODate(),
+        referenceDate,
       });
 
       const localMembers = loadAllMembers(storage);
-      const visibleMembers = getVisibleMembers(viewer, localMembers);
-
       const downlineIds = cloudSnapshot.roots.flatMap((root) => collectMemberIdsFromTree(root));
-      const cloudCache = await fetchDownlineCloudData(downlineIds, session.memberId);
+
+      // —— Stage 2: downline cloud (isolated — failure → empty cache) ——
+      let cloudCache: DownlineCloudDataCache = new Map();
+      try {
+        cloudCache = await fetchDownlineCloudData(downlineIds, session.memberId);
+      } catch (error) {
+        console.error("[organization] downline_cloud_failure", error);
+        cloudCache = new Map();
+      }
+      // Enrich from the local cloudCache variable — never from prior React state.
       setDownlineCache(cloudCache);
 
-      const mergedRoots = cloudSnapshot.roots.map((root) =>
-        mergeCloudTreeWithLocalMetrics(root, visibleMembers, storage, cloudCache),
-      );
+      // —— Stage 3: Product VP enrichment (isolated — never blanks org) ——
+      let mergedRoots = cloudSnapshot.roots;
+      try {
+        mergedRoots = enrichOrganizationRootsWithProductVp({
+          roots: cloudSnapshot.roots,
+          members: localMembers,
+          storage,
+          viewerId: session.memberId,
+          yearMonth,
+          downlineCache: cloudCache,
+          downlineIds,
+          loadMetrics: loadMemberMetrics,
+          qualificationHelpers: {
+            resolveQualificationLabel: resolveOrganizationQualificationLabel,
+            buildNextQualification: buildOrganizationNextQualificationView,
+          },
+        });
+      } catch (error) {
+        console.error("[organization] product_vp_enrichment_failure", error);
+        mergedRoots = cloudSnapshot.roots;
+      }
 
       const nextSnapshot: OrganizationCenterSnapshot = {
         referenceDate: cloudSnapshot.referenceDate,
@@ -135,13 +129,16 @@ export default function OrganizationCenterPage() {
         computedAt: cloudSnapshot.computedAt,
       };
 
+      // Replace snapshot atomically so selectedNode (derived via useMemo) always
+      // reads post-enrichment monthlyVp — never a pre-enrichment 0 placeholder.
       setSnapshot(nextSnapshot);
       setViewer(viewer);
       setAllMembers(localMembers);
       setExpandedIds(collectDefaultExpandedIds(nextSnapshot.roots, 2));
       setSelectedMemberId(viewer.id);
       setLoadState("ready");
-    } catch {
+    } catch (error) {
+      console.error("[organization] organization_fetch_failure", error);
       setSnapshot(null);
       setLoadState("error");
     }
@@ -202,35 +199,28 @@ export default function OrganizationCenterPage() {
       title={PARTNER_LABELS.organization}
       titleIcon={APP_ICON.page.organization}
     >
+      <section className="home-section">
+        <OrganizationTreeDiagram
+          expandedIds={expandedIds}
+          onExpandAll={expandAll}
+          onSelectMember={setSelectedMemberId}
+          onToggleExpand={toggleExpanded}
+          roots={snapshot.roots}
+          selectedMemberId={selectedMemberId}
+        />
+      </section>
+
+      {selectedNode ? (
         <section className="home-section">
-          <OrganizationTreeDiagram
-            expandedIds={expandedIds}
-            onExpandAll={expandAll}
-            onSelectMember={setSelectedMemberId}
-            onToggleExpand={toggleExpanded}
-            roots={snapshot.roots}
-            selectedMemberId={selectedMemberId}
+          <OrganizationMemberDetail
+            key={selectedNode.member.memberId}
+            canAdjustRank={canAdjustSelectedRank}
+            downlineEvents={getDownlineEvents(selectedNode.member.memberId, downlineCache)}
+            member={selectedNode.member}
+            onRankAdjusted={() => void load()}
           />
         </section>
-
-        {selectedNode ? (
-          <section className="home-section">
-            {selectedMemberId === viewer?.id ? (
-              <p className="mb-3 rounded-2xl bg-[var(--brand-primary-muted)] px-4 py-3 text-[0.875rem] text-[#636366]">
-                <IconLabel icon={APP_ICON.action.redeem}>
-                  點選組織圖中的下線夥伴，即可為其兌換積分（支援所有世代）。
-                </IconLabel>
-              </p>
-            ) : null}
-            <OrganizationMemberDetail
-              key={selectedNode.member.memberId}
-              canAdjustRank={canAdjustSelectedRank}
-              downlineEvents={getDownlineEvents(selectedNode.member.memberId, downlineCache)}
-              member={selectedNode.member}
-              onRankAdjusted={() => void load()}
-            />
-          </section>
-        ) : null}
+      ) : null}
     </PageShell>
   );
 }

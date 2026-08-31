@@ -183,27 +183,17 @@ export function buildHomeProgressView(
 
   const rows: HomeProgressRow[] = [];
 
-  const vpStep = metrics.nextSteps.find(
-    (step) => step.stepKey.includes("vp") || step.stepKey.includes("map_monthly"),
-  );
+  const productVpTotal = metrics.productVp?.monthlyTotal ?? metrics.vp.totalVp;
 
-  if (vpStep) {
-    rows.push({
-      label: "本月 VP",
-      value: `${vpStep.current.toLocaleString("zh-Hant")} / ${vpStep.target.toLocaleString("zh-Hant")} VP`,
-      percent: vpStep.progressPercent,
-    });
-  } else {
-    rows.push({
-      label: "本月 VP",
-      value:
-        vpTarget != null
-          ? `${metrics.vp.totalVp.toLocaleString("zh-Hant")} / ${vpTarget.toLocaleString("zh-Hant")} VP`
-          : `${metrics.vp.totalVp.toLocaleString("zh-Hant")} VP`,
-      // Prefer engine percent only — never invent KPI math in UI.
-      percent: null,
-    });
-  }
+  rows.push({
+    label: "本月 VP",
+    value:
+      vpTarget != null
+        ? `${productVpTotal.toLocaleString("zh-Hant")} / ${vpTarget.toLocaleString("zh-Hant")} VP`
+        : `${productVpTotal.toLocaleString("zh-Hant")} VP`,
+    // Prefer engine/rule percent only — never invent KPI math in UI.
+    percent: null,
+  });
 
   rows.push({
     label: "本月量測",

@@ -306,6 +306,7 @@ function RetailHouseView({
   dateRange,
   presentationMode,
   editingItem,
+  listEpoch,
   onDateRangeChange,
   onEnterPresentationMode,
   onExitPresentationMode,
@@ -317,6 +318,8 @@ function RetailHouseView({
   dateRange: RetailHouseDateRange;
   presentationMode: boolean;
   editingItem: RetailReportLineItem | null;
+  /** Bumped on create/update/delete so the list rebuilds from repository truth. */
+  listEpoch: number;
   onDateRangeChange: (range: RetailHouseDateRange) => void;
   onEnterPresentationMode: () => void;
   onExitPresentationMode: () => void;
@@ -325,10 +328,11 @@ function RetailHouseView({
   onCloseEdit: () => void;
 }) {
   const storage = useMemo(() => createLocalStorageAdapter(), []);
-  const snapshot = useMemo(
-    () => buildRetailHouseView(metrics, dateRange, storage),
-    [metrics, dateRange, storage],
-  );
+  const snapshot = useMemo(() => {
+    // listEpoch is an intentional rebuild token after create/update/delete.
+    void listEpoch;
+    return buildRetailHouseView(metrics, dateRange, storage);
+  }, [metrics, dateRange, storage, listEpoch]);
   const displayName = getMemberDisplayName();
   const avatarUrl = getMemberAvatarUrl();
   const rangeLabel = formatReportDateRange(snapshot.weekStartDate, snapshot.weekEndDate);
@@ -435,12 +439,21 @@ export default function RetailHousePage() {
     resolveRetailHouseDateRange("week", todayISODate()),
   );
   const [editingItem, setEditingItem] = useState<RetailReportLineItem | null>(null);
+  const [listEpoch, setListEpoch] = useState(0);
 
   useEffect(() => {
     queueMicrotask(() => {
       setMetrics(loadMissionControlMetrics());
     });
   }, []);
+
+  function handleMutationComplete(nextMetrics: MemberComputedMetrics) {
+    // Local repository is already updated — refresh presentation immediately,
+    // clear any selected edit target, then let cloud sync finish async.
+    setMetrics(nextMetrics);
+    setEditingItem(null);
+    setListEpoch((epoch) => epoch + 1);
+  }
 
   if (!metrics) {
     return (
@@ -454,13 +467,14 @@ export default function RetailHousePage() {
     <RetailHouseView
       dateRange={dateRange}
       editingItem={editingItem}
+      listEpoch={listEpoch}
       metrics={metrics}
       onCloseEdit={() => setEditingItem(null)}
       onDateRangeChange={setDateRange}
       onEditItem={setEditingItem}
       onEnterPresentationMode={() => setPresentationMode(true)}
       onExitPresentationMode={() => setPresentationMode(false)}
-      onMetricsChange={setMetrics}
+      onMetricsChange={handleMutationComplete}
       presentationMode={presentationMode}
     />
   );

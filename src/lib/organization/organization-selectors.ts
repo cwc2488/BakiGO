@@ -102,7 +102,7 @@ export function buildOrganizationMemberView(
   allMembers: Member[],
 ): OrganizationMemberView {
   const monthlyVpTarget = resolveMonthlyVpTarget();
-  const monthlyVp = metrics.vp.totalVp;
+  const monthlyVp = metrics.productVp?.monthlyTotal ?? metrics.vp.totalVp;
 
   return {
     memberId: member.id,

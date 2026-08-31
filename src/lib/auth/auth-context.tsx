@@ -41,6 +41,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
 
     try {
+      // Session restore starts background cloud sync (members + retail + app-data).
+      // Do NOT await Retail House reconciliation on the auth-critical path —
+      // that blocked first paint with duplicate cloud merges.
       const restored = await restoreCloudSession(storage);
       const nextSession = restored ?? getCurrentSession(storage);
       setSession(nextSession);

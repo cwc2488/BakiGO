@@ -12,7 +12,12 @@ export type CloudAuthMember = {
   email: string;
 };
 
-/** Pull latest org + member data from Supabase after auth is established. */
+/**
+ * Pull latest org + member data from Supabase after auth is established.
+ *
+ * Retail House reconciliation runs once inside syncAppDataOnLogin — do not
+ * call ensureOwnRetailTransactionsReconciled again here (startup duplicate).
+ */
 export async function syncCloudAuthData(
   storage: StorageAdapter,
   member: CloudAuthMember,

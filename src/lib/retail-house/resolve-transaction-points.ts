@@ -13,12 +13,13 @@ export function resolveRetailVpFromTransaction(transaction: {
     return undefined;
   }
   const raw = transaction.metadata?.retailVp;
-  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+  // Allow 0 (教練課 etc.) — only reject negative / non-finite. Do not treat 0 as missing.
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
     return raw;
   }
   if (typeof raw === "string" && raw.trim() !== "") {
     const parsed = Number(raw);
-    if (Number.isFinite(parsed) && parsed > 0) {
+    if (Number.isFinite(parsed) && parsed >= 0) {
       return parsed;
     }
   }
