@@ -8,26 +8,22 @@ import {
   collectMemberIdsFromTree,
   fetchDownlineCloudData,
   getDownlineEvents,
-  getDownlineMonthlyProductVpBatch,
   resolveYearMonthFromReferenceDate,
   type DownlineCloudDataCache,
 } from "@/lib/cloud/downline-cloud-data";
 import { syncCloudMembersToLocalStorage } from "@/lib/cloud/sync-cloud-members-to-local";
 import { todayISODate } from "@/lib/config/app-config";
 import { loadAllMembers } from "@/lib/members/member-service";
-import { loadMemberMetrics } from "@/lib/mission-control/format";
+import { enrichOrganizationRootsWithProductVp } from "@/lib/organization/enrich-organization-product-vp";
 import {
   buildOrganizationNextQualificationView,
   findMemberSubtree,
-  resolveMonthlyVpTarget,
   resolveOrganizationQualificationLabel,
 } from "@/lib/organization/organization-selectors";
-import { createEventRepository } from "@/lib/repositories/event-repository";
+import { loadMemberMetrics } from "@/lib/mission-control/format";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
-import { resolveMonthlyProductVpFromEvents } from "@/lib/retail-house/downline-product-vp";
-import type { OrganizationCenterSnapshot, OrganizationTreeNode } from "@/types/organization-center";
+import type { OrganizationCenterSnapshot } from "@/types/organization-center";
 import type { Member } from "@/types/member";
-import type { EntityId, YearMonth } from "@/types";
 import { PageShell } from "@/components/ui/PageShell";
 import { PageErrorState, PageLoadingState } from "@/components/ui/PageStates";
 import { APP_ICON } from "@/lib/ui/app-icons";
@@ -40,85 +36,6 @@ import {
 } from "./OrganizationTreeDiagram";
 
 type LoadState = "loading" | "ready" | "error";
-
-/**
- * Product VP for org nodes comes from Retail House transaction events —
- * viewer: local events; downline: cloud batch projection (not metrics.vp).
- */
-function resolveNodeProductVp(input: {
-  memberId: EntityId;
-  viewerId: EntityId;
-  yearMonth: YearMonth;
-  downlineProductVp: Map<EntityId, number>;
-  storage: ReturnType<typeof createLocalStorageAdapter>;
-}): number {
-  if (input.memberId === input.viewerId) {
-    const localEvents = createEventRepository(input.storage).getByMemberId(input.memberId);
-    return resolveMonthlyProductVpFromEvents({
-      memberId: input.memberId,
-      yearMonth: input.yearMonth,
-      events: localEvents,
-    });
-  }
-  return input.downlineProductVp.get(input.memberId) ?? 0;
-}
-
-function mergeCloudTreeWithLocalMetrics(
-  node: OrganizationTreeNode,
-  members: Member[],
-  storage: ReturnType<typeof createLocalStorageAdapter>,
-  viewerId: EntityId,
-  yearMonth: YearMonth,
-  downlineProductVp: Map<EntityId, number>,
-  downlineCache?: DownlineCloudDataCache,
-): OrganizationTreeNode {
-  const localMember = members.find((member) => member.id === node.member.memberId);
-  const supplementalEvents = getDownlineEvents(node.member.memberId, downlineCache);
-  const metricsMemberId = localMember?.id ?? node.member.memberId;
-  const metrics =
-    localMember || supplementalEvents.length > 0
-      ? loadMemberMetrics(metricsMemberId, storage, supplementalEvents)
-      : null;
-
-  const monthlyVpTarget = resolveMonthlyVpTarget();
-  const monthlyVp = resolveNodeProductVp({
-    memberId: node.member.memberId,
-    viewerId,
-    yearMonth,
-    downlineProductVp,
-    storage,
-  });
-
-  const mergedMember = {
-    ...node.member,
-    memberNumber: node.member.memberNumber || localMember?.herbalifeMemberId || "",
-    monthlyVp,
-    monthlyVpTarget,
-    metMonthlyVp2500: monthlyVpTarget !== null ? monthlyVp >= monthlyVpTarget : false,
-    qualificationLabel:
-      localMember && metrics
-        ? resolveOrganizationQualificationLabel(localMember, metrics)
-        : node.member.qualificationLabel,
-    nextQualification: metrics
-      ? buildOrganizationNextQualificationView(metrics)
-      : node.member.nextQualification,
-  };
-
-  return {
-    member: mergedMember,
-    children: node.children.map((child) =>
-      mergeCloudTreeWithLocalMetrics(
-        child,
-        members,
-        storage,
-        viewerId,
-        yearMonth,
-        downlineProductVp,
-        downlineCache,
-      ),
-    ),
-  };
-}
 
 export default function OrganizationCenterPage() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
@@ -135,6 +52,7 @@ export default function OrganizationCenterPage() {
       const storage = createLocalStorageAdapter();
       const session = getCurrentSession(storage);
       if (!session) {
+        console.error("[organization] organization_fetch_failure", "missing_session");
         setLoadState("error");
         return;
       }
@@ -143,13 +61,16 @@ export default function OrganizationCenterPage() {
 
       const viewer = getCurrentMember(storage);
       if (!viewer) {
+        console.error("[organization] organization_fetch_failure", "missing_viewer");
         setLoadState("error");
         return;
       }
 
+      // —— Stage 1: core organization (must succeed for page to load) ——
       const { members: cloudMembers, relationships } = await fetchCloudOrganizationData();
       const viewerCloud = cloudMembers.find((member) => member.id === session.memberId);
       if (!viewerCloud) {
+        console.error("[organization] organization_fetch_failure", "viewer_not_in_cloud");
         setLoadState("error");
         return;
       }
@@ -165,28 +86,39 @@ export default function OrganizationCenterPage() {
       });
 
       const localMembers = loadAllMembers(storage);
-
       const downlineIds = cloudSnapshot.roots.flatMap((root) => collectMemberIdsFromTree(root));
-      const cloudCache = await fetchDownlineCloudData(downlineIds, session.memberId);
+
+      // —— Stage 2: downline cloud (isolated — failure → empty cache) ——
+      let cloudCache: DownlineCloudDataCache = new Map();
+      try {
+        cloudCache = await fetchDownlineCloudData(downlineIds, session.memberId);
+      } catch (error) {
+        console.error("[organization] downline_cloud_failure", error);
+        cloudCache = new Map();
+      }
       setDownlineCache(cloudCache);
 
-      const downlineProductVp = getDownlineMonthlyProductVpBatch(
-        downlineIds.filter((id) => id !== session.memberId),
-        yearMonth,
-        cloudCache,
-      );
-
-      const mergedRoots = cloudSnapshot.roots.map((root) =>
-        mergeCloudTreeWithLocalMetrics(
-          root,
-          localMembers,
+      // —— Stage 3: Product VP enrichment (isolated — never blanks org) ——
+      let mergedRoots = cloudSnapshot.roots;
+      try {
+        mergedRoots = enrichOrganizationRootsWithProductVp({
+          roots: cloudSnapshot.roots,
+          members: localMembers,
           storage,
-          session.memberId,
+          viewerId: session.memberId,
           yearMonth,
-          downlineProductVp,
-          cloudCache,
-        ),
-      );
+          downlineCache: cloudCache,
+          downlineIds,
+          loadMetrics: loadMemberMetrics,
+          qualificationHelpers: {
+            resolveQualificationLabel: resolveOrganizationQualificationLabel,
+            buildNextQualification: buildOrganizationNextQualificationView,
+          },
+        });
+      } catch (error) {
+        console.error("[organization] product_vp_enrichment_failure", error);
+        mergedRoots = cloudSnapshot.roots;
+      }
 
       const nextSnapshot: OrganizationCenterSnapshot = {
         referenceDate: cloudSnapshot.referenceDate,
@@ -202,7 +134,8 @@ export default function OrganizationCenterPage() {
       setExpandedIds(collectDefaultExpandedIds(nextSnapshot.roots, 2));
       setSelectedMemberId(viewer.id);
       setLoadState("ready");
-    } catch {
+    } catch (error) {
+      console.error("[organization] organization_fetch_failure", error);
       setSnapshot(null);
       setLoadState("error");
     }

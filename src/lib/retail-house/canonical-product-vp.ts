@@ -47,6 +47,10 @@ export function resolveProductVpContribution(transaction: ProductVpTransactionIn
   return retailVp ?? 0;
 }
 
+function hasUsableTransactionDate(date: unknown): date is string {
+  return typeof date === "string" && date.length >= 7;
+}
+
 export function calculateMonthlyProductVp(input: {
   memberId: EntityId;
   yearMonth: YearMonth;
@@ -54,6 +58,10 @@ export function calculateMonthlyProductVp(input: {
 }): number {
   return input.transactions.reduce((sum, transaction) => {
     if (transaction.memberId !== input.memberId) {
+      return sum;
+    }
+    // Legacy rows may lack transactionDate — skip (do not throw / crash org).
+    if (!hasUsableTransactionDate(transaction.transactionDate)) {
       return sum;
     }
     if (!isInYearMonth(transaction.transactionDate, input.yearMonth)) {
@@ -80,6 +88,9 @@ export function calculateMonthlyProductVpByMemberIds(input: {
 
   for (const transaction of input.transactions) {
     if (!wanted.has(transaction.memberId)) {
+      continue;
+    }
+    if (!hasUsableTransactionDate(transaction.transactionDate)) {
       continue;
     }
     if (!isInYearMonth(transaction.transactionDate, input.yearMonth)) {

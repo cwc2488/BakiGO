@@ -7,6 +7,7 @@ import {
   projectRetailTransactionsFromEvents,
   resolveMonthlyProductVpBatchFromEvents,
   resolveMonthlyProductVpFromEvents,
+  sanitizeBakiEventsForProductVp,
 } from "@/lib/retail-house/downline-product-vp";
 import { calculateMonthlyProductVp } from "@/lib/retail-house/canonical-product-vp";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
@@ -42,6 +43,16 @@ function parseJsonArray<T>(payload: unknown): T[] {
       return [];
     }
   }
+  // Some legacy rows wrapped the array — tolerate without throwing.
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    if (Array.isArray(record.events)) {
+      return record.events as T[];
+    }
+    if (Array.isArray(record.items)) {
+      return record.items as T[];
+    }
+  }
   return [];
 }
 
@@ -58,19 +69,44 @@ export interface DownlineMemberCloudData {
 
 export type DownlineCloudDataCache = Map<EntityId, DownlineMemberCloudData>;
 
-function buildDownlineEntry(
-  ownerMemberId: EntityId,
-  events: BakiEvent[],
-  pipelineLeads: RetailPipelineLead[],
-): DownlineMemberCloudData {
-  const aligned = alignDownlineEventsToOwnerMemberId(events, ownerMemberId);
-  return {
-    events: aligned,
-    pipelineLeads,
-    retailTransactions: projectRetailTransactionsFromEvents(aligned),
-  };
+function emptyDownlineEntry(): DownlineMemberCloudData {
+  return { events: [], pipelineLeads: [], retailTransactions: [] };
 }
 
+/**
+ * Build a downline cache entry. Projection failures for one member return empty
+ * Retail House data for that member — never throw.
+ */
+export function buildDownlineEntry(
+  ownerMemberId: EntityId,
+  events: unknown[],
+  pipelineLeads: RetailPipelineLead[],
+): DownlineMemberCloudData {
+  try {
+    const sanitized = sanitizeBakiEventsForProductVp(events);
+    const aligned = alignDownlineEventsToOwnerMemberId(sanitized, ownerMemberId);
+    return {
+      events: aligned,
+      pipelineLeads: Array.isArray(pipelineLeads) ? pipelineLeads : [],
+      retailTransactions: projectRetailTransactionsFromEvents(aligned),
+    };
+  } catch (error) {
+    console.error("[organization] downline_entry_build_failure", {
+      memberId: ownerMemberId,
+      error,
+    });
+    return {
+      events: [],
+      pipelineLeads: Array.isArray(pipelineLeads) ? pipelineLeads : [],
+      retailTransactions: [],
+    };
+  }
+}
+
+/**
+ * Authorized batch read of downline app-data.
+ * Network / RLS / parse failures return an empty cache — callers must still render org.
+ */
 export async function fetchDownlineCloudData(
   memberIds: EntityId[],
   viewerMemberId: EntityId,
@@ -82,12 +118,18 @@ export async function fetchDownlineCloudData(
     return new Map();
   }
 
-  // Single bounded batch query (member_ids × sync keys) — not N Retail House history calls.
-  const rows = await fetchCloudAppDataBatch(targetIds, [...DOWNLINE_SYNC_KEYS]);
   const cache: DownlineCloudDataCache = new Map();
-
   for (const memberId of targetIds) {
-    cache.set(memberId, buildDownlineEntry(memberId, [], []));
+    cache.set(memberId, emptyDownlineEntry());
+  }
+
+  let rows: Awaited<ReturnType<typeof fetchCloudAppDataBatch>> = [];
+  try {
+    // Single bounded batch query (member_ids × sync keys) — not N Retail House history calls.
+    rows = await fetchCloudAppDataBatch(targetIds, [...DOWNLINE_SYNC_KEYS]);
+  } catch (error) {
+    console.error("[organization] downline_cloud_failure", error);
+    return cache;
   }
 
   for (const row of rows) {
@@ -96,13 +138,22 @@ export async function fetchDownlineCloudData(
       continue;
     }
 
-    if (row.dataKey === STORAGE_KEYS.bakiEvents) {
-      const events = parseJsonArray<BakiEvent>(row.payload);
-      cache.set(row.memberId, buildDownlineEntry(row.memberId, events, entry.pipelineLeads));
-    }
-    if (row.dataKey === STORAGE_KEYS.retailPipelineLeads) {
-      const pipelineLeads = parseJsonArray<RetailPipelineLead>(row.payload);
-      cache.set(row.memberId, buildDownlineEntry(row.memberId, entry.events, pipelineLeads));
+    try {
+      if (row.dataKey === STORAGE_KEYS.bakiEvents) {
+        const events = parseJsonArray<unknown>(row.payload);
+        cache.set(row.memberId, buildDownlineEntry(row.memberId, events, entry.pipelineLeads));
+      }
+      if (row.dataKey === STORAGE_KEYS.retailPipelineLeads) {
+        const pipelineLeads = parseJsonArray<RetailPipelineLead>(row.payload);
+        cache.set(row.memberId, buildDownlineEntry(row.memberId, entry.events, pipelineLeads));
+      }
+    } catch (error) {
+      console.error("[organization] downline_row_parse_failure", {
+        memberId: row.memberId,
+        dataKey: row.dataKey,
+        error,
+      });
+      cache.set(row.memberId, emptyDownlineEntry());
     }
   }
 
@@ -147,19 +198,24 @@ export function getDownlineMonthlyProductVp(
   yearMonth: YearMonth,
   cache: DownlineCloudDataCache | undefined,
 ): number {
-  const retailTransactions = getDownlineRetailTransactions(memberId, cache);
-  if (cache?.has(memberId)) {
-    return calculateMonthlyProductVp({
+  try {
+    const retailTransactions = getDownlineRetailTransactions(memberId, cache);
+    if (cache?.has(memberId)) {
+      return calculateMonthlyProductVp({
+        memberId,
+        yearMonth,
+        transactions: retailTransactions,
+      });
+    }
+    return resolveMonthlyProductVpFromEvents({
       memberId,
       yearMonth,
-      transactions: retailTransactions,
+      events: getDownlineEvents(memberId, cache),
     });
+  } catch (error) {
+    console.error("[organization] product_vp_member_failure", { memberId, error });
+    return 0;
   }
-  return resolveMonthlyProductVpFromEvents({
-    memberId,
-    yearMonth,
-    events: getDownlineEvents(memberId, cache),
-  });
 }
 
 /** Batch Product VP for org tree — one projection pass per member, no N full metrics recalcs. */
@@ -168,15 +224,24 @@ export function getDownlineMonthlyProductVpBatch(
   yearMonth: YearMonth,
   cache: DownlineCloudDataCache | undefined,
 ): Map<EntityId, number> {
-  const eventsByMemberId = new Map<EntityId, readonly BakiEvent[]>();
-  for (const memberId of memberIds) {
-    eventsByMemberId.set(memberId, getDownlineEvents(memberId, cache));
+  try {
+    const eventsByMemberId = new Map<EntityId, readonly BakiEvent[]>();
+    for (const memberId of memberIds) {
+      eventsByMemberId.set(memberId, getDownlineEvents(memberId, cache));
+    }
+    return resolveMonthlyProductVpBatchFromEvents({
+      memberIds,
+      yearMonth,
+      eventsByMemberId,
+    });
+  } catch (error) {
+    console.error("[organization] product_vp_batch_failure", error);
+    const zeros = new Map<EntityId, number>();
+    for (const memberId of memberIds) {
+      zeros.set(memberId, 0);
+    }
+    return zeros;
   }
-  return resolveMonthlyProductVpBatchFromEvents({
-    memberIds,
-    yearMonth,
-    eventsByMemberId,
-  });
 }
 
 export function resolveYearMonthFromReferenceDate(referenceDate: string): YearMonth {
