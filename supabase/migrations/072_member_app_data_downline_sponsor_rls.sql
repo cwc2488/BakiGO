@@ -1,12 +1,21 @@
--- Align member_app_data downline SELECT with Organization tree hierarchy.
+-- Align member_app_data downline SELECT with Organization tree hierarchy,
+-- scoped to the explicit authorized downline business-view keys only.
 --
 -- Org tree walks organization_relationships ∪ members.sponsor_member_number
--- (see build-cloud-organization-tree.ts). Prior RLS walked relationships only,
--- so partners visible in Organization (sponsor-only edges) returned empty
--- member_app_data → Partner Detail Product VP rendered as 0.
+-- (see build-cloud-organization-tree.ts). Production previously had OWN-only
+-- member_app_data SELECT, so uplines could not read downline Retail House /
+-- Product VP sources even when the partner appeared in Organization.
+--
+-- SECURITY: downline SELECT is NOT a blanket read of all downline app-data.
+-- Only the keys required by authorized Partner Detail / Organization views:
+--   - baki-go:baki-events
+--   - baki-go:retail-transactions
+--   - baki-go:retail-pipeline-leads
+-- Calendar, settings, and any future unknown data_key remain OWN-only.
+-- Own full access continues via member_app_data_select_own (unchanged).
 --
 -- Also backfill missing relationship rows from sponsor_member_number so both
--- UI and RLS share one durable edge source.
+-- UI and RLS share one durable edge source (idempotent; Production expect ~0).
 
 -- 1) Backfill org edges from sponsor field (idempotent)
 insert into public.organization_relationships (parent_member_number, child_member_number)
@@ -21,14 +30,19 @@ where m.sponsor_member_number is not null
   )
 on conflict (parent_member_number, child_member_number) do nothing;
 
--- 2) Recreate downline SELECT to include sponsor recursion
+-- 2) Recreate downline SELECT: hierarchy + explicit data_key allowlist
 drop policy if exists "member_app_data_select_downline" on public.member_app_data;
 
 create policy "member_app_data_select_downline"
   on public.member_app_data for select
   to authenticated
   using (
-    member_id in (
+    data_key in (
+      'baki-go:baki-events',
+      'baki-go:retail-transactions',
+      'baki-go:retail-pipeline-leads'
+    )
+    and member_id in (
       with recursive downline as (
         select m.id, m.member_number
         from public.members m

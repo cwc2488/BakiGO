@@ -190,7 +190,7 @@ describe("REQUIRED — Production-shaped Product VP 2338.85 end-to-end", () => {
     );
   });
 
-  it("RLS migration aligns sponsor walk with Organization tree", () => {
+  it("RLS migration aligns sponsor walk with Organization tree and key allowlist", () => {
     const sql = readFileSync(
       resolve(process.cwd(), "supabase/migrations/072_member_app_data_downline_sponsor_rls.sql"),
       "utf8",
@@ -199,5 +199,10 @@ describe("REQUIRED — Production-shaped Product VP 2338.85 end-to-end", () => {
     expect(sql).toContain("organization_relationships");
     expect(sql).toContain("member_app_data_select_downline");
     expect(sql).toContain("on conflict (parent_member_number, child_member_number) do nothing");
+    expect(sql).toContain("'baki-go:baki-events'");
+    expect(sql).toContain("'baki-go:retail-transactions'");
+    expect(sql).toContain("'baki-go:retail-pipeline-leads'");
+    expect(sql).toContain("data_key in (");
+    expect(sql).not.toContain("'baki-go:calendar-events'");
   });
 });
