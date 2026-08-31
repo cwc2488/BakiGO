@@ -176,7 +176,7 @@ describe("Calendar V2 — overlap layout", () => {
     expect(result.layouts.every((layout) => layout.widthPercent === 50)).toBe(true);
   });
 
-  it("renders each event as exactly one continuous layout entry", () => {
+  it("REAL-WORLD: 台中 HOM / 純伶 / 幸芬 / 中壢商機 / 美珠姐 — all visible, continuous, once each", () => {
     const result = layoutTimedEvents(
       [
         makeExpandedEvent({ occurrenceId: "a", title: "台中 HOM", startAt: `${day}T19:00`, endAt: `${day}T21:00` }),
@@ -194,16 +194,27 @@ describe("Calendar V2 — overlap layout", () => {
       60,
     );
 
+    // All five directly visible — no +N for normal business overlap
     expect(result.layouts).toHaveLength(5);
     expect(result.overflowClusters).toHaveLength(0);
     expect(new Set(layoutEventIds(result))).toEqual(new Set(["a", "b", "c", "d", "e"]));
 
-    const hom = result.layouts.find((layout) => layout.event.title === "台中 HOM");
-    const chungli = result.layouts.find((layout) => layout.event.title === "中壢商機-肇銘推廣");
-    expect(hom).toBeDefined();
-    expect(chungli).toBeDefined();
-    expect(hom!.heightPx).toBeGreaterThan(0);
-    expect(chungli!.heightPx).toBeGreaterThan(0);
+    // ONE EVENT = ONE CARD (never duplicated across interval segments)
+    for (const id of ["a", "b", "c", "d", "e"]) {
+      expect(result.layouts.filter((layout) => layout.event.occurrenceId === id)).toHaveLength(1);
+    }
+
+    const hom = result.layouts.find((layout) => layout.event.title === "台中 HOM")!;
+    const chungli = result.layouts.find((layout) => layout.event.title === "中壢商機-肇銘推廣")!;
+    const pureling = result.layouts.find((layout) => layout.event.title === "純伶")!;
+    const meizhu = result.layouts.find((layout) => layout.event.title === "美珠姐")!;
+
+    // Continuous cards: 2h events taller than 1h events; single top/height each
+    expect(hom.heightPx).toBeGreaterThan(pureling.heightPx);
+    expect(chungli.heightPx).toBeGreaterThan(meizhu.heightPx);
+    expect(hom.heightPx).toBe(chungli.heightPx);
+    expect(hom.topPx).toBeLessThan(chungli.topPx);
+    expect(chungli.topPx + chungli.heightPx).toBeGreaterThan(hom.topPx + hom.heightPx);
   });
 
   it("renders 2 through 6 simultaneous events inline without overflow", () => {
@@ -300,5 +311,21 @@ describe("Calendar V2 — UI form", () => {
     expect(form).not.toContain('optgroup label="會議"');
     expect(form).toContain("事件分類");
     expect(form).toContain("事件顏色");
+  });
+});
+
+describe("Calendar V2 — unrelated product surface untouched", () => {
+  it("does not alter Partner bottom navigation", () => {
+    const nav = src("src/components/navigation/AppNav.tsx");
+    expect(nav).toContain("我的｜顧客｜行事曆");
+    expect(nav).toContain('href: "/customers"');
+    expect(nav).toContain('href: "/calendar"');
+    expect(nav).not.toContain("PARTNER_V2_NAV_ITEMS");
+  });
+
+  it("does not alter Admin home entry injection", () => {
+    const admin = src("src/lib/auth/admin-access.ts");
+    expect(admin).toContain("管理中心");
+    expect(admin).toContain("homeMoreEntriesForViewer");
   });
 });
