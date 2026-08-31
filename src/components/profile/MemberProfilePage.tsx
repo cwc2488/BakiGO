@@ -151,7 +151,6 @@ function ProfileQuickLinks() {
           label: partnerFollowUpCount > 0 ? `夥伴關懷 (${partnerFollowUpCount})` : "夥伴關懷",
         }]
       : []),
-    { href: "/leaderboard", label: "排行榜" },
     { href: "/organization", label: "我的組織" },
     { href: "/retail-house", label: "零售屋" },
     { href: "/goals", label: "我的目標" },

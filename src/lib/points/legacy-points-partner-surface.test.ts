@@ -27,19 +27,44 @@ describe("legacy Points partner surface removal", () => {
     expect(page).not.toContain("monthlyPoints");
   });
 
-  it("removes Points tiles from Profile growth section", () => {
+  it("removes Points tiles and leaderboard entry from Profile", () => {
     const profile = read("src/components/profile/MemberProfilePage.tsx");
     expect(profile).not.toContain("本月積分");
     expect(profile).not.toContain('label="可兌換"');
+    expect(profile).not.toContain("/leaderboard");
+    expect(profile).not.toContain("排行榜");
     expect(profile).toContain("本月 VP");
   });
 
-  it("retires Partner leaderboard Points balances", () => {
+  it("redirects /leaderboard with no Points retirement notice", () => {
+    const route = read("src/app/leaderboard/page.tsx");
+    expect(route).toContain('redirect("/")');
+    expect(route).not.toContain("積分");
+    expect(route).not.toContain("可兌換");
+    expect(route).not.toContain("兌換");
+    expect(route).not.toContain("已退出");
+    expect(route).not.toContain("已停用");
+    expect(route).not.toContain("buildPointsLeaderboard");
+    expect(route).not.toContain("APP_ICON");
+
     const leaderboard = read("src/components/leaderboard/LeaderboardPage.tsx");
-    expect(leaderboard).toContain("積分已退出");
-    expect(leaderboard).not.toContain("你的本月積分");
-    expect(leaderboard).not.toContain("為下線兌換積分");
+    expect(leaderboard).toContain('redirect("/")');
+    expect(leaderboard).not.toContain("積分");
+    expect(leaderboard).not.toContain("可兌換");
+    expect(leaderboard).not.toContain("已退出");
     expect(leaderboard).not.toContain("buildPointsLeaderboard");
+  });
+
+  it("hides legacy reward XP from Goal and workspace Partner UI", () => {
+    const goals = read("src/components/goal-center/GoalCardView.tsx");
+    expect(goals).not.toContain("rewardXP");
+    expect(goals).not.toContain(" XP");
+    expect(goals).not.toContain("積分");
+
+    const workspace = read("src/lib/members/workspace-selectors.ts");
+    expect(workspace).not.toContain("積分");
+    expect(workspace).not.toContain(" XP");
+    expect(workspace).not.toContain("mission.xp");
   });
 
   it("keeps Points backend modules for recoverability", () => {
