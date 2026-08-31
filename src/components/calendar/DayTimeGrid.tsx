@@ -13,11 +13,10 @@ import {
   getGridHeightPx,
   getSlotCount,
   getSlotHeightPx,
-  groupLayoutSegmentsByEvent,
   layoutTimedEvents,
   rescheduleTimesFromGridTop,
   slotIndexToTime,
-  type TimedEventLayoutSegment,
+  type TimedEventLayout,
   type TimedEventOverflowCluster,
 } from "@/lib/calendar/time-grid";
 import { getCalendarEventSurfaceStyle } from "@/lib/calendar/event-styles";
@@ -49,31 +48,21 @@ type DragSession = {
   captureTarget: HTMLElement | null;
 };
 
-function layoutPositionStyle(layout: {
-  topPx: number;
-  heightPx: number;
-  leftPercent: number;
-  widthPercent: number;
-  column: number;
-  totalColumns: number;
-}) {
-  const insetPx = layout.totalColumns >= 5 ? 1 : layout.totalColumns >= 4 ? 2 : 3;
-  const gapPx = layout.totalColumns >= 5 ? 1 : 2;
-  const trackWidth = `(100% - ${insetPx * 2}px - ${Math.max(0, layout.totalColumns - 1) * gapPx}px)`;
+function layoutPositionStyle(layout: TimedEventLayout) {
+  const insetPx = layout.peakConcurrent >= 5 ? 1 : layout.peakConcurrent >= 4 ? 2 : 3;
+  const gapPx = layout.peakConcurrent >= 5 ? 1 : 2;
+  const trackWidth = `(100% - ${insetPx * 2}px - ${Math.max(0, layout.peakConcurrent - 1) * gapPx}px)`;
   return {
     top: layout.topPx,
     height: layout.heightPx,
     left: `calc(${insetPx}px + ${trackWidth} * ${layout.leftPercent / 100} + ${layout.column * gapPx}px)`,
     width: `calc(${trackWidth} * ${layout.widthPercent / 100})`,
+    zIndex: layout.zIndex,
   };
 }
 
-function EventCardContent({
-  segment,
-}: {
-  segment: TimedEventLayoutSegment;
-}) {
-  const density = getEventCardDensity(segment.widthPercent);
+function EventCardContent({ layout }: { layout: TimedEventLayout }) {
+  const density = getEventCardDensity(layout.widthPercent);
   const titleClass =
     density === "minimal"
       ? "truncate text-[0.5625rem] font-semibold leading-tight text-[#1d1d1f]"
@@ -82,19 +71,19 @@ function EventCardContent({
         : "truncate text-[0.75rem] font-semibold leading-tight text-[#1d1d1f]";
 
   const paddingClass =
-    density === "minimal" ? "px-0.5 py-0.5" : density === "narrow" ? "px-1 py-0.5" : "px-1.5 py-1";
+    density === "minimal" ? "px-1 py-0.5" : density === "narrow" ? "px-1 py-0.5" : "px-2 py-1";
 
   return (
     <div className={paddingClass}>
-      <p className={titleClass}>{segment.event.title}</p>
+      <p className={titleClass}>{layout.event.title}</p>
       {density === "wide" || density === "medium" ? (
         <p className="truncate text-[0.5625rem] leading-tight text-[#86868b]">
-          {formatEventTimeRange(segment.event.startAt, segment.event.endAt, segment.event.allDay)}
+          {formatEventTimeRange(layout.event.startAt, layout.event.endAt, layout.event.allDay)}
         </p>
       ) : null}
-      {density === "wide" && segment.event.activityTypeKey ? (
+      {density === "wide" && layout.event.activityTypeKey ? (
         <p className="truncate text-[0.5rem] leading-tight text-[#aeaeb2]">
-          {getCalendarActivityTypeLabel(segment.event.activityTypeKey)}
+          {getCalendarActivityTypeLabel(layout.event.activityTypeKey)}
         </p>
       ) : null}
     </div>
@@ -134,7 +123,7 @@ function CurrentTimeIndicator({
 function DraggableTimedEvent({
   dayDate,
   intervalMinutes,
-  segments,
+  layout,
   onEventSelect,
   onEventReschedule,
   onDragActiveChange,
@@ -142,7 +131,7 @@ function DraggableTimedEvent({
 }: {
   dayDate: string;
   intervalMinutes: CalendarSlotInterval;
-  segments: TimedEventLayoutSegment[];
+  layout: TimedEventLayout;
   onEventSelect: (event: ExpandedCalendarEvent) => void;
   onEventReschedule?: (
     event: ExpandedCalendarEvent,
@@ -153,15 +142,12 @@ function DraggableTimedEvent({
   interactionResetKey: number;
 }) {
   const dragRef = useRef<DragSession | null>(null);
-  const [previewTopDeltaPx, setPreviewTopDeltaPx] = useState<number | null>(null);
+  const [previewTopPx, setPreviewTopPx] = useState<number | null>(null);
   const [isLongPressReady, setIsLongPressReady] = useState(false);
-  const event = segments[0].event;
-  const originTopPx = Math.min(...segments.map((segment) => segment.topPx));
-  const originBottomPx = Math.max(...segments.map((segment) => segment.topPx + segment.heightPx));
-  const originHeightPx = originBottomPx - originTopPx;
-  const draggable = canDragCalendarEvent(event) && Boolean(onEventReschedule);
-  const isDragging = previewTopDeltaPx !== null;
-  const topDeltaPx = previewTopDeltaPx ?? 0;
+  const draggable = canDragCalendarEvent(layout.event) && Boolean(onEventReschedule);
+  const topPx = previewTopPx ?? layout.topPx;
+  const isDragging = previewTopPx !== null;
+  const position = layoutPositionStyle({ ...layout, topPx });
 
   function clearLongPressTimer() {
     const timer = dragRef.current?.longPressTimer;
@@ -190,7 +176,7 @@ function DraggableTimedEvent({
     clearLongPressTimer();
     releaseCapture();
     dragRef.current = null;
-    setPreviewTopDeltaPx(null);
+    setPreviewTopPx(null);
     setIsLongPressReady(false);
     onDragActiveChange(false);
   }
@@ -217,10 +203,10 @@ function DraggableTimedEvent({
     const deltaY = clientY - drag.startClientY;
     const nextTopPx = clampDragTopPx(
       drag.originTopPx + deltaY,
-      originHeightPx,
+      layout.heightPx,
       intervalMinutes,
     );
-    const durationMinutes = eventDurationMinutes(event.startAt, event.endAt);
+    const durationMinutes = eventDurationMinutes(layout.event.startAt, layout.event.endAt);
     const nextTimes = rescheduleTimesFromGridTop({
       dayDate,
       topPx: nextTopPx,
@@ -229,145 +215,141 @@ function DraggableTimedEvent({
     });
 
     if (
-      nextTimes.startAt !== event.startAt ||
-      nextTimes.endAt !== event.endAt
+      nextTimes.startAt !== layout.event.startAt ||
+      nextTimes.endAt !== layout.event.endAt
     ) {
-      onEventReschedule(event, nextTimes.startAt, nextTimes.endAt);
+      onEventReschedule(layout.event, nextTimes.startAt, nextTimes.endAt);
     }
   }
 
   return (
-    <>
-      {segments.map((segment) => {
-        const position = layoutPositionStyle({
-          ...segment,
-          topPx: segment.topPx + topDeltaPx,
-        });
-        const density = getEventCardDensity(segment.widthPercent);
-        const radiusClass = density === "minimal" ? "rounded-[4px]" : "rounded-lg";
+    <button
+      className={`absolute box-border overflow-hidden rounded-lg text-left transition-shadow ${
+        isDragging
+          ? "z-40 cursor-grabbing shadow-md ring-2 ring-[#3d8b40]/30"
+          : isLongPressReady
+            ? "z-30 ring-2 ring-[#3d8b40]/20"
+            : ""
+      } ${draggable && (isLongPressReady || isDragging) ? "touch-none cursor-grabbing" : ""}`}
+      onClick={(clickEvent) => {
+        if (dragRef.current?.moved) {
+          clickEvent.preventDefault();
+          clickEvent.stopPropagation();
+          return;
+        }
+        clickEvent.stopPropagation();
+        onEventSelect(layout.event);
+      }}
+      onPointerCancel={(event) => {
+        if (dragRef.current?.pointerId === event.pointerId) {
+          releaseCapture();
+        }
+        resetDrag();
+      }}
+      onPointerDown={(event) => {
+        if (!draggable) {
+          return;
+        }
 
-        return (
-          <button
-            key={segment.segmentId}
-            className={`absolute box-border overflow-hidden text-left transition-shadow ${radiusClass} ${
-              isDragging
-                ? "z-30 cursor-grabbing shadow-md ring-2 ring-[#3d8b40]/30"
-                : isLongPressReady
-                  ? "z-20 ring-2 ring-[#3d8b40]/20"
-                  : "z-10"
-            } ${draggable && (isLongPressReady || isDragging) ? "touch-none cursor-grabbing" : ""}`}
-            onClick={(clickEvent) => {
-              if (dragRef.current?.moved) {
-                clickEvent.preventDefault();
-                clickEvent.stopPropagation();
-                return;
-              }
-              clickEvent.stopPropagation();
-              onEventSelect(event);
-            }}
-            onPointerCancel={(pointerEvent) => {
-              if (dragRef.current?.pointerId === pointerEvent.pointerId) {
-                releaseCapture();
-              }
-              resetDrag();
-            }}
-            onPointerDown={(pointerEvent) => {
-              if (!draggable) {
-                return;
-              }
+        const pointerId = event.pointerId;
+        const captureTarget = event.currentTarget;
+        dragRef.current = {
+          pointerId,
+          startClientX: event.clientX,
+          startClientY: event.clientY,
+          originTopPx: layout.topPx,
+          moved: false,
+          dragEnabled: false,
+          longPressTimer: window.setTimeout(() => {
+            if (dragRef.current?.pointerId !== pointerId) {
+              return;
+            }
+            dragRef.current.dragEnabled = true;
+            dragRef.current.longPressTimer = null;
+            setIsLongPressReady(true);
+          }, LONG_PRESS_MS),
+          captureTarget,
+        };
+        captureTarget.setPointerCapture(pointerId);
+      }}
+      onPointerMove={(event) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) {
+          return;
+        }
 
-              const pointerId = pointerEvent.pointerId;
-              const captureTarget = pointerEvent.currentTarget;
-              dragRef.current = {
-                pointerId,
-                startClientX: pointerEvent.clientX,
-                startClientY: pointerEvent.clientY,
-                originTopPx,
-                moved: false,
-                dragEnabled: false,
-                longPressTimer: window.setTimeout(() => {
-                  if (dragRef.current?.pointerId !== pointerId) {
-                    return;
-                  }
-                  dragRef.current.dragEnabled = true;
-                  dragRef.current.longPressTimer = null;
-                  setIsLongPressReady(true);
-                }, LONG_PRESS_MS),
-                captureTarget,
-              };
-              captureTarget.setPointerCapture(pointerId);
-            }}
-            onPointerMove={(pointerEvent) => {
-              const drag = dragRef.current;
-              if (!drag || drag.pointerId !== pointerEvent.pointerId) {
-                return;
-              }
+        const deltaY = event.clientY - drag.startClientY;
+        const deltaX = event.clientX - drag.startClientX;
 
-              const deltaY = pointerEvent.clientY - drag.startClientY;
-              const deltaX = pointerEvent.clientX - drag.startClientX;
+        if (!drag.dragEnabled) {
+          if (Math.abs(deltaY) < DRAG_THRESHOLD_PX && Math.abs(deltaX) < DRAG_THRESHOLD_PX) {
+            return;
+          }
+          resetDrag();
+          return;
+        }
 
-              if (!drag.dragEnabled) {
-                if (Math.abs(deltaY) < DRAG_THRESHOLD_PX && Math.abs(deltaX) < DRAG_THRESHOLD_PX) {
-                  return;
-                }
-                resetDrag();
-                return;
-              }
+        if (!drag.moved) {
+          if (Math.abs(deltaY) < DRAG_THRESHOLD_PX && Math.abs(deltaX) < DRAG_THRESHOLD_PX) {
+            return;
+          }
+          if (Math.abs(deltaX) > Math.abs(deltaY)) {
+            resetDrag();
+            return;
+          }
+          drag.moved = true;
+          onDragActiveChange(true);
+        }
 
-              if (!drag.moved) {
-                if (Math.abs(deltaY) < DRAG_THRESHOLD_PX && Math.abs(deltaX) < DRAG_THRESHOLD_PX) {
-                  return;
-                }
-                if (Math.abs(deltaX) > Math.abs(deltaY)) {
-                  resetDrag();
-                  return;
-                }
-                drag.moved = true;
-                onDragActiveChange(true);
-              }
-
-              pointerEvent.preventDefault();
-              pointerEvent.stopPropagation();
-              const nextTopPx = clampDragTopPx(
-                drag.originTopPx + deltaY,
-                originHeightPx,
-                intervalMinutes,
-              );
-              setPreviewTopDeltaPx(nextTopPx - drag.originTopPx);
-            }}
-            onPointerUp={(pointerEvent) => {
-              const drag = dragRef.current;
-              if (!drag || drag.pointerId !== pointerEvent.pointerId) {
-                return;
-              }
-
-              releaseCapture();
-
-              if (drag.moved) {
-                pointerEvent.preventDefault();
-                pointerEvent.stopPropagation();
-                commitDrag(pointerEvent.clientY);
-                window.setTimeout(resetDrag, 0);
-                return;
-              }
-
-              resetDrag();
-            }}
-            style={{
-              ...position,
-              zIndex: isDragging ? 30 + segment.column : 10 + segment.column,
-              ...getCalendarEventSurfaceStyle(event.color, {
-                attended: event.attendedFromShared,
-              }),
-            }}
-            type="button"
-          >
-            <EventCardContent segment={segment} />
-          </button>
+        event.preventDefault();
+        event.stopPropagation();
+        setPreviewTopPx(
+          clampDragTopPx(drag.originTopPx + deltaY, layout.heightPx, intervalMinutes),
         );
-      })}
-    </>
+      }}
+      onPointerUp={(event) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) {
+          return;
+        }
+
+        releaseCapture();
+
+        if (drag.moved) {
+          event.preventDefault();
+          event.stopPropagation();
+          commitDrag(event.clientY);
+          window.setTimeout(resetDrag, 0);
+          return;
+        }
+
+        resetDrag();
+      }}
+      style={{
+        ...position,
+        ...getCalendarEventSurfaceStyle(layout.event.color, {
+          attended: layout.event.attendedFromShared,
+        }),
+      }}
+      type="button"
+    >
+      <EventCardContent layout={layout} />
+    </button>
   );
+}
+
+function overflowClusterPositionStyle(cluster: TimedEventOverflowCluster) {
+  const peakConcurrent = Math.max(1, Math.round(100 / cluster.widthPercent));
+  const insetPx = 2;
+  const gapPx = 1;
+  const trackWidth = `(100% - ${insetPx * 2}px - ${Math.max(0, peakConcurrent - 1) * gapPx}px)`;
+  return {
+    top: cluster.topPx,
+    height: cluster.heightPx,
+    left: `calc(${insetPx}px + ${trackWidth} * ${cluster.leftPercent / 100})`,
+    width: `calc(${trackWidth} * ${cluster.widthPercent / 100})`,
+    zIndex: 10,
+  };
 }
 
 function OverflowClusterButton({
@@ -378,14 +360,7 @@ function OverflowClusterButton({
   onEventSelect: (event: ExpandedCalendarEvent) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const position = layoutPositionStyle({
-    topPx: cluster.topPx,
-    heightPx: cluster.heightPx,
-    leftPercent: cluster.leftPercent,
-    widthPercent: cluster.widthPercent,
-    column: Math.round(cluster.leftPercent / cluster.widthPercent),
-    totalColumns: Math.round(100 / cluster.widthPercent),
-  });
+  const position = overflowClusterPositionStyle(cluster);
 
   return (
     <>
@@ -473,8 +448,7 @@ function DayTimedColumn({
   interactionResetKey: number;
 }) {
   const timedEvents = events.filter((event) => !event.allDay);
-  const { segments, overflowClusters } = layoutTimedEvents(timedEvents, dayDate, intervalMinutes);
-  const segmentGroups = groupLayoutSegmentsByEvent(segments);
+  const { layouts, overflowClusters } = layoutTimedEvents(timedEvents, dayDate, intervalMinutes);
 
   return (
     <div className="relative min-w-0 flex-1" style={{ height: gridHeight }}>
@@ -492,16 +466,16 @@ function DayTimedColumn({
 
       <CurrentTimeIndicator dayDate={dayDate} intervalMinutes={intervalMinutes} />
 
-      {[...segmentGroups.entries()].map(([occurrenceId, eventSegments]) => (
+      {layouts.map((layout) => (
         <DraggableTimedEvent
-          key={occurrenceId}
+          key={layout.event.occurrenceId}
           dayDate={dayDate}
           interactionResetKey={interactionResetKey}
           intervalMinutes={intervalMinutes}
+          layout={layout}
           onDragActiveChange={onDragActiveChange}
           onEventReschedule={onEventReschedule}
           onEventSelect={onEventSelect}
-          segments={eventSegments}
         />
       ))}
 
