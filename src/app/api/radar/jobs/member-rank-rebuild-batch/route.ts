@@ -123,6 +123,7 @@ export async function POST(request: Request) {
       snapshot_date,
       pipeline_run_id,
       recovery_tag: APPROVED_BATCH.label,
+      force_new_job: true,
     });
     results.push({
       member_id,

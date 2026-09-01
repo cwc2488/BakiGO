@@ -31,12 +31,17 @@ export async function runRankWorker(
   const run_date = String(payload.run_date ?? "");
   const now = ctx.now ?? new Date();
 
+  const isAuthorizedRecovery = Boolean(
+    (payload as { recovery?: unknown }).recovery,
+  );
+
   const integrityContext = await loadRankIntegrityContext(ctx.repo, {
     member_id,
     snapshot_date: run_date,
     pipeline_run_id: job.pipeline_run_id ?? null,
   });
-  const integrityFailure = detectRankIntegrityFailure(integrityContext);
+  const integrityFailure =
+    isAuthorizedRecovery ? null : detectRankIntegrityFailure(integrityContext);
   if (integrityFailure) {
     return {
       job_id: job.id,

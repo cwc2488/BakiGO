@@ -1,0 +1,221 @@
+/**
+ * Production 2026-09-01 Rank rebuild — direct Supabase execution (no upstream AI).
+ * Requires NEXT_PUBLIC_SUPABASE_URL (ubdrkrvyyrqdvlehzhsz) + SUPABASE_SERVICE_ROLE_KEY.
+ * Never prints secret values.
+ */
+import { writeFileSync } from "node:fs";
+import { createClient } from "@supabase/supabase-js";
+import { DEFAULT_ALLOCATION_RULES } from "../src/lib/radar/allocation/allocation-rules";
+import { createSupabaseRadarJobQueue } from "../src/lib/radar/jobs/supabase-queue-store";
+import { runMemberRankRebuild } from "../src/lib/radar/jobs/run-member-rank-rebuild";
+import type { WorkerContext } from "../src/lib/radar/jobs/workers/dispatch";
+import { SupabaseRadarRepository } from "../src/lib/radar/repository/supabase-repository";
+import { scoreSnapshotDateOrFilter } from "../src/lib/radar/repository/score-snapshot-date";
+import { createSourceAdapterRegistry } from "../src/lib/radar/sources/registry";
+
+const PROD_PROJECT = "ubdrkrvyyrqdvlehzhsz";
+const WRONG_PROJECT = "pgzfuqpsphwdcvcxnmrr";
+const SNAPSHOT_DATE = "2026-09-01";
+const PIPELINE_RUN_ID = "9e484340-4ccd-4c8c-9271-430705cae699";
+const AFFECTED_MEMBER = "f8359859-b5f7-4c97-b0b1-7a5a2ab9fd92";
+const RECOVERY_LABEL = "SCORE_RANK_CONTRACT_BATCH_2026-09-01";
+
+function required(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value || value.length < 20 || value.startsWith("[SENSITIVE]")) {
+    throw new Error(`missing_or_placeholder:${name}`);
+  }
+  return value;
+}
+
+function assertProductionUrl(url: string) {
+  if (url.includes(WRONG_PROJECT)) {
+    throw new Error(`wrong_supabase_project:${WRONG_PROJECT}`);
+  }
+  if (!url.includes(PROD_PROJECT)) {
+    throw new Error(`supabase_url_must_contain:${PROD_PROJECT}`);
+  }
+}
+
+function createCtx(client: ReturnType<typeof createClient>): WorkerContext {
+  const repo = new SupabaseRadarRepository(client);
+  return {
+    repo,
+    queue: createSupabaseRadarJobQueue(client),
+    sources: createSourceAdapterRegistry({
+      record: (entry) => repo.recordSourceFetchAudit(entry),
+    }),
+    now: new Date(),
+  };
+}
+
+async function countEmptyTop20(client: ReturnType<typeof createClient>) {
+  const { data, error } = await client
+    .from("member_daily_top20")
+    .select("member_id, item_count")
+    .eq("snapshot_date", SNAPSHOT_DATE);
+  if (error) throw new Error(error.message);
+  let empty = 0;
+  let nonempty = 0;
+  for (const row of data ?? []) {
+    if (Number(row.item_count ?? 0) === 0) empty += 1;
+    else nonempty += 1;
+  }
+  return { total: (data ?? []).length, empty, nonempty, rows: data ?? [] };
+}
+
+async function memberSnapshot(client: ReturnType<typeof createClient>, member_id: string) {
+  const { data, error } = await client
+    .from("member_daily_top20")
+    .select("id, member_id, item_count, generated_at, items, pipeline_run_id")
+    .eq("member_id", member_id)
+    .eq("snapshot_date", SNAPSHOT_DATE)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+async function scoreUniverse(client: ReturnType<typeof createClient>, member_id: string) {
+  const { data, error } = await client
+    .from("radar_candidate_score_snapshots")
+    .select("candidate_id_text, overall_score, analyzed_at, created_at, extraction_snapshot")
+    .eq("member_id", member_id)
+    .or(scoreSnapshotDateOrFilter(SNAPSHOT_DATE));
+  if (error) throw new Error(error.message);
+  const latest = new Map<string, { score: number; ts: string }>();
+  for (const row of data ?? []) {
+    const id = String(row.candidate_id_text ?? "");
+    if (!id) continue;
+    const ts = String(row.analyzed_at ?? row.created_at ?? "");
+    const prev = latest.get(id);
+    if (!prev || ts.localeCompare(prev.ts) > 0) {
+      latest.set(id, { score: Number(row.overall_score), ts });
+    }
+  }
+  const scores = [...latest.entries()]
+    .map(([candidate_id, v]) => ({ candidate_id, score: v.score }))
+    .sort((a, b) => b.score - a.score);
+  const above40 = scores.filter((s) => s.score >= DEFAULT_ALLOCATION_RULES.minimum_qualified_score);
+  return { visible: scores.length, above40: above40.length, top: scores[0]?.score ?? null, scores: above40 };
+}
+
+async function main() {
+  const cron = process.env.RADAR_CRON_SECRET?.trim() || process.env.CRON_SECRET?.trim() || "";
+  const origin = (process.env.PRODUCTION_ORIGIN ?? "https://bakigo.tw").replace(/\/$/, "");
+
+  if (cron.length >= 8 && !process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+    const dry = await fetch(`${origin}/api/radar/jobs/member-rank-rebuild-batch`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cron}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: true }),
+    });
+    const dryJson = await dry.json();
+    if (dry.status === 401) {
+      throw new Error("production_http_unauthorized");
+    }
+    const batch = await fetch(`${origin}/api/radar/jobs/member-rank-rebuild-batch`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cron}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ member_limit: 200 }),
+    });
+    const batchJson = await batch.json();
+    const member = await fetch(`${origin}/api/radar/jobs/member-rank-recovery`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cron}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        member_id: AFFECTED_MEMBER,
+        snapshot_date: SNAPSHOT_DATE,
+        pipeline_run_id: PIPELINE_RUN_ID,
+        force: true,
+      }),
+    });
+    const memberJson = await member.json();
+    const report = { mode: "http", dry: dryJson, batch: batchJson, member: memberJson };
+    writeFileSync(".tmp-prod-radar-rebuild-0901.json", JSON.stringify(report, null, 2));
+    console.log(JSON.stringify(report, null, 2));
+    if (!batchJson?.after?.snapshot?.generated_at && !memberJson?.after?.snapshot?.generated_at) {
+      process.exit(2);
+    }
+    return;
+  }
+
+  const url = required("NEXT_PUBLIC_SUPABASE_URL");
+  const serviceKey = required("SUPABASE_SERVICE_ROLE_KEY");
+  assertProductionUrl(url);
+
+  const client = createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const beforeCounts = await countEmptyTop20(client);
+  const beforeMember = await memberSnapshot(client, AFFECTED_MEMBER);
+  const beforeScores = await scoreUniverse(client, AFFECTED_MEMBER);
+
+  const emptyMembers = (beforeCounts.rows ?? [])
+    .filter((row) => Number(row.item_count ?? 0) === 0)
+    .map((row) => String(row.member_id));
+
+  const ctx = createCtx(client);
+  const results: Array<{ member_id: string; ok: boolean; item_count: number; error_code?: string }> =
+    [];
+
+  for (const member_id of emptyMembers) {
+    const rebuild = await runMemberRankRebuild(ctx, {
+      member_id,
+      snapshot_date: SNAPSHOT_DATE,
+      pipeline_run_id: PIPELINE_RUN_ID,
+      recovery_tag: RECOVERY_LABEL,
+      force_new_job: true,
+    });
+    results.push({
+      member_id,
+      ok: rebuild.ok,
+      item_count: rebuild.item_count,
+      error_code: rebuild.error_code,
+    });
+  }
+
+  const afterCounts = await countEmptyTop20(client);
+  const afterMember = await memberSnapshot(client, AFFECTED_MEMBER);
+  const afterScores = await scoreUniverse(client, AFFECTED_MEMBER);
+
+  const report = {
+    ok: results.every((r) => r.ok),
+    supabase_project: PROD_PROJECT,
+    snapshot_date: SNAPSHOT_DATE,
+    pipeline_run_id: PIPELINE_RUN_ID,
+    affected_member_id: AFFECTED_MEMBER,
+    before: {
+      empty_top20: beforeCounts.empty,
+      nonempty_top20: beforeCounts.nonempty,
+      member: beforeMember,
+      score_universe: beforeScores,
+    },
+    after: {
+      empty_top20: afterCounts.empty,
+      nonempty_top20: afterCounts.nonempty,
+      member: afterMember,
+      score_universe: afterScores,
+    },
+    rebuild: {
+      attempted: results.length,
+      succeeded: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok).length,
+      results,
+    },
+    generated_at_changed:
+      beforeMember?.generated_at !== afterMember?.generated_at,
+  };
+
+  writeFileSync(".tmp-prod-radar-rebuild-0901.json", JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report, null, 2));
+
+  if (!report.generated_at_changed) {
+    process.exit(2);
+  }
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});

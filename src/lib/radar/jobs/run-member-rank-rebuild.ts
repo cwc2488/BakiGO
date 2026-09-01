@@ -10,6 +10,8 @@ export type MemberRankRebuildInput = {
   snapshot_date: string;
   pipeline_run_id: string;
   recovery_tag?: string;
+  /** Each authorized rebuild gets a fresh queue idempotency key (never reuse succeeded rank jobs). */
+  force_new_job?: boolean;
 };
 
 export type MemberRankRebuildResult = {
@@ -36,6 +38,11 @@ export async function runMemberRankRebuild(
     member_id: input.member_id,
   });
 
+  const idempotencySuffix =
+    input.force_new_job !== false
+      ? `${recoveryTag}:${now.toISOString()}`
+      : recoveryTag;
+
   const { job } = await ctx.queue.enqueue(
     {
       pipeline_run_id: input.pipeline_run_id,
@@ -43,7 +50,7 @@ export async function runMemberRankRebuild(
       idempotency_key: pipelineJobKey(input.snapshot_date, [
         "rank",
         input.member_id,
-        recoveryTag,
+        idempotencySuffix,
       ]),
       payload: {
         run_date: input.snapshot_date,
@@ -52,6 +59,7 @@ export async function runMemberRankRebuild(
         recovery: recoveryTag,
       },
       priority: 100_000,
+      max_attempts: 8,
     },
     now,
   );
@@ -66,6 +74,7 @@ export async function runMemberRankRebuild(
 
   const result = await runRankWorker(ctx, rankJob);
   if (result.status === "succeeded") {
+    await ctx.queue.complete({ job_id: job.id, metrics: result.metrics }, now);
     return {
       ok: true,
       item_count: Number(result.metrics?.item_count ?? 0),
@@ -74,6 +83,14 @@ export async function runMemberRankRebuild(
       metrics: result.metrics ?? null,
     };
   }
+
+  await ctx.queue.fail({
+    job_id: job.id,
+    error_code: result.error_code ?? "WORKER_FAILED",
+    error_message: result.error_message ?? "rank rebuild failed",
+    retryable: false,
+    now,
+  });
 
   return {
     ok: false,
