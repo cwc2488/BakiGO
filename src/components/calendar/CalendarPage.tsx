@@ -20,6 +20,7 @@ import { MonthDayAgenda } from "@/components/calendar/MonthDayAgenda";
 import { WeekDayStrip } from "@/components/calendar/WeekDayStrip";
 import { WeekView } from "@/components/calendar/WeekView";
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { assertCustomerOwnedByMember } from "@/lib/calendar/calendar-event-participants";
 import {
   inferCalendarActivityTypeFromTitle,
   CALENDAR_CATEGORY_KEYS,
@@ -82,6 +83,7 @@ import {
   getTodayDateString,
 } from "@/lib/calendar/time-grid";
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
+import { createCustomerRepository } from "@/lib/repositories/customer-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { awaitPendingCloudSync } from "@/lib/repositories/syncing-storage-adapter";
 import { useSwipeNavigation } from "@/lib/hooks/use-swipe-navigation";
@@ -90,6 +92,7 @@ import { AppIcon } from "@/components/ui/AppIcon";
 import { APP_ICON, QUADRANT_ICONS } from "@/lib/ui/app-icons";
 import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
 import type { CalendarEvent, CalendarSlotInterval, ExpandedCalendarEvent, RecurrenceEditScope } from "@/types/calendar-event";
+import type { Customer } from "@/types/customer";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
 import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal";
@@ -191,6 +194,8 @@ export default function CalendarPage() {
   const [quickRecordOpen, setQuickRecordOpen] = useState(false);
   const [quickRecordMenuOpen, setQuickRecordMenuOpen] = useState(false);
   const [completionResultOpen, setCompletionResultOpen] = useState(false);
+  const [draftParticipantIds, setDraftParticipantIds] = useState<string[]>([]);
+  const [ownedCustomers, setOwnedCustomers] = useState<Customer[]>([]);
 
   const resetCalendarInteraction = useCallback(() => {
     setInteractionResetKey((current) => current + 1);
@@ -202,6 +207,7 @@ export default function CalendarPage() {
     setEditingOccurrence(null);
     setRecurrenceScopeMode(null);
     setCompletionResultOpen(false);
+    setDraftParticipantIds([]);
     resetCalendarInteraction();
   }, [resetCalendarInteraction]);
 
@@ -215,6 +221,11 @@ export default function CalendarPage() {
     purgeSharedEventsFromPersonalStorage(storage, getSharedCalendarIds());
     setEvents(createCalendarEventRepository(storage).getByMemberId(memberId).filter(isPersonalCalendarEvent));
     reloadAttendance();
+    setOwnedCustomers(
+      createCustomerRepository(storage)
+        .getCustomersByOwner(memberId)
+        .filter((customer) => customer.ownerMemberId === memberId),
+    );
   }, [memberId, reloadAttendance, storage]);
 
   useEffect(() => {
@@ -400,8 +411,34 @@ export default function CalendarPage() {
     setFormReadOnly(false);
     setEditingEventId(null);
     setViewingExpandedEvent(null);
+    setDraftParticipantIds([]);
     setFormValues(buildDefaultFormValues(date, time));
     setFormOpen(true);
+  }
+
+  function handleAddParticipant(customerId: string) {
+    const customer = ownedCustomers.find((row) => row.id === customerId);
+    if (!assertCustomerOwnedByMember(customer, memberId)) {
+      setStatusMessage("無權限加入此顧客");
+      return;
+    }
+    setDraftParticipantIds((current) =>
+      current.includes(customerId) ? current : [...current, customerId],
+    );
+    if (formMode === "edit" && editingEventId) {
+      createCalendarEventRepository(storage).addParticipant(editingEventId, customerId);
+      void awaitPendingCloudSync();
+      reloadEvents();
+    }
+  }
+
+  function handleRemoveParticipant(customerId: string) {
+    setDraftParticipantIds((current) => current.filter((id) => id !== customerId));
+    if (formMode === "edit" && editingEventId) {
+      createCalendarEventRepository(storage).removeParticipant(editingEventId, customerId);
+      void awaitPendingCloudSync();
+      reloadEvents();
+    }
   }
 
   function syncAttendanceRecord(
@@ -482,6 +519,7 @@ export default function CalendarPage() {
       setFormMode("view");
       setFormReadOnly(true);
       setEditingEventId(null);
+      setDraftParticipantIds([]);
       setFormValues({
         ...expandedEventToFormValues(expanded),
         activityTypeKey:
@@ -504,6 +542,7 @@ export default function CalendarPage() {
     setFormReadOnly(false);
     setEditingEventId(source.id);
     setEditingOccurrence(expanded);
+    setDraftParticipantIds([...(source.participantCustomerIds ?? [])]);
     setFormValues({
       ...eventToFormValues(source),
       date: expanded.startAt.slice(0, 10),
@@ -770,11 +809,17 @@ export default function CalendarPage() {
 
     try {
       if (formMode === "create") {
-        const created = repository.create({ memberId, ...payload });
+        const created = repository.create({
+          memberId,
+          ...payload,
+          participantCustomerIds: draftParticipantIds,
+        });
         await awaitPendingCloudSync();
         googleWarning = await syncToGoogleWithWarning(created, "create");
         setFormOpen(false);
+        setDraftParticipantIds([]);
         resetCalendarInteraction();
+        reloadEvents();
         setStatusMessage(googleWarning ? `行程已新增（${googleWarning}）` : "行程已新增");
         return;
       }
@@ -797,8 +842,14 @@ export default function CalendarPage() {
           getOccurrenceDateFromExpanded(editingOccurrence!, source) ?? formValues.date;
         const plan = planRecurringUpdate(source, occurrenceDate, scope, payload);
         googleWarning = await applyRecurrenceMutation(plan);
+        // Participants belong to the series (source event), not a single occurrence.
+        repository.update(editingEventId, { participantCustomerIds: draftParticipantIds });
+        await awaitPendingCloudSync();
       } else {
-        const updated = repository.update(editingEventId, payload);
+        const updated = repository.update(editingEventId, {
+          ...payload,
+          participantCustomerIds: draftParticipantIds,
+        });
         await awaitPendingCloudSync();
         googleWarning = await syncToGoogleWithWarning(updated, "update");
       }
@@ -1244,6 +1295,17 @@ export default function CalendarPage() {
         onDelete={formMode === "edit" ? () => void handleDelete() : undefined}
         onSubmit={() => void handleSubmit()}
         open={formOpen && recurrenceScopeMode === null}
+        participantsContext={
+          formMode === "view" || formReadOnly
+            ? undefined
+            : {
+                participantCustomerIds: draftParticipantIds,
+                customers: ownedCustomers,
+                editable: true,
+                onAdd: handleAddParticipant,
+                onRemove: handleRemoveParticipant,
+              }
+        }
         personalLogContext={personalLogContext}
         readOnly={formReadOnly}
         sharedContext={formSharedContext}

@@ -7,6 +7,7 @@ import {
   parseCustomerBodyNumber,
   type CustomerBodyFormValues,
 } from "@/components/customers/CustomerBodySection";
+import { CustomerNextActivitySection } from "@/components/customers/CustomerNextActivitySection";
 import { CustomerPhotoCompareSection } from "@/components/customers/CustomerPhotoCompareSection";
 import {
   CustomerProgressPhotoSection,
@@ -43,6 +44,7 @@ import { computeBmi, computeAgeFromCustomerProfile } from "@/lib/customers/body-
 import { todayISODate } from "@/lib/config/app-config";
 import { formatShortDate } from "@/lib/mission-control/format";
 import { createCustomerRepository } from "@/lib/repositories/customer-repository";
+import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -423,6 +425,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
         await revokeCustomerPortalToken(customerId).catch(() => undefined);
       }
       repo.deleteCustomer(customerId);
+      createCalendarEventRepository(storage).removeCustomerFromAllEvents(customerId);
       try {
         await flushCustomerCloudPushAsync();
       } catch (error) {
@@ -512,6 +515,14 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
           </button>
         </div>
       </section>
+
+      {viewer ? (
+        <CustomerNextActivitySection
+          customer={customer}
+          memberId={viewer.id}
+          storage={storage}
+        />
+      ) : null}
 
       <BodyCompositionTrendCharts seriesList={trendSeries} />
 
