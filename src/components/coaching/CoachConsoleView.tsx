@@ -116,7 +116,7 @@ export function CoachConsoleView({
         ) : null}
       </Section>
 
-      <Section kicker="AI 教練判斷" title="依據證據，不發明確定性" tone="ai">
+      <Section kicker="AI 教練判斷" title={view.aiJudgment[0]?.conclusion ?? "根據今天的紀錄判斷"} tone="ai">
         <div className="space-y-3">
           {view.aiJudgment.slice(0, 4).map((item, index) => (
             <article key={`${item.conclusion}-${index}`} className="rounded-[0.875rem] bg-white px-3 py-3">

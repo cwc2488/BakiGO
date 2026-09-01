@@ -216,5 +216,8 @@ describe("Coach Console semantic truth", () => {
     expect(view.shareReadiness).toBe("NOT_ENOUGH_DATA");
     expect(view.shareCopy).toBe("資料還不足，等待下一次量測");
     expect(view.shareCopy).not.toContain("不適合談");
+    expect(view.aiJudgment.flatMap((item) => [item.conclusion, ...item.evidence.map((ev) => ev.summary)]).join("\n")).not.toMatch(
+      /NOT_ENOUGH_DATA|INSUFFICIENT_DATA|PARTIAL_REPORT/,
+    );
   });
 });

@@ -207,7 +207,7 @@ function buildAiJudgment(input: {
     evidence: [
       {
         type: "measurement",
-        summary: `分享狀態 ${input.shareReadiness}`,
+        summary: shareReadinessCopy(input.shareReadiness),
         sourceDate: input.sourceDate,
       },
     ],
