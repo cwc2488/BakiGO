@@ -267,3 +267,67 @@ export async function runOneTimeRecovery0901(
     failure_reason: ok ? null : "zero_snapshots_recomputed",
   };
 }
+
+/** Runs the hardcoded one-time recovery once on Production when not yet completed. */
+export async function tryOneTimeRecovery0901IfPending(
+  client: SupabaseClient,
+  ctx: WorkerContext,
+): Promise<OneTimeRecovery0901Result | null> {
+  if (process.env.VERCEL_ENV !== "production") {
+    return null;
+  }
+
+  const status = await loadOneTimeRecovery0901Status(client);
+  if (status.completed) {
+    return null;
+  }
+
+  return runOneTimeRecovery0901(client, ctx, { dry_run: false });
+}
+
+export async function loadOneTimeRecovery0901PublicReport(client: SupabaseClient) {
+  const status = await loadOneTimeRecovery0901Status(client);
+  const snapshot_date = ONE_TIME_RECOVERY_0901.snapshot_date;
+
+  const { data: memberRow } = await client
+    .from("member_daily_top20")
+    .select("generated_at, item_count, items")
+    .eq("member_id", ONE_TIME_RECOVERY_0901.affected_member_id)
+    .eq("snapshot_date", snapshot_date)
+    .maybeSingle();
+
+  const { data: allRows } = await client
+    .from("member_daily_top20")
+    .select("member_id, item_count")
+    .eq("snapshot_date", snapshot_date);
+
+  let empty = 0;
+  let nonempty = 0;
+  for (const row of allRows ?? []) {
+    if (Number(row.item_count ?? 0) === 0) empty += 1;
+    else nonempty += 1;
+  }
+
+  const newGeneratedAt = memberRow?.generated_at ? String(memberRow.generated_at) : null;
+  const generated_at_changed =
+    Boolean(newGeneratedAt) &&
+    newGeneratedAt!.localeCompare(ONE_TIME_RECOVERY_0901.affected_member_baseline_generated_at) >
+      0;
+
+  return {
+    read_only: true,
+    recovery_completed: status.completed,
+    completed_at: status.completed_at,
+    snapshots_updated: status.snapshots_updated,
+    snapshot_date,
+    pipeline_run_id: ONE_TIME_RECOVERY_0901.pipeline_run_id,
+    affected_member_id: ONE_TIME_RECOVERY_0901.affected_member_id,
+    old_generated_at: ONE_TIME_RECOVERY_0901.affected_member_baseline_generated_at,
+    new_generated_at: newGeneratedAt,
+    generated_at_changed,
+    item_count: memberRow?.item_count ?? null,
+    items: memberRow?.items ?? [],
+    empty_count: empty,
+    nonempty_count: nonempty,
+  };
+}

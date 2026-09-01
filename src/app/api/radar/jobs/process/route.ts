@@ -7,6 +7,7 @@ import {
   scheduleRadarProcessContinuation,
 } from "@/lib/radar/jobs/auto-drain";
 import { loadRadarOpsStatus } from "@/lib/radar/jobs/ops-status";
+import { tryOneTimeRecovery0901IfPending } from "@/lib/radar/jobs/one-time-recovery-0901";
 import { createSupabaseRadarJobQueue } from "@/lib/radar/jobs/supabase-queue-store";
 import { runWorkerBatch, type WorkerContext } from "@/lib/radar/jobs/workers/dispatch";
 import { createSourceAdapterRegistry } from "@/lib/radar/sources/registry";
@@ -61,6 +62,13 @@ async function handleProcess(request: Request) {
 
   try {
     const client = createSupabaseServiceClient();
+    const ctx = createWorkerContext();
+
+    let one_time_recovery: Awaited<ReturnType<typeof tryOneTimeRecovery0901IfPending>> = null;
+    if (request.method === "GET") {
+      one_time_recovery = await tryOneTimeRecovery0901IfPending(client, ctx);
+    }
+
     const opsBefore = await loadRadarOpsStatus(client);
     const pipeline_run_id = mode.pipeline_run_id ?? opsBefore.run?.pipeline_run_id ?? null;
     if (pipeline_run_id) {
@@ -153,7 +161,27 @@ async function handleProcess(request: Request) {
           }),
         );
       }
-      return noStoreJson({ ok: true, accepted: true, continue: true, processed, ops }, { status: 202 });
+      return noStoreJson(
+        {
+          ok: true,
+          accepted: true,
+          continue: true,
+          processed,
+          ops,
+          one_time_recovery: one_time_recovery
+            ? {
+                ok: one_time_recovery.ok,
+                inert: one_time_recovery.inert,
+                snapshots_updated: one_time_recovery.snapshots_updated,
+                members_requested: one_time_recovery.members_requested,
+                members_rebuilt: one_time_recovery.members_rebuilt,
+                members_failed: one_time_recovery.members_failed,
+                affected_member: one_time_recovery.affected_member,
+              }
+            : null,
+        },
+        { status: 202 },
+      );
     }
 
     const processed = await runWorkerBatch(createWorkerContext(), mode.claimLimit);

@@ -14,6 +14,7 @@ import { buildRawSnapshot } from "../normalization/test-fixtures";
 import type { OverallScoreResult } from "../scoring/types";
 import {
   isOneTimeRecovery0901Authorized,
+  isOneTimeRecovery0901Configured,
   readOneTimeRecovery0901Token,
 } from "@/lib/supabase/one-time-recovery-auth";
 import { POST } from "@/app/api/radar/jobs/one-time-recovery-0901/route";
@@ -136,14 +137,18 @@ async function seedEligible(
 
 describe("one-time recovery 0901 auth", () => {
   const prev = process.env.RADAR_ONE_TIME_RECOVERY_0901_TOKEN;
+  const prevCron = process.env.RADAR_CRON_SECRET;
 
   afterEach(() => {
     if (prev === undefined) delete process.env.RADAR_ONE_TIME_RECOVERY_0901_TOKEN;
     else process.env.RADAR_ONE_TIME_RECOVERY_0901_TOKEN = prev;
+    if (prevCron === undefined) delete process.env.RADAR_CRON_SECRET;
+    else process.env.RADAR_CRON_SECRET = prevCron;
   });
 
   it("uses RADAR_ONE_TIME_RECOVERY_0901_TOKEN only", () => {
     delete process.env.RADAR_ONE_TIME_RECOVERY_0901_TOKEN;
+    delete process.env.RADAR_CRON_SECRET;
     expect(readOneTimeRecovery0901Token()).toBe("");
     process.env.RADAR_ONE_TIME_RECOVERY_0901_TOKEN = "one-time-recovery-token-16";
     expect(
@@ -153,6 +158,22 @@ describe("one-time recovery 0901 auth", () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it("accepts existing RADAR_CRON_SECRET when dedicated token is unset", () => {
+    delete process.env.RADAR_ONE_TIME_RECOVERY_0901_TOKEN;
+    process.env.RADAR_CRON_SECRET = "production-radar-cron-secret";
+    expect(
+      isOneTimeRecovery0901Authorized(
+        new Request("https://bakigo.tw/api/radar/jobs/one-time-recovery-0901", {
+          headers: { authorization: "Bearer production-radar-cron-secret" },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects wrong bearer", () => {
+    process.env.RADAR_CRON_SECRET = "production-radar-cron-secret";
     expect(
       isOneTimeRecovery0901Authorized(
         new Request("https://bakigo.tw/api/radar/jobs/one-time-recovery-0901", {
@@ -160,6 +181,14 @@ describe("one-time recovery 0901 auth", () => {
         }),
       ),
     ).toBe(false);
+  });
+
+  it("is configured when RADAR_CRON_SECRET is set (no dedicated token)", () => {
+    delete process.env.RADAR_ONE_TIME_RECOVERY_0901_TOKEN;
+    delete process.env.RADAR_CRON_SECRET;
+    expect(isOneTimeRecovery0901Configured()).toBe(false);
+    process.env.RADAR_CRON_SECRET = "production-radar-cron-secret";
+    expect(isOneTimeRecovery0901Configured()).toBe(true);
   });
 });
 

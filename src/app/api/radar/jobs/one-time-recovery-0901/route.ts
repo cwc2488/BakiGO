@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 /**
  * ONE-TIME historical recovery for 2026-09-01 empty Top20 snapshots.
  * Hardcoded scope — no arbitrary dates, pipeline runs, members, or operations.
- * Auth: RADAR_ONE_TIME_RECOVERY_0901_TOKEN (not RADAR_CRON_SECRET).
+ * Auth: RADAR_ONE_TIME_RECOVERY_0901_TOKEN or existing RADAR_CRON_SECRET.
  * Becomes inert after successful completion (completion marker in radar_jobs).
  */
 

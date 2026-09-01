@@ -1,6 +1,14 @@
 {
   "crons": [
     {
+      "path": "/api/radar/jobs/one-time-recovery-0901",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/one-time-recovery-0901",
+      "schedule": "30 8 * * *"
+    },
+    {
       "path": "/api/radar/jobs/daily-pipeline",
       "schedule": "0 22 * * *"
     },
