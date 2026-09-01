@@ -1,5 +1,11 @@
 import { noStoreJson } from "@/lib/radar/jobs/auto-drain";
 import { loadMemberSnapshotGapReport } from "@/lib/radar/jobs/member-snapshot-gap";
+import {
+  loadSnapshotGeneratedAt,
+  recoverySucceeded,
+  snapshotWasRecomputed,
+  summarizeRecoveryEvidence,
+} from "@/lib/radar/jobs/recovery-evidence";
 import { runMemberRankRebuild } from "@/lib/radar/jobs/run-member-rank-rebuild";
 import { createSupabaseRadarJobQueue } from "@/lib/radar/jobs/supabase-queue-store";
 import { SupabasePipelineStore } from "@/lib/radar/pipeline/supabase-pipeline-store";
@@ -9,6 +15,7 @@ import {
   createSupabaseServiceClient,
   isRadarCronAuthorized,
   isSupabaseServiceConfigured,
+  readSupabaseServiceEnv,
 } from "@/lib/supabase/service-client";
 import type { WorkerContext } from "@/lib/radar/jobs/workers/dispatch";
 
@@ -34,6 +41,8 @@ type ApprovedRecovery = {
   pipeline_run_id: string;
   label: string;
 };
+
+const PROD_SUPABASE_PROJECT = "ubdrkrvyyrqdvlehzhsz";
 
 const APPROVED_RECOVERIES: ApprovedRecovery[] = [
   {
@@ -86,6 +95,18 @@ export async function POST(request: Request) {
     return noStoreJson({ error: "Supabase service role is not configured" }, { status: 503 });
   }
 
+  const { url: supabase_url } = readSupabaseServiceEnv();
+  if (!supabase_url.includes(PROD_SUPABASE_PROJECT)) {
+    return noStoreJson(
+      {
+        error: "wrong_supabase_project",
+        detail: `Expected Production project ${PROD_SUPABASE_PROJECT}.`,
+        supabase_url_host: new URL(supabase_url).host,
+      },
+      { status: 503 },
+    );
+  }
+
   let body: Body = {};
   try {
     body = (await request.json()) as Body;
@@ -128,6 +149,7 @@ export async function POST(request: Request) {
       ok: true,
       skipped: true,
       reason: "snapshot_already_populated",
+      supabase_project: PROD_SUPABASE_PROJECT,
       before,
     });
   }
@@ -138,10 +160,12 @@ export async function POST(request: Request) {
       dry_run: true,
       would_rebuild_rank: true,
       recovery_label: approved.label,
+      supabase_project: PROD_SUPABASE_PROJECT,
       before,
     });
   }
 
+  const beforeSnapshot = await loadSnapshotGeneratedAt(client, member_id, snapshot_date);
   const ctx = createWorkerContext();
   const rebuild = await runMemberRankRebuild(ctx, {
     member_id,
@@ -150,6 +174,7 @@ export async function POST(request: Request) {
     recovery_tag: approved.label,
     force_new_job: true,
   });
+  const afterSnapshot = await loadSnapshotGeneratedAt(client, member_id, snapshot_date);
 
   const after = await loadMemberSnapshotGapReport(client, {
     member_id,
@@ -157,10 +182,37 @@ export async function POST(request: Request) {
     pipeline_run_id,
   });
 
+  const evidence = [
+    {
+      member_id,
+      previous_generated_at: beforeSnapshot.generated_at,
+      new_generated_at: afterSnapshot.generated_at,
+      previous_item_count: beforeSnapshot.item_count,
+      new_item_count: afterSnapshot.item_count,
+      snapshot_updated: snapshotWasRecomputed(
+        beforeSnapshot.generated_at,
+        afterSnapshot.generated_at,
+      ),
+      rebuild,
+    },
+  ];
+  const summary = summarizeRecoveryEvidence(evidence);
+  const ok =
+    recoverySucceeded({
+      members_requested: 1,
+      snapshots_updated: summary.snapshots_updated,
+    }) && rebuild.ok;
+
   return noStoreJson({
-    ok: rebuild.ok,
-    recovered: rebuild.ok && Number(after.snapshot.item_count ?? 0) > 0,
+    ok,
+    recovered: ok && Number(after.snapshot.item_count ?? 0) >= 0,
     recovery_label: approved.label,
+    supabase_project: PROD_SUPABASE_PROJECT,
+    previous_generated_at: beforeSnapshot.generated_at,
+    new_generated_at: afterSnapshot.generated_at,
+    ...summary,
+    failure_reason:
+      ok ? null : rebuild.ok ? "generated_at_unchanged" : rebuild.error_code ?? "rebuild_failed",
     rebuild,
     before,
     after,

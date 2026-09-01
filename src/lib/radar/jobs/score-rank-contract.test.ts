@@ -344,6 +344,85 @@ describe("Score → Rank contract", () => {
     expect(repo.recommendationOccurrences.length).toBe(1);
   });
 
+  it("explicit rebuild succeeds even when original rank job already succeeded", async () => {
+    const repo = new InMemoryRadarRepository();
+    const queue = new RadarJobQueue(new InMemoryRadarJobQueueStore());
+    const ctx = baseCtx(repo, queue);
+    const now = ctx.now!;
+
+    await seedEligibleCandidate(repo, MEMBER_A, "cand_succeeded_rank", 55, now);
+    await repo.upsertMemberDailyTop20({
+      member_id: MEMBER_A,
+      pipeline_run_id: PIPELINE,
+      snapshot_date: RUN_DATE,
+      generated_at: new Date("2026-09-01T03:42:33.938Z"),
+      items: [],
+    });
+
+    const first = await runMemberRankRebuild(ctx, {
+      member_id: MEMBER_A,
+      snapshot_date: RUN_DATE,
+      pipeline_run_id: PIPELINE,
+      recovery_tag: "first_recovery",
+      force_new_job: true,
+    });
+    expect(first.ok).toBe(true);
+    expect(first.item_count).toBe(1);
+
+    const second = await runMemberRankRebuild(ctx, {
+      member_id: MEMBER_A,
+      snapshot_date: RUN_DATE,
+      pipeline_run_id: PIPELINE,
+      recovery_tag: "second_recovery",
+      force_new_job: true,
+    });
+    expect(second.ok).toBe(true);
+    expect(second.item_count).toBe(1);
+    expect(repo.recommendationOccurrences.length).toBe(1);
+  });
+
+  it("authorized recovery bypasses pipeline-zero integrity gate", async () => {
+    const repo = new InMemoryRadarRepository();
+    const queue = new RadarJobQueue(new InMemoryRadarJobQueueStore());
+    const ctx = baseCtx(repo, queue);
+    const now = ctx.now!;
+
+    await seedEligibleCandidate(repo, MEMBER_A, "cand_recovery_gate", 68.5, now);
+    repo.scoreProgress.set(`${PIPELINE}:${MEMBER_A}`, {
+      expected_score_jobs: 50,
+      terminal_score_jobs: 50,
+      rank_enqueued: true,
+    });
+
+    const originalList = repo.listMemberScoreSnapshots.bind(repo);
+    const originalVisible = repo.countMemberScoreSnapshotsForDate.bind(repo);
+    const originalAbove = repo.countMemberScoreSnapshotsAboveMinimum.bind(repo);
+    repo.listMemberScoreSnapshots = async () => [];
+    repo.countMemberScoreSnapshotsForDate = async () => 0;
+    repo.countMemberScoreSnapshotsAboveMinimum = async () => 3;
+
+    const blocked = await runRankWorker(ctx, rankJob(MEMBER_A));
+    expect(blocked.status).toBe("failed");
+    expect(blocked.error_code).toBe("SCORE_RANK_VISIBILITY_GAP");
+
+    repo.listMemberScoreSnapshots = originalList;
+    repo.countMemberScoreSnapshotsForDate = originalVisible;
+    repo.countMemberScoreSnapshotsAboveMinimum = originalAbove;
+
+    const recoveryJob: RadarJobRecord = {
+      ...rankJob(MEMBER_A),
+      payload: {
+        run_date: RUN_DATE,
+        member_id: MEMBER_A,
+        artifact_refs: {},
+        recovery: "SCORE_RANK_CONTRACT_2026-09-01",
+      },
+    };
+    const recovered = await runRankWorker(ctx, recoveryJob);
+    expect(recovered.status).toBe("succeeded");
+    expect(recovered.metrics?.item_count).toBe(1);
+  });
+
   it("historical score rows do not shrink today's visible universe", async () => {
     const repo = new InMemoryRadarRepository();
     const queue = new RadarJobQueue(new InMemoryRadarJobQueueStore());

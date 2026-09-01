@@ -1,5 +1,11 @@
 import { noStoreJson } from "@/lib/radar/jobs/auto-drain";
-import { loadMemberSnapshotGapReport } from "@/lib/radar/jobs/member-snapshot-gap";
+import {
+  loadSnapshotGeneratedAt,
+  recoverySucceeded,
+  snapshotWasRecomputed,
+  summarizeRecoveryEvidence,
+  type SnapshotEvidenceRow,
+} from "@/lib/radar/jobs/recovery-evidence";
 import { runMemberRankRebuild } from "@/lib/radar/jobs/run-member-rank-rebuild";
 import { createSupabaseRadarJobQueue } from "@/lib/radar/jobs/supabase-queue-store";
 import { SupabasePipelineStore } from "@/lib/radar/pipeline/supabase-pipeline-store";
@@ -9,6 +15,7 @@ import {
   createSupabaseServiceClient,
   isRadarCronAuthorized,
   isSupabaseServiceConfigured,
+  readSupabaseServiceEnv,
 } from "@/lib/supabase/service-client";
 import type { WorkerContext } from "@/lib/radar/jobs/workers/dispatch";
 
@@ -33,6 +40,8 @@ const APPROVED_BATCH = {
   label: "SCORE_RANK_CONTRACT_BATCH_2026-09-01",
 };
 
+const PROD_SUPABASE_PROJECT = "ubdrkrvyyrqdvlehzhsz";
+
 function createWorkerContext(): WorkerContext {
   const client = createSupabaseServiceClient();
   const repo = new SupabaseRadarRepository(client);
@@ -52,6 +61,18 @@ export async function POST(request: Request) {
   }
   if (!isSupabaseServiceConfigured()) {
     return noStoreJson({ error: "Supabase service role is not configured" }, { status: 503 });
+  }
+
+  const { url: supabase_url } = readSupabaseServiceEnv();
+  if (!supabase_url.includes(PROD_SUPABASE_PROJECT)) {
+    return noStoreJson(
+      {
+        error: "wrong_supabase_project",
+        detail: `Expected Production project ${PROD_SUPABASE_PROJECT}.`,
+        supabase_url_host: new URL(supabase_url).host,
+      },
+      { status: 503 },
+    );
   }
 
   let body: Body = {};
@@ -102,22 +123,19 @@ export async function POST(request: Request) {
       dry_run: true,
       snapshot_date,
       pipeline_run_id,
+      supabase_project: PROD_SUPABASE_PROJECT,
       before_empty_count,
       before_histogram,
-      would_rebuild_members: targets.length,
+      members_requested: targets.length,
       member_ids: targets,
     });
   }
 
   const ctx = createWorkerContext();
-  const results: Array<{
-    member_id: string;
-    ok: boolean;
-    item_count: number;
-    error_code?: string;
-  }> = [];
+  const evidence: SnapshotEvidenceRow[] = [];
 
   for (const member_id of targets) {
+    const beforeSnapshot = await loadSnapshotGeneratedAt(client, member_id, snapshot_date);
     const rebuild = await runMemberRankRebuild(ctx, {
       member_id,
       snapshot_date,
@@ -125,11 +143,18 @@ export async function POST(request: Request) {
       recovery_tag: APPROVED_BATCH.label,
       force_new_job: true,
     });
-    results.push({
+    const afterSnapshot = await loadSnapshotGeneratedAt(client, member_id, snapshot_date);
+    evidence.push({
       member_id,
-      ok: rebuild.ok,
-      item_count: rebuild.item_count,
-      error_code: rebuild.error_code,
+      previous_generated_at: beforeSnapshot.generated_at,
+      new_generated_at: afterSnapshot.generated_at,
+      previous_item_count: beforeSnapshot.item_count,
+      new_item_count: afterSnapshot.item_count,
+      snapshot_updated: snapshotWasRecomputed(
+        beforeSnapshot.generated_at,
+        afterSnapshot.generated_at,
+      ),
+      rebuild,
     });
   }
 
@@ -147,16 +172,26 @@ export async function POST(request: Request) {
     after_histogram[key] = (after_histogram[key] ?? 0) + 1;
   }
 
+  const summary = summarizeRecoveryEvidence(evidence);
+  const ok = recoverySucceeded({
+    members_requested: summary.members_requested,
+    snapshots_updated: summary.snapshots_updated,
+  });
+
   return noStoreJson({
-    ok: true,
+    ok,
     snapshot_date,
     pipeline_run_id,
+    supabase_project: PROD_SUPABASE_PROJECT,
     before_empty_count,
     after_empty_count,
     before_histogram,
     after_histogram,
-    rebuilt: results.filter((r) => r.ok).length,
-    failed: results.filter((r) => !r.ok).length,
-    results,
+    ...summary,
+    failure_reason:
+      ok || summary.members_requested === 0
+        ? null
+        : "zero_snapshots_recomputed",
+    evidence,
   });
 }

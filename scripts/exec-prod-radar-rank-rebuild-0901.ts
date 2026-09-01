@@ -4,7 +4,7 @@
  * Never prints secret values.
  */
 import { writeFileSync } from "node:fs";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { DEFAULT_ALLOCATION_RULES } from "../src/lib/radar/allocation/allocation-rules";
 import { createSupabaseRadarJobQueue } from "../src/lib/radar/jobs/supabase-queue-store";
 import { runMemberRankRebuild } from "../src/lib/radar/jobs/run-member-rank-rebuild";
@@ -37,7 +37,7 @@ function assertProductionUrl(url: string) {
   }
 }
 
-function createCtx(client: ReturnType<typeof createClient>): WorkerContext {
+function createCtx(client: SupabaseClient): WorkerContext {
   const repo = new SupabaseRadarRepository(client);
   return {
     repo,
@@ -49,22 +49,23 @@ function createCtx(client: ReturnType<typeof createClient>): WorkerContext {
   };
 }
 
-async function countEmptyTop20(client: ReturnType<typeof createClient>) {
+async function countEmptyTop20(client: SupabaseClient) {
   const { data, error } = await client
     .from("member_daily_top20")
     .select("member_id, item_count")
     .eq("snapshot_date", SNAPSHOT_DATE);
   if (error) throw new Error(error.message);
+  const rows = (data ?? []) as Array<{ member_id: string; item_count: number | null }>;
   let empty = 0;
   let nonempty = 0;
-  for (const row of data ?? []) {
+  for (const row of rows) {
     if (Number(row.item_count ?? 0) === 0) empty += 1;
     else nonempty += 1;
   }
-  return { total: (data ?? []).length, empty, nonempty, rows: data ?? [] };
+  return { total: rows.length, empty, nonempty, rows };
 }
 
-async function memberSnapshot(client: ReturnType<typeof createClient>, member_id: string) {
+async function memberSnapshot(client: SupabaseClient, member_id: string) {
   const { data, error } = await client
     .from("member_daily_top20")
     .select("id, member_id, item_count, generated_at, items, pipeline_run_id")
@@ -72,18 +73,31 @@ async function memberSnapshot(client: ReturnType<typeof createClient>, member_id
     .eq("snapshot_date", SNAPSHOT_DATE)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return data;
+  return data as {
+    id: string;
+    member_id: string;
+    item_count: number | null;
+    generated_at: string | null;
+    items: unknown;
+    pipeline_run_id: string | null;
+  } | null;
 }
 
-async function scoreUniverse(client: ReturnType<typeof createClient>, member_id: string) {
+async function scoreUniverse(client: SupabaseClient, member_id: string) {
   const { data, error } = await client
     .from("radar_candidate_score_snapshots")
     .select("candidate_id_text, overall_score, analyzed_at, created_at, extraction_snapshot")
     .eq("member_id", member_id)
     .or(scoreSnapshotDateOrFilter(SNAPSHOT_DATE));
   if (error) throw new Error(error.message);
+  const rows = (data ?? []) as Array<{
+    candidate_id_text: string | null;
+    overall_score: number | null;
+    analyzed_at: string | null;
+    created_at: string | null;
+  }>;
   const latest = new Map<string, { score: number; ts: string }>();
-  for (const row of data ?? []) {
+  for (const row of rows) {
     const id = String(row.candidate_id_text ?? "");
     if (!id) continue;
     const ts = String(row.analyzed_at ?? row.created_at ?? "");
