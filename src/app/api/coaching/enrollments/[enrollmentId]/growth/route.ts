@@ -9,7 +9,6 @@ import {
   formatGrowthPathLabel,
   formatGrowthSummaryTone,
   formatMeasuredOutcomeDisplay,
-  formatReadinessHeadline,
   GROWTH_UI_LABELS,
   mapGrowthWhyEvidenceToZh,
 } from "@/lib/coaching/presentation/coaching-ui-copy";
@@ -121,12 +120,21 @@ async function loadGrowthBundle(input: {
     opportunity: record,
     coachView: {
       suitableNow: matrix.shouldOpen,
-      headline: formatReadinessHeadline(matrix.readiness),
+      headline: formatGrowthSummaryTone({
+        suitableNow: matrix.shouldOpen,
+        readiness: matrix.readiness,
+        inviteCheckin: matrix.inviteCheckin,
+        repairExperience: matrix.repairExperience,
+        measurementStage: matrix.outcomeSignal.measurementStage,
+        outcomeStatus: matrix.outcomeSignal.outcomeStatus,
+      }),
       summaryTone: formatGrowthSummaryTone({
         suitableNow: matrix.shouldOpen,
         readiness: matrix.readiness,
         inviteCheckin: matrix.inviteCheckin,
         repairExperience: matrix.repairExperience,
+        measurementStage: matrix.outcomeSignal.measurementStage,
+        outcomeStatus: matrix.outcomeSignal.outcomeStatus,
       }),
       sectionTitle: GROWTH_UI_LABELS.sectionTitle,
       measuredOutcome: formatMeasuredOutcomeDisplay({
