@@ -22,13 +22,12 @@ import {
   resolveEnrollmentStartDate,
 } from "@/lib/coaching/enrollment-window";
 import { buildBodyCompositionTrendSeries } from "@/lib/customers/body-composition-trends";
+import { CoachConsoleView } from "@/components/coaching/CoachConsoleView";
+import { buildCoachConsoleView } from "@/lib/coaching/semantics/build-coach-console";
 import {
-  buildDetailActionCard,
-  buildDetailTodayScanRows,
   COACH_TODAY_REPORT_SHORT,
   DETAIL_MORE_DEFAULT_OPEN,
   formatEnrollmentDateRange,
-  humanizeOutcomeConclusion,
   resolveCoachTodayReportState,
 } from "@/lib/coaching/presentation/coaching-workbench-presentation";
 import { useSoftRefresh } from "@/lib/hooks/use-soft-refresh";
@@ -84,18 +83,44 @@ type DetailPayload = {
   historicalTomorrowFocus: Array<{ logDate: string; tomorrowFocus: string }>;
 };
 
-function metricLine(
-  label: string,
-  baseline: number | null | undefined,
-  latest: number | null | undefined,
-  unit: string,
-): string | null {
-  if (baseline == null && latest == null) return null;
-  if (baseline != null && latest != null) {
-    return `${label}　${baseline} → ${latest} ${unit}`;
-  }
-  if (latest != null) return `${label}　目前 ${latest} ${unit}`;
-  return `${label}　目前穩定`;
+function DailyFullReport({
+  logDate,
+  dailyLog,
+}: {
+  logDate: string;
+  dailyLog: CoachingDailyLogDetail & { meals: MealWithSignedUrl[] };
+}) {
+  return (
+    <div>
+      <h3 className="text-[0.9375rem] font-semibold text-[#1d1d1f]">
+        {coachingRelativeDayLabel(logDate)}完整回報
+      </h3>
+      {dailyLog.id ? (
+        <div className="mt-3 space-y-3">
+          {dailyLog.meals.map((meal) => (
+            <div key={meal.id} className="rounded-[1rem] border border-[#eef2ea] p-3">
+              <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">
+                {COACHING_MEAL_SLOT_LABELS[meal.mealSlot]}
+              </p>
+              {meal.textNote ? (
+                <p className="mt-1 text-[0.875rem] text-[#636366] break-words">{meal.textNote}</p>
+              ) : null}
+              {meal.photo?.signedUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  alt={`${COACHING_MEAL_SLOT_LABELS[meal.mealSlot]}照片`}
+                  className="mt-2 max-h-48 w-full rounded-[0.75rem] object-cover"
+                  src={meal.photo.signedUrl}
+                />
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-[0.875rem] text-[#86868b]">這天還沒有回報。</p>
+      )}
+    </div>
+  );
 }
 
 export default function CoachingDetailPage({
@@ -121,6 +146,7 @@ export default function CoachingDetailPage({
   const [showCharts, setShowCharts] = useState(false);
   const [progressPhotoCount, setProgressPhotoCount] = useState(0);
   const [actionSavedHint, setActionSavedHint] = useState(false);
+  const [showJudgmentTools, setShowJudgmentTools] = useState(false);
   const recentDates = useMemo(() => listCoachingRecentLogDates(), []);
 
   const reload = useCallback(
@@ -201,19 +227,27 @@ export default function CoachingDetailPage({
   );
 
   const customerDisplayName = payload?.customerDisplayName ?? "陪跑詳情";
+  const consoleView = useMemo(() => {
+    if (!payload) return null;
+    return buildCoachConsoleView({
+      dailyLog: payload.dailyLog.id ? payload.dailyLog : null,
+      baselineRecord,
+      latestRecord,
+      measurementStage: progress?.measurementStage,
+      outcomeStatus: progress?.outcomeStatus,
+      coachAttentionRequired: Boolean(payload.aiOutput?.coach?.coach_attention_required),
+      attentionReason: payload.aiOutput?.coach?.attention_reason,
+      interventionLevel: payload.aiOutput?.finalInterventionLevel,
+      dailySummary: payload.aiOutput?.coach?.daily_summary,
+      aiEvidence: payload.aiOutput?.coach?.evidence,
+      logDate,
+    });
+  }, [payload, baselineRecord, latestRecord, progress, logDate]);
+
   const reportState = resolveCoachTodayReportState({
     todaySubmitted: Boolean(payload?.dailyLog.submittedAt),
     todayAiStatus: payload?.aiOutput?.status,
-  });
-  const scanRows = buildDetailTodayScanRows(payload?.dailyLog.id ? payload.dailyLog : null);
-  const actionCard = buildDetailActionCard({
-    submitted: Boolean(payload?.dailyLog.submittedAt),
-    aiStatus: payload?.aiOutput?.status,
-    coachAttentionRequired: Boolean(payload?.aiOutput?.coach?.coach_attention_required),
-    attentionReason: payload?.aiOutput?.coach?.attention_reason,
-    dailySummary: payload?.aiOutput?.coach?.daily_summary,
-    interventionLevel: payload?.aiOutput?.finalInterventionLevel,
-    bowelCount: payload?.dailyLog.bowelMovementCount,
+    dailyReportState: consoleView?.report.state,
   });
 
   const startDate = payload
@@ -228,25 +262,6 @@ export default function CoachingDetailPage({
   const dateRange = payload
     ? formatEnrollmentDateRange(startDate, endDate)
     : "—";
-
-  const weightLine = metricLine(
-    "體重",
-    baselineRecord?.weightKg ?? null,
-    latestRecord?.weightKg ?? null,
-    "kg",
-  );
-  const fatLine = metricLine(
-    "體脂",
-    baselineRecord?.bodyFatPercent ?? null,
-    latestRecord?.bodyFatPercent ?? null,
-    "%",
-  );
-  const muscleLine = metricLine(
-    "肌肉",
-    baselineRecord?.skeletalMuscleKg ?? null,
-    latestRecord?.skeletalMuscleKg ?? null,
-    "kg",
-  );
 
   const updateStatus = async (status: CoachingEnrollment["status"]) => {
     setBusy(true);
@@ -276,10 +291,9 @@ export default function CoachingDetailPage({
       ) : null}
       {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
 
-      {payload && !loading ? (
+      {payload && !loading && consoleView ? (
         <div className="space-y-5 pb-10">
-          {/* Layer 1 — 今天 */}
-          <section className="space-y-4 rounded-[1.25rem] bg-white px-4 py-4">
+          <section className="space-y-3 rounded-[1.25rem] bg-white px-4 py-4">
             <div>
               <h1 className="text-[1.375rem] font-semibold leading-tight text-[#1d1d1f] break-words">
                 {customerDisplayName}
@@ -289,11 +303,9 @@ export default function CoachingDetailPage({
               </p>
               <p className="mt-0.5 text-[0.8125rem] text-[#86868b]">陪跑日期：{dateRange}</p>
             </div>
-
             <p className="text-[0.9375rem] font-medium text-[#1d1d1f]">
               今天狀態：{COACH_TODAY_REPORT_SHORT[reportState]}
             </p>
-
             <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="最近三天">
               {recentDates.map((date) => {
                 const selected = date === logDate;
@@ -318,142 +330,63 @@ export default function CoachingDetailPage({
                 );
               })}
             </div>
-
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-2">
-              {scanRows.map((row) => (
-                <div key={row.label} className="flex items-baseline justify-between gap-2 border-b border-[#f2f2f2] py-2">
-                  <dt className="text-[0.875rem] text-[#86868b]">{row.label}</dt>
-                  <dd className="text-right text-[0.9375rem] font-medium text-[#1d1d1f] break-words">
-                    {row.value}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-
-            {payload.dailyLog.customerNote?.trim() ? (
-              <p className="text-[0.875rem] leading-relaxed text-[#636366] break-words">
-                心得：{payload.dailyLog.customerNote.trim()}
-              </p>
-            ) : null}
-
             {payload.aiOutput?.status === "pending" || payload.aiOutput?.status === "processing" ? (
               <p className="text-[0.8125rem] text-[#86868b]">進階分析正在整理中</p>
             ) : null}
           </section>
 
-          {/* Layer 2 — 今天建議你做什麼 */}
-          <section className="rounded-[1.25rem] border border-[#e8ece4] bg-[#f7faf5] px-4 py-4">
-            <p className="text-[0.75rem] font-medium tracking-wide text-[#86868b]">今天建議你做什麼</p>
-            <h2 className="mt-2 text-[1.125rem] font-semibold text-[#1d1d1f] break-words">
-              {actionCard.title}
-            </h2>
-            <p className="mt-2 text-[0.9375rem] leading-relaxed text-[#1d1d1f] break-words">
-              {actionCard.body}
-            </p>
-            {actionCard.suggestion ? (
-              <p className="mt-2 text-[0.875rem] leading-relaxed text-[#636366] break-words">
-                {actionCard.suggestion}
-              </p>
-            ) : null}
-            {actionCard.secondaryNote ? (
-              <p className="mt-2 text-[0.8125rem] leading-relaxed text-[#86868b] break-words">
-                補充：{actionCard.secondaryNote}
-              </p>
-            ) : null}
-            {actionCard.showRecordAction ? (
-              <button
-                type="button"
-                className="mt-4 inline-flex min-h-11 items-center justify-center rounded-full bg-[#1d1d1f] px-5 text-[0.875rem] font-medium text-white"
-                onClick={() => {
-                  setShowMore(true);
-                  setActionSavedHint(true);
-                  window.setTimeout(() => {
-                    document.getElementById("coach-more-actions")?.scrollIntoView({ behavior: "smooth" });
-                  }, 50);
-                }}
-              >
-                記錄已處理
-              </button>
-            ) : null}
-            {actionSavedHint ? (
-              <p className="mt-2 text-[0.8125rem] text-[#3f6212]">請在下方「教練處理紀錄」完成記錄。</p>
-            ) : null}
-          </section>
+          <CoachConsoleView
+            view={consoleView}
+            actionSavedHint={actionSavedHint}
+            onRecordAction={
+              consoleView.nextAction.showRecordAction
+                ? () => {
+                    setShowMore(true);
+                    setActionSavedHint(true);
+                    window.setTimeout(() => {
+                      document.getElementById("coach-more-actions")?.scrollIntoView({ behavior: "smooth" });
+                    }, 50);
+                  }
+                : undefined
+            }
+            fullReport={<DailyFullReport dailyLog={payload.dailyLog} logDate={logDate} />}
+            extraJudgment={
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  className="flex min-h-11 w-full items-center justify-between rounded-[0.875rem] bg-white px-3 text-left text-[0.875rem] font-medium text-[#1d1d1f]"
+                  onClick={() => setShowJudgmentTools((open) => !open)}
+                >
+                  <span>教練安排與成果細節</span>
+                  <span aria-hidden>{showJudgmentTools ? "▴" : "▾"}</span>
+                </button>
+                {showJudgmentTools ? (
+                  <div className="space-y-3">
+                    <CoachingDirectivePanel enrollmentId={enrollmentId} />
+                    <CoachingGrowthPanel enrollmentId={enrollmentId} logDate={logDate} />
+                  </div>
+                ) : null}
+              </div>
+            }
+          />
 
-          {/* Layer 3 — 最近的變化 */}
-          <section className="rounded-[1.25rem] bg-white px-4 py-4">
-            <h2 className="text-[1.0625rem] font-semibold text-[#1d1d1f]">最近的變化</h2>
-            <div className="mt-3 space-y-2 text-[0.9375rem] text-[#1d1d1f]">
-              {weightLine ? <p>{weightLine}</p> : null}
-              {fatLine ? <p>{fatLine}</p> : null}
-              {muscleLine ? <p>{muscleLine}</p> : <p>肌肉　目前穩定</p>}
-              <p className="text-[#636366]">
-                顧客感受　
-                {payload.dailyLog.customerNote?.trim()
-                  ? payload.dailyLog.customerNote.trim()
-                  : "尚無特別紀錄"}
-              </p>
-            </div>
-            <p className="mt-3 text-[0.875rem] leading-relaxed text-[#636366]">
-              {humanizeOutcomeConclusion(progress?.outcomeStatus ?? null)}
-            </p>
-          </section>
-
-          {/* Layer 4 — 更多 */}
           <section className="space-y-3">
             <button
               type="button"
               className="flex min-h-11 w-full items-center justify-between rounded-[1.25rem] border border-[#e5e7eb] bg-white px-4 text-left text-[0.9375rem] font-medium text-[#1d1d1f]"
               onClick={() => setShowMore((v) => !v)}
             >
-              <span>查看更多陪跑資料</span>
+              <span>更多陪跑資料</span>
               <span aria-hidden>{showMore ? "▴" : "▾"}</span>
             </button>
 
             {showMore ? (
               <div id="coach-more-actions" className="space-y-4">
                 {loadMorePanels ? (
-                  <>
-                    <CoachingDirectivePanel enrollmentId={enrollmentId} />
-                    <CoachingCoachActionPanel enrollmentId={enrollmentId} reasonCodes={reasonCodes} />
-                    <CoachingGrowthPanel enrollmentId={enrollmentId} logDate={logDate} />
-                  </>
+                  <CoachingCoachActionPanel enrollmentId={enrollmentId} reasonCodes={reasonCodes} />
                 ) : (
-                  <div className="space-y-2" aria-busy="true">
-                    <div className="h-20 animate-pulse rounded-[1.25rem] bg-[#f0f1ef]" />
-                    <div className="h-20 animate-pulse rounded-[1.25rem] bg-[#f0f1ef]" />
-                  </div>
+                  <div className="h-20 animate-pulse rounded-[1.25rem] bg-[#f0f1ef]" />
                 )}
-
-                <div className="rounded-[1.25rem] bg-white px-4 py-4">
-                  <h3 className="text-[1rem] font-semibold text-[#1d1d1f]">
-                    {coachingRelativeDayLabel(logDate)}完整回報
-                  </h3>
-                  {payload.dailyLog.id ? (
-                    <div className="mt-3 space-y-3">
-                      {payload.dailyLog.meals.map((meal) => (
-                        <div key={meal.id} className="rounded-[1rem] border border-[#eef2ea] p-3">
-                          <p className="text-[0.9375rem] font-semibold text-[#1d1d1f]">
-                            {COACHING_MEAL_SLOT_LABELS[meal.mealSlot]}
-                          </p>
-                          {meal.textNote ? (
-                            <p className="mt-1 text-[0.875rem] text-[#636366] break-words">{meal.textNote}</p>
-                          ) : null}
-                          {meal.photo?.signedUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              alt={`${COACHING_MEAL_SLOT_LABELS[meal.mealSlot]}照片`}
-                              className="mt-2 max-h-48 w-full rounded-[0.75rem] object-cover"
-                              src={meal.photo.signedUrl}
-                            />
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-[0.875rem] text-[#86868b]">這天還沒有回報。</p>
-                  )}
-                </div>
 
                 {progressPhotoCount > 0 ? (
                   <div className="rounded-[1.25rem] bg-white px-4 py-4">
@@ -501,7 +434,7 @@ export default function CoachingDetailPage({
                   {showCharts ? <BodyCompositionTrendCharts seriesList={trendSeries} /> : null}
                 </div>
 
-                <div className="rounded-[1.25rem] bg-white px-4 py-4 space-y-3">
+                <div className="space-y-3 rounded-[1.25rem] bg-white px-4 py-4">
                   <h3 className="text-[1rem] font-semibold text-[#1d1d1f]">陪跑設定</h3>
                   <p className="text-[0.875rem] text-[#636366]">目標：{payload.enrollment.goal || "—"}</p>
                   <p className="text-[0.875rem] text-[#636366]">陪跑日期：{dateRange}</p>

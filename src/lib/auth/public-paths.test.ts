@@ -51,4 +51,8 @@ describe("public-paths", () => {
     expect(isPublicPath("/quiz/leads")).toBe(false);
     expect(isPublicPath("/quiz/hub")).toBe(false);
   });
+
+  it("treats Coach Console visual preview as open public", () => {
+    expect(isOpenPublicPath("/internal/coach-console-preview")).toBe(true);
+  });
 });

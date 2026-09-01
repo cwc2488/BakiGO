@@ -138,6 +138,28 @@ describe("Coaching UX presentation (CUX)", () => {
     expect(urgent).toHaveLength(0);
   });
 
+  it("CUX-partial never describes meaningful report as 尚未回報", () => {
+    const card = buildDetailActionCard({
+      submitted: false,
+      aiStatus: null,
+      coachAttentionRequired: false,
+      attentionReason: null,
+      dailySummary: null,
+      interventionLevel: "normal",
+      bowelCount: null,
+      hasMeaningfulReport: true,
+      missingItems: ["午餐", "晚餐"],
+    });
+    expect(card.title).toBe("今天已開始回報");
+    expect(card.body).not.toContain("尚未回報");
+    expect(card.body).not.toContain("完成今天的回報");
+    expect(resolveCoachTodayReportState({
+      todaySubmitted: false,
+      todayAiStatus: null,
+      dailyReportState: "PARTIAL_REPORT",
+    })).toBe("partial");
+  });
+
   it("CUX-03 today reported humanized", () => {
     expect(COACH_TODAY_REPORT_LABELS.ready).toBe("✓ 今日已完成");
     expect(COACH_TODAY_REPORT_LABELS.organizing).toBe("⏳ 正在整理今天的回報");
@@ -314,7 +336,7 @@ describe("Coaching UX presentation (CUX)", () => {
     expect(copy).not.toMatch(/not_yet_measurable|baseline_only|insufficient_data/);
   });
 
-  it("CUX-10 Growth collapsed", () => {
+  it("CUX-10 Growth collapsed under Coach Console judgment tools", () => {
     expect(DETAIL_MORE_DEFAULT_OPEN).toBe(false);
     expect(DETAIL_DEFERRED_PANEL_IDS).toContain("growth");
     const detailSource = readFileSync(
@@ -322,8 +344,11 @@ describe("Coaching UX presentation (CUX)", () => {
       "utf8",
     );
     expect(detailSource).toContain("DETAIL_MORE_DEFAULT_OPEN");
-    expect(detailSource).toMatch(/showMore[\s\S]*CoachingGrowthPanel/);
-    expect(detailSource).toMatch(/\{showMore \?/);
+    expect(detailSource).toContain("CoachConsoleView");
+    expect(detailSource).toContain("CoachingGrowthPanel");
+    expect(detailSource).toContain("showJudgmentTools");
+    expect(detailSource).not.toContain("顧客感受");
+    expect(detailSource).not.toContain("心得：");
   });
 
   it("CUX-11 Timeline/history deferred", () => {
@@ -423,7 +448,12 @@ describe("Coaching UX presentation (CUX)", () => {
       "utf8",
     );
     expect(detail).toContain("CoachingCoachActionPanel");
-    expect(detail).toContain("記錄已處理");
+    expect(detail).toContain("CoachConsoleView");
+    const consoleView = readFileSync(
+      resolve(process.cwd(), "src/components/coaching/CoachConsoleView.tsx"),
+      "utf8",
+    );
+    expect(consoleView).toContain("記錄已處理");
   });
 
   it("CUX-15 focus refresh still works", () => {

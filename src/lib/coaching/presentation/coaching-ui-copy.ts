@@ -9,6 +9,7 @@ import {
   COACHING_TREND_STATUS_LABELS,
 } from "@/lib/coaching/ai/assess-coaching-outcome";
 import { bandLabel, growthPathLabel, readinessLabel } from "@/lib/coaching/growth/build-growth-intelligence";
+import { resolveShareReadiness, shareReadinessCopy } from "@/lib/coaching/semantics/share-readiness";
 import type { CoachingMeasurementStage, CoachingOutcomeStatus, CoachingTrendStatus } from "@/types/coaching-signals";
 
 /** UX-1.2 Coach-facing outcome labels (presentation only). */
@@ -110,6 +111,7 @@ export const GROWTH_UI_LABELS = {
   summarySuitable: "現在適合談",
   summaryContinue: "先持續陪跑",
   summaryNotSuitable: "現在不適合談",
+  summaryNotEnoughData: "資料還不足，等待下一次量測",
 } as const;
 
 export function formatOutcomeStatusLabel(status: string | null | undefined): string {
@@ -146,16 +148,26 @@ export function formatReadinessHeadline(readiness: string | null | undefined): s
   return readinessLabel(readiness);
 }
 
-/** 5–10 秒摘要：適合談 / 先持續陪跑 / 現在不適合談 */
+/** 5–10 秒摘要：適合談 / 先持續陪跑 / 資料不足 / 現在不適合談 */
 export function formatGrowthSummaryTone(input: {
   suitableNow: boolean;
   readiness?: string | null;
   inviteCheckin?: boolean;
   repairExperience?: boolean;
+  measurementStage?: string | null;
+  outcomeStatus?: string | null;
 }): string {
-  if (input.suitableNow) return GROWTH_UI_LABELS.summarySuitable;
-  if (input.inviteCheckin || input.repairExperience) return GROWTH_UI_LABELS.summaryContinue;
-  if (input.readiness === "emerging") return GROWTH_UI_LABELS.summaryContinue;
+  const share = resolveShareReadiness({
+    suitableNow: input.suitableNow,
+    readiness: input.readiness,
+    inviteCheckin: input.inviteCheckin,
+    repairExperience: input.repairExperience,
+    measurementStage: input.measurementStage,
+    outcomeStatus: input.outcomeStatus,
+  });
+  if (share === "NOT_ENOUGH_DATA") return GROWTH_UI_LABELS.summaryNotEnoughData;
+  if (share === "READY") return GROWTH_UI_LABELS.summarySuitable;
+  if (share === "POSSIBLE_SIGNAL") return GROWTH_UI_LABELS.summaryContinue;
   return GROWTH_UI_LABELS.summaryNotSuitable;
 }
 
