@@ -4,7 +4,7 @@
 
 After each Production promotion, record the integrated commit SHA here and branch from it for new work.
 
-**Integrated RC (pending promotion):** `cursor/integrated-production-baseline-f161` — merges Home/Calendar (`4e5195e`), Retail House (`3dcc14d`), Radar Score→Rank (`ca658d9`).
+**Integrated RC (pending promotion):** `7cbed1c` on branch `cursor/integrated-production-baseline-f161` — merges Home/Calendar (`4e5195e`), Retail House (`3dcc14d`), Radar Score→Rank (`ca658d9`).
 
 **Production at mission start:** `ca658d99943ad5948cefb29adf94b416af63bfcf` (Radar only — missing Home/Calendar/Retail fixes).
 
