@@ -12,6 +12,12 @@ import type { WorkerContext } from "../src/lib/radar/jobs/workers/dispatch";
 import { SupabaseRadarRepository } from "../src/lib/radar/repository/supabase-repository";
 import { scoreSnapshotDateOrFilter } from "../src/lib/radar/repository/score-snapshot-date";
 import { createSourceAdapterRegistry } from "../src/lib/radar/sources/registry";
+import {
+  buildRadarCronAuthorizationHeader,
+  loadProductionEnvFile,
+  readRadarCronClientSecret,
+  resolveRadarCronAuthReport,
+} from "./radar-prod-auth";
 
 const PROD_PROJECT = "ubdrkrvyyrqdvlehzhsz";
 const WRONG_PROJECT = "pgzfuqpsphwdcvcxnmrr";
@@ -114,40 +120,83 @@ async function scoreUniverse(client: SupabaseClient, member_id: string) {
 }
 
 async function main() {
-  const cron = process.env.RADAR_CRON_SECRET?.trim() || process.env.CRON_SECRET?.trim() || "";
+  loadProductionEnvFile(".env.production.local");
+  const authReport = resolveRadarCronAuthReport();
+  const cron = readRadarCronClientSecret();
   const origin = (process.env.PRODUCTION_ORIGIN ?? "https://bakigo.tw").replace(/\/$/, "");
 
-  if (cron.length >= 8 && !process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+  if (cron && !process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+    const headers = buildRadarCronAuthorizationHeader(cron);
     const dry = await fetch(`${origin}/api/radar/jobs/member-rank-rebuild-batch`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${cron}`, "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ dry_run: true }),
+      cache: "no-store",
     });
-    const dryJson = await dry.json();
+    const dryJson = await dry.json().catch(() => ({}));
     if (dry.status === 401) {
+      const report = {
+        mode: "http",
+        auth_report: authReport,
+        auth_failure_class: "unauthorized_bearer_mismatch_or_server_secret_missing",
+        http_status: 401,
+        fix:
+          "Set Cloud Agent RADAR_CRON_SECRET to the exact Vercel Production RADAR_CRON_SECRET value.",
+        dry: dryJson,
+      };
+      writeFileSync(".tmp-prod-radar-rebuild-0901.json", JSON.stringify(report, null, 2));
+      console.log(JSON.stringify(report, null, 2));
       throw new Error("production_http_unauthorized");
     }
     const batch = await fetch(`${origin}/api/radar/jobs/member-rank-rebuild-batch`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${cron}`, "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ member_limit: 200 }),
+      cache: "no-store",
     });
-    const batchJson = await batch.json();
+    const batchJson = await batch.json().catch(() => ({}));
     const member = await fetch(`${origin}/api/radar/jobs/member-rank-recovery`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${cron}`, "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         member_id: AFFECTED_MEMBER,
         snapshot_date: SNAPSHOT_DATE,
         pipeline_run_id: PIPELINE_RUN_ID,
         force: true,
       }),
+      cache: "no-store",
     });
-    const memberJson = await member.json();
-    const report = { mode: "http", dry: dryJson, batch: batchJson, member: memberJson };
+    const memberJson = await member.json().catch(() => ({}));
+    const evidence = (batchJson as { evidence?: Array<{ member_id: string; previous_generated_at?: string; new_generated_at?: string; snapshot_updated?: boolean }> }).evidence ?? [];
+    const affectedEvidence = evidence.find((row) => row.member_id === AFFECTED_MEMBER);
+    const report = {
+      mode: "http",
+      auth_report: authReport,
+      http_status: batch.status,
+      dry: dryJson,
+      batch: batchJson,
+      member: memberJson,
+      affected_member: {
+        previous_generated_at:
+          affectedEvidence?.previous_generated_at ??
+          (memberJson as { previous_generated_at?: string }).previous_generated_at ??
+          null,
+        new_generated_at:
+          affectedEvidence?.new_generated_at ??
+          (memberJson as { new_generated_at?: string }).new_generated_at ??
+          null,
+        snapshot_updated:
+          affectedEvidence?.snapshot_updated ??
+          (memberJson as { snapshots_updated?: number }).snapshots_updated === 1,
+      },
+    };
     writeFileSync(".tmp-prod-radar-rebuild-0901.json", JSON.stringify(report, null, 2));
     console.log(JSON.stringify(report, null, 2));
-    if (!batchJson?.after?.snapshot?.generated_at && !memberJson?.after?.snapshot?.generated_at) {
+    const prev = report.affected_member.previous_generated_at;
+    const next = report.affected_member.new_generated_at;
+    const changed =
+      Boolean(next) && (!prev || String(next).localeCompare(String(prev)) > 0);
+    if (!changed) {
       process.exit(2);
     }
     return;
