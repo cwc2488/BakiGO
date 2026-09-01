@@ -67,6 +67,16 @@ describe("UX-2 performance architecture", () => {
     expect(home).toContain("includeMapUniverse: false");
   });
 
+  it("PERF-05b — Retail House first paint skips MapUniverse and never hangs on spinner", () => {
+    const page = readSrc("src/components/retail-house/RetailHousePage.tsx");
+    const boot = readSrc("src/lib/retail-house/retail-house-bootstrap.ts");
+    expect(boot).toContain("includeMapUniverse: false");
+    expect(page).toContain("bootstrapRetailHousePage");
+    expect(page).toContain("RETAIL_HOUSE_LOAD_WATCHDOG_MS");
+    expect(page).not.toContain("fetchCloudAppData");
+    expect(page).not.toContain("ensureOwnRetailTransactionsReconciled");
+  });
+
   it("PERF-06 — Calendar shared sync window is explicitly bounded", () => {
     const sync = readSrc("src/lib/calendar/sync-shared-calendars.ts");
     expect(sync).toContain("SHARED_CALENDAR_SYNC_RANGE_DAYS");
