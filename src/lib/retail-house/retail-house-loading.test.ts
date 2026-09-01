@@ -291,16 +291,10 @@ describe("REQUIRED — Retail House loading lifecycle (permanent spinner regress
         transactions: [
           {
             id: TX_ID,
-            createdAt: "2026-09-01T00:00:00.000Z",
-            updatedAt: "2026-09-01T00:00:00.000Z",
-            organizationId: APP_IDS.organizationId,
             memberId: MEMBER_B,
-            customerName: "小美",
             transactionTypeKey: RETAIL_TRANSACTION_TYPE_KEYS.NEW_CUSTOMER_NTD,
             transactionDate: "2026-09-01",
             amount: 5000,
-            currencyCode: "TWD",
-            retailHouseKey: APP_IDS.defaultRetailHouseKey,
             metadata: { customerName: "小美", currencyCode: "TWD", retailVp: 150 },
           },
         ],
