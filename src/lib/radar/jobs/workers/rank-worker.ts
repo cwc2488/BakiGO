@@ -3,8 +3,24 @@ import { allocationBlockFor } from "../../allocation/allocation-eligibility";
 import { capDailyRecommendations, parseAllocationRules } from "../../allocation/allocation-rules";
 import { evaluateSemanticEligibility } from "../../semantics/candidate-understanding";
 import { rankCandidates } from "../../scoring/rank-candidates";
+import type { OverallScoreResult } from "../../scoring/types";
+import {
+  detectRankIntegrityFailure,
+  loadRankIntegrityContext,
+} from "../rank-integrity";
 import type { RadarJobRecord } from "../types";
 import { enrichPayload, type WorkerContext, type WorkerResult } from "./dispatch";
+
+function resolveEntryScore(entry: {
+  overall_score: number;
+  result: OverallScoreResult;
+}): number {
+  const fromResult = entry.result?.overall_score;
+  if (typeof fromResult === "number" && Number.isFinite(fromResult)) {
+    return fromResult;
+  }
+  return entry.overall_score;
+}
 
 export async function runRankWorker(
   ctx: WorkerContext,
@@ -14,6 +30,28 @@ export async function runRankWorker(
   const member_id = String(payload.member_id ?? "");
   const run_date = String(payload.run_date ?? "");
   const now = ctx.now ?? new Date();
+
+  const integrityContext = await loadRankIntegrityContext(ctx.repo, {
+    member_id,
+    snapshot_date: run_date,
+    pipeline_run_id: job.pipeline_run_id ?? null,
+  });
+  const integrityFailure = detectRankIntegrityFailure(integrityContext);
+  if (integrityFailure) {
+    return {
+      job_id: job.id,
+      status: "failed",
+      error_code: integrityFailure.error_code,
+      error_message: integrityFailure.error_message,
+      metrics: {
+        expected_score_jobs: integrityContext.progress?.expected_score_jobs ?? null,
+        terminal_score_jobs: integrityContext.progress?.terminal_score_jobs ?? null,
+        score_snapshots_visible: integrityContext.score_snapshots_visible,
+        score_snapshots_above_minimum: integrityContext.score_snapshots_above_minimum,
+        item_count: 0,
+      },
+    };
+  }
 
   const scored = await ctx.repo.listMemberScoreSnapshots({
     member_id,
@@ -32,13 +70,16 @@ export async function runRankWorker(
   let skipped_allocation_locked = 0;
   let skipped_below_minimum_score = 0;
   let skipped_semantic = 0;
+  let eligible_before_threshold = scored.length;
+
   for (const entry of scored) {
+    const canonicalScore = resolveEntryScore(entry);
     const state = await ctx.repo.getMemberCandidateState(member_id, entry.candidate_id);
     const block = allocationBlockFor({
       member_id,
       state,
       claim: claimByCandidate.get(entry.candidate_id) ?? null,
-      overall_score: entry.result.overall_score,
+      overall_score: canonicalScore,
       now,
       rules,
     });
@@ -84,24 +125,24 @@ export async function runRankWorker(
 
     eligible.push({
       candidateId: entry.candidate_id,
-      result: entry.result,
+      result: {
+        ...(entry.result ?? {}),
+        overall_score: canonicalScore,
+        scoring_version: entry.result?.scoring_version ?? "v1",
+      } as OverallScoreResult,
     });
   }
 
-  // A shorter list is the correct answer when fewer candidates qualify. On a
-  // re-run the cap applies to the whole day, so already-recommended candidates
-  // keep their place and cannot be joined by more than the day's remaining slots.
+  const eligible_after_threshold = eligible.length;
+
   const alreadyRecommendedToday = new Set(
     await ctx.repo.listRecommendedCandidateIds({ member_id, snapshot_date: run_date }),
   );
   const ranked = capDailyRecommendations(rankCandidates(eligible), {
     already_recommended_today: alreadyRecommendedToday,
     rules,
-    // Ranks stay contiguous even when the cap drops someone mid-list.
   }).map((item, index) => ({ ...item, rank: index + 1 }));
 
-  // One snapshot per member per day: a re-run replaces today's content and
-  // keeps the snapshot identity the occurrence audit refers to.
   const snapshot = await ctx.repo.upsertMemberDailyTop20({
     member_id,
     pipeline_run_id: job.pipeline_run_id ?? "",
@@ -126,12 +167,17 @@ export async function runRankWorker(
     job_id: job.id,
     status: "succeeded",
     metrics: {
-      item_count: ranked.length,
+      expected_score_jobs: integrityContext.progress?.expected_score_jobs ?? null,
+      terminal_score_jobs: integrityContext.progress?.terminal_score_jobs ?? null,
+      score_snapshots_visible: integrityContext.score_snapshots_visible,
+      eligible_before_threshold,
+      eligible_after_threshold,
       skipped_freshness_or_analysis,
       skipped_member_handled,
       skipped_allocation_locked,
       skipped_below_minimum_score,
       skipped_semantic,
+      item_count: ranked.length,
       full_precision_top_score: ranked[0]?.overall_score ?? null,
       snapshot_id: snapshot.id,
       occurrences_appended: occurrences.appended,

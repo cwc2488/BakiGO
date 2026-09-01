@@ -13,6 +13,19 @@ import {
 import type { MemberRadarRecommendationFeedback } from "../feedback/types";
 import type { MemberRadarRegionPreference } from "../semantics/region-preference";
 import type { CandidateDevelopmentClaimRecord, RadarRepository } from "./types";
+import {
+  scoreSnapshotDateOrFilter,
+  scoreSnapshotRowMatchesDate,
+} from "./score-snapshot-date";
+
+function isMissingRpcError(error: { message?: string; code?: string }): boolean {
+  const message = String(error.message ?? "").toLowerCase();
+  return (
+    error.code === "PGRST202" ||
+    message.includes("could not find the function") ||
+    message.includes("function") && message.includes("does not exist")
+  );
+}
 
 function mapClaimRow(row: Record<string, unknown>): CandidateDevelopmentClaimRecord {
   return {
@@ -872,13 +885,20 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
   override async initMemberScoreProgress(
     input: Parameters<RadarRepository["initMemberScoreProgress"]>[0],
   ) {
-    const { data, error } = await this.client
+    const { error } = await this.client.rpc("radar_add_expected_score_job", {
+      p_pipeline_run_id: input.pipeline_run_id,
+      p_member_id: input.member_id,
+    });
+    if (error && !isMissingRpcError(error)) throw new Error(error.message);
+    if (!error) return;
+
+    const { data, error: readError } = await this.client
       .from("radar_member_score_progress")
       .select("expected_score_jobs, terminal_score_jobs, rank_enqueued")
       .eq("pipeline_run_id", input.pipeline_run_id)
       .eq("member_id", input.member_id)
       .maybeSingle();
-    if (error) throw new Error(error.message);
+    if (readError) throw new Error(readError.message);
     const expected = Number(data?.expected_score_jobs ?? 0) + input.expected_score_jobs;
     const { error: writeError } = await this.client.from("radar_member_score_progress").upsert({
       pipeline_run_id: input.pipeline_run_id,
@@ -894,16 +914,36 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
   override async incrementMemberScoreProgress(
     input: Parameters<RadarRepository["incrementMemberScoreProgress"]>[0],
   ) {
-    const { data, error } = await this.client
+    const { data, error } = await this.client.rpc("radar_increment_terminal_score_job", {
+      p_pipeline_run_id: input.pipeline_run_id,
+      p_member_id: input.member_id,
+    });
+    if (!error) {
+      const row = (data ?? [])[0] as
+        | {
+            expected_score_jobs: number;
+            terminal_score_jobs: number;
+            rank_enqueued: boolean;
+          }
+        | undefined;
+      return {
+        terminal_score_jobs: Number(row?.terminal_score_jobs ?? 0),
+        expected_score_jobs: Number(row?.expected_score_jobs ?? 0),
+        rank_enqueued: Boolean(row?.rank_enqueued),
+      };
+    }
+    if (!isMissingRpcError(error)) throw new Error(error.message);
+
+    const { data: progress, error: readError } = await this.client
       .from("radar_member_score_progress")
       .select("expected_score_jobs, terminal_score_jobs, rank_enqueued")
       .eq("pipeline_run_id", input.pipeline_run_id)
       .eq("member_id", input.member_id)
       .maybeSingle();
-    if (error) throw new Error(error.message);
-    const terminal = Number(data?.terminal_score_jobs ?? 0) + 1;
-    const expected = Number(data?.expected_score_jobs ?? 0);
-    const rank_enqueued = Boolean(data?.rank_enqueued);
+    if (readError) throw new Error(readError.message);
+    const terminal = Number(progress?.terminal_score_jobs ?? 0) + 1;
+    const expected = Number(progress?.expected_score_jobs ?? 0);
+    const rank_enqueued = Boolean(progress?.rank_enqueued);
     const { error: writeError } = await this.client.from("radar_member_score_progress").upsert({
       pipeline_run_id: input.pipeline_run_id,
       member_id: input.member_id,
@@ -914,6 +954,72 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
     });
     if (writeError) throw new Error(writeError.message);
     return { terminal_score_jobs: terminal, expected_score_jobs: expected, rank_enqueued };
+  }
+
+  override async getMemberScoreProgress(
+    input: Parameters<RadarRepository["getMemberScoreProgress"]>[0],
+  ) {
+    const { data, error } = await this.client
+      .from("radar_member_score_progress")
+      .select("expected_score_jobs, terminal_score_jobs, rank_enqueued")
+      .eq("pipeline_run_id", input.pipeline_run_id)
+      .eq("member_id", input.member_id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    return {
+      expected_score_jobs: Number(data.expected_score_jobs ?? 0),
+      terminal_score_jobs: Number(data.terminal_score_jobs ?? 0),
+      rank_enqueued: Boolean(data.rank_enqueued),
+    };
+  }
+
+  override async clearMemberRankEnqueued(
+    input: Parameters<RadarRepository["clearMemberRankEnqueued"]>[0],
+  ) {
+    const { error } = await this.client
+      .from("radar_member_score_progress")
+      .update({ rank_enqueued: false, updated_at: new Date().toISOString() })
+      .eq("pipeline_run_id", input.pipeline_run_id)
+      .eq("member_id", input.member_id);
+    if (error) throw new Error(error.message);
+  }
+
+  override async countMemberScoreSnapshotsForDate(
+    input: Parameters<RadarRepository["countMemberScoreSnapshotsForDate"]>[0],
+  ) {
+    const { count, error } = await this.client
+      .from("radar_candidate_score_snapshots")
+      .select("id", { count: "exact", head: true })
+      .eq("member_id", input.member_id)
+      .or(scoreSnapshotDateOrFilter(input.snapshot_date));
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  }
+
+  override async countMemberScoreSnapshotsAboveMinimum(
+    input: Parameters<RadarRepository["countMemberScoreSnapshotsAboveMinimum"]>[0],
+  ) {
+    const { data, error } = await this.client
+      .from("radar_candidate_score_snapshots")
+      .select("candidate_id_text, overall_score, analyzed_at, created_at, extraction_snapshot")
+      .eq("member_id", input.member_id)
+      .gte("overall_score", input.minimum_score)
+      .or(scoreSnapshotDateOrFilter(input.snapshot_date));
+    if (error) throw new Error(error.message);
+    const sameDay = (data ?? []).filter((row) =>
+      scoreSnapshotRowMatchesDate(row, input.snapshot_date),
+    );
+    const latestByCandidate = new Set<string>();
+    for (const row of [...sameDay].sort((a, b) =>
+      String(a.analyzed_at ?? a.created_at ?? "").localeCompare(
+        String(b.analyzed_at ?? b.created_at ?? ""),
+      ),
+    )) {
+      const id = String(row.candidate_id_text ?? "");
+      if (id) latestByCandidate.add(id);
+    }
+    return latestByCandidate.size;
   }
 
   override async markMemberRankEnqueued(
@@ -1000,24 +1106,22 @@ export class SupabaseRadarRepository extends InMemoryRadarRepository implements 
     snapshot_date: string;
     candidate_ids?: string[];
   }) {
-    // Restrict to today's visible IDs when provided — avoids full member score history.
     let query = this.client
       .from("radar_candidate_score_snapshots")
       .select(
         "candidate_id_text, overall_score, analysis_run_id, analyzed_at, created_at, extraction_snapshot",
       )
-      .eq("member_id", input.member_id);
+      .eq("member_id", input.member_id)
+      .or(scoreSnapshotDateOrFilter(input.snapshot_date))
+      .order("analyzed_at", { ascending: false });
     if (input.candidate_ids && input.candidate_ids.length > 0) {
       query = query.in("candidate_id_text", [...new Set(input.candidate_ids)]);
     }
     const { data, error } = await query;
     if (error) throw new Error(error.message);
-    const sameDay = (data ?? []).filter((row) => {
-      const snapshot = row.extraction_snapshot as { snapshot_date?: unknown } | null;
-      if (snapshot?.snapshot_date === input.snapshot_date) return true;
-      const analyzed = String(row.analyzed_at ?? "");
-      return analyzed.slice(0, 10) === input.snapshot_date;
-    });
+    const sameDay = (data ?? []).filter((row) =>
+      scoreSnapshotRowMatchesDate(row, input.snapshot_date),
+    );
     // Score snapshots stay append-only history, so a re-scored candidate has
     // several rows for the day. Ranking takes the newest one per candidate;
     // without this a re-run would rank the same person more than once.
