@@ -1,5 +1,6 @@
 "use client";
 
+import { EventParticipantsSection } from "@/components/calendar/EventParticipantsSection";
 import { useState } from "react";
 import {
   MobileDismissibleSheet,
@@ -24,6 +25,8 @@ import {
   type ExpandedCalendarEvent,
   type RecurrenceFrequency,
 } from "@/types/calendar-event";
+import type { Customer } from "@/types/customer";
+import type { EntityId } from "@/types";
 
 export interface EventFormValues {
   title: string;
@@ -339,6 +342,7 @@ export function EventFormModal({
   readOnly = false,
   sharedContext,
   personalLogContext,
+  participantsContext,
   onChange,
   onClose,
   onSubmit,
@@ -350,6 +354,13 @@ export function EventFormModal({
   readOnly?: boolean;
   sharedContext?: SharedEventFormContext;
   personalLogContext?: PersonalEventLogContext;
+  participantsContext?: {
+    participantCustomerIds: EntityId[];
+    customers: Customer[];
+    editable: boolean;
+    onAdd: (customerId: EntityId) => void;
+    onRemove: (customerId: EntityId) => void;
+  };
   onChange: (values: EventFormValues) => void;
   onClose: () => void;
   onSubmit: () => void;
@@ -600,6 +611,16 @@ export function EventFormModal({
               <p className="mt-1 text-[0.8125rem] text-[#86868b]">尚無夥伴標記參加</p>
             )}
           </div>
+        ) : null}
+
+        {participantsContext && !sharedContext ? (
+          <EventParticipantsSection
+            customers={participantsContext.customers}
+            editable={participantsContext.editable}
+            onAdd={participantsContext.onAdd}
+            onRemove={participantsContext.onRemove}
+            participantCustomerIds={participantsContext.participantCustomerIds}
+          />
         ) : null}
       </MobileDismissibleSheetBody>
 

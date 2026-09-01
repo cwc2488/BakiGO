@@ -71,6 +71,11 @@ export interface CalendarEvent extends StoredEntity {
   googleCalendarId?: string;
   /** 開始前 N 分鐘提醒，例如 [15, 60] */
   reminderMinutes?: number[];
+  /**
+   * Stable Customer.id list for this personal event (canonical participant link).
+   * Not names — survives customer rename. Unique in repository layer.
+   */
+  participantCustomerIds?: EntityId[];
 }
 
 export interface CalendarEventCreateInput {
@@ -88,6 +93,7 @@ export interface CalendarEventCreateInput {
   googleEventId?: string;
   googleCalendarId?: string;
   reminderMinutes?: number[];
+  participantCustomerIds?: EntityId[];
 }
 
 export interface CalendarEventUpdateInput {
@@ -104,6 +110,7 @@ export interface CalendarEventUpdateInput {
   googleEventId?: string;
   googleCalendarId?: string;
   reminderMinutes?: number[];
+  participantCustomerIds?: EntityId[];
 }
 
 /** 展開後的單次 occurrence（含指向母事件） */
