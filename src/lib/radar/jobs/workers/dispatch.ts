@@ -224,24 +224,59 @@ export async function maybeEnqueueRank(
   });
   if (!should) return null;
 
+  const progress = await ctx.repo.getMemberScoreProgress({
+    pipeline_run_id: input.pipeline_run_id,
+    member_id: input.member_id,
+  });
+  if (progress) {
+    const visible = await ctx.repo.countMemberScoreSnapshotsForDate({
+      member_id: input.member_id,
+      snapshot_date: input.run_date,
+    });
+    // Excluded score jobs advance terminal without snapshots — visible < terminal is normal.
+    // Only wait when DB proves scored artifacts exist but the same-day filter sees none (race/gap).
+    if (
+      progress.terminal_score_jobs >= progress.expected_score_jobs &&
+      progress.expected_score_jobs > 0 &&
+      visible === 0
+    ) {
+      const aboveMinimum = await ctx.repo.countMemberScoreSnapshotsAboveMinimum({
+        member_id: input.member_id,
+        snapshot_date: input.run_date,
+        minimum_score: 40,
+      });
+      if (aboveMinimum > 0) {
+        return null;
+      }
+    }
+  }
+
   await ctx.repo.markMemberRankEnqueued({
     pipeline_run_id: input.pipeline_run_id,
     member_id: input.member_id,
   });
 
-  return ctx.queue.enqueue(
-    {
-      pipeline_run_id: input.pipeline_run_id,
-      job_type: "rank",
-      idempotency_key: pipelineJobKey(input.run_date, ["rank", input.member_id]),
-      payload: {
-        run_date: input.run_date,
-        member_id: input.member_id,
-        artifact_refs: {},
+  try {
+    return await ctx.queue.enqueue(
+      {
+        pipeline_run_id: input.pipeline_run_id,
+        job_type: "rank",
+        idempotency_key: pipelineJobKey(input.run_date, ["rank", input.member_id]),
+        payload: {
+          run_date: input.run_date,
+          member_id: input.member_id,
+          artifact_refs: {},
+        },
       },
-    },
-    ctx.now,
-  );
+      ctx.now,
+    );
+  } catch (error) {
+    await ctx.repo.clearMemberRankEnqueued({
+      pipeline_run_id: input.pipeline_run_id,
+      member_id: input.member_id,
+    });
+    throw error;
+  }
 }
 
 export function newNormalizationRunId(candidate_id: string, now = new Date()): string {

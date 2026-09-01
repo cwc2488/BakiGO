@@ -16,6 +16,8 @@ const RETRY_POLICY: Record<
   | "MISSING_ARTIFACT"
   | "NORMALIZATION_DETERMINISTIC"
   | "STRUCTURED_OUTPUTS_UNSUPPORTED"
+  | "SCORE_RANK_ARTIFACT_GAP"
+  | "SCORE_RANK_VISIBILITY_GAP"
   | "UNKNOWN",
   RetryDecision
 > = {
@@ -25,6 +27,8 @@ const RETRY_POLICY: Record<
   UPSTREAM_5XX: { retryable: true, max_attempts: 5, backoff_ms: 30_000 },
   LLM_INVALID_JSON: { retryable: true, max_attempts: 2, backoff_ms: 0 },
   TRANSIENT_DB: { retryable: true, max_attempts: 3, backoff_ms: 5_000 },
+  SCORE_RANK_ARTIFACT_GAP: { retryable: true, max_attempts: 8, backoff_ms: 15_000 },
+  SCORE_RANK_VISIBILITY_GAP: { retryable: true, max_attempts: 8, backoff_ms: 15_000 },
   SCHEMA_VALIDATION: { retryable: false, max_attempts: 1, backoff_ms: 0 },
   SCHEMA_INVALID: { retryable: false, max_attempts: 1, backoff_ms: 0 },
   INPUT_INVALID: { retryable: false, max_attempts: 1, backoff_ms: 0 },

@@ -358,6 +358,31 @@ export interface RadarRepository {
     member_id: string;
   }): Promise<boolean>;
 
+  getMemberScoreProgress(input: {
+    pipeline_run_id: string;
+    member_id: string;
+  }): Promise<{
+    expected_score_jobs: number;
+    terminal_score_jobs: number;
+    rank_enqueued: boolean;
+  } | null>;
+
+  clearMemberRankEnqueued(input: {
+    pipeline_run_id: string;
+    member_id: string;
+  }): Promise<void>;
+
+  countMemberScoreSnapshotsForDate(input: {
+    member_id: string;
+    snapshot_date: string;
+  }): Promise<number>;
+
+  countMemberScoreSnapshotsAboveMinimum(input: {
+    member_id: string;
+    snapshot_date: string;
+    minimum_score: number;
+  }): Promise<number>;
+
   /**
    * One logical snapshot per member per day. A re-run replaces the content of
    * the existing row and keeps its `id`, because
