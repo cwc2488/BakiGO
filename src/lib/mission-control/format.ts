@@ -7,7 +7,7 @@ import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { EntityId } from "@/types";
 import type { BakiEvent } from "@/types/baki-event";
 import {
-  getLatestComputedMetrics,
+  getComputedMetricsForReferenceDate,
   recalculateMemberMetrics,
   type MemberComputedMetrics,
 } from "@/lib/services/recalculate-member-metrics";
@@ -49,15 +49,8 @@ export function readMissionControlMetrics(
   storage: StorageAdapter = createLocalStorageAdapter(),
 ): MemberComputedMetrics | null {
   const resolvedMemberId = memberId ?? resolveAuthenticatedMemberId(storage);
-  const cached = getLatestComputedMetrics(resolvedMemberId, storage);
-  if (!cached) {
-    return null;
-  }
   const today = todayISODate();
-  if (cached.missions.referenceDate !== today) {
-    return null;
-  }
-  return cached;
+  return getComputedMetricsForReferenceDate(resolvedMemberId, today, storage);
 }
 
 export function getMemberDisplayName(

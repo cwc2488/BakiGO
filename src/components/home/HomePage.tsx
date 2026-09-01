@@ -176,21 +176,22 @@ export default function HomePage() {
 
   const bootstrap = useCallback(() => {
     setErrorMessage("資料載入失敗，請稍後再試。");
+    let cached: MemberComputedMetrics | null = null;
     try {
-      // Stale-day cache is rejected inside readMissionControlMetrics (Taipei day).
-      const cached = readMissionControlMetrics();
-      if (cached) {
-        setMetrics(cached);
-        setLoadState("ready");
-        queueMicrotask(() => softRecalc());
-        return;
-      }
-      setLoadState("loading");
-      softRecalc();
+      cached = readMissionControlMetrics();
     } catch {
-      setLoadState("error");
-      setErrorMessage("系統無法完成計算，請重新載入或稍後再試。");
+      cached = null;
     }
+
+    if (cached) {
+      setMetrics(cached);
+      setLoadState("ready");
+      queueMicrotask(() => softRecalc());
+      return;
+    }
+
+    setLoadState("loading");
+    softRecalc();
   }, [softRecalc]);
 
   useEffect(() => {

@@ -152,10 +152,14 @@ function saveComputedMetrics(
     (item) => !(item.memberId === snapshot.memberId && item.yearMonth === snapshot.yearMonth),
   );
 
-  storage.setItem(
-    STORAGE_KEYS.computedMetrics,
-    JSON.stringify([...withoutCurrent, snapshot]),
-  );
+  try {
+    storage.setItem(
+      STORAGE_KEYS.computedMetrics,
+      JSON.stringify([...withoutCurrent, snapshot]),
+    );
+  } catch {
+    // Quota / private-mode persistence must not block Home render after recompute.
+  }
 }
 
 export function recalculateMemberMetrics(
@@ -511,6 +515,40 @@ export function getLatestComputedMetrics(
         .filter((item) => item.memberId === memberId)
         .sort((left, right) => right.computedAt.localeCompare(left.computedAt))[0] ?? null
     );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cached metrics for a specific Asia/Taipei reference day (missions.referenceDate).
+ * Safer than getLatestComputedMetrics alone when August + September snapshots coexist.
+ */
+export function getComputedMetricsForReferenceDate(
+  memberId: EntityId,
+  referenceDate: ISODateString,
+  storage: StorageAdapter = createLocalStorageAdapter(),
+): MemberComputedMetrics | null {
+  const raw = storage.getItem(STORAGE_KEYS.computedMetrics);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as MemberComputedMetrics[];
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return null;
+    }
+
+    const matching = parsed.filter(
+      (item) =>
+        item.memberId === memberId && item.missions?.referenceDate === referenceDate,
+    );
+    if (matching.length === 0) {
+      return null;
+    }
+
+    return matching.sort((left, right) => right.computedAt.localeCompare(left.computedAt))[0];
   } catch {
     return null;
   }
