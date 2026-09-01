@@ -17,6 +17,7 @@ const FORBIDDEN_DOWNLINE_KEYS = [
   STORAGE_KEYS.calendarEventDeletionTombstones,
   STORAGE_KEYS.calendarGoogleDeletionTombstones,
   STORAGE_KEYS.calendarSharedAttendance,
+  STORAGE_KEYS.calendarAllianceEventParticipants,
   STORAGE_KEYS.calendarReminderQueue,
   STORAGE_KEYS.googleCalendarAuth,
   STORAGE_KEYS.homeDisplayMode,

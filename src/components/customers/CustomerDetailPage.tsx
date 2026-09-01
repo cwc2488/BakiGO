@@ -43,6 +43,7 @@ import { buildBodyCompositionTrendSeries } from "@/lib/customers/body-compositio
 import { computeBmi, computeAgeFromCustomerProfile } from "@/lib/customers/body-metrics";
 import { todayISODate } from "@/lib/config/app-config";
 import { formatShortDate } from "@/lib/mission-control/format";
+import { removeCustomerFromAllianceEvents } from "@/lib/calendar/alliance-event-participants";
 import { createCustomerRepository } from "@/lib/repositories/customer-repository";
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
@@ -426,6 +427,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
       }
       repo.deleteCustomer(customerId);
       createCalendarEventRepository(storage).removeCustomerFromAllEvents(customerId);
+      removeCustomerFromAllianceEvents(storage, viewer.id, customerId);
       try {
         await flushCustomerCloudPushAsync();
       } catch (error) {

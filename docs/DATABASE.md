@@ -46,9 +46,12 @@ Migration `061_customers_soft_delete.sql` adds nullable `deleted_at`. Active CRM
 
 **Operational source of truth (app):** `CalendarEvent.participantCustomerIds` inside `member_app_data` key `baki-go:calendar-events` (stable customer IDs, not names).
 
-**Cloud mirror:** `calendar_event_participants` enforces `unique (owner_member_id, event_id, customer_id)` and owner-only RLS that also requires the customer row to belong to the same coach (`deleted_at is null`). Removing a participant or deleting an event does **not** delete the customer or the calendar event series counterpart beyond the join row.
+**Cloud mirror:** `calendar_event_participants` enforces uniqueness on
+`(owner_member_id, event_source, event_id, customer_id)` and owner-only RLS that also requires the customer row to belong to the same coach (`deleted_at is null`). Removing a participant or deleting an event does **not** delete the customer or the calendar event series counterpart beyond the join row.
 
-Customer Detail 「下次活動」 and Calendar Event 「參加人員」 read/write the same `participantCustomerIds` list.
+Customer Detail 「下次活動」 and Calendar Event 「參加人員」 read/write the same participant links.
+
+Migration `075_calendar_event_participants_source.sql` adds `event_source` (`personal` | `alliance_shared`) and uniqueness `(owner_member_id, event_source, event_id, customer_id)`. Existing 074 rows default to `personal`. Alliance Shared events use canonical `shared:{calendarId}:{uid}` IDs and are **never copied** into personal calendar. Shared links live in `member_app_data` key `baki-go:calendar-alliance-event-participants` (OWN-only; not in downline RLS allowlist).
 
 ### Quiz icebreaker (`021_quiz_icebreaker_v1.sql`+)
 
