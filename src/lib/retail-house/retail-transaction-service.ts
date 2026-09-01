@@ -196,6 +196,7 @@ export function deleteRetailTransactionForCurrentMember(
     {
       memberId,
       referenceDate: resolveReferenceDate(target.referenceEventDate),
+      includeMapUniverse: false,
     },
     storage,
   );
@@ -268,6 +269,7 @@ export function updateRetailTransactionForCurrentMember(
     {
       memberId,
       referenceDate: resolveReferenceDate(validated.eventDate),
+      includeMapUniverse: false,
     },
     storage,
   );
@@ -305,6 +307,7 @@ export function createRetailTransactionForCurrentMember(
     {
       memberId,
       referenceDate: resolveReferenceDate(validated.eventDate),
+      includeMapUniverse: false,
     },
     storage,
   );
