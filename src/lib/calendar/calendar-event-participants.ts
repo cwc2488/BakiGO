@@ -167,6 +167,7 @@ export function toParticipantRows(
     createdAt: now,
     updatedAt: now,
     ownerMemberId,
+    eventSource: "personal",
     eventId: event.id,
     customerId,
   }));

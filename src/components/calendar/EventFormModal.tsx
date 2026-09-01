@@ -613,7 +613,7 @@ export function EventFormModal({
           </div>
         ) : null}
 
-        {participantsContext && !sharedContext ? (
+        {participantsContext ? (
           <EventParticipantsSection
             customers={participantsContext.customers}
             editable={participantsContext.editable}

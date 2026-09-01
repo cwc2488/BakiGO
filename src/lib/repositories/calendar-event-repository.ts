@@ -92,6 +92,7 @@ export class LocalStorageCalendarEventRepository implements CalendarEventReposit
     const next = [...this.getAll(), event];
     this.storage.setItem(STORAGE_KEYS.calendarEvents, JSON.stringify(next));
     void flushCalendarEventParticipantsCloud(event.memberId, event.id, {
+      eventSource: "personal",
       participantCustomerIds: event.participantCustomerIds,
     });
     return event;
@@ -123,6 +124,7 @@ export class LocalStorageCalendarEventRepository implements CalendarEventReposit
     this.storage.setItem(STORAGE_KEYS.calendarEvents, JSON.stringify(next));
     if (input.participantCustomerIds !== undefined) {
       void flushCalendarEventParticipantsCloud(updated.memberId, updated.id, {
+        eventSource: "personal",
         participantCustomerIds: updated.participantCustomerIds,
       });
     }
@@ -136,6 +138,7 @@ export class LocalStorageCalendarEventRepository implements CalendarEventReposit
     this.storage.setItem(STORAGE_KEYS.calendarEvents, JSON.stringify(next));
     if (existing) {
       void flushCalendarEventParticipantsCloud(existing.memberId, eventId, {
+        eventSource: "personal",
         deleted: true,
       });
     }
@@ -173,6 +176,7 @@ export class LocalStorageCalendarEventRepository implements CalendarEventReposit
     this.storage.setItem(STORAGE_KEYS.calendarEvents, JSON.stringify(next));
     flushPendingCloudSync();
     void flushCalendarEventParticipantsCloud(ownerId, undefined, {
+      eventSource: "personal",
       removedCustomerId: customerId,
     });
   }

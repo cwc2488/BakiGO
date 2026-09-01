@@ -17,6 +17,8 @@ export const STORAGE_KEYS = {
   calendarEventDeletionTombstones: "baki-go:calendar-event-deletion-tombstones",
   calendarGoogleDeletionTombstones: "baki-go:calendar-google-deletion-tombstones",
   calendarSharedAttendance: "baki-go:calendar-shared-attendance",
+  /** Coach-owned customer links to Alliance Shared events (not copied into personal calendar). */
+  calendarAllianceEventParticipants: "baki-go:calendar-alliance-event-participants",
   sharedCalendarEvents: "baki-go:shared-calendar-events",
   sharedCalendarCacheMeta: "baki-go:shared-calendar-cache-meta",
   sharedCalendarDataVersion: "baki-go:shared-calendar-data-version",

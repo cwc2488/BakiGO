@@ -22,6 +22,11 @@ import { WeekView } from "@/components/calendar/WeekView";
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import { assertCustomerOwnedByMember } from "@/lib/calendar/calendar-event-participants";
 import {
+  addAllianceEventParticipant,
+  listAllianceParticipantsForEvent,
+  removeAllianceEventParticipant,
+} from "@/lib/calendar/alliance-event-participants";
+import {
   inferCalendarActivityTypeFromTitle,
   CALENDAR_CATEGORY_KEYS,
   resolveCalendarCategoryKey,
@@ -425,6 +430,15 @@ export default function CalendarPage() {
     setDraftParticipantIds((current) =>
       current.includes(customerId) ? current : [...current, customerId],
     );
+    if (formMode === "view" && viewingExpandedEvent) {
+      addAllianceEventParticipant(storage, {
+        ownerMemberId: memberId,
+        eventId: viewingExpandedEvent.sourceEventId,
+        customerId,
+      });
+      void awaitPendingCloudSync();
+      return;
+    }
     if (formMode === "edit" && editingEventId) {
       createCalendarEventRepository(storage).addParticipant(editingEventId, customerId);
       void awaitPendingCloudSync();
@@ -434,6 +448,15 @@ export default function CalendarPage() {
 
   function handleRemoveParticipant(customerId: string) {
     setDraftParticipantIds((current) => current.filter((id) => id !== customerId));
+    if (formMode === "view" && viewingExpandedEvent) {
+      removeAllianceEventParticipant(storage, {
+        ownerMemberId: memberId,
+        eventId: viewingExpandedEvent.sourceEventId,
+        customerId,
+      });
+      void awaitPendingCloudSync();
+      return;
+    }
     if (formMode === "edit" && editingEventId) {
       createCalendarEventRepository(storage).removeParticipant(editingEventId, customerId);
       void awaitPendingCloudSync();
@@ -519,7 +542,9 @@ export default function CalendarPage() {
       setFormMode("view");
       setFormReadOnly(true);
       setEditingEventId(null);
-      setDraftParticipantIds([]);
+      setDraftParticipantIds(
+        listAllianceParticipantsForEvent(storage, memberId, expanded.sourceEventId),
+      );
       setFormValues({
         ...expandedEventToFormValues(expanded),
         activityTypeKey:
@@ -1295,17 +1320,13 @@ export default function CalendarPage() {
         onDelete={formMode === "edit" ? () => void handleDelete() : undefined}
         onSubmit={() => void handleSubmit()}
         open={formOpen && recurrenceScopeMode === null}
-        participantsContext={
-          formMode === "view" || formReadOnly
-            ? undefined
-            : {
-                participantCustomerIds: draftParticipantIds,
-                customers: ownedCustomers,
-                editable: true,
-                onAdd: handleAddParticipant,
-                onRemove: handleRemoveParticipant,
-              }
-        }
+        participantsContext={{
+          participantCustomerIds: draftParticipantIds,
+          customers: ownedCustomers,
+          editable: true,
+          onAdd: handleAddParticipant,
+          onRemove: handleRemoveParticipant,
+        }}
         personalLogContext={personalLogContext}
         readOnly={formReadOnly}
         sharedContext={formSharedContext}

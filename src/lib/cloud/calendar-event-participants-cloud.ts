@@ -1,18 +1,21 @@
 /**
- * Optional cloud mirror for calendar_event_participants (migration 074).
- * Local CalendarEvent.participantCustomerIds remains the operational source of truth
- * (synced via member_app_data calendar-events blob). This flush best-effort mirrors
- * links into SQL for uniqueness + RLS when the table exists.
+ * Optional cloud mirror for calendar_event_participants (074 + 075).
+ * Local stores remain operational source of truth. SQL uniqueness is
+ * (owner_member_id, event_source, event_id, customer_id).
  */
 import { isCloudDatabaseMemberId } from "@/lib/cloud/cloud-member-ids";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { uniqueCustomerIds } from "@/lib/calendar/calendar-event-participants";
 import type { EntityId } from "@/types";
+import {
+  CALENDAR_EVENT_SOURCE,
+  type CalendarEventSource,
+} from "@/types/calendar-event-participant";
 
 type FlushOptions = {
   deleted?: boolean;
   removedCustomerId?: EntityId;
-  /** Desired participant ids for the event (omit when deleted). */
+  eventSource?: CalendarEventSource;
   participantCustomerIds?: readonly EntityId[];
 };
 
@@ -23,22 +26,21 @@ export async function flushCalendarEventParticipantsCloud(
 ): Promise<void> {
   if (!isSupabaseConfigured()) return;
 
+  const eventSource = options.eventSource ?? CALENDAR_EVENT_SOURCE.PERSONAL;
+
   try {
     const supabase = createSupabaseBrowserClient();
 
     if (options.removedCustomerId) {
+      let query = supabase
+        .from("calendar_event_participants")
+        .delete()
+        .eq("customer_id", options.removedCustomerId)
+        .eq("event_source", eventSource);
       if (ownerMemberId && isCloudDatabaseMemberId(ownerMemberId)) {
-        await supabase
-          .from("calendar_event_participants")
-          .delete()
-          .eq("owner_member_id", ownerMemberId)
-          .eq("customer_id", options.removedCustomerId);
-      } else {
-        await supabase
-          .from("calendar_event_participants")
-          .delete()
-          .eq("customer_id", options.removedCustomerId);
+        query = query.eq("owner_member_id", ownerMemberId);
       }
+      await query;
       return;
     }
 
@@ -51,6 +53,7 @@ export async function flushCalendarEventParticipantsCloud(
         .from("calendar_event_participants")
         .delete()
         .eq("owner_member_id", ownerMemberId)
+        .eq("event_source", eventSource)
         .eq("event_id", eventId);
       return;
     }
@@ -61,6 +64,7 @@ export async function flushCalendarEventParticipantsCloud(
       .from("calendar_event_participants")
       .select("id, customer_id")
       .eq("owner_member_id", ownerMemberId)
+      .eq("event_source", eventSource)
       .eq("event_id", eventId);
 
     if (readError) {
@@ -87,14 +91,18 @@ export async function flushCalendarEventParticipantsCloud(
       await supabase.from("calendar_event_participants").upsert(
         toAdd.map((customerId) => ({
           owner_member_id: ownerMemberId,
+          event_source: eventSource,
           event_id: eventId,
           customer_id: customerId,
           updated_at: now,
         })),
-        { onConflict: "owner_member_id,event_id,customer_id", ignoreDuplicates: true },
+        {
+          onConflict: "owner_member_id,event_source,event_id,customer_id",
+          ignoreDuplicates: true,
+        },
       );
     }
   } catch {
-    // Non-blocking: local calendar blob remains authoritative.
+    // Non-blocking: local stores remain authoritative.
   }
 }
