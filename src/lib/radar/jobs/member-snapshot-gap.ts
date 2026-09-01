@@ -1,4 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  scoreSnapshotDateOrFilter,
+  scoreSnapshotRowMatchesDate,
+} from "../repository/score-snapshot-date";
 
 /**
  * RADAR-MEMBER-SNAPSHOT-GAP-01 — read-only member-scoped diagnosis.
@@ -112,26 +116,26 @@ export async function loadMemberSnapshotGapReport(
     .eq("member_id", member_id)
     .maybeSingle();
 
-  const { count: score_snapshot_count } = await client
+  const { data: scoreRows, error: scoreRowsError } = await client
     .from("radar_candidate_score_snapshots")
-    .select("id", { count: "exact", head: true })
+    .select("id, candidate_id_text, analyzed_at, created_at, extraction_snapshot")
     .eq("member_id", member_id)
-    .filter("extraction_snapshot->>snapshot_date", "eq", snapshot_date);
+    .or(scoreSnapshotDateOrFilter(snapshot_date));
+  if (scoreRowsError) throw new Error(scoreRowsError.message);
 
-  // Fallback count by analyzed_at date prefix when snapshot_date is only in JSON.
-  let scoreCount = score_snapshot_count ?? 0;
-  if (scoreCount === 0) {
-    const { data: scoreRows } = await client
-      .from("radar_candidate_score_snapshots")
-      .select("id, analyzed_at, extraction_snapshot")
-      .eq("member_id", member_id)
-      .limit(5000);
-    scoreCount = (scoreRows ?? []).filter((row) => {
-      const snap = asRecord(row.extraction_snapshot);
-      if (snap.snapshot_date === snapshot_date) return true;
-      return String(row.analyzed_at ?? "").slice(0, 10) === snapshot_date;
-    }).length;
+  const sameDayScores = (scoreRows ?? []).filter((row) =>
+    scoreSnapshotRowMatchesDate(row, snapshot_date),
+  );
+  const latestScoreCandidates = new Set<string>();
+  for (const row of [...sameDayScores].sort((a, b) =>
+    String(a.analyzed_at ?? a.created_at ?? "").localeCompare(
+      String(b.analyzed_at ?? b.created_at ?? ""),
+    ),
+  )) {
+    const id = String(row.candidate_id_text ?? "");
+    if (id) latestScoreCandidates.add(id);
   }
+  const scoreCount = latestScoreCandidates.size;
 
   const { count: handledCount } = await client
     .from("member_candidate_state")

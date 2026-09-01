@@ -1,8 +1,7 @@
 import { noStoreJson } from "@/lib/radar/jobs/auto-drain";
-import { pipelineJobKey } from "@/lib/radar/jobs/chain";
 import { loadMemberSnapshotGapReport } from "@/lib/radar/jobs/member-snapshot-gap";
+import { runMemberRankRebuild } from "@/lib/radar/jobs/run-member-rank-rebuild";
 import { createSupabaseRadarJobQueue } from "@/lib/radar/jobs/supabase-queue-store";
-import { processClaimedJob, type WorkerContext } from "@/lib/radar/jobs/workers/dispatch";
 import { SupabasePipelineStore } from "@/lib/radar/pipeline/supabase-pipeline-store";
 import { SupabaseRadarRepository } from "@/lib/radar/repository/supabase-repository";
 import { createSourceAdapterRegistry } from "@/lib/radar/sources/registry";
@@ -11,14 +10,14 @@ import {
   isRadarCronAuthorized,
   isSupabaseServiceConfigured,
 } from "@/lib/supabase/service-client";
-import type { RadarJobRecord } from "@/lib/radar/jobs/types";
+import type { WorkerContext } from "@/lib/radar/jobs/workers/dispatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * RADAR-MEMBER-SNAPSHOT-GAP-01 — single-member rank recovery only.
- * Does not rebuild org run, discovery, analyze, or other members' snapshots.
+ * Single-member Rank recovery — re-ranks from existing score snapshots only.
+ * Does not rebuild discovery, analyze, or score upstream stages.
  */
 
 type Body = {
@@ -26,11 +25,30 @@ type Body = {
   snapshot_date?: string;
   pipeline_run_id?: string;
   dry_run?: boolean;
+  force?: boolean;
 };
 
-const APPROVED_MEMBER_ID = "f8359859-b5f7-4c97-b0b1-7a5a2ab9fd92";
-const APPROVED_DATE = "2026-08-27";
-const APPROVED_RUN_ID = "64499623-d0ff-4b4f-8336-2a17091af7cc";
+type ApprovedRecovery = {
+  member_id: string;
+  snapshot_date: string;
+  pipeline_run_id: string;
+  label: string;
+};
+
+const APPROVED_RECOVERIES: ApprovedRecovery[] = [
+  {
+    member_id: "f8359859-b5f7-4c97-b0b1-7a5a2ab9fd92",
+    snapshot_date: "2026-08-27",
+    pipeline_run_id: "64499623-d0ff-4b4f-8336-2a17091af7cc",
+    label: "RADAR-MEMBER-SNAPSHOT-GAP-01",
+  },
+  {
+    member_id: "f8359859-b5f7-4c97-b0b1-7a5a2ab9fd92",
+    snapshot_date: "2026-09-01",
+    pipeline_run_id: "9e484340-4ccd-4c8c-9271-430705cae699",
+    label: "SCORE_RANK_CONTRACT_2026-09-01",
+  },
+];
 
 function createWorkerContext(): WorkerContext {
   const client = createSupabaseServiceClient();
@@ -43,6 +61,21 @@ function createWorkerContext(): WorkerContext {
     }),
     pipelineStore: new SupabasePipelineStore(client),
   };
+}
+
+function findApprovedRecovery(input: {
+  member_id: string;
+  snapshot_date: string;
+  pipeline_run_id: string;
+}): ApprovedRecovery | null {
+  return (
+    APPROVED_RECOVERIES.find(
+      (row) =>
+        row.member_id === input.member_id &&
+        row.snapshot_date === input.snapshot_date &&
+        row.pipeline_run_id === input.pipeline_run_id,
+    ) ?? null
+  );
 }
 
 export async function POST(request: Request) {
@@ -70,16 +103,12 @@ export async function POST(request: Request) {
     );
   }
 
-  // Hard guard: only the proven 2026-08-27 gap recovery member/date/run.
-  if (
-    snapshot_date !== APPROVED_DATE ||
-    pipeline_run_id !== APPROVED_RUN_ID ||
-    member_id !== APPROVED_MEMBER_ID
-  ) {
+  const approved = findApprovedRecovery({ member_id, snapshot_date, pipeline_run_id });
+  if (!approved) {
     return noStoreJson(
       {
         error: "recovery_guard_rejected",
-        detail: "Only the approved 2026-08-27 Partner 巴其 single-member recovery is allowed.",
+        detail: "Member/date/run is not on the approved recovery allowlist.",
       },
       { status: 403 },
     );
@@ -92,100 +121,34 @@ export async function POST(request: Request) {
     pipeline_run_id,
   });
 
-  if (before.snapshot.exists) {
+  const hasNonEmptySnapshot =
+    before.snapshot.exists && Number(before.snapshot.item_count ?? 0) > 0;
+  if (hasNonEmptySnapshot && !body.force) {
     return noStoreJson({
       ok: true,
       skipped: true,
-      reason: "snapshot_already_exists",
+      reason: "snapshot_already_populated",
       before,
     });
-  }
-
-  if (before.rank_jobs.some((job) => job.status === "succeeded")) {
-    return noStoreJson(
-      {
-        ok: false,
-        error: "rank_succeeded_without_snapshot",
-        before,
-      },
-      { status: 409 },
-    );
   }
 
   if (body.dry_run) {
     return noStoreJson({
       ok: true,
       dry_run: true,
-      would_enqueue_rank: true,
+      would_rebuild_rank: true,
+      recovery_label: approved.label,
       before,
     });
   }
 
   const ctx = createWorkerContext();
-  const now = new Date();
-  const { job: enqueued } = await ctx.queue.enqueue(
-    {
-      pipeline_run_id,
-      job_type: "rank",
-      idempotency_key: pipelineJobKey(snapshot_date, [
-        "rank",
-        member_id,
-        "member_snapshot_gap_01",
-      ]),
-      payload: {
-        run_date: snapshot_date,
-        member_id,
-        artifact_refs: {},
-        recovery: "RADAR-MEMBER-SNAPSHOT-GAP-01",
-      },
-      priority: 100_000,
-    },
-    now,
-  );
-
-  if (enqueued.status === "succeeded") {
-    const afterExisting = await loadMemberSnapshotGapReport(client, {
-      member_id,
-      snapshot_date,
-      pipeline_run_id,
-    });
-    return noStoreJson({
-      ok: afterExisting.snapshot.exists,
-      skipped: true,
-      reason: "recovery_rank_already_succeeded",
-      enqueued_job_id: enqueued.id,
-      before,
-      after: afterExisting,
-    });
-  }
-
-  // Mark running then process via the same worker path as claim+dispatch.
-  const { error: claimError } = await client
-    .from("radar_jobs")
-    .update({
-      status: "running",
-      started_at: now.toISOString(),
-      attempt_count: Number(enqueued.attempt_count ?? 0) + 1,
-      updated_at: now.toISOString(),
-    })
-    .eq("id", enqueued.id)
-    .in("status", ["pending", "failed", "running"]);
-  if (claimError) {
-    return noStoreJson(
-      { ok: false, error: claimError.message, enqueued_job_id: enqueued.id },
-      { status: 500 },
-    );
-  }
-
-  const claimed: RadarJobRecord = {
-    ...enqueued,
-    status: "running",
-    started_at: now.toISOString(),
-    attempt_count: Number(enqueued.attempt_count ?? 0) + 1,
-    updated_at: now.toISOString(),
-  };
-
-  await processClaimedJob({ ...ctx, now }, claimed);
+  const rebuild = await runMemberRankRebuild(ctx, {
+    member_id,
+    snapshot_date,
+    pipeline_run_id,
+    recovery_tag: approved.label,
+  });
 
   const after = await loadMemberSnapshotGapReport(client, {
     member_id,
@@ -194,9 +157,10 @@ export async function POST(request: Request) {
   });
 
   return noStoreJson({
-    ok: true,
-    recovered: after.snapshot.exists,
-    enqueued_job_id: enqueued.id,
+    ok: rebuild.ok,
+    recovered: rebuild.ok && Number(after.snapshot.item_count ?? 0) > 0,
+    recovery_label: approved.label,
+    rebuild,
     before,
     after,
   });

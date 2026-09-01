@@ -567,6 +567,43 @@ export class InMemoryRadarRepository implements RadarRepository {
     return Number(row.terminal_score_jobs) >= Number(row.expected_score_jobs);
   }
 
+  async getMemberScoreProgress(input: { pipeline_run_id: string; member_id: string }) {
+    const row = this.scoreProgress.get(this.scoreProgressKey(input.pipeline_run_id, input.member_id));
+    if (!row) return null;
+    return {
+      expected_score_jobs: Number(row.expected_score_jobs ?? 0),
+      terminal_score_jobs: Number(row.terminal_score_jobs ?? 0),
+      rank_enqueued: Boolean(row.rank_enqueued),
+    };
+  }
+
+  async clearMemberRankEnqueued(input: { pipeline_run_id: string; member_id: string }) {
+    const row = this.scoreProgress.get(this.scoreProgressKey(input.pipeline_run_id, input.member_id));
+    if (row) row.rank_enqueued = false;
+  }
+
+  async countMemberScoreSnapshotsForDate(input: { member_id: string; snapshot_date: string }) {
+    const latest = new Map<string, boolean>();
+    for (const row of this.memberScores) {
+      if (row.member_id !== input.member_id || row.snapshot_date !== input.snapshot_date) continue;
+      latest.set(String(row.candidate_id), true);
+    }
+    return latest.size;
+  }
+
+  async countMemberScoreSnapshotsAboveMinimum(input: {
+    member_id: string;
+    snapshot_date: string;
+    minimum_score: number;
+  }) {
+    const latest = new Map<string, number>();
+    for (const row of this.memberScores) {
+      if (row.member_id !== input.member_id || row.snapshot_date !== input.snapshot_date) continue;
+      latest.set(String(row.candidate_id), Number(row.overall_score));
+    }
+    return [...latest.values()].filter((score) => score >= input.minimum_score).length;
+  }
+
   async upsertMemberDailyTop20(input: {
     member_id: string;
     pipeline_run_id: string;
