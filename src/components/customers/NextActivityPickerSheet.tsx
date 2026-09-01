@@ -58,9 +58,9 @@ export function NextActivityPickerSheet({ open, items, onClose, onSelect }: Prop
     <MobileDismissibleSheet
       onClose={handleClose}
       open={open}
-      overlayClassName="bg-black/55"
-      panelClassName="mb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] flex h-[min(86dvh,calc(100dvh-4.75rem-env(safe-area-inset-bottom,0px)))] w-full max-w-md flex-col overflow-hidden rounded-t-[1.5rem] bg-[#ffffff] shadow-[0_-12px_40px_rgba(0,0,0,0.22)] sm:mb-0 sm:h-[min(86vh,40rem)] sm:rounded-[1.5rem]"
-      rootClassName="z-[130]"
+      overlayClassName="bg-black/60"
+      panelClassName="flex h-[min(90dvh,100dvh)] w-full max-w-md flex-col overflow-hidden rounded-t-[1.5rem] bg-[#ffffff] pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-12px_40px_rgba(0,0,0,0.28)] sm:mb-0 sm:h-[min(86vh,40rem)] sm:rounded-[1.5rem] sm:pb-0"
+      rootClassName="z-[140]"
     >
       <MobileDismissibleSheetHandle />
 
