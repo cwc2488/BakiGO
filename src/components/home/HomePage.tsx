@@ -25,6 +25,8 @@ import {
 } from "@/lib/home/my-home-presentation";
 import { homeMoreEntriesForViewer } from "@/lib/auth/admin-access";
 import { useSuperAdmin } from "@/lib/auth/use-super-admin";
+import { useSoftRefresh } from "@/lib/hooks/use-soft-refresh";
+import { millisecondsUntilNextAppMidnight } from "@/lib/config/app-config";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -81,12 +83,6 @@ function BusinessHomeView({ metrics }: { metrics: MemberComputedMetrics }) {
             <MetricRow key={row.label} label={row.label} percent={row.percent} value={row.value} />
           ))}
         </dl>
-        <Link
-          href={progress.fullProgressHref}
-          className="mt-5 inline-flex min-h-10 items-center text-[0.875rem] font-semibold text-[var(--brand-primary-dark)]"
-        >
-          查看完整進度 →
-        </Link>
       </section>
 
       {/* 我的事業 */}
@@ -181,6 +177,7 @@ export default function HomePage() {
   const bootstrap = useCallback(() => {
     setErrorMessage("資料載入失敗，請稍後再試。");
     try {
+      // Stale-day cache is rejected inside readMissionControlMetrics (Taipei day).
       const cached = readMissionControlMetrics();
       if (cached) {
         setMetrics(cached);
@@ -200,6 +197,36 @@ export default function HomePage() {
     queueMicrotask(() => {
       bootstrap();
     });
+  }, [bootstrap]);
+
+  // Resume from background / focus — re-resolve Taipei "today" without restart.
+  useSoftRefresh(() => {
+    bootstrap();
+  });
+
+  // Schedule refresh at the next Asia/Taipei midnight boundary.
+  useEffect(() => {
+    let timerId: number | null = null;
+    let cancelled = false;
+
+    const schedule = () => {
+      if (cancelled) {
+        return;
+      }
+      const delay = millisecondsUntilNextAppMidnight();
+      timerId = window.setTimeout(() => {
+        bootstrap();
+        schedule();
+      }, delay + 50);
+    };
+
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timerId !== null) {
+        window.clearTimeout(timerId);
+      }
+    };
   }, [bootstrap]);
 
   if (loadState === "loading" && !metrics) {
