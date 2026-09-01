@@ -190,6 +190,12 @@ export function syncPersonalCalendarEventToBakiEvent(
   memberId: EntityId,
   calendarEvent: CalendarEvent | ExpandedCalendarEvent,
   occurrenceDate?: ISODateString,
+  result?: {
+    customerName?: string;
+    customerPhone?: string;
+    region?: string;
+    note?: string;
+  },
 ): MemberComputedMetrics | null {
   const activityTypeKey =
     "activityTypeKey" in calendarEvent ? calendarEvent.activityTypeKey : undefined;
@@ -200,6 +206,13 @@ export function syncPersonalCalendarEventToBakiEvent(
   const date = occurrenceDate ?? calendarEvent.startAt.slice(0, 10);
   const calendarEventId =
     "sourceEventId" in calendarEvent ? calendarEvent.sourceEventId : calendarEvent.id;
+
+  const customerName = result?.customerName?.trim();
+  const resultNote = result?.note?.trim();
+  const composedNote = buildCalendarNote({
+    title: calendarEvent.title,
+    notes: [calendarEvent.notes, resultNote].filter(Boolean).join("\n") || undefined,
+  });
 
   const input: BakiEventCreateInput = {
     organizationId: APP_IDS.organizationId,
@@ -212,10 +225,14 @@ export function syncPersonalCalendarEventToBakiEvent(
       calendarEventId,
       occurrenceDate: date,
       calendarTitle: calendarEvent.title,
-      note: buildCalendarNote({
-        title: calendarEvent.title,
-        notes: calendarEvent.notes,
-      }),
+      note: composedNote,
+      ...(customerName
+        ? {
+            customerName,
+            customerPhone: result?.customerPhone?.trim() || undefined,
+            region: result?.region?.trim() || undefined,
+          }
+        : {}),
     },
   };
 

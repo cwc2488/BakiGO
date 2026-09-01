@@ -122,7 +122,8 @@ describe("Partner UI precision cleanup", () => {
     expect(home).not.toContain("nextGoalValue");
     expect(home).not.toContain("nextGoalPercent");
     expect(home).toContain("progress.rows");
-    expect(home).toContain("查看完整進度");
+    expect(home).not.toContain("查看完整進度");
+    expect(home).not.toContain("fullProgressHref");
   });
 
   it("hides organization attention banner", () => {
