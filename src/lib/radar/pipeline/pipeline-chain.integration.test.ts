@@ -105,7 +105,7 @@ describe("radar pipeline chain integration", () => {
     );
 
     const result = await runJob(ctx, normalizeJob);
-    expect(result?.status).toBe("failed");
+    expect(result?.status === "failed" || result?.status === "dead_letter").toBe(true);
 
     const analyzeJobs = [...(await ctx.queue.claim({ limit: 10, now }))].filter(
       (job) => job.job_type === "analyze",

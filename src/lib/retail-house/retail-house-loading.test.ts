@@ -186,13 +186,12 @@ describe("REQUIRED — Retail House loading lifecycle (permanent spinner regress
     const storage = memoryStorage();
     authSeed(storage);
 
-    // Force bootstrap failure by making storage.setItem throw during saveComputedMetrics.
-    const originalSetItem = storage.setItem.bind(storage);
-    storage.setItem = (key, value) => {
-      if (key === STORAGE_KEYS.computedMetrics) {
-        throw new Error("QuotaExceededError");
+    const originalGetItem = storage.getItem.bind(storage);
+    storage.getItem = (key) => {
+      if (key === STORAGE_KEYS.bakiEvents) {
+        throw new Error("IndexedDB read failed");
       }
-      originalSetItem(key, value);
+      return originalGetItem(key);
     };
 
     const result = bootstrapRetailHousePage({
