@@ -58,13 +58,14 @@ import { getSharedCalendarIds, getSharedCalendarSyncRange, syncSharedGoogleCalen
 import { buildMeetingAttendanceSummary } from "@/lib/calendar/meeting-attendance-summary";
 import {
   completeCalendarActivityEvent,
-  ensureScheduledCalendarActivityEvent,
+  ensureScheduledConsultationCalendarEvent,
   getLinkedCalendarActivityEventId,
   isPersonalCalendarEventLogged,
   isRecordableCalendarActivityKey,
   removeBakiEventForPersonalCalendarEvent,
   removeBakiEventForSharedAttendance,
   skipCalendarActivityEvent,
+  syncPersonalCalendarEventToBakiEvent,
   syncSharedAttendanceToBakiEvent,
 } from "@/lib/calendar/calendar-baki-event-sync";
 import {
@@ -92,24 +93,12 @@ import type { CalendarEvent, CalendarSlotInterval, ExpandedCalendarEvent, Recurr
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
 import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal";
-import {
-  logTodayActivity,
-  type QuickActivityInput,
-} from "@/lib/daily-action/log-today-action";
+import type { QuickActivityInput } from "@/lib/daily-action/log-today-action";
 
 type CalendarViewMode = "day" | "week" | "month" | "stats";
-type QuickRecordKind = "measurement" | "consultation";
 
-function resolveActivityKind(
-  activityTypeKey: string | undefined,
-): "measurement" | "consultation" | "other" {
-  if (activityTypeKey === ACTIVITY_EVENT_KEYS.MEASUREMENT) {
-    return "measurement";
-  }
-  if (activityTypeKey === ACTIVITY_EVENT_KEYS.CONSULTATION) {
-    return "consultation";
-  }
-  return "other";
+function isConsultationActivity(activityTypeKey: string | undefined): boolean {
+  return activityTypeKey === ACTIVITY_EVENT_KEYS.CONSULTATION;
 }
 
 function resolveEditingOccurrenceDate(
@@ -197,9 +186,6 @@ export default function CalendarPage() {
   const [personalEventLogged, setPersonalEventLogged] = useState(false);
   const [isLoggingPersonalEvent, setIsLoggingPersonalEvent] = useState(false);
   const [interactionResetKey, setInteractionResetKey] = useState(0);
-  const [quickRecordKind, setQuickRecordKind] = useState<QuickRecordKind | null>(null);
-  const [quickRecordOpen, setQuickRecordOpen] = useState(false);
-  const [quickRecordMenuOpen, setQuickRecordMenuOpen] = useState(false);
   const [completionResultOpen, setCompletionResultOpen] = useState(false);
 
   const resetCalendarInteraction = useCallback(() => {
@@ -541,8 +527,7 @@ export default function CalendarPage() {
       return;
     }
 
-    const kind = resolveActivityKind(formValues.activityTypeKey);
-    if (kind === "measurement" || kind === "consultation") {
+    if (isConsultationActivity(formValues.activityTypeKey)) {
       setCompletionResultOpen(true);
       return;
     }
@@ -565,18 +550,22 @@ export default function CalendarPage() {
         source,
         formValues.date,
       );
-      completeCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
+      syncPersonalCalendarEventToBakiEvent(
+        storage,
+        memberId,
+        calendarEvent,
+        occurrenceDate,
+      );
       setPersonalEventLogged(true);
-      setStatusMessage("已完成活動");
-      closeEventForm();
+      setStatusMessage("已登記至紀錄中心");
     } catch (caught) {
-      setStatusMessage(caught instanceof Error ? caught.message : "完成失敗");
+      setStatusMessage(caught instanceof Error ? caught.message : "登記失敗");
     } finally {
       setIsLoggingPersonalEvent(false);
     }
   }
 
-  function handleSkipPersonalEventWithoutResult() {
+  function handleSkipConsultationWithoutResult() {
     if (!editingEventId) {
       return;
     }
@@ -600,7 +589,7 @@ export default function CalendarPage() {
       );
       skipCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
       setPersonalEventLogged(true);
-      setStatusMessage("已標記未實際發生（不計入本月量測／諮詢）");
+      setStatusMessage("已標記未實際發生（不計入本月諮詢）");
       closeEventForm();
     } catch (caught) {
       setStatusMessage(caught instanceof Error ? caught.message : "操作失敗");
@@ -609,10 +598,13 @@ export default function CalendarPage() {
     }
   }
 
-  async function handleCompletionResultSubmit(
-    activityType: QuickRecordKind,
+  async function handleConsultationCompletionSubmit(
+    activityType: "measurement" | "consultation",
     input: QuickActivityInput,
   ) {
+    if (activityType !== "consultation") {
+      return;
+    }
     if (!editingEventId) {
       return;
     }
@@ -627,10 +619,7 @@ export default function CalendarPage() {
       const calendarEvent: CalendarEvent = {
         ...source,
         ...payload,
-        activityTypeKey:
-          activityType === "measurement"
-            ? ACTIVITY_EVENT_KEYS.MEASUREMENT
-            : ACTIVITY_EVENT_KEYS.CONSULTATION,
+        activityTypeKey: ACTIVITY_EVENT_KEYS.CONSULTATION,
       };
       const occurrenceDate = resolveEditingOccurrenceDate(
         editingOccurrence,
@@ -664,26 +653,13 @@ export default function CalendarPage() {
 
       setPersonalEventLogged(true);
       setCompletionResultOpen(false);
-      setStatusMessage(
-        activityType === "measurement" ? "已記錄量測成果" : "已記錄諮詢成果",
-      );
+      setStatusMessage("已記錄諮詢成果");
       closeEventForm();
     } catch (caught) {
       throw caught instanceof Error ? caught : new Error("儲存失敗，請稍後再試");
     } finally {
       setIsLoggingPersonalEvent(false);
     }
-  }
-
-  async function handleQuickRecordSubmit(
-    activityType: QuickRecordKind,
-    input: QuickActivityInput,
-  ) {
-    logTodayActivity(activityType, input, storage);
-    setQuickRecordOpen(false);
-    setQuickRecordKind(null);
-    setQuickRecordMenuOpen(false);
-    setStatusMessage(activityType === "measurement" ? "已快速記錄量測" : "已快速記錄諮詢");
   }
 
   function handleFormChange(nextValues: typeof formValues) {
@@ -836,8 +812,8 @@ export default function CalendarPage() {
     try {
       if (formMode === "create") {
         const created = repository.create({ memberId, ...payload });
-        if (!isRecurringSeries(created)) {
-          ensureScheduledCalendarActivityEvent(storage, memberId, created);
+        if (!isRecurringSeries(created) && isConsultationActivity(created.activityTypeKey)) {
+          ensureScheduledConsultationCalendarEvent(storage, memberId, created);
         }
         await awaitPendingCloudSync();
         googleWarning = await syncToGoogleWithWarning(created, "create");
@@ -1097,18 +1073,19 @@ export default function CalendarPage() {
         }
       : undefined;
 
-  const personalActivityKind = resolveActivityKind(formValues.activityTypeKey);
+  const isConsultationEdit = isConsultationActivity(formValues.activityTypeKey);
   const personalLogContext =
     formMode === "edit" && editingEventId && isRecordableCalendarActivityKey(formValues.activityTypeKey)
       ? {
           isLogged: personalEventLogged,
           isLogging: isLoggingPersonalEvent,
           onLogActivity: handleLogPersonalEvent,
-          activityKind: personalActivityKind,
-          onSkipWithoutResult:
-            personalActivityKind === "measurement" || personalActivityKind === "consultation"
-              ? handleSkipPersonalEventWithoutResult
-              : undefined,
+          ...(isConsultationEdit
+            ? {
+                activityKind: "consultation" as const,
+                onSkipWithoutResult: handleSkipConsultationWithoutResult,
+              }
+            : {}),
         }
       : undefined;
 
@@ -1124,51 +1101,14 @@ export default function CalendarPage() {
               </h1>
             </div>
             {viewMode !== "stats" ? (
-              <div className="relative flex shrink-0 items-center gap-2">
-                <div className="relative">
-                  <button
-                    className="inline-flex items-center gap-1 rounded-full border border-[var(--cal-border)] bg-[var(--cal-surface)] px-3 py-2 text-[0.8125rem] font-semibold text-[#1d1d1f] transition-transform active:scale-[0.98]"
-                    onClick={() => setQuickRecordMenuOpen((open) => !open)}
-                    type="button"
-                  >
-                    ＋ 快速紀錄
-                  </button>
-                  {quickRecordMenuOpen ? (
-                    <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 min-w-[9.5rem] overflow-hidden rounded-2xl border border-[var(--cal-border)] bg-[var(--cal-surface)] shadow-lg">
-                      <button
-                        className="block w-full px-4 py-3 text-left text-[0.875rem] font-medium text-[#1d1d1f] hover:bg-[var(--cal-primary-muted)]"
-                        onClick={() => {
-                          setQuickRecordMenuOpen(false);
-                          setQuickRecordKind("measurement");
-                          setQuickRecordOpen(true);
-                        }}
-                        type="button"
-                      >
-                        量測
-                      </button>
-                      <button
-                        className="block w-full border-t border-[var(--cal-border)] px-4 py-3 text-left text-[0.875rem] font-medium text-[#1d1d1f] hover:bg-[var(--cal-primary-muted)]"
-                        onClick={() => {
-                          setQuickRecordMenuOpen(false);
-                          setQuickRecordKind("consultation");
-                          setQuickRecordOpen(true);
-                        }}
-                        type="button"
-                      >
-                        諮詢
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-                <button
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 text-[0.875rem] font-semibold text-white transition-transform active:scale-[0.98]"
-                  onClick={() => openCreate()}
-                  type="button"
-                >
-                  <AppIcon className="text-white" name={APP_ICON.action.addRecord} size={16} />
-                  新增
-                </button>
-              </div>
+              <button
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 text-[0.875rem] font-semibold text-white transition-transform active:scale-[0.98]"
+                onClick={() => openCreate()}
+                type="button"
+              >
+                <AppIcon className="text-white" name={APP_ICON.action.addRecord} size={16} />
+                新增
+              </button>
             ) : null}
           </div>
 
@@ -1311,7 +1251,7 @@ export default function CalendarPage() {
         onClose={closeEventForm}
         onDelete={formMode === "edit" ? () => void handleDelete() : undefined}
         onSubmit={() => void handleSubmit()}
-        open={formOpen && recurrenceScopeMode === null}
+        open={formOpen}
         personalLogContext={personalLogContext}
         readOnly={formReadOnly}
         sharedContext={formSharedContext}
@@ -1329,25 +1269,9 @@ export default function CalendarPage() {
       />
 
       <QuickActivityModal
-        activityType={quickRecordOpen ? quickRecordKind : null}
-        onClose={() => {
-          setQuickRecordOpen(false);
-          setQuickRecordKind(null);
-        }}
-        onSubmit={handleQuickRecordSubmit}
-        open={quickRecordOpen}
-      />
-
-      <QuickActivityModal
-        activityType={
-          completionResultOpen
-            ? personalActivityKind === "measurement" || personalActivityKind === "consultation"
-              ? personalActivityKind
-              : null
-            : null
-        }
+        activityType={completionResultOpen ? "consultation" : null}
         onClose={() => setCompletionResultOpen(false)}
-        onSubmit={handleCompletionResultSubmit}
+        onSubmit={handleConsultationCompletionSubmit}
         open={completionResultOpen}
       />
     </div>

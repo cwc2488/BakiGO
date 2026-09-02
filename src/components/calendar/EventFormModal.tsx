@@ -60,7 +60,7 @@ export interface PersonalEventLogContext {
   isLogging?: boolean;
   onLogActivity: () => void;
   onSkipWithoutResult?: () => void;
-  activityKind?: "measurement" | "consultation" | "other";
+  activityKind?: "consultation";
 }
 
 export function buildDefaultFormValues(date: string, startTime = "09:00"): EventFormValues {
@@ -639,38 +639,53 @@ export function EventFormModal({
         {!readOnly ? (
           <>
             {personalLogContext ? (
-              <>
+              personalLogContext.activityKind === "consultation" ? (
+                <>
+                  <button
+                    className={`w-full rounded-xl px-4 py-3.5 text-[0.9375rem] font-semibold ${
+                      personalLogContext.isLogged
+                        ? "border border-[var(--cal-primary-dark)] bg-[var(--cal-primary-light)] text-[var(--cal-primary-dark)]"
+                        : "bg-[var(--cal-primary)] text-white"
+                    }`}
+                    disabled={personalLogContext.isLogged || personalLogContext.isLogging}
+                    onClick={personalLogContext.onLogActivity}
+                    type="button"
+                  >
+                    {personalLogContext.isLogged
+                      ? "已完成活動"
+                      : personalLogContext.isLogging
+                        ? "處理中…"
+                        : "完成活動 · 記錄諮詢"}
+                  </button>
+                  {!personalLogContext.isLogged && personalLogContext.onSkipWithoutResult ? (
+                    <button
+                      className="w-full rounded-xl border border-[var(--cal-border)] bg-[var(--cal-surface)] px-4 py-3 text-[0.875rem] font-medium text-[#86868b]"
+                      disabled={personalLogContext.isLogging}
+                      onClick={personalLogContext.onSkipWithoutResult}
+                      type="button"
+                    >
+                      未實際發生（不計入本月諮詢）
+                    </button>
+                  ) : null}
+                </>
+              ) : (
                 <button
                   className={`w-full rounded-xl px-4 py-3.5 text-[0.9375rem] font-semibold ${
                     personalLogContext.isLogged
                       ? "border border-[var(--cal-primary-dark)] bg-[var(--cal-primary-light)] text-[var(--cal-primary-dark)]"
-                      : "bg-[var(--cal-primary)] text-white"
+                      : "border border-[var(--cal-border)] bg-[var(--cal-surface)] text-[#1d1d1f]"
                   }`}
                   disabled={personalLogContext.isLogged || personalLogContext.isLogging}
                   onClick={personalLogContext.onLogActivity}
                   type="button"
                 >
                   {personalLogContext.isLogged
-                    ? "已完成活動"
+                    ? "已登記至紀錄中心"
                     : personalLogContext.isLogging
-                      ? "處理中…"
-                      : personalLogContext.activityKind === "measurement"
-                        ? "完成活動 · 記錄量測"
-                        : personalLogContext.activityKind === "consultation"
-                          ? "完成活動 · 記錄諮詢"
-                          : "完成活動"}
+                      ? "登記中…"
+                      : "完成並登記至紀錄中心"}
                 </button>
-                {!personalLogContext.isLogged && personalLogContext.onSkipWithoutResult ? (
-                  <button
-                    className="w-full rounded-xl border border-[var(--cal-border)] bg-[var(--cal-surface)] px-4 py-3 text-[0.875rem] font-medium text-[#86868b]"
-                    disabled={personalLogContext.isLogging}
-                    onClick={personalLogContext.onSkipWithoutResult}
-                    type="button"
-                  >
-                    未實際發生（不計入本月成果）
-                  </button>
-                ) : null}
-              </>
+              )
             ) : null}
             <button
               className="w-full rounded-xl bg-[var(--cal-primary)] px-4 py-3.5 text-[1rem] font-semibold text-white disabled:opacity-50"

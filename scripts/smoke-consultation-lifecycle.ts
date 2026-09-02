@@ -4,7 +4,7 @@
  */
 import {
   completeCalendarActivityEvent,
-  ensureScheduledCalendarActivityEvent,
+  ensureScheduledConsultationCalendarEvent,
   getLinkedCalendarActivityEventId,
 } from "../src/lib/calendar/calendar-baki-event-sync";
 import { logTodayActivity } from "../src/lib/daily-action/log-today-action";
@@ -55,7 +55,7 @@ const calendarEvent: CalendarEvent = {
 const occurrenceDate = "2026-09-02";
 
 // FLOW A
-ensureScheduledCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
+ensureScheduledConsultationCalendarEvent(storage, memberId, calendarEvent, occurrenceDate);
 const scheduledId = getLinkedCalendarActivityEventId(
   storage,
   memberId,

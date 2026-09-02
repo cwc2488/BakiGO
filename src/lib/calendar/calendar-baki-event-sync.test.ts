@@ -1,10 +1,11 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
   completeCalendarActivityEvent,
-  ensureScheduledCalendarActivityEvent,
+  ensureScheduledConsultationCalendarEvent,
   findLinkedCalendarBakiEvent,
   getLinkedCalendarActivityEventId,
   isPersonalCalendarEventLogged,
+  syncPersonalCalendarEventToBakiEvent,
 } from "@/lib/calendar/calendar-baki-event-sync";
 import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
 import { ACTIVITY_LIFECYCLE_STATUS } from "@/lib/event-center/activity-lifecycle";
@@ -60,7 +61,7 @@ describe("calendar consultation single event lifecycle", () => {
 
   it("creates exactly one scheduled consultation when calendar appointment is saved", () => {
     const calendarEvent = buildCalendarEvent();
-    ensureScheduledCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
+    ensureScheduledConsultationCalendarEvent(storage, memberId, calendarEvent, occurrenceDate);
 
     const events = createEventRepository(storage).getByMemberId(memberId);
     expect(events).toHaveLength(1);
@@ -70,7 +71,7 @@ describe("calendar consultation single event lifecycle", () => {
 
   it("completes scheduled consultation on the same event id", () => {
     const calendarEvent = buildCalendarEvent();
-    ensureScheduledCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
+    ensureScheduledConsultationCalendarEvent(storage, memberId, calendarEvent, occurrenceDate);
     const scheduledId = getLinkedCalendarActivityEventId(
       storage,
       memberId,
@@ -95,7 +96,7 @@ describe("calendar consultation single event lifecycle", () => {
 
   it("is idempotent when completing the same consultation twice", () => {
     const calendarEvent = buildCalendarEvent();
-    ensureScheduledCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
+    ensureScheduledConsultationCalendarEvent(storage, memberId, calendarEvent, occurrenceDate);
 
     completeCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate, {
       customerName: "王小姐",
@@ -160,5 +161,25 @@ describe("calendar consultation single event lifecycle", () => {
       occurrenceDate,
       secondOccurrence,
     ]);
+  });
+
+  it("does not create scheduled rows for measurement calendar appointments", () => {
+    const calendarEvent = buildCalendarEvent({
+      activityTypeKey: ACTIVITY_EVENT_KEYS.MEASUREMENT,
+      title: "量測預約",
+    });
+    ensureScheduledConsultationCalendarEvent(storage, memberId, calendarEvent, occurrenceDate);
+    expect(createEventRepository(storage).getByMemberId(memberId)).toHaveLength(0);
+  });
+
+  it("records measurement on calendar complete without a prior scheduled row", () => {
+    const calendarEvent = buildCalendarEvent({
+      activityTypeKey: ACTIVITY_EVENT_KEYS.MEASUREMENT,
+      title: "量測預約",
+    });
+    syncPersonalCalendarEventToBakiEvent(storage, memberId, calendarEvent, occurrenceDate);
+    const events = createEventRepository(storage).getByMemberId(memberId);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.metadata?.lifecycleStatus).toBeUndefined();
   });
 });
