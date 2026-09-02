@@ -1,3 +1,4 @@
+import { rethrowStorageUserError } from "./storage-quota-error";
 import type { StorageAdapter } from "./storage-adapter";
 
 export class LocalStorageAdapter implements StorageAdapter {
@@ -12,7 +13,11 @@ export class LocalStorageAdapter implements StorageAdapter {
     if (typeof window === "undefined") {
       return;
     }
-    window.localStorage.setItem(key, value);
+    try {
+      window.localStorage.setItem(key, value);
+    } catch (error) {
+      rethrowStorageUserError(error);
+    }
   }
 
   removeItem(key: string): void {
