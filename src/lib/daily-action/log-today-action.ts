@@ -1,5 +1,5 @@
 import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
-import { processEventForCurrentMember } from "@/lib/event-center/process-event";
+import { completeActivityEventForCurrentMember, processEventForCurrentMember } from "@/lib/event-center/process-event";
 import {
   createQuickRecruitMember,
   type QuickRecruitInput,
@@ -35,7 +35,7 @@ export function logTodayActivity(
       ? ACTIVITY_EVENT_KEYS.MEASUREMENT
       : ACTIVITY_EVENT_KEYS.CONSULTATION;
 
-  return processEventForCurrentMember(
+  return completeActivityEventForCurrentMember(
     {
       eventTypeKey,
       eventCategory: "activity",
@@ -48,6 +48,7 @@ export function logTodayActivity(
       },
     },
     storage,
+    "quick",
   );
 }
 

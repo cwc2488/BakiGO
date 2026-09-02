@@ -1,9 +1,18 @@
 import { CALENDAR_OTHER_ACTIVITY_KEY } from "@/lib/calendar/calendar-activity-types";
 import { APP_IDS } from "@/lib/config/app-config";
+import {
+  ACTIVITY_LIFECYCLE_STATUS,
+  buildCompletedActivityMetadata,
+  buildScheduledActivityMetadata,
+  buildSkippedActivityMetadata,
+  getActivityLifecycleStatus,
+  isActivityCompletionFinalized,
+} from "@/lib/event-center/activity-lifecycle";
 import { getEventTypeDefinition } from "@/lib/event-center/event-types";
 import { createEventRepository } from "@/lib/repositories/event-repository";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
+import { rethrowStorageUserError } from "@/lib/repositories/storage-quota-error";
 import { recalculateMemberMetrics } from "@/lib/services/recalculate-member-metrics";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import type { BakiEvent, BakiEventCreateInput } from "@/types/baki-event";
@@ -20,6 +29,11 @@ export interface CalendarBakiEventMetadata {
   calendarTitle?: string;
   newFriendsCount?: number;
   note?: string;
+  lifecycleStatus?: string;
+  completedAt?: string;
+  customerName?: string;
+  customerPhone?: string;
+  region?: string;
 }
 
 interface CalendarAttendanceInput {
@@ -29,6 +43,13 @@ interface CalendarAttendanceInput {
   title: string;
   notes?: string;
   startAt: string;
+}
+
+export interface CalendarActivityCompletionResult {
+  customerName?: string;
+  customerPhone?: string;
+  region?: string;
+  note?: string;
 }
 
 export function isRecordableCalendarActivityKey(activityTypeKey: string | undefined): boolean {
@@ -81,19 +102,38 @@ export function findLinkedCalendarBakiEvent(
 }
 
 function persistEvents(storage: StorageAdapter, events: BakiEvent[]): void {
-  storage.setItem(STORAGE_KEYS.bakiEvents, JSON.stringify(events));
+  try {
+    storage.setItem(STORAGE_KEYS.bakiEvents, JSON.stringify(events));
+  } catch (error) {
+    rethrowStorageUserError(error);
+  }
 }
 
 function upsertLinkedEvent(
   storage: StorageAdapter,
   input: BakiEventCreateInput,
   link: { sharedEventId?: string; calendarEventId?: string; occurrenceDate?: ISODateString },
+  options?: { preserveCompleted?: boolean },
 ): MemberComputedMetrics {
   const repository = createEventRepository(storage);
   const existing = findLinkedCalendarBakiEvent(storage, input.memberId, link);
   const now = new Date().toISOString();
 
   if (existing) {
+    const existingStatus = getActivityLifecycleStatus(existing.metadata);
+    const incomingStatus = getActivityLifecycleStatus(input.metadata);
+
+    if (
+      options?.preserveCompleted &&
+      existingStatus === ACTIVITY_LIFECYCLE_STATUS.COMPLETED &&
+      incomingStatus === ACTIVITY_LIFECYCLE_STATUS.SCHEDULED
+    ) {
+      return recalculateMemberMetrics(
+        { memberId: input.memberId, referenceDate: existing.eventDate },
+        storage,
+      );
+    }
+
     const updated: BakiEvent = {
       ...existing,
       eventTypeKey: input.eventTypeKey,
@@ -144,9 +184,176 @@ export function isPersonalCalendarEventLogged(
   calendarEventId: string,
   occurrenceDate: ISODateString,
 ): boolean {
-  return Boolean(
-    findLinkedCalendarBakiEvent(storage, memberId, { calendarEventId, occurrenceDate }),
+  const existing = findLinkedCalendarBakiEvent(storage, memberId, {
+    calendarEventId,
+    occurrenceDate,
+  });
+  if (!existing) {
+    return false;
+  }
+  return isActivityCompletionFinalized(existing);
+}
+
+function resolveCalendarEventId(calendarEvent: CalendarEvent | ExpandedCalendarEvent): string {
+  return "sourceEventId" in calendarEvent ? calendarEvent.sourceEventId : calendarEvent.id;
+}
+
+function resolveOccurrenceDate(
+  calendarEvent: CalendarEvent | ExpandedCalendarEvent,
+  occurrenceDate?: ISODateString,
+): ISODateString {
+  if (occurrenceDate) {
+    return occurrenceDate;
+  }
+  if ("occurrenceDate" in calendarEvent && calendarEvent.occurrenceDate) {
+    return calendarEvent.occurrenceDate.slice(0, 10);
+  }
+  return calendarEvent.startAt.slice(0, 10);
+}
+
+function buildPersonalCalendarActivityInput(
+  memberId: EntityId,
+  calendarEvent: CalendarEvent | ExpandedCalendarEvent,
+  activityTypeKey: string,
+  date: ISODateString,
+  calendarEventId: string,
+  metadataBase: EntityMetadataPartial,
+): BakiEventCreateInput {
+  return {
+    organizationId: APP_IDS.organizationId,
+    memberId,
+    eventTypeKey: activityTypeKey,
+    eventCategory: "activity",
+    eventDate: date,
+    metadata: {
+      source: "calendar",
+      calendarEventId,
+      occurrenceDate: date,
+      calendarTitle: calendarEvent.title,
+      ...metadataBase,
+    },
+  };
+}
+
+type EntityMetadataPartial = Record<string, string | number | boolean | undefined>;
+
+/** Create or refresh a scheduled activity row when a calendar appointment is saved. */
+export function ensureScheduledCalendarActivityEvent(
+  storage: StorageAdapter,
+  memberId: EntityId,
+  calendarEvent: CalendarEvent,
+  occurrenceDate?: ISODateString,
+): MemberComputedMetrics | null {
+  const activityTypeKey = calendarEvent.activityTypeKey;
+  if (!isRecordableCalendarActivityKey(activityTypeKey)) {
+    return null;
+  }
+
+  const date = resolveOccurrenceDate(calendarEvent, occurrenceDate);
+  const calendarEventId = calendarEvent.id;
+  const note = buildCalendarNote({
+    title: calendarEvent.title,
+    notes: calendarEvent.notes,
+  });
+
+  const input = buildPersonalCalendarActivityInput(
+    memberId,
+    calendarEvent,
+    activityTypeKey!,
+    date,
+    calendarEventId,
+    {
+      note,
+      ...buildScheduledActivityMetadata(undefined),
+    },
   );
+
+  return upsertLinkedEvent(
+    storage,
+    input,
+    { calendarEventId, occurrenceDate: date },
+    { preserveCompleted: true },
+  );
+}
+
+/** Mark a calendar-linked activity as completed — updates the same event ID when scheduled. */
+export function completeCalendarActivityEvent(
+  storage: StorageAdapter,
+  memberId: EntityId,
+  calendarEvent: CalendarEvent | ExpandedCalendarEvent,
+  occurrenceDate: ISODateString,
+  result?: CalendarActivityCompletionResult,
+): MemberComputedMetrics | null {
+  const activityTypeKey =
+    "activityTypeKey" in calendarEvent ? calendarEvent.activityTypeKey : undefined;
+  if (!isRecordableCalendarActivityKey(activityTypeKey)) {
+    return null;
+  }
+
+  const date = resolveOccurrenceDate(calendarEvent, occurrenceDate);
+  const calendarEventId = resolveCalendarEventId(calendarEvent);
+  const completedAt = new Date().toISOString();
+
+  const customerName = result?.customerName?.trim();
+  const resultNote = result?.note?.trim();
+  const composedNote = buildCalendarNote({
+    title: calendarEvent.title,
+    notes: [calendarEvent.notes, resultNote].filter(Boolean).join("\n") || undefined,
+  });
+
+  const input = buildPersonalCalendarActivityInput(
+    memberId,
+    calendarEvent,
+    activityTypeKey!,
+    date,
+    calendarEventId,
+    {
+      note: composedNote,
+      ...(customerName
+        ? {
+            customerName,
+            customerPhone: result?.customerPhone?.trim() || undefined,
+            region: result?.region?.trim() || undefined,
+          }
+        : {}),
+      ...buildCompletedActivityMetadata(undefined, completedAt),
+    },
+  );
+
+  return upsertLinkedEvent(storage, input, { calendarEventId, occurrenceDate: date });
+}
+
+export function skipCalendarActivityEvent(
+  storage: StorageAdapter,
+  memberId: EntityId,
+  calendarEvent: CalendarEvent | ExpandedCalendarEvent,
+  occurrenceDate: ISODateString,
+): MemberComputedMetrics | null {
+  const activityTypeKey =
+    "activityTypeKey" in calendarEvent ? calendarEvent.activityTypeKey : undefined;
+  if (!isRecordableCalendarActivityKey(activityTypeKey)) {
+    return null;
+  }
+
+  const date = resolveOccurrenceDate(calendarEvent, occurrenceDate);
+  const calendarEventId = resolveCalendarEventId(calendarEvent);
+
+  const input = buildPersonalCalendarActivityInput(
+    memberId,
+    calendarEvent,
+    activityTypeKey!,
+    date,
+    calendarEventId,
+    {
+      note: buildCalendarNote({
+        title: calendarEvent.title,
+        notes: calendarEvent.notes,
+      }),
+      ...buildSkippedActivityMetadata(undefined),
+    },
+  );
+
+  return upsertLinkedEvent(storage, input, { calendarEventId, occurrenceDate: date });
 }
 
 export function syncSharedAttendanceToBakiEvent(
@@ -159,6 +366,7 @@ export function syncSharedAttendanceToBakiEvent(
   }
 
   const eventDate = attendance.startAt.slice(0, 10);
+  const completedAt = new Date().toISOString();
   const input: BakiEventCreateInput = {
     organizationId: APP_IDS.organizationId,
     memberId,
@@ -176,47 +384,23 @@ export function syncSharedAttendanceToBakiEvent(
         notes: attendance.notes,
         newFriendsCount: attendance.newFriendsCount,
       }),
+      ...buildCompletedActivityMetadata(undefined, completedAt),
     },
   };
 
   return upsertLinkedEvent(storage, input, { sharedEventId: attendance.sharedEventId });
 }
 
+/** @deprecated Use completeCalendarActivityEvent for consultation/measurement completion. */
 export function syncPersonalCalendarEventToBakiEvent(
   storage: StorageAdapter,
   memberId: EntityId,
   calendarEvent: CalendarEvent | ExpandedCalendarEvent,
   occurrenceDate?: ISODateString,
+  result?: CalendarActivityCompletionResult,
 ): MemberComputedMetrics | null {
-  const activityTypeKey =
-    "activityTypeKey" in calendarEvent ? calendarEvent.activityTypeKey : undefined;
-  if (!isRecordableCalendarActivityKey(activityTypeKey)) {
-    return null;
-  }
-
-  const date = occurrenceDate ?? calendarEvent.startAt.slice(0, 10);
-  const calendarEventId =
-    "sourceEventId" in calendarEvent ? calendarEvent.sourceEventId : calendarEvent.id;
-
-  const input: BakiEventCreateInput = {
-    organizationId: APP_IDS.organizationId,
-    memberId,
-    eventTypeKey: activityTypeKey!,
-    eventCategory: "activity",
-    eventDate: date,
-    metadata: {
-      source: "calendar",
-      calendarEventId,
-      occurrenceDate: date,
-      calendarTitle: calendarEvent.title,
-      note: buildCalendarNote({
-        title: calendarEvent.title,
-        notes: calendarEvent.notes,
-      }),
-    },
-  };
-
-  return upsertLinkedEvent(storage, input, { calendarEventId, occurrenceDate: date });
+  const date = resolveOccurrenceDate(calendarEvent, occurrenceDate);
+  return completeCalendarActivityEvent(storage, memberId, calendarEvent, date, result);
 }
 
 export function removeBakiEventForSharedAttendance(
@@ -245,4 +429,13 @@ export function removeBakiEventForPersonalCalendarEvent(
     { calendarEventId, occurrenceDate },
     occurrenceDate,
   );
+}
+
+export function getLinkedCalendarActivityEventId(
+  storage: StorageAdapter,
+  memberId: EntityId,
+  calendarEventId: string,
+  occurrenceDate: ISODateString,
+): string | undefined {
+  return findLinkedCalendarBakiEvent(storage, memberId, { calendarEventId, occurrenceDate })?.id;
 }
