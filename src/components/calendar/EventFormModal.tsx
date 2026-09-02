@@ -652,10 +652,10 @@ export function EventFormModal({
                     type="button"
                   >
                     {personalLogContext.isLogged
-                      ? "已完成活動"
+                      ? "已完成諮詢"
                       : personalLogContext.isLogging
                         ? "處理中…"
-                        : "完成活動 · 記錄諮詢"}
+                        : "完成諮詢"}
                   </button>
                   {!personalLogContext.isLogged && personalLogContext.onSkipWithoutResult ? (
                     <button

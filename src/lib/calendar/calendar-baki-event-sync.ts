@@ -296,10 +296,16 @@ export function completeCalendarActivityEvent(
 
   const date = resolveOccurrenceDate(calendarEvent, occurrenceDate);
   const calendarEventId = resolveCalendarEventId(calendarEvent);
-  const completedAt = new Date().toISOString();
+  const link = { calendarEventId, occurrenceDate: date };
+  const existing = findLinkedCalendarBakiEvent(storage, memberId, link);
 
-  const customerName = result?.customerName?.trim();
+  if (existing && getActivityLifecycleStatus(existing.metadata) === ACTIVITY_LIFECYCLE_STATUS.COMPLETED) {
+    return recalculateMemberMetrics({ memberId, referenceDate: date }, storage);
+  }
+
+  const completedAt = new Date().toISOString();
   const resultNote = result?.note?.trim();
+  const customerName = result?.customerName?.trim();
   const composedNote = buildCalendarNote({
     title: calendarEvent.title,
     notes: [calendarEvent.notes, resultNote].filter(Boolean).join("\n") || undefined,
@@ -312,6 +318,7 @@ export function completeCalendarActivityEvent(
     date,
     calendarEventId,
     {
+      ...(existing?.metadata ?? {}),
       note: composedNote,
       ...(customerName
         ? {
@@ -320,11 +327,11 @@ export function completeCalendarActivityEvent(
             region: result?.region?.trim() || undefined,
           }
         : {}),
-      ...buildCompletedActivityMetadata(undefined, completedAt),
+      ...buildCompletedActivityMetadata(existing?.metadata, completedAt),
     },
   );
 
-  return upsertLinkedEvent(storage, input, { calendarEventId, occurrenceDate: date });
+  return upsertLinkedEvent(storage, input, link);
 }
 
 export function skipCalendarActivityEvent(
@@ -341,6 +348,12 @@ export function skipCalendarActivityEvent(
 
   const date = resolveOccurrenceDate(calendarEvent, occurrenceDate);
   const calendarEventId = resolveCalendarEventId(calendarEvent);
+  const link = { calendarEventId, occurrenceDate: date };
+  const existing = findLinkedCalendarBakiEvent(storage, memberId, link);
+
+  if (existing && getActivityLifecycleStatus(existing.metadata) === ACTIVITY_LIFECYCLE_STATUS.SKIPPED) {
+    return recalculateMemberMetrics({ memberId, referenceDate: date }, storage);
+  }
 
   const input = buildPersonalCalendarActivityInput(
     memberId,
