@@ -4,7 +4,7 @@ export {
   FixtureCandidateSourceAdapter,
   MetaThreadsAdapter,
   MetaInstagramAdapter,
-  createProductionSourceAdapters,
   THREADS_ADAPTER_VERSION,
   INSTAGRAM_ADAPTER_VERSION,
 } from "./fixture-adapter";
+export { LiveThreadsAdapter } from "./threads-live-adapter";

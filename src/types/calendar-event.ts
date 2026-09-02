@@ -1,13 +1,21 @@
 import type { EntityId, ISODateString, StoredEntity } from "./common";
 
 export type CalendarEventColor =
-  | "blue"
   | "green"
-  | "orange"
-  | "red"
-  | "purple"
+  | "emerald"
   | "teal"
-  | "gray";
+  | "sky"
+  | "blue"
+  | "indigo"
+  | "purple"
+  | "lavender"
+  | "pink"
+  | "rose"
+  | "orange"
+  | "amber"
+  | "gray"
+  /** @deprecated Legacy palette — normalized on read */
+  | "red";
 
 export type RecurrenceFrequency = "none" | "daily" | "weekly" | "monthly" | "custom";
 
@@ -55,7 +63,7 @@ export interface CalendarEvent extends StoredEntity {
   color: CalendarEventColor;
   recurrence: RecurrenceRule;
   recurrenceExceptions?: RecurrenceException[];
-  /** 行程種類：量測、諮詢、會議等，供統計使用 */
+  /** 行程分類 key（會議 / 諮詢 / 教練課 / 量測）；舊資料可能仍為 meeting subtype */
   activityTypeKey?: CalendarActivityTypeKey;
   /** 從共用行事曆標記「會參加」後固定顯示 */
   attendedFromShared?: boolean;
@@ -63,6 +71,11 @@ export interface CalendarEvent extends StoredEntity {
   googleCalendarId?: string;
   /** 開始前 N 分鐘提醒，例如 [15, 60] */
   reminderMinutes?: number[];
+  /**
+   * Stable Customer.id list for this personal event (canonical participant link).
+   * Not names — survives customer rename. Unique in repository layer.
+   */
+  participantCustomerIds?: EntityId[];
 }
 
 export interface CalendarEventCreateInput {
@@ -80,6 +93,7 @@ export interface CalendarEventCreateInput {
   googleEventId?: string;
   googleCalendarId?: string;
   reminderMinutes?: number[];
+  participantCustomerIds?: EntityId[];
 }
 
 export interface CalendarEventUpdateInput {
@@ -96,6 +110,7 @@ export interface CalendarEventUpdateInput {
   googleEventId?: string;
   googleCalendarId?: string;
   reminderMinutes?: number[];
+  participantCustomerIds?: EntityId[];
 }
 
 /** 展開後的單次 occurrence（含指向母事件） */
@@ -119,7 +134,7 @@ export interface ExpandedCalendarEvent {
 
 export type CalendarSlotInterval = 30 | 60 | 120;
 
-/** 對應紀錄中心的活動類型 key（量測、諮詢、HOM 等） */
+/** 對應紀錄中心的活動類型 key（量測、諮詢、會議等） */
 export type CalendarActivityTypeKey = string;
 
 export interface GoogleCalendarConnection {
@@ -131,18 +146,56 @@ export interface GoogleCalendarConnection {
   selectedCalendarName?: string;
 }
 
+/** Curated premium palette — muted saturation, readable on light surfaces. */
 export const CALENDAR_EVENT_COLORS: Record<
   CalendarEventColor,
-  { label: string; bg: string; border: string; text: string }
+  { label: string; accent: string; tint: string; text: string }
 > = {
-  blue: { label: "藍", bg: "#5ac8fa", border: "#007aff", text: "#ffffff" },
-  green: { label: "綠", bg: "#77b539", border: "#248a3d", text: "#ffffff" },
-  orange: { label: "橙", bg: "#ff9f0a", border: "#b25000", text: "#1d1d1f" },
-  red: { label: "紅", bg: "#ff375f", border: "#cf1322", text: "#ffffff" },
-  purple: { label: "紫", bg: "#bf5af2", border: "#8944ab", text: "#ffffff" },
-  teal: { label: "青", bg: "#64d2ff", border: "#248a3d", text: "#1d1d1f" },
-  gray: { label: "灰", bg: "#86868b", border: "#636366", text: "#ffffff" },
+  green: { label: "綠", accent: "#3d8b40", tint: "#eef6ee", text: "#1d1d1f" },
+  emerald: { label: "翠綠", accent: "#2f9e72", tint: "#ecf8f3", text: "#1d1d1f" },
+  teal: { label: "青", accent: "#2a9d9a", tint: "#ecf7f7", text: "#1d1d1f" },
+  sky: { label: "天藍", accent: "#3b82c4", tint: "#edf5fc", text: "#1d1d1f" },
+  blue: { label: "藍", accent: "#3b6fd4", tint: "#edf2fc", text: "#1d1d1f" },
+  indigo: { label: "靛", accent: "#5b5bd6", tint: "#f0f0fc", text: "#1d1d1f" },
+  purple: { label: "紫", accent: "#8b5cf6", tint: "#f5f0fd", text: "#1d1d1f" },
+  lavender: { label: "薰衣草", accent: "#9b7ec8", tint: "#f6f2fb", text: "#1d1d1f" },
+  pink: { label: "粉", accent: "#d4578a", tint: "#fdf0f6", text: "#1d1d1f" },
+  rose: { label: "玫瑰", accent: "#c45c6a", tint: "#fdf0f2", text: "#1d1d1f" },
+  orange: { label: "橙", accent: "#d4822a", tint: "#fdf5ec", text: "#1d1d1f" },
+  amber: { label: "琥珀", accent: "#c4922a", tint: "#fdf8ec", text: "#1d1d1f" },
+  gray: { label: "灰", accent: "#8e8e93", tint: "#f2f2f7", text: "#1d1d1f" },
+  red: { label: "紅", accent: "#c45c6a", tint: "#fdf0f2", text: "#1d1d1f" },
 };
+
+/** Colors shown in the event form picker (excludes legacy-only values). */
+export const CALENDAR_EVENT_COLOR_OPTIONS: CalendarEventColor[] = [
+  "green",
+  "emerald",
+  "teal",
+  "sky",
+  "blue",
+  "indigo",
+  "purple",
+  "lavender",
+  "pink",
+  "rose",
+  "orange",
+  "amber",
+];
+
+const LEGACY_COLOR_ALIASES: Partial<Record<string, CalendarEventColor>> = {
+  red: "rose",
+};
+
+export function normalizeCalendarEventColor(
+  color: CalendarEventColor | string | undefined,
+  fallback: CalendarEventColor = "green",
+): CalendarEventColor {
+  if (color && color in CALENDAR_EVENT_COLORS) {
+    return LEGACY_COLOR_ALIASES[color] ?? (color as CalendarEventColor);
+  }
+  return fallback;
+}
 
 export const CALENDAR_DAY_START_HOUR = 6;
 export const CALENDAR_DAY_END_HOUR = 24;

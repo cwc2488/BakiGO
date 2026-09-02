@@ -1,3 +1,5 @@
+import { capabilityStateFromMetaError } from "../../acquisition/capability-states";
+import { resolveEnrichUsername } from "../../intake/resolve-candidate-input";
 import type { Platform } from "../../normalization/schema";
 import type { RadarJobRecord } from "../types";
 import {
@@ -27,7 +29,12 @@ export async function runEnrichWorker(
 
   const candidate = await ctx.repo.getCandidate(candidate_id);
   const platform = (payload.platform as Platform | undefined) ?? candidate?.primary_platform ?? "threads";
-  const username = payload.username ? String(payload.username) : candidate?.normalized_username ?? null;
+  const username = resolveEnrichUsername({
+    payload_username: payload.username ? String(payload.username) : null,
+    stored_username: candidate?.normalized_username ?? null,
+    candidate_id,
+    platform,
+  });
   const adapter = ctx.sources.forPlatform(platform);
 
   let enrichResult;
@@ -46,7 +53,9 @@ export async function runEnrichWorker(
     await ctx.repo.updateRefreshStateAfterEnrich({
       candidate_id,
       succeeded: false,
-      enrichment_capability_state: "source_unavailable",
+      enrichment_capability_state: capabilityStateFromMetaError(
+        error instanceof Error ? error.message : "",
+      ),
       now,
     });
     return {
@@ -83,6 +92,7 @@ export async function runEnrichWorker(
   await ctx.repo.upsertCandidate({
     id: candidate_id,
     profile_semantic_hash: enrichResult.profile_semantic_hash,
+    normalized_username: username,
   });
 
   // Secondary IG enrichment when Threads username is known — no auto identity merge.

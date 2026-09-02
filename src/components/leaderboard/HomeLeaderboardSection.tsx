@@ -1,8 +1,10 @@
 "use client";
 
-import { todayISODate, toYearMonthFromDate } from "@/lib/config/app-config";
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
-import { loadLeaderboardBoards } from "@/lib/points/load-leaderboard-points";
+import { todayISODate, toYearMonthFromDate } from "@/lib/config/app-config";
+import { loadAllMembers } from "@/lib/members/member-service";
+import { loadMemberMetrics } from "@/lib/mission-control/format";
+import { buildPointsLeaderboard } from "@/lib/points/build-points-leaderboard";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import { PointsHeroCard } from "@/components/points/PointsHeroCard";
@@ -17,7 +19,23 @@ function useLeaderboardViews(metrics: MemberComputedMetrics) {
     const referenceDate = todayISODate();
     const yearMonth = toYearMonthFromDate(referenceDate);
     const viewerId = resolveAuthenticatedMemberId(storage);
-    return loadLeaderboardBoards(storage, undefined, referenceDate, yearMonth, viewerId);
+    const members = loadAllMembers(storage).filter((member) => member.status === "active");
+    const metricsByMemberId = new Map(
+      members.map((member) => [member.id, loadMemberMetrics(member.id, storage)]),
+    );
+
+    const baseInput = {
+      members,
+      metricsByMemberId,
+      yearMonth,
+      referenceDate,
+      viewerMemberId: viewerId,
+    };
+
+    return {
+      weekly: buildPointsLeaderboard({ ...baseInput, period: "weekly" }),
+      monthly: buildPointsLeaderboard({ ...baseInput, period: "monthly" }),
+    };
   }, [metrics, storage]);
 }
 

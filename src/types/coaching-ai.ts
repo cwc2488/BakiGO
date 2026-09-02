@@ -76,6 +76,11 @@ export type CoachingDailyMealFeedback = {
 };
 
 export type CoachingDailyGenerationCustomerOutput = {
+  /**
+   * AI Coach V2 freeform message. When present, customer UI renders this alone
+   * instead of the legacy sectioned report fields.
+   */
+  coach_message?: string | null;
   encouragement: string;
   today_feedback: string;
   /** Short overall food read for the day — must mention what was actually observed. */

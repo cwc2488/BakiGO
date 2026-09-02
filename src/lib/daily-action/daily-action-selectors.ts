@@ -117,7 +117,7 @@ export function buildDailyActionSnapshot(
   metrics: MemberComputedMetrics,
   storage: StorageAdapter,
 ): DailyActionSnapshot {
-  const topPriority = metrics.presidentAI.topPriorities[0];
+  const topPriority = metrics.presidentAI?.topPriorities?.[0];
 
   return {
     referenceDate: metrics.missions.referenceDate,
@@ -136,7 +136,9 @@ export function buildDailyActionSnapshot(
     ),
     superLeague: buildSuperLeagueView(metrics, storage),
     presidentAiTitle:
-      topPriority?.title ?? metrics.presidentAI.focusMode.label ?? "今日尚無建議",
+      topPriority?.title ??
+      metrics.presidentAI?.focusMode?.label ??
+      "今日尚無建議",
     presidentAiDescription: topPriority?.description ?? null,
     topPriority: topPriority ?? null,
   };

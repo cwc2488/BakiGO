@@ -51,6 +51,11 @@ import type { RetailWeeklyReport } from "@/types/retail-weekly-report";
 import type { EventCenterResult } from "@/types/event-center";
 import { applyMemberStateFromEvents } from "@/lib/event-center/resolve-member-state";
 import { projectEventsForEngines } from "@/lib/event-center/project-events";
+import { calculateMonthlyProductVp } from "@/lib/retail-house/canonical-product-vp";
+import {
+  loadAuthoritativeRetailTransactions,
+  resolveAuthoritativeRetailTransactionsFromPayloads,
+} from "@/lib/retail-house/authoritative-retail-transactions";
 import { loadPointRedemptions } from "@/lib/repositories/point-redemption-repository";
 import { createEventRepository } from "@/lib/repositories/event-repository";
 import { buildRetailWeeklyReport } from "./build-retail-weekly-report";
@@ -76,6 +81,13 @@ import {
 } from "@/lib/learning-resources/recommend-learning-resources";
 import type { MemberGoalActionStep } from "@/types/member-goal";
 
+/** Retail House Product VP for the business month — not legacy reward 積分. */
+export interface ProductVpMetrics {
+  yearMonth: YearMonth;
+  /** Canonical monthly Product VP from Retail House records. */
+  monthlyTotal: number;
+}
+
 export interface MemberComputedMetrics {
   memberId: EntityId;
   yearMonth: YearMonth;
@@ -83,6 +95,8 @@ export interface MemberComputedMetrics {
   retailHouse: RetailHouseResult;
   monthlyChallenge: MonthlyChallengeProgress;
   vp: VpResult;
+  /** Canonical Product VP (Retail House). Prefer this for 「本月 VP」 displays. */
+  productVp: ProductVpMetrics;
   map: MapProgressResult;
   nextSteps: NextStep[];
   qualificationResults: QualificationResult[];
@@ -138,10 +152,14 @@ function saveComputedMetrics(
     (item) => !(item.memberId === snapshot.memberId && item.yearMonth === snapshot.yearMonth),
   );
 
-  storage.setItem(
-    STORAGE_KEYS.computedMetrics,
-    JSON.stringify([...withoutCurrent, snapshot]),
-  );
+  try {
+    storage.setItem(
+      STORAGE_KEYS.computedMetrics,
+      JSON.stringify([...withoutCurrent, snapshot]),
+    );
+  } catch {
+    // Quota / private-mode persistence must not block Home render after recompute.
+  }
 }
 
 export function recalculateMemberMetrics(
@@ -152,15 +170,9 @@ export function recalculateMemberMetrics(
   const eventRepository = createEventRepository(storage);
   const mergedById = new Map<string, BakiEvent>();
   for (const event of eventRepository.getAll()) {
-    if (!event?.id) {
-      continue;
-    }
     mergedById.set(event.id, event);
   }
   for (const event of input.supplementalEvents ?? []) {
-    if (!event?.id) {
-      continue;
-    }
     mergedById.set(event.id, event);
   }
   const allEvents = [...mergedById.values()];
@@ -189,6 +201,32 @@ export function recalculateMemberMetrics(
     members,
   });
   const vp = toLegacyVpResult(vpEngineResult);
+  // Product VP uses authoritative RH records (local events ∪ legacy retailTransactions),
+  // then overlays supplemental cloud events for downline metrics paths.
+  const localAuthoritative = loadAuthoritativeRetailTransactions(storage, input.memberId);
+  const supplementalOnly = input.supplementalEvents ?? [];
+  const cloudOverlay =
+    supplementalOnly.length > 0
+      ? resolveAuthoritativeRetailTransactionsFromPayloads({
+          ownerMemberId: input.memberId,
+          events: supplementalOnly,
+          legacyTransactions: [],
+        }).transactions
+      : [];
+  const productVpById = new Map(
+    localAuthoritative.transactions.map((transaction) => [transaction.id, transaction]),
+  );
+  for (const transaction of cloudOverlay) {
+    productVpById.set(transaction.id, transaction);
+  }
+  const productVp = {
+    yearMonth,
+    monthlyTotal: calculateMonthlyProductVp({
+      memberId: input.memberId,
+      yearMonth,
+      transactions: [...productVpById.values()],
+    }),
+  };
 
   const retailHouse = calculateRetailHouse({
     memberId: input.memberId,
@@ -322,6 +360,7 @@ export function recalculateMemberMetrics(
     retailHouse,
     monthlyChallenge,
     vp,
+    productVp,
     map,
     nextSteps,
     qualificationResults,
@@ -476,6 +515,40 @@ export function getLatestComputedMetrics(
         .filter((item) => item.memberId === memberId)
         .sort((left, right) => right.computedAt.localeCompare(left.computedAt))[0] ?? null
     );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cached metrics for a specific Asia/Taipei reference day (missions.referenceDate).
+ * Safer than getLatestComputedMetrics alone when August + September snapshots coexist.
+ */
+export function getComputedMetricsForReferenceDate(
+  memberId: EntityId,
+  referenceDate: ISODateString,
+  storage: StorageAdapter = createLocalStorageAdapter(),
+): MemberComputedMetrics | null {
+  const raw = storage.getItem(STORAGE_KEYS.computedMetrics);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as MemberComputedMetrics[];
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return null;
+    }
+
+    const matching = parsed.filter(
+      (item) =>
+        item.memberId === memberId && item.missions?.referenceDate === referenceDate,
+    );
+    if (matching.length === 0) {
+      return null;
+    }
+
+    return matching.sort((left, right) => right.computedAt.localeCompare(left.computedAt))[0];
   } catch {
     return null;
   }

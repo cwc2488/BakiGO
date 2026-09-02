@@ -106,6 +106,7 @@ export async function loadCoachingTimelinePage(input: {
     .eq("owner_member_id", input.ownerMemberId)
     .gte("log_date", journeyStartDate)
     .lte("log_date", input.asOfLogDate)
+    .is("deleted_at", null)
     .order("log_date", { ascending: false });
   queryCount += 1;
   if (logsError) {
@@ -122,6 +123,7 @@ export async function loadCoachingTimelinePage(input: {
     .eq("point_key", COACHING_AI_POINT_KEY)
     .gte("log_date", journeyStartDate)
     .lte("log_date", input.asOfLogDate)
+    .is("deleted_at", null)
     .order("log_date", { ascending: false });
   queryCount += 1;
   if (aiError) {

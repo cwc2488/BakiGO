@@ -36,6 +36,23 @@ See migrations `001_cloud_foundation.sql`, `004_member_app_data.sql`.
 
 Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `occupation`. Migration `025_customers_sex.sql` adds nullable `sex` with enum check. When a full birthday is captured, persist `birth_date` and derive `birth_year` for legacy compatibility.
 
+Migration `061_customers_soft_delete.sql` adds nullable `deleted_at`. Active CRM rows have `deleted_at IS NULL`. Coach delete is a soft delete (`deleted_at = now()`); a BEFORE UPDATE trigger preserves `deleted_at` once set so stale client upserts cannot resurrect. Child tables (measurements, photos, coaching FKs) are not cascade-deleted.
+
+### Calendar ↔ Customer participants (`074_calendar_event_participants.sql`)
+
+| Table | Purpose |
+|-------|---------|
+| `calendar_event_participants` | Coach-owned join: personal calendar `event_id` (JSON `CalendarEvent.id`) ↔ `customers.id` |
+
+**Operational source of truth (app):** `CalendarEvent.participantCustomerIds` inside `member_app_data` key `baki-go:calendar-events` (stable customer IDs, not names).
+
+**Cloud mirror:** `calendar_event_participants` enforces uniqueness on
+`(owner_member_id, event_source, event_id, customer_id)` and owner-only RLS that also requires the customer row to belong to the same coach (`deleted_at is null`). Removing a participant or deleting an event does **not** delete the customer or the calendar event series counterpart beyond the join row.
+
+Customer Detail 「下次活動」 and Calendar Event 「參加人員」 read/write the same participant links.
+
+Migration `075_calendar_event_participants_source.sql` adds `event_source` (`personal` | `alliance_shared`) and uniqueness `(owner_member_id, event_source, event_id, customer_id)`. Existing 074 rows default to `personal`. Alliance Shared events use canonical `shared:{calendarId}:{uid}` IDs and are **never copied** into personal calendar. Shared links live in `member_app_data` key `baki-go:calendar-alliance-event-participants` (OWN-only; not in downline RLS allowlist).
+
 ### Quiz icebreaker (`021_quiz_icebreaker_v1.sql`+)
 
 | Table | Purpose |
@@ -67,6 +84,8 @@ Production Supabase (`baki-go` / `ubdrkrvyyrqdvlehzhsz`) already contains the Qu
 **CONVERSATION-RESET-01:** `/quiz/fat-loss` creates `entry=reset_v1` and persists `__resetV1` (`conversation_reset_v1`) on `analysis_sessions.answers_json`. Fixed 6-question projective quiz + gpt-4.1 conversation + 3-section report. Production `/quiz/fat-loss` serves RESET Quiz V2.
 
 **21D-HANDOFF-01:** After RESET report, consumer can express INTEREST in a paid 21-day experience (no price, no checkout). Attribution copies from `analysis_sessions` — `/r` growth share owner wins over `/q` referrer. Minimal contact capture: display name + one channel (`line`, `instagram`, or `phone`).
+
+**21D Experience Landing + Consultation V1 (`063`):** Public LP at `/experience/21d/[token]` (analysis session token). Adds nullable `consultation_preference` (`text` | `phone` | `in_person`) and `landing_page_version` on `experience_21d_interests`. Funnel events include `21d_landing_viewed`, `21d_consultation_*`. Ownership still copied server-side from the analysis session — client cannot forge partner IDs.
 
 **QUIZ-PARTNER-01:** Workbench statuses are presentation only: interested→待聯絡, contacted/considering→已聯絡, joined→已成交, declined→未成交. Joined/declined change lead status only — no customer, enrollment, order, or payment.
 
@@ -794,9 +813,9 @@ Member (coach)
 | Table | Purpose |
 |-------|---------|
 | `coaching_enrollments` | Active/paused/completed coaching relationship; plan snapshot + onboarding state. `started_at` = Day 1 authority; `planned_end_at` (034) = inclusive planned end (default start+89 days); `ended_at` = actual completion timestamp |
-| `coaching_daily_logs` | One row per enrollment per `log_date` (Asia/Taipei). Sleep: `sleep_bedtime`, `sleep_wake_time`; `sleep_duration` computed on save |
+| `coaching_daily_logs` | One row per enrollment per `log_date` (Asia/Taipei). Sleep: `sleep_bedtime`, `sleep_wake_time`; `sleep_duration` computed on save. Soft-delete: `deleted_at` / `deleted_by` (037); default queries exclude deleted rows. Active unique is `(enrollment_id, log_date) WHERE deleted_at IS NULL`. |
 | `coaching_meal_entries` | Meal slot rows linked to daily log |
-| `coaching_meal_photos` | Storage path refs for meal photos (private bucket) |
+| `coaching_meal_photos` | Storage path refs for meal photos (private bucket); optional `vision_observation_json` cache (`067`) for real-time + daily reuse |
 
 **Migration `028_coaching_sleep_times.sql`:** adds `sleep_bedtime`, `sleep_wake_time` to `coaching_daily_logs`.
 
@@ -815,7 +834,7 @@ Member (coach)
 
 **Worker RPCs (`030`):** `claim_coaching_generation_jobs`, `reclaim_stale_coaching_generation_jobs`.
 
-**`coaching_ai_outputs` key columns:** `input_fingerprint`, `input_snapshot`, `output_json`, `status` (`pending|processing|completed|failed`), `regeneration_count`, `ai_proposed_intervention_level` (audit), `final_intervention_level` (deterministic engine — authoritative), `started_at`, `completed_at`. Unique: `(enrollment_id, log_date, point_key)` where `point_key = daily_coach_generation`.
+**`coaching_ai_outputs` key columns:** `input_fingerprint`, `input_snapshot`, `output_json`, `status` (`pending|processing|completed|failed`), `regeneration_count`, `ai_proposed_intervention_level` (audit), `final_intervention_level` (deterministic engine — authoritative), `started_at`, `completed_at`, `deleted_at` / `deleted_by` (037, aligned with daily-log soft-delete). Unique: `(enrollment_id, log_date, point_key)` where `point_key = daily_coach_generation`. Default list/get queries exclude deleted rows.
 
 **`coaching_generation_jobs` idempotency:** partial unique index on `(output_id, input_fingerprint) WHERE status IN ('queued','processing')`.
 
@@ -827,7 +846,42 @@ Member (coach)
 
 **Reuse:** `customers`, `members`, `customer_portal_tokens`, `body_composition_records`, `customer_progress_photos` (read-only in coach detail).
 
-### AI Coaching Phase 3d — Coach Action Memory
+### AI Coaching V2 — 21-day freeform (`064_coaching_ai_v2.sql`)
+
+| Table | Purpose |
+|-------|---------|
+| `coaching_ai_cycles` | Intensive 21-day AI coaching cycle per enrollment |
+| `coaching_ai_memory` | Durable compact coaching memory |
+| `coaching_ai_open_loops` | Unfinished coaching threads |
+| `coaching_ai_hypotheses` | Revisable probabilistic interpretations |
+| `coaching_ai_turns` | Bounded conversational turns |
+| `coaching_ai_day21_reflections` | Personalized end-of-cycle synthesis |
+
+**RLS:** Owner-member SELECT only. Mutations via service-role APIs. Additive / non-destructive.
+
+Customer-facing freeform message lives in `coaching_ai_outputs.output_json.customer.coach_message` when V2 is enabled.
+
+### Baki Go 21 — customer chat surface (`065_coaching_go21.sql`, `066_go21_reminder_uniqueness.sql`, `068_go21_goal.sql`, `069_go21_understanding.sql`, `070_go21_daily_targets.sql`, `071_go21_coach_daily_plan.sql`)
+
+| Change | Purpose |
+|--------|---------|
+| `coaching_ai_reminders` | Reminder intents (daily / open-loop / measurement / experiment / reengagement). Delivery channel separate; in-app first. |
+| `coaching_enrollments.go21_started_at` | Idempotent customer “開始我的 21 天陪跑” marker |
+| `066` uniqueness | Measurement/daily kinds: one per Taipei day; open_loop allows multiple via `related_open_loop_id` |
+| `coaching_enrollments.go21_goal_json` | Durable 21-day goal record |
+| `coaching_enrollments.go21_understanding_json` | Premium Coaching Brain — longitudinal personal understanding (evidence, confidence, revisable) |
+| `coaching_enrollments.go21_daily_targets_json` | Coach-set daily water/calories/protein/sleep targets for Go21 enrollment (optional; existing enrollments compatible) |
+| `coaching_daily_logs.nutrition_estimate_json` | Optional soft calorie/protein estimates for the day (uncertain bands; never fake precision) |
+| `coaching_enrollments.go21_coach_plan_json` | Coach-prescribed daily plan items (period/name/amount/instruction/recurrence); AI must not silently rewrite |
+| `coaching_daily_logs.go21_plan_day_json` | Inferred plan execution for the log date (completions / intentional skips); evidence-based |
+
+**Security:** Customer entry via existing opaque `customer_portal_tokens` at `/c/{token}/go21`. Go21 routes enforce experience-21d eligibility. No guessable customer IDs in URLs.
+
+**Delivery:** `POST/GET /api/coaching/go21/reminders/process` (cron secret) + on-open delivery in Go21 context.
+
+**Docs:** `docs/GO21.md`
+
+
 
 **Status:** Applied migration `031_coaching_coach_actions.sql`. Coach-only internal memory.
 
@@ -886,6 +940,10 @@ Member (coach)
 **Public route:** `/r/[token]` — open public; server resolves by hash; returns consented non-health payload only.
 
 **Do not reuse:** `customer_portal_tokens` (health capability) or `quiz_share_links` (member referrer).
+
+**RADAR-SEMANTIC-01 (`049_radar_semantic_region_preference.sql`):** Additive `member_radar_region_preferences` (one row per member). Stores `current_*` development region plus `pending_*` / `pending_effective_date` so a same-day change cannot rewrite today's Top20. RLS enabled; `anon` / `authenticated` have no grants; `service_role` only. Does not mutate historical Radar snapshots, analysis JSON, or pipeline runs. Candidate understanding lives in existing extraction JSON (`candidate_understanding`, optional/backward compatible).
+
+**RADAR-FEEDBACK-01 (`050_radar_member_recommendation_feedback.sql`):** Additive `member_radar_recommendation_feedback` (unique `member_id + candidate_id + recommendation_date`). Stores 👍/👎, optional rejection reason/note, and immutable `evaluation_context` JSON for future quality reports. RLS enabled; `anon` / `authenticated` have no grants; `service_role` only. Does not mutate scores, Top20, allocation, or exclusion.
 
 ## Migrations
 

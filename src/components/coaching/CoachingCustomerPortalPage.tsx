@@ -431,7 +431,7 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
       };
 
       if (!response.ok || !payload.ok || !payload.dailyLog) {
-        throw new Error(payload.error ?? "儲存失敗");
+        throw new Error(payload.error ?? "資料儲存失敗，請稍後再試。");
       }
 
       setDailyLog(payload.dailyLog);
@@ -469,7 +469,12 @@ export default function CoachingCustomerPortalPage({ token }: { token: string })
 
       setSavedMessage("已自動儲存");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "儲存失敗");
+      const raw = saveError instanceof Error ? saveError.message : "";
+      const looksTechnical =
+        /on conflict|exclusion constraint|unique constraint|duplicate key|PGRST|postgres|violates/i.test(
+          raw,
+        );
+      setError(looksTechnical || !raw ? "資料儲存失敗，請稍後再試。" : raw);
     } finally {
       setSubmitting(false);
     }

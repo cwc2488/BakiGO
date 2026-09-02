@@ -1,4 +1,4 @@
-import { todayISODate } from "@/lib/config/app-config";
+import { currentAppHour, todayISODate } from "@/lib/config/app-config";
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import { getMemberAvatarUrl as resolveMemberAvatarUrl, getMemberDisplayName as resolveMemberName } from "@/lib/members/member-service";
 import { createMemberRepository } from "@/lib/repositories/member-repository";
@@ -7,7 +7,7 @@ import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { EntityId } from "@/types";
 import type { BakiEvent } from "@/types/baki-event";
 import {
-  getLatestComputedMetrics,
+  getComputedMetricsForReferenceDate,
   recalculateMemberMetrics,
   type MemberComputedMetrics,
 } from "@/lib/services/recalculate-member-metrics";
@@ -36,16 +36,21 @@ export function loadMemberMetrics(
   memberId: EntityId,
   storage: StorageAdapter = createLocalStorageAdapter(),
   supplementalEvents?: BakiEvent[],
-  options?: { includeMapUniverse?: boolean },
 ): MemberComputedMetrics {
-  return loadMissionControlMetrics(memberId, storage, supplementalEvents, options);
+  return loadMissionControlMetrics(memberId, storage, supplementalEvents);
 }
 
+/**
+ * Cached metrics are only usable for the current Asia/Taipei calendar day.
+ * Stale day/month snapshots must not paint Home after midnight rollover.
+ */
 export function readMissionControlMetrics(
   memberId?: EntityId,
   storage: StorageAdapter = createLocalStorageAdapter(),
 ): MemberComputedMetrics | null {
-  return getLatestComputedMetrics(memberId ?? resolveAuthenticatedMemberId(storage), storage);
+  const resolvedMemberId = memberId ?? resolveAuthenticatedMemberId(storage);
+  const today = todayISODate();
+  return getComputedMetricsForReferenceDate(resolvedMemberId, today, storage);
 }
 
 export function getMemberDisplayName(
@@ -98,7 +103,7 @@ export function formatDisplayDate(referenceDate: string): string {
 }
 
 export function formatPlainTimeGreeting(date: Date = new Date()): string {
-  const hour = date.getHours();
+  const hour = currentAppHour(date);
   if (hour < 12) {
     return "早安";
   }
@@ -109,7 +114,7 @@ export function formatPlainTimeGreeting(date: Date = new Date()): string {
 }
 
 export function formatTimeGreeting(date: Date = new Date()): string {
-  const hour = date.getHours();
+  const hour = currentAppHour(date);
   if (hour < 12) {
     return "🌅 早安";
   }

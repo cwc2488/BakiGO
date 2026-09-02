@@ -1,4 +1,4 @@
-import { isExcludedFromMemberRecommendations } from "../jobs/constants";
+import { filterAllocatableForMember } from "../allocation/allocation-read-model";
 import { roundScoreForDisplay } from "../scoring/format-display";
 import type { RankedCandidate } from "../scoring/types";
 import type { RadarRepository, Top20SnapshotRecord } from "../repository/types";
@@ -74,28 +74,14 @@ export async function buildRadarTodayResponse(input: {
   };
 }
 
+/** Personal state plus the global allocation lock, both evaluated on this read. */
 export async function applyReadTimeDevelopmentFilter(
   repo: RadarRepository,
   member_id: string,
   snapshot: Top20SnapshotRecord,
+  now?: Date,
 ): Promise<RankedCandidate[]> {
-  const visible: RankedCandidate[] = [];
-
-  for (const item of snapshot.items) {
-    const state = await repo.getMemberCandidateState(member_id, item.candidateId);
-    if (
-      state &&
-      isExcludedFromMemberRecommendations({
-        development_state: state.development_state,
-        excluded_from_recommendations: state.excluded_from_recommendations,
-      })
-    ) {
-      continue;
-    }
-    visible.push(item);
-  }
-
-  return visible;
+  return filterAllocatableForMember({ repo, member_id, items: snapshot.items, now });
 }
 
 function mapTodayItem(entry: RankedCandidate): RadarTodayItem {

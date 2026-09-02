@@ -18,7 +18,7 @@ export function TabRootShell({
       {decorated ? (
         <IconLeafDecoration className="pointer-events-none absolute -right-2 top-0 h-28 w-28 sm:h-32 sm:w-32" />
       ) : null}
-      <main className={`relative ${containerClassName} flex flex-col gap-5 pb-24 pt-10 sm:pt-12`}>
+      <main className={`relative ${containerClassName} flex flex-col gap-6 pb-24 pt-10 sm:pt-12`}>
         {header}
         {children}
       </main>

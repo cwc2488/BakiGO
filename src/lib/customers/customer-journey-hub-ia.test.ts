@@ -25,11 +25,21 @@ describe("CustomerJourneyHub IA", () => {
       href: "/quiz/21d",
       title: "心理測驗",
       desc: "分享測驗，聯絡想了解 21 天的人",
-      iconHref: "/quiz/21d",
+      iconHref: "/quiz/hub",
       waitingBadge: true,
     });
     expect(quiz?.comingSoon).toBeFalsy();
     expect(quiz?.locked).toBeFalsy();
-    expect(quiz?.href).toBeTruthy();
+    expect(quiz?.href).toBe("/quiz/21d");
+    expect(quiz?.href).not.toBe("/quiz/hub");
+  });
+
+  it("keeps AI Radar active with href and no comingSoon", () => {
+    const radar = CUSTOMER_JOURNEY_HUB_ITEMS.find((item) => item.title === "AI Radar");
+    expect(radar).toMatchObject({
+      href: "/radar",
+      desc: "智慧找人",
+    });
+    expect(radar?.comingSoon).toBeFalsy();
   });
 });

@@ -14,6 +14,11 @@ import {
   type Experience21dFunnelEvent,
   type Experience21dStatus,
 } from "@/lib/analysis/handoff/experience-21d-path";
+import {
+  EXPERIENCE_21D_LANDING_VERSION,
+  isExperience21dConsultationPreference,
+  type Experience21dConsultationPreference,
+} from "@/lib/experience/experience-21d-landing-copy";
 import { RESET_META_KEY } from "@/lib/analysis/reset/reset-path";
 import type { ResetPublicView, ResetSession } from "@/lib/analysis/reset/reset-contract";
 import { normalizeCustomerPhone } from "@/lib/customers/customer-profile";
@@ -45,6 +50,8 @@ type InterestRow = {
   display_name: string | null;
   contact_channel: string | null;
   contact_value: string | null;
+  consultation_preference: Experience21dConsultationPreference | null;
+  landing_page_version: string | null;
   invitation_bridge: string | null;
   brief_json: CoachHandoffBrief;
   created_at: string;
@@ -160,6 +167,8 @@ export async function request21dInterest(input: {
     channel?: string | null;
     value?: string | null;
   } | null;
+  consultationPreference?: Experience21dConsultationPreference | null;
+  landingPageVersion?: string | null;
 }): Promise<{ public: Experience21dPublicHandoff; created: boolean }> {
   if (input.session.act !== "report" || !input.session.report) {
     throw new AnalysisSessionError("Report is not ready.", 409, "report_not_ready");
@@ -169,9 +178,57 @@ export async function request21dInterest(input: {
     event: "21d_interest_clicked",
   });
   const existing = await getInterestBySessionId(input.analysisSessionId);
+  const preference =
+    input.consultationPreference && isExperience21dConsultationPreference(input.consultationPreference)
+      ? input.consultationPreference
+      : null;
+  const landingPageVersion = input.landingPageVersion?.trim() || null;
+
+  // Idempotent: already submitted with usable contact (+ optional preference already set).
   if (existing && hasUsableContact(existing)) {
+    if (preference && existing.consultation_preference !== preference) {
+      const supabase = requireService();
+      const patch = {
+        consultation_preference: preference,
+        landing_page_version: landingPageVersion ?? existing.landing_page_version ?? EXPERIENCE_21D_LANDING_VERSION,
+        brief_json: {
+          ...(existing.brief_json ?? {}),
+          consultation_preference: preference,
+          landing_page_version: landingPageVersion ?? existing.landing_page_version ?? EXPERIENCE_21D_LANDING_VERSION,
+        },
+        updated_at: new Date().toISOString(),
+      };
+      let { data: updated, error: updateError } = await supabase
+        .from("experience_21d_interests")
+        .update(patch)
+        .eq("id", existing.id)
+        .select("*")
+        .maybeSingle();
+      if (updateError && /consultation_preference|landing_page_version|schema cache/i.test(updateError.message)) {
+        const retry = await supabase
+          .from("experience_21d_interests")
+          .update({
+            brief_json: patch.brief_json,
+            updated_at: patch.updated_at,
+          })
+          .eq("id", existing.id)
+          .select("*")
+          .maybeSingle();
+        updated = retry.data;
+        updateError = retry.error;
+      }
+      if (!updateError && updated) {
+        await record21dFunnelEvent({
+          analysisSessionId: input.analysisSessionId,
+          event: "21d_consultation_submitted",
+          interestId: String(updated.id),
+        });
+        return { public: toPublicHandoff(input.session, updated as InterestRow)!, created: false };
+      }
+    }
     return { public: toPublicHandoff(input.session, existing)!, created: false };
   }
+
   const parsed = parse21dContact(input.contact ?? {});
   if (!parsed) {
     return {
@@ -194,6 +251,14 @@ export async function request21dInterest(input: {
   });
   const invitation = build21dInvitation(input.session.report);
   const supabase = requireService();
+  const briefPayload =
+    preference != null
+      ? {
+          ...brief,
+          consultation_preference: preference,
+          landing_page_version: landingPageVersion ?? EXPERIENCE_21D_LANDING_VERSION,
+        }
+      : brief;
   const payload = {
     analysis_session_id: input.analysisSessionId,
     customer_id: customerId,
@@ -209,8 +274,12 @@ export async function request21dInterest(input: {
     display_name: parsed.displayName,
     contact_channel: parsed.channel,
     contact_value: parsed.value,
+    consultation_preference: preference,
+    landing_page_version: preference
+      ? landingPageVersion ?? EXPERIENCE_21D_LANDING_VERSION
+      : landingPageVersion,
     invitation_bridge: invitation.bridge,
-    brief_json: brief,
+    brief_json: briefPayload,
     updated_at: new Date().toISOString(),
   };
   const { data, error } = await supabase
@@ -218,24 +287,51 @@ export async function request21dInterest(input: {
     .upsert(payload, { onConflict: "analysis_session_id" })
     .select("*")
     .maybeSingle();
-  if (error || !data) {
+  let saved = data as InterestRow | null;
+  let saveError = error;
+  // Preview may run before additive 063 is applied; keep preference in brief_json.
+  if (
+    saveError &&
+    /consultation_preference|landing_page_version|schema cache/i.test(saveError.message)
+  ) {
+    const {
+      consultation_preference: _pref,
+      landing_page_version: _ver,
+      ...legacyPayload
+    } = payload;
+    const retry = await supabase
+      .from("experience_21d_interests")
+      .upsert(legacyPayload, { onConflict: "analysis_session_id" })
+      .select("*")
+      .maybeSingle();
+    saved = retry.data as InterestRow | null;
+    saveError = retry.error;
+  }
+  if (saveError || !saved) {
     const raced = await getInterestBySessionId(input.analysisSessionId);
     if (raced && hasUsableContact(raced)) {
       return { public: toPublicHandoff(input.session, raced)!, created: false };
     }
-    throw new AnalysisSessionError(error?.message || "Failed to save interest.", 500, "interest_failed");
+    throw new AnalysisSessionError(saveError?.message || "Failed to save interest.", 500, "interest_failed");
   }
   await record21dFunnelEvent({
     analysisSessionId: input.analysisSessionId,
     event: "21d_contact_captured",
-    interestId: String(data.id),
+    interestId: String(saved.id),
   });
   await record21dFunnelEvent({
     analysisSessionId: input.analysisSessionId,
     event: "21d_interest_created",
-    interestId: String(data.id),
+    interestId: String(saved.id),
   });
-  return { public: toPublicHandoff(input.session, data as InterestRow)!, created: true };
+  if (preference) {
+    await record21dFunnelEvent({
+      analysisSessionId: input.analysisSessionId,
+      event: "21d_consultation_submitted",
+      interestId: String(saved.id),
+    });
+  }
+  return { public: toPublicHandoff(input.session, saved)!, created: true };
 }
 
 export type Partner21dCard = {
@@ -249,6 +345,7 @@ export type Partner21dCard = {
   realBottleneck: string;
   contactChannel: string | null;
   contactValue: string | null;
+  consultationPreference: Experience21dConsultationPreference | null;
   animalType: string | null;
   animalLabel: string;
 };
@@ -256,6 +353,13 @@ export type Partner21dCard = {
 function partnerCard(row: InterestRow): Partner21dCard {
   const brief = row.brief_json ?? ({} as CoachHandoffBrief);
   const animal = animalPresentation(row.primary_animal_type);
+  const briefPreference = (brief as { consultation_preference?: unknown }).consultation_preference;
+  const preference =
+    row.consultation_preference && isExperience21dConsultationPreference(row.consultation_preference)
+      ? row.consultation_preference
+      : isExperience21dConsultationPreference(briefPreference)
+        ? briefPreference
+        : null;
   return {
     id: row.id,
     displayName: row.display_name || "尚未留名",
@@ -267,6 +371,7 @@ function partnerCard(row: InterestRow): Partner21dCard {
     realBottleneck: brief.real_bottleneck ?? "",
     contactChannel: row.contact_channel,
     contactValue: row.contact_value,
+    consultationPreference: preference,
     animalType: row.primary_animal_type,
     animalLabel: animal.label,
   };

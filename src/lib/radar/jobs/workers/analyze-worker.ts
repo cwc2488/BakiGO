@@ -49,11 +49,20 @@ export async function runAnalyzeWorker(
   });
 
   if (outcome.kind === "failed") {
+    const error_code = outcome.analysis_run.error_code ?? "SCHEMA_VALIDATION";
     return {
       job_id: job.id,
       status: "failed",
-      error_code: "SCHEMA_VALIDATION",
+      error_code,
       error_message: outcome.analysis_run.error_message ?? "invalid extraction",
+      metrics: outcome.telemetry
+        ? {
+            openai_calls: outcome.telemetry.openai_calls,
+            repair_attempted: outcome.telemetry.repair_attempted,
+            repair_succeeded: outcome.telemetry.repair_succeeded,
+            conformance_actions: outcome.telemetry.conformance_actions,
+          }
+        : undefined,
     };
   }
 
@@ -77,7 +86,9 @@ export async function runAnalyzeWorker(
     });
   }
 
-  const members = await ctx.repo.listActiveMembers();
+  const members = ctx.scoreMemberIds?.length
+    ? ctx.scoreMemberIds.map((member_id) => ({ member_id }))
+    : await ctx.repo.listActiveMembers();
   await enqueueScoreJobsForMembers(ctx, {
     pipeline_run_id: job.pipeline_run_id,
     run_date,
@@ -92,6 +103,14 @@ export async function runAnalyzeWorker(
     metrics: {
       analysis_run_id,
       cache_hit: outcome.kind === "cache_hit",
+      openai_calls: outcome.telemetry?.openai_calls ?? 0,
+      repair_attempted: outcome.telemetry?.repair_attempted ?? false,
+      repair_succeeded: outcome.telemetry?.repair_succeeded ?? false,
+      conformance_actions: outcome.telemetry?.conformance_actions ?? [],
+      total_tokens: (outcome.telemetry?.usage ?? []).reduce(
+        (sum, usage) => sum + usage.total_tokens,
+        0,
+      ),
     },
   };
 }

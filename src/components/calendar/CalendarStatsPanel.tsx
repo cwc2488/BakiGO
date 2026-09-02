@@ -7,19 +7,11 @@ import {
   type CalendarStatsQuery,
   type CalendarStatsResult,
 } from "@/lib/calendar/calendar-stats";
-import { CALENDAR_EVENT_COLORS, type CalendarEvent, type CalendarEventColor } from "@/types/calendar-event";
+import { CALENDAR_EVENT_COLORS, normalizeCalendarEventColor, type CalendarEvent, type CalendarEventColor } from "@/types/calendar-event";
 import { getCalendarActivityTypeLabel } from "@/lib/calendar/calendar-activity-types";
 import { useMemo, useState } from "react";
 
-const COLOR_LABELS: Record<CalendarEventColor, string> = {
-  blue: "藍",
-  green: "綠",
-  orange: "橙",
-  red: "紅",
-  purple: "紫",
-  teal: "青",
-  gray: "灰",
-};
+const COLOR_LABELS = CALENDAR_EVENT_COLORS;
 
 export function CalendarStatsPanel({
   events,
@@ -202,9 +194,9 @@ function StatsByColor({ stats }: { stats: CalendarStatsResult }) {
             <span className="inline-flex items-center gap-2 text-[0.875rem]">
               <span
                 className="h-3 w-3 rounded-full"
-                style={{ backgroundColor: CALENDAR_EVENT_COLORS[color].bg }}
+                style={{ backgroundColor: CALENDAR_EVENT_COLORS[color].accent }}
               />
-              {COLOR_LABELS[color]}
+              {COLOR_LABELS[color].label}
             </span>
             <span className="text-[0.875rem] font-medium text-[#636366]">{stats.byColor[color]}</span>
           </li>
@@ -236,7 +228,7 @@ function StatsEventList({ stats }: { stats: CalendarStatsResult }) {
               </div>
               <span
                 className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: CALENDAR_EVENT_COLORS[event.color].bg }}
+                style={{ backgroundColor: CALENDAR_EVENT_COLORS[normalizeCalendarEventColor(event.color)].accent }}
               />
             </li>
           ))}

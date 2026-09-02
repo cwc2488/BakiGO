@@ -1,7 +1,12 @@
 import type { Platform } from "../normalization/schema";
-import type { CandidateSourceAdapter, SourceAdapterId } from "./types";
-import { createProductionSourceAdapters } from "./fixture-adapter";
-import type { SourceFetchAuditor } from "./types";
+import {
+  MetaInstagramAdapter,
+  MetaThreadsAdapter,
+} from "./fixture-adapter";
+import { OfficialInstagramAdapter } from "./instagram-official-adapter";
+import { shouldUseRadarFixtureAdapters } from "./live-mode";
+import { LiveThreadsAdapter } from "./threads-live-adapter";
+import type { CandidateSourceAdapter, SourceAdapterId, SourceFetchAuditor } from "./types";
 
 export { discoverPlatformsForKeyword, mapKeywordToPlatforms } from "../keywords/map-keyword-to-platforms";
 
@@ -32,7 +37,16 @@ export class SourceAdapterRegistry {
   }
 }
 
+export function createProductionSourceAdapters(
+  auditor?: SourceFetchAuditor,
+): CandidateSourceAdapter[] {
+  if (shouldUseRadarFixtureAdapters()) {
+    return [new MetaThreadsAdapter(auditor), new MetaInstagramAdapter(auditor)];
+  }
+
+  return [new LiveThreadsAdapter(auditor), new OfficialInstagramAdapter(auditor)];
+}
+
 export function createSourceAdapterRegistry(auditor?: SourceFetchAuditor): SourceAdapterRegistry {
   return new SourceAdapterRegistry(createProductionSourceAdapters(auditor));
 }
-

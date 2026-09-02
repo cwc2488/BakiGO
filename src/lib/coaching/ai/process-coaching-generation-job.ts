@@ -23,6 +23,10 @@ import { generateDailyCoachWithTelemetry } from "@/lib/coaching/ai/generate-dail
 import { loadAuthoritativeCoachingGenerationInput } from "@/lib/coaching/ai/load-coaching-generation-context";
 import { observeCoachingMeals } from "@/lib/coaching/ai/observe-coaching-meals";
 import {
+  loadGo21VisionCacheForStoragePaths,
+  saveVisionCache,
+} from "@/lib/go21/realtime-vision";
+import {
   createEmptyCoachingAiLatency,
   logCoachingAiLatency,
 } from "@/lib/coaching/ai/coaching-ai-latency";
@@ -169,6 +173,17 @@ export async function processCoachingGenerationJob(
       daily_log_id: loaded.todayLog.id || null,
       duration_ms: Date.now() - setupStartedAt,
     });
+
+    if (!loaded.todayLog.id) {
+      await markGenerationJobSuperseded(job.id, "daily_log_missing_or_deleted");
+      logCoachingAiJobLifecycle({
+        stage: "job_superseded",
+        ...lifecycleBase(job),
+        reason: "daily_log_missing_or_deleted",
+      });
+      return { outcome: "superseded", reason: "daily_log_missing_or_deleted" };
+    }
+
     const currentFingerprint = fingerprintCoachingGenerationInput(loaded.generationInput);
 
     // Provisional post-submit jobs: upgrade fingerprint in-place and continue (no supersede loop).
@@ -350,17 +365,57 @@ export async function processCoachingGenerationJob(
       daily_log_id: todayLog.id || null,
       meta: { prepared_image_count: preparedImages.prepared.length },
     });
-    const { observations: mealObservations } = await observeCoachingMeals({
-      generationInput: loaded.generationInput,
-      preparedMealImages: preparedImages.prepared,
-      ownerMemberId: job.ownerMemberId,
-      persistTelemetry: true,
-    });
+
+    // Reuse Go21 real-time vision cache when present — avoid duplicate OpenAI vision calls.
+    const cachedByPath = await loadGo21VisionCacheForStoragePaths(
+      preparedImages.prepared.map((img) => img.sourceStoragePath),
+    );
+    const uncachedImages = preparedImages.prepared.filter(
+      (img) => !cachedByPath.has(img.sourceStoragePath),
+    );
+    let mealObservations = Array.from(cachedByPath.values());
+    if (uncachedImages.length > 0) {
+      const observed = await observeCoachingMeals({
+        generationInput: loaded.generationInput,
+        preparedMealImages: uncachedImages,
+        ownerMemberId: job.ownerMemberId,
+        persistTelemetry: true,
+      });
+      for (const obs of observed.observations) {
+        const match = uncachedImages.find((img) => img.mealSlot === obs.mealSlot);
+        if (match && (observed.source === "vision" || observed.source === "merged")) {
+          await saveVisionCache({
+            storagePath: match.sourceStoragePath,
+            observation: obs,
+            source: observed.source,
+            model: process.env.COACHING_DAILY_AI_MODEL_ID ?? "meal_vision",
+          });
+        }
+      }
+      const bySlot = new Map(mealObservations.map((o) => [o.mealSlot, o]));
+      for (const obs of observed.observations) {
+        bySlot.set(obs.mealSlot, obs);
+      }
+      mealObservations = Array.from(bySlot.values());
+    } else if (preparedImages.prepared.length === 0) {
+      const observed = await observeCoachingMeals({
+        generationInput: loaded.generationInput,
+        preparedMealImages: [],
+        ownerMemberId: job.ownerMemberId,
+        persistTelemetry: true,
+      });
+      mealObservations = observed.observations;
+    }
+
     latency.vision_completed_at = new Date().toISOString();
     logCoachingAiJobLifecycle({
       stage: "job_vision_completed",
       ...lifecycleBase(job),
       duration_ms: Date.parse(latency.vision_completed_at) - Date.parse(latency.vision_started_at!),
+      meta: {
+        vision_cache_hits: cachedByPath.size,
+        vision_live_images: uncachedImages.length,
+      },
     });
 
     const customerVoice = extractCustomerVoiceSignals(loaded.generationInput.todayContext.customerNote);
@@ -387,19 +442,68 @@ export async function processCoachingGenerationJob(
     });
     const finalInterventionLevel = decisionContext.finalInterventionLevel;
 
-    const provider = createCoachingAiProvider();
-    const { result } = await generateDailyCoachWithTelemetry({
-      provider,
-      request: {
+    const { isCoachingAiV2Enabled, runCoachingAiV2Turn } = await import(
+      "@/lib/coaching/ai/v2/run-v2-turn"
+    );
+
+    let outputJson;
+    let resultModel: string;
+    let resultPromptVersion: string;
+    let aiProposedInterventionLevel = finalInterventionLevel;
+
+    if (isCoachingAiV2Enabled()) {
+      const v2 = await runCoachingAiV2Turn({
         generationInput: loaded.generationInput,
-        preparedMealImages: preparedImages.prepared,
-        finalInterventionLevel,
         decisionContext,
-      },
-      ownerMemberId: job.ownerMemberId,
-      imageUsageMetadata: preparedImages.telemetry,
-      persistTelemetry: true,
-    });
+        enrollmentStartedAt: loaded.enrollmentStartedAt,
+        plannedEndAt: loaded.enrollmentPlannedEndAt,
+        planSnapshot: loaded.generationInput.profileMemory.planSnapshot,
+        channel:
+          loaded.generationInput.profileMemory.daysSinceEnrollmentStart >= 20
+            ? "day21"
+            : "daily_log",
+        persistToSupabase: true,
+      });
+      // Keep coach-side decision authority (nutrition / intervention / attention).
+      outputJson = applyCoachingDecisionContextToOutput(v2.outputJson, decisionContext, {
+        generationInput: loaded.generationInput,
+      });
+      // Preserve freeform customer message after authority rewrite.
+      const bridgedMessage = v2.draft.coachMessage;
+      outputJson = {
+        ...outputJson,
+        customer: {
+          ...outputJson.customer,
+          coach_message: bridgedMessage,
+          encouragement: bridgedMessage.slice(0, 240),
+          today_feedback: bridgedMessage.slice(0, 500),
+        },
+      };
+      resultModel = v2.model;
+      resultPromptVersion = v2.promptVersion;
+      aiProposedInterventionLevel = outputJson.coach.proposed_intervention_level;
+    } else {
+      const provider = createCoachingAiProvider();
+      const { result } = await generateDailyCoachWithTelemetry({
+        provider,
+        request: {
+          generationInput: loaded.generationInput,
+          preparedMealImages: preparedImages.prepared,
+          finalInterventionLevel,
+          decisionContext,
+        },
+        ownerMemberId: job.ownerMemberId,
+        imageUsageMetadata: preparedImages.telemetry,
+        persistTelemetry: true,
+      });
+      outputJson = applyCoachingDecisionContextToOutput(result.output, decisionContext, {
+        generationInput: loaded.generationInput,
+      });
+      resultModel = result.model;
+      resultPromptVersion = result.promptVersion;
+      aiProposedInterventionLevel = outputJson.coach.proposed_intervention_level;
+    }
+
     latency.coach_generation_completed_at = new Date().toISOString();
     logCoachingAiJobLifecycle({
       stage: "job_coach_completed",
@@ -407,10 +511,6 @@ export async function processCoachingGenerationJob(
       duration_ms:
         Date.parse(latency.coach_generation_completed_at) -
         Date.parse(latency.coach_generation_started_at!),
-    });
-
-    const outputJson = applyCoachingDecisionContextToOutput(result.output, decisionContext, {
-      generationInput: loaded.generationInput,
     });
 
     latency.persist_started_at = new Date().toISOString();
@@ -423,10 +523,10 @@ export async function processCoachingGenerationJob(
       fingerprint: currentFingerprint,
       generationInput: loaded.generationInput,
       outputJson,
-      model: result.model,
-      promptVersion: result.promptVersion,
+      model: resultModel,
+      promptVersion: resultPromptVersion,
       finalInterventionLevel,
-      aiProposedInterventionLevel: outputJson.coach.proposed_intervention_level,
+      aiProposedInterventionLevel,
     });
     await markGenerationJobCompleted(job.id);
     latency.persist_completed_at = new Date().toISOString();

@@ -14,6 +14,13 @@
   --brand-text-muted: #86868b;
   --brand-hint: #aeaeb2;
 
+  /* Partner surface — restrained premium tokens */
+  --partner-radius-lg: 1.25rem;
+  --partner-radius-md: 1rem;
+  --partner-radius-sm: 0.75rem;
+  --partner-shadow: 0 1px 2px rgba(29, 29, 31, 0.04);
+  --partner-border: color-mix(in srgb, var(--brand-border) 80%, transparent);
+
   --background: var(--brand-bg);
   --foreground: var(--brand-text);
   --home-shadow: 0 8px 40px rgba(36, 138, 61, 0.06);
@@ -51,13 +58,35 @@ body {
   font-family: var(--font-geist-sans), "PingFang TC", "Noto Sans TC",
     -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  /* clip avoids the overflow-x:hidden → overflow-y:auto quirk that
+     turns html/body into scrollports and breaks position:fixed bottom nav
+     on long mobile pages (e.g. /radar, /calendar). */
+  overflow-x: clip;
+  overflow-y: visible;
   max-width: 100vw;
 }
 
 html {
-  overflow-x: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
   max-width: 100vw;
+}
+
+/* BOTTOM-NAV-GLOBAL-REGRESSION-02 — lock viewport-fixed mobile bottom nav.
+   Keep utilities out of the critical path so restores/merges cannot silently
+   drop fixed + safe-area via className churn. Desktop side nav stays separate. */
+.app-bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  width: 100%;
+  border-top: 1px solid var(--brand-border);
+  background: color-mix(in srgb, var(--brand-surface) 98%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .home-container {
@@ -1017,6 +1046,47 @@ body:has(.reset-xp) {
 .rx-kv-hit:disabled {
   cursor: wait;
 }
+.rx-kv-hit.is-starting {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(184, 92, 114, 0.94);
+  color: #fffaf8;
+  box-shadow: 0 8px 18px rgba(154, 63, 84, 0.22);
+  cursor: wait;
+}
+.rx-kv-hit-busy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  padding: 0 0.55rem;
+  pointer-events: none;
+}
+.rx-kv-hit-label {
+  font-size: clamp(0.72rem, 3.2vw, 0.92rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  line-height: 1;
+}
+.rx-kv-hit-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  flex-shrink: 0;
+}
+.rx-kv-hit-dots i {
+  width: 0.28rem;
+  height: 0.28rem;
+  border-radius: 99px;
+  background: #fffaf8;
+  opacity: 0.45;
+  animation: rx-breathe 1.5s ease-in-out infinite;
+}
+.rx-kv-hit-dots i:nth-child(2) { animation-delay: 0.18s; }
+.rx-kv-hit-dots i:nth-child(3) { animation-delay: 0.36s; }
 .rx-landing > .rx-error {
   position: relative;
   z-index: 2;
@@ -1589,6 +1659,7 @@ body:has(.reset-xp) {
   .rx-in-quiet,
   .rx-in-editorial,
   .rx-think-dots i,
+  .rx-kv-hit-dots i,
   .rx-choice,
   .rx-progress-fill {
     animation: none !important;
@@ -1599,4 +1670,201 @@ body:has(.reset-xp) {
     transform: none;
   }
 }
+
+/* —— 21-day Experience landing (artwork-first; interactive layer only) —— */
+.e21d-page {
+  --e21d-bg: #f7f3ea;
+  --e21d-surface: #fffdf8;
+  --e21d-ink: #24352c;
+  --e21d-muted: #66756c;
+  --e21d-forest: #2f513d;
+  --e21d-sage: #5a7d66;
+  --e21d-soft: #e6efe7;
+  --e21d-line: #e2ddd1;
+  --e21d-radius: 1.15rem;
+  min-height: 100dvh;
+  background: var(--e21d-bg);
+  color: var(--e21d-ink);
+  font-family: "PingFang TC", "Noto Sans TC", "Hiragino Sans GB", sans-serif;
+}
+.e21d-interact {
+  color: var(--e21d-ink);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.e21d-interact-title {
+  margin: 0;
+  color: var(--e21d-forest);
+  font-size: 1.25rem;
+  font-weight: 750;
+}
+.e21d-interact-body {
+  margin: 0.55rem 0 0;
+  color: var(--e21d-muted);
+  font-size: 0.9375rem;
+  line-height: 1.65;
+}
+.e21d-btn-primary,
+.e21d-btn-secondary {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3.15rem;
+  padding: 0.85rem 1.35rem;
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+.e21d-btn-primary {
+  background: var(--e21d-forest);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(47, 81, 61, 0.18);
+}
+.e21d-btn-secondary {
+  background: var(--e21d-soft);
+  color: var(--e21d-forest);
+}
+.e21d-btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.e21d-btn-primary:focus-visible,
+.e21d-btn-secondary:focus-visible,
+.e21d-option:focus-within,
+.e21d-field input:focus-visible,
+.e21d-channel:focus-within {
+  outline: 2px solid var(--e21d-sage);
+  outline-offset: 2px;
+}
+.e21d-options {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+.e21d-legend {
+  margin: 0 0 0.55rem;
+  color: var(--e21d-forest);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.e21d-option {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--e21d-radius);
+  border: 1.5px solid var(--e21d-line);
+  background: var(--e21d-surface);
+  cursor: pointer;
+}
+.e21d-option.is-recommended {
+  background: color-mix(in srgb, var(--e21d-soft) 55%, white);
+}
+.e21d-option.is-selected {
+  border-color: var(--e21d-forest);
+  box-shadow: 0 0 0 1px var(--e21d-forest);
+}
+.e21d-option-title {
+  color: var(--e21d-ink);
+  font-size: 1rem;
+  font-weight: 700;
+}
+.e21d-option-sub {
+  color: var(--e21d-muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+.e21d-contact-block {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+.e21d-field {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--e21d-ink);
+}
+.e21d-field input {
+  min-height: 2.85rem;
+  border-radius: 0.95rem;
+  border: 1px solid var(--e21d-line);
+  background: #fff;
+  padding: 0.75rem 0.95rem;
+  font-size: 1rem;
+  color: var(--e21d-ink);
+}
+.e21d-channels {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.e21d-channels legend {
+  margin-bottom: 0.45rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.e21d-channel-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.e21d-channel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.5rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: var(--e21d-soft);
+  font-size: 0.875rem;
+}
+.e21d-error {
+  margin: 0.75rem 0 0;
+  color: #b42318;
+  font-size: 0.9rem;
+}
+.e21d-reassure-note,
+.e21d-whisper {
+  margin: 0.7rem 0 0;
+  text-align: center;
+  color: var(--e21d-muted);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+.e21d-success {
+  text-align: center;
+  padding: 0.5rem 0 1rem;
+}
+.e21d-apply .e21d-btn-primary {
+  margin-top: 1rem;
+  width: 100%;
+}
+.e21d-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--e21d-line) 80%, transparent);
+  color: var(--e21d-muted);
+  font-size: 0.8125rem;
+}
+.e21d-footer a {
+  color: var(--e21d-sage);
+}
+@media (prefers-reduced-motion: reduce) {
+  .e21d-btn-primary,
+  .e21d-btn-secondary {
+    transition: none;
+  }
+}
+
 

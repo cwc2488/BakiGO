@@ -15,16 +15,18 @@ import { formatOutcomeStatusLabel } from "@/lib/coaching/presentation/coaching-u
 import { assessBowelMovementSignal } from "@/lib/coaching/ai/bowel-movement-signal";
 
 /** Human labels — never expose pending/processing/completed enums. */
-export type CoachTodayReportState = "not_reported" | "organizing" | "ready";
+export type CoachTodayReportState = "not_reported" | "partial" | "organizing" | "ready";
 
 export const COACH_TODAY_REPORT_LABELS: Record<CoachTodayReportState, string> = {
   not_reported: "○ 今天尚未回報",
+  partial: "◑ 今天已開始回報",
   organizing: "⏳ 正在整理今天的回報",
   ready: "✓ 今日已完成",
 };
 
 export const COACH_TODAY_REPORT_SHORT: Record<CoachTodayReportState, string> = {
   not_reported: "○ 尚未回報",
+  partial: "◑ 已開始回報",
   organizing: "⏳ 正在整理",
   ready: "✓ 已完成",
 };
@@ -141,11 +143,19 @@ export function humanizeAttentionNextStep(input: {
 export function resolveCoachTodayReportState(input: {
   todaySubmitted: boolean;
   todayAiStatus: string | null | undefined;
+  dailyReportState?: "NO_REPORT" | "PARTIAL_REPORT" | "COMPLETE_REPORT";
 }): CoachTodayReportState {
+  if (input.dailyReportState === "NO_REPORT") return "not_reported";
+  if (input.dailyReportState === "PARTIAL_REPORT") return "partial";
+  if (input.dailyReportState === "COMPLETE_REPORT") {
+    const status = input.todayAiStatus ?? null;
+    if (status === "pending" || status === "processing") return "organizing";
+    return "ready";
+  }
   if (!input.todaySubmitted) return "not_reported";
   const status = input.todayAiStatus ?? null;
   if (status === "completed") return "ready";
-  if (status === "failed") return "ready"; // Layer1 done; don't block coach with tech fail
+  if (status === "failed") return "ready";
   return "organizing";
 }
 
@@ -197,6 +207,7 @@ export function buildWorkbenchTodaySummary(
       todayAiStatus: card.todayAiStatus,
     });
     if (state === "not_reported") notReportedCount += 1;
+    else if (state === "partial") reportedCount += 1;
     else if (state === "organizing") {
       organizingCount += 1;
       reportedCount += 1;
@@ -272,6 +283,8 @@ export function buildDetailActionCard(input: {
   bowelCount: number | null | undefined;
   /** Presentation-only directive hint; does not change Attention. */
   directiveSecondaryNote?: string | null;
+  hasMeaningfulReport?: boolean;
+  missingItems?: string[];
 }): DetailActionCard {
   const bowel = assessBowelMovementSignal({ todayCount: input.bowelCount ?? null });
   const bowelNote =
@@ -318,6 +331,19 @@ export function buildDetailActionCard(input: {
       suggestion: null,
       secondaryNote: bowelNote || input.directiveSecondaryNote || null,
       showRecordAction: Boolean(bowelNote || input.directiveSecondaryNote),
+    };
+  }
+
+  if (!input.submitted && input.hasMeaningfulReport) {
+    const missing = (input.missingItems ?? []).filter(Boolean);
+    return {
+      title: "今天已開始回報",
+      body: missing.length
+        ? `尚有項目未完成：${missing.join("、")}。先不用催整份回報。`
+        : "今天已開始回報，尚有項目未完成。先不用催整份回報。",
+      suggestion: missing[0] ? `→ 若晚一點仍沒有${missing[0]}紀錄，再提醒即可` : null,
+      secondaryNote: bowelNote || input.directiveSecondaryNote || null,
+      showRecordAction: false,
     };
   }
 

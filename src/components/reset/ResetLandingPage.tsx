@@ -2,7 +2,10 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { ResetLandingView } from "@/components/reset/ResetExperienceViews";
+import { stashResetBootExperience } from "@/lib/analysis/reset/reset-boot-cache";
+import type { ResetPublicView } from "@/lib/analysis/reset/reset-contract";
 import { getShareParams, saveFatLossQuizAttribution } from "@/lib/quiz/fat-loss/session-storage";
 
 export function ResetLandingPage() {
@@ -11,6 +14,13 @@ export function ResetLandingPage() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const landingBeaconSent = useRef(false);
+  /** Sync lock: one in-flight start per tap sequence (before React re-renders). */
+  const startInFlight = useRef(false);
+
+  useEffect(() => {
+    // Prime serverless + quiz id cache while the user reads the landing (no session write).
+    void fetch("/api/analysis/sessions", { method: "GET", cache: "no-store" }).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const share = getShareParams(searchParams);
@@ -35,8 +45,13 @@ export function ResetLandingPage() {
   }, [searchParams]);
 
   async function handleStart() {
-    setStarting(true);
-    setError(null);
+    if (startInFlight.current) return;
+    startInFlight.current = true;
+    // Paint busy CTA in this same tap before awaiting the network.
+    flushSync(() => {
+      setStarting(true);
+      setError(null);
+    });
     const share = getShareParams(searchParams);
     saveFatLossQuizAttribution({
       referralShareToken: share.referralShareToken,
@@ -55,12 +70,20 @@ export function ResetLandingPage() {
           resultShareCode: share.resultShareCode ?? null,
         }),
       });
-      const payload = (await response.json()) as { token?: string; error?: string };
+      const payload = (await response.json()) as {
+        token?: string;
+        error?: string;
+        experience?: ResetPublicView;
+      };
       if (!response.ok || !payload.token) throw new Error(payload.error ?? "無法開始");
+      if (payload.experience) {
+        stashResetBootExperience(payload.token, payload.experience);
+      }
       router.push(`/analysis/${payload.token}`);
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : "無法開始");
       setStarting(false);
+      startInFlight.current = false;
     }
   }
 

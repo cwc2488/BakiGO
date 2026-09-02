@@ -17,11 +17,6 @@ export function GoalCardView({ goal }: { goal: GoalCard }) {
           </p>
           <p className="mt-1 text-[0.875rem] leading-relaxed text-[#86868b]">{goal.description}</p>
         </div>
-        {goal.rewardXP > 0 ? (
-          <span className="shrink-0 text-[0.8125rem] font-semibold text-[#ff375f]">
-            +{goal.rewardXP} 積分
-          </span>
-        ) : null}
       </div>
 
       {goal.isRuleMissing ? (

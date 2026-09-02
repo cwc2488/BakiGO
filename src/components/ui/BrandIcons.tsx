@@ -517,7 +517,6 @@ export const ROUTE_ICON_COMPONENTS = {
   "/president-road": IconPresidentRoad,
   "/profile": IconProfile,
   "/quiz/hub": IconQuizHub,
-  "/quiz/21d": IconQuizHub,
 } as const;
 
 export const NAV_ICONS = {

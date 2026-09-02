@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnalysisFlowPage } from "@/components/analysis/AnalysisFlowPage";
 import {
   ResetConversationView,
@@ -9,6 +10,7 @@ import {
   ResetRevealView,
 } from "@/components/reset/ResetExperienceViews";
 import { ResetShell } from "@/components/reset/ResetShell";
+import { takeResetBootExperience } from "@/lib/analysis/reset/reset-boot-cache";
 import { RESET_THINKING_LINES } from "@/lib/analysis/reset/reset-animals";
 import type { Experience21dConsumerChannel } from "@/lib/analysis/handoff/experience-21d-contact";
 import type { ResetPublicView } from "@/lib/analysis/reset/reset-contract";
@@ -35,9 +37,25 @@ export function AnalysisExperienceSwitch({ token }: { token: string }) {
     setMode("reset");
   }, [token]);
 
-  useEffect(() => {
-    void load().catch((err) => setError(err instanceof Error ? err.message : "無法載入"));
-  }, [load]);
+  // Boot from create-session stash before paint; only network-load when stash miss.
+  useLayoutEffect(() => {
+    let cancelled = false;
+    const boot = takeResetBootExperience(token);
+    if (boot) {
+      setExperience(boot);
+      setMode("reset");
+      return () => {
+        cancelled = true;
+      };
+    }
+    void load()
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "無法載入");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, load]);
 
   if (error) {
     return (
@@ -68,6 +86,7 @@ function ResetExperiencePage({
   initial: ResetPublicView;
   onReload: () => Promise<void>;
 }) {
+  const router = useRouter();
   const [view, setView] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,7 +206,9 @@ function ResetExperiencePage({
       contactValue={contactValue}
       busy={busy}
       error={error}
-      onPrimary={() => void post({ action: "21d_interest" })}
+      onPrimary={() => {
+        router.push(`/experience/21d/${encodeURIComponent(token)}`);
+      }}
       onSecondary={() => document.querySelector(".rx-report-grid")?.scrollIntoView({ behavior: "smooth", block: "start" })}
       onContactName={setContactName}
       onContactChannel={(channel) => {
@@ -195,14 +216,9 @@ function ResetExperiencePage({
         setContactValue("");
       }}
       onContactValue={setContactValue}
-      onSubmitContact={() =>
-        void post({
-          action: "21d_interest",
-          displayName: contactName,
-          channel: contactChannel,
-          value: contactValue,
-        })
-      }
+      onSubmitContact={() => {
+        router.push(`/experience/21d/${encodeURIComponent(token)}`);
+      }}
     />
   );
 }

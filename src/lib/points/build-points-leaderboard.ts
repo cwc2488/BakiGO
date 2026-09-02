@@ -1,8 +1,8 @@
 import { getMemberDisplayName } from "@/lib/members/member-service";
 import { resolvePointsWeekRange } from "@/lib/points/week-range";
+import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import type { Member } from "@/types/member";
 import type { EntityId } from "@/types";
-import type { Points, Streak } from "@/types/gamification";
 import {
   LEADERBOARD_DISPLAY_LIMITS,
   type LeaderboardPeriod,
@@ -10,23 +10,9 @@ import {
   type PointsLeaderboardResult,
 } from "@/types/points";
 
-export type LeaderboardPointsSnapshot = {
-  gamification: {
-    points: Pick<
-      Points,
-      | "monthlyPoints"
-      | "weeklyPoints"
-      | "lifetimePoints"
-      | "availablePoints"
-      | "streakMultiplier"
-    >;
-    streak: Pick<Streak, "currentStreak">;
-  };
-};
-
 export interface BuildPointsLeaderboardInput {
   members: Member[];
-  metricsByMemberId: Map<EntityId, LeaderboardPointsSnapshot>;
+  metricsByMemberId: Map<EntityId, MemberComputedMetrics>;
   yearMonth: string;
   referenceDate: string;
   viewerMemberId: EntityId;
@@ -36,7 +22,7 @@ export interface BuildPointsLeaderboardInput {
 
 function scoreEntry(
   member: Member,
-  metrics: LeaderboardPointsSnapshot | undefined,
+  metrics: MemberComputedMetrics | undefined,
   period: LeaderboardPeriod,
 ): Omit<PointsLeaderboardEntry, "rank"> {
   const points = metrics?.gamification.points;
@@ -67,7 +53,7 @@ function sortEntries(entries: Omit<PointsLeaderboardEntry, "rank">[]): PointsLea
     if (right.lifetimePoints !== left.lifetimePoints) {
       return right.lifetimePoints - left.lifetimePoints;
     }
-    return (left.displayName ?? "").localeCompare(right.displayName ?? "", "zh-Hant");
+    return left.displayName.localeCompare(right.displayName, "zh-Hant");
   });
 
   return sorted.map((entry, index) => ({
@@ -107,7 +93,7 @@ export function buildPointsLeaderboard(
 export function buildDirectDownlinePointSummaries(
   viewerId: EntityId,
   members: Member[],
-  metricsByMemberId: Map<EntityId, LeaderboardPointsSnapshot>,
+  metricsByMemberId: Map<EntityId, MemberComputedMetrics>,
 ): PointsLeaderboardEntry[] {
   return sortEntries(
     members

@@ -21,6 +21,7 @@ import { PageErrorState, PageLoadingState } from "@/components/ui/PageStates";
 import { IconLabel } from "@/components/ui/AppIcon";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { PARTNER_LABELS } from "@/lib/ui/partner-labels";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const TIMELINE_CATEGORY_LABELS: Record<BakiEventCategory, string> = {
@@ -313,6 +314,18 @@ export default function EventCenterPage() {
       title={PARTNER_LABELS.recordCenter}
       titleIcon={APP_ICON.page.events}
     >
+        <div className="rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-primary-muted)] px-4 py-3.5 sm:px-5">
+          <p className="text-[0.875rem] leading-relaxed text-[#636366]">
+            量測／諮詢請改由「行事曆」完成活動或「快速紀錄」。
+          </p>
+          <Link
+            className="mt-2 inline-flex text-[0.875rem] font-semibold text-[var(--brand-primary-dark)] underline-offset-2 hover:underline"
+            href="/calendar"
+          >
+            前往行事曆
+          </Link>
+        </div>
+
         <section className="rounded-[1.75rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] p-6 sm:p-7">
           <h2 className="flex items-center gap-1.5 text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-[#86868b]">
             <IconLabel icon={APP_ICON.action.addRecord}>新增紀錄</IconLabel>

@@ -105,7 +105,7 @@ describe("radar pipeline chain integration", () => {
     );
 
     const result = await runJob(ctx, normalizeJob);
-    expect(result?.status).toBe("failed");
+    expect(result?.status === "failed" || result?.status === "dead_letter").toBe(true);
 
     const analyzeJobs = [...(await ctx.queue.claim({ limit: 10, now }))].filter(
       (job) => job.job_type === "analyze",
@@ -276,8 +276,7 @@ describe("radar pipeline chain integration", () => {
 
   it("intraday development read-filter removes candidate without modifying snapshot", async () => {
     const { repo, now } = createHarness();
-    const snapshot = await repo.insertMemberDailyTop20({
-      id: "top20-1",
+    const snapshot = await repo.upsertMemberDailyTop20({
       member_id: "member-a",
       pipeline_run_id: "run-1",
       snapshot_date: "2026-08-09",

@@ -98,6 +98,7 @@ export type RadarJobQueueStore = {
     error_message: string;
     available_at: Date | null;
     finished_at: Date;
+    max_attempts?: number;
   }): Promise<RadarJobRecord | null>;
   insertJobRun(input: Omit<PipelineJobRunRecord, "id"> & { id: string }): Promise<void>;
   updateJobRun(

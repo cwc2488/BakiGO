@@ -66,12 +66,23 @@ export function ResetLandingView({
           />
           <button
             type="button"
-            className="rx-kv-hit"
-            aria-label="開始測驗"
+            className={starting ? "rx-kv-hit is-starting" : "rx-kv-hit"}
+            aria-label={starting ? "準備測驗中…" : "開始測驗"}
             aria-busy={starting || undefined}
             disabled={starting}
             onClick={onStart}
-          />
+          >
+            {starting ? (
+              <span className="rx-kv-hit-busy">
+                <span className="rx-kv-hit-dots" aria-hidden>
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span className="rx-kv-hit-label">準備測驗中…</span>
+              </span>
+            ) : null}
+          </button>
         </div>
         {error ? <p className="rx-error">{error}</p> : null}
       </div>

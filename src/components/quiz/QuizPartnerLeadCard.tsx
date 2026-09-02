@@ -8,6 +8,7 @@ import {
   QUIZ_PARTNER_STATUS_LABEL,
   toQuizPartnerUiStatus,
 } from "@/lib/quiz/partner/quiz-partner-presentation";
+import { experience21dConsultationPreferenceLabel } from "@/lib/experience/experience-21d-landing-copy";
 
 export type QuizPartnerLeadCardData = {
   id: string;
@@ -18,6 +19,7 @@ export type QuizPartnerLeadCardData = {
   realBottleneck: string;
   contactChannel: string | null;
   contactValue: string | null;
+  consultationPreference?: string | null;
   animalLabel: string;
 };
 
@@ -39,6 +41,7 @@ export function QuizPartnerLeadCard({
 }) {
   const ui = toQuizPartnerUiStatus(item.status);
   const contact = buildPartnerContactActions(item.contactChannel, item.contactValue);
+  const preferenceLabel = experience21dConsultationPreferenceLabel(item.consultationPreference);
   return (
     <article className="rounded-[1.5rem] border border-[#eadfd6] bg-[#fffdf9] p-4 shadow-[0_8px_32px_rgba(80,40,40,0.04)]">
       <div className="flex items-start justify-between gap-3">
@@ -48,6 +51,11 @@ export function QuizPartnerLeadCard({
             <p className="mt-0.5 truncate text-[0.875rem] text-[#636366]">{contact.display}</p>
           ) : null}
           <p className="mt-0.5 text-[0.8125rem] text-[#86868b]">{formatRelativeZh(item.createdAt)}</p>
+          {preferenceLabel ? (
+            <p className="mt-1.5 inline-flex rounded-full bg-[#e6efe7] px-2.5 py-0.5 text-[0.75rem] font-semibold text-[#2f513d]">
+              諮詢方式：{preferenceLabel}
+            </p>
+          ) : null}
         </div>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[0.75rem] font-semibold ${CHIP[ui]}`}>
           {QUIZ_PARTNER_STATUS_LABEL[ui]}

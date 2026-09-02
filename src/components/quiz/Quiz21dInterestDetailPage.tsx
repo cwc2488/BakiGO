@@ -14,6 +14,7 @@ import {
   toQuizPartnerUiStatus,
 } from "@/lib/quiz/partner/quiz-partner-presentation";
 import { animalPresentation } from "@/lib/quiz/partner/quiz-partner-presentation";
+import { experience21dConsultationPreferenceLabel } from "@/lib/experience/experience-21d-landing-copy";
 
 type Detail = {
   card: {
@@ -22,6 +23,7 @@ type Detail = {
     createdAt: string;
     source: string;
     status: string;
+    consultationPreference?: string | null;
     animalType: string | null;
     animalLabel: string;
   };
@@ -117,6 +119,7 @@ export function Quiz21dInterestDetailPage({ interestId }: { interestId: string }
   const contact = buildPartnerContactActions(detail.contactChannel, detail.contactValue);
   const animal = detail.card.animalLabel || animalPresentation(detail.card.animalType).label;
   const brief = detail.brief;
+  const preferenceLabel = experience21dConsultationPreferenceLabel(detail.card.consultationPreference);
 
   return (
     <PageShell title={detail.card.displayName} subtitle="有人主動想了解，你現在只要去跟他聊。" backHref="/quiz/21d">
@@ -130,6 +133,11 @@ export function Quiz21dInterestDetailPage({ interestId }: { interestId: string }
           {formatRelativeZh(detail.card.createdAt)} · {QUIZ_PARTNER_STATUS_LABEL[ui]} ·{" "}
           {partnerSourceLabel(detail.card.source)}
         </p>
+        {preferenceLabel ? (
+          <p className="mt-3 inline-flex rounded-full bg-[#e6efe7] px-2.5 py-1 text-[0.8125rem] font-semibold text-[#2f513d]">
+            諮詢方式：{preferenceLabel}
+          </p>
+        ) : null}
         {contact ? (
           <div className="mt-4 space-y-2">
             <p className="text-[0.9375rem] text-[#1d1d1f]">{contact.display}</p>

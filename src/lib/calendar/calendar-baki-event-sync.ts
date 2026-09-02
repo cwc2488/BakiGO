@@ -1,4 +1,4 @@
-import { CALENDAR_OTHER_ACTIVITY_KEY } from "@/lib/calendar/calendar-activity-types";
+import { CALENDAR_CATEGORY_KEYS, CALENDAR_OTHER_ACTIVITY_KEY } from "@/lib/calendar/calendar-activity-types";
 import { APP_IDS } from "@/lib/config/app-config";
 import {
   ACTIVITY_LIFECYCLE_STATUS,
@@ -55,6 +55,9 @@ export interface CalendarActivityCompletionResult {
 export function isRecordableCalendarActivityKey(activityTypeKey: string | undefined): boolean {
   if (!activityTypeKey || activityTypeKey === CALENDAR_OTHER_ACTIVITY_KEY) {
     return false;
+  }
+  if (activityTypeKey === CALENDAR_CATEGORY_KEYS.MEETING) {
+    return true;
   }
   const definition = getEventTypeDefinition(activityTypeKey);
   return definition?.category === "activity";

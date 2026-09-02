@@ -1,3 +1,116 @@
 {
-  "crons": []
+  "crons": [
+    {
+      "path": "/api/radar/jobs/one-time-recovery-0901",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/one-time-recovery-0901",
+      "schedule": "30 8 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/daily-pipeline",
+      "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "30 23 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/radar/jobs/process",
+      "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/coaching/go21/reminders/process",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/coaching/go21/reminders/process",
+      "schedule": "0 10 * * *"
+    }
+  ]
 }

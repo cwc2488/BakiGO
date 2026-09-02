@@ -1,8 +1,7 @@
 import { randomBytes } from "crypto";
 import { createSupabaseServiceClient, isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
-import type { FatLossQuizAnswers, FatLossQuizResult } from "@/lib/quiz/fat-loss/types";
-import { FAT_LOSS_QUIZ_SLUG, type PersonalityType } from "@/lib/quiz/fat-loss/types";
-import { NATIVE_V1_SEED_KEY } from "@/lib/analysis/native-entry";
+import type { FatLossQuizAnswers, FatLossQuizResult, PersonalityType } from "@/lib/quiz/fat-loss/types";
+import { FAT_LOSS_QUIZ_SLUG } from "@/lib/quiz/fat-loss/types";
 import { generateFollowupMessage } from "@/lib/quiz/fat-loss/followup-message";
 import {
   formatActionHistoryLabels,
@@ -11,6 +10,7 @@ import {
   validateFatLossAnswers,
 } from "@/lib/quiz/fat-loss/score-quiz";
 import { getPersonalityProfile, INTERACTION_PRIORITY_LABELS, READINESS_LABELS, URGENCY_LABELS } from "@/lib/quiz/fat-loss/personality-content";
+import { NATIVE_V1_SEED_KEY } from "@/lib/analysis/native-entry";
 
 export type QuizResponseRecord = {
   id: string;
@@ -56,6 +56,17 @@ export async function getQuizIdBySlug(slug: string): Promise<string | null> {
     throw new Error(error.message);
   }
   return data?.id ?? null;
+}
+
+/** Warm-instance cache for the public fat-loss quiz definition id (stable). */
+let cachedFatLossQuizId: string | null = null;
+
+export async function getFatLossQuizIdCached(): Promise<string> {
+  if (cachedFatLossQuizId) return cachedFatLossQuizId;
+  const id = await getQuizIdBySlug(FAT_LOSS_QUIZ_SLUG);
+  if (!id) throw new Error("Quiz not found.");
+  cachedFatLossQuizId = id;
+  return id;
 }
 
 export async function resolveReferrerFromShare(input: {
@@ -146,29 +157,42 @@ export async function createNativeSeedQuizResult(input: {
   referrerMemberId?: string | null;
   referralShareToken?: string | null;
 }): Promise<{ resultId: string; responseId: string }> {
-  const created = await createQuizResponse({
-    respondentName: input.respondentName?.trim() || "你",
-    shareCode: input.shareCode,
-    referrerMemberId: input.referrerMemberId,
-    referralShareToken: input.referralShareToken,
-  });
+  const quizId = await getFatLossQuizIdCached();
+  const [referrer, growthShareId] = await Promise.all([
+    resolveReferrerFromShare({
+      shareCode: input.shareCode,
+      referrerMemberId: input.referrerMemberId,
+    }),
+    (async () => {
+      const { resolveValidatedGrowthShareId } = await import("@/lib/analysis/resolve-growth-share");
+      return resolveValidatedGrowthShareId(input.referralShareToken);
+    })(),
+  ]);
+
   const now = new Date().toISOString();
   const emptyScores = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 } as Record<PersonalityType, number>;
   const supabase = requireServiceClient();
-  const { error: answersError } = await supabase
+  // One insert: seed answers + completed_at (no follow-up UPDATE round trip).
+  const { data: response, error: responseError } = await supabase
     .from("quiz_responses")
-    .update({
+    .insert({
+      quiz_id: quizId,
+      respondent_name: (input.respondentName?.trim() || "你"),
+      referrer_member_id: referrer.referrerMemberId,
+      share_code: referrer.shareCode,
+      growth_share_id: growthShareId,
       answers_json: { [NATIVE_V1_SEED_KEY]: true },
       completed_at: now,
     })
-    .eq("id", created.id);
-  if (answersError) {
-    throw new Error(answersError.message);
+    .select("id")
+    .single();
+  if (responseError || !response) {
+    throw new Error(responseError?.message ?? "Failed to create quiz response.");
   }
   const { data: result, error: resultError } = await supabase
     .from("quiz_results")
     .insert({
-      response_id: created.id,
+      response_id: response.id,
       primary_type: "A",
       secondary_type: "A",
       personality_scores_json: emptyScores,
@@ -183,7 +207,7 @@ export async function createNativeSeedQuizResult(input: {
   if (resultError || !result) {
     throw new Error(resultError?.message ?? "Failed to save native seed result.");
   }
-  return { resultId: result.id, responseId: created.id };
+  return { resultId: result.id, responseId: response.id };
 }
 
 export async function updateQuizResponseAnswers(

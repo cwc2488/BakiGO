@@ -1,0 +1,262 @@
+/**
+ * Go21 conversation helpers: disengagement, display content,
+ * Brain V3 prompt signals, chat near-bottom detection re-exports.
+ */
+
+export type Go21DisengagementAssessment = {
+  detected: boolean;
+  wantsToStop: boolean;
+  lowConfidence: boolean;
+  /** Brief natural reply — never a motivational essay. */
+  briefReply: string | null;
+};
+
+const STOP_PATTERNS =
+  /想結束|結束這個陪跑|不想繼續|退出陪跑|不要陪跑了|停止陪跑|結束陪跑|我要退出/u;
+
+const LOW_CONFIDENCE_PATTERNS =
+  /很沒信心|沒信心|撐不住|想放棄|好挫折|做不到|太難了|灰心/u;
+
+/**
+ * Detect disengagement / stop intent for a brief human coaching reply.
+ * Safety/medical language is handled elsewhere and takes precedence.
+ */
+export function assessGo21Disengagement(message: string): Go21DisengagementAssessment {
+  const text = message.trim();
+  if (!text) {
+    return { detected: false, wantsToStop: false, lowConfidence: false, briefReply: null };
+  }
+
+  const wantsToStop = STOP_PATTERNS.test(text);
+  const lowConfidence = LOW_CONFIDENCE_PATTERNS.test(text);
+  if (!wantsToStop && !lowConfidence) {
+    return { detected: false, wantsToStop: false, lowConfidence: false, briefReply: null };
+  }
+
+  if (wantsToStop && lowConfidence) {
+    return {
+      detected: true,
+      wantsToStop: true,
+      lowConfidence: true,
+      briefReply:
+        "聽起來你今天真的有點撐不住了。是這個陪跑方式不適合你，還是最近整體壓力比較大？",
+    };
+  }
+  if (wantsToStop) {
+    return {
+      detected: true,
+      wantsToStop: true,
+      lowConfidence: false,
+      briefReply:
+        "好，我聽到了。你是想先暫停這幾天，還是確定要結束這次 21 天陪跑？跟我說一聲就好，我不會硬留你。",
+    };
+  }
+  return {
+    detected: true,
+    wantsToStop: false,
+    lowConfidence: true,
+    briefReply: "聽起來今天信心有點低。是哪個地方最讓你卡住？",
+  };
+}
+
+/** Customer-facing turn text — never include vision system blobs. */
+export function buildGo21CustomerDisplayContent(input: {
+  message: string;
+  hasPhoto: boolean;
+}): string {
+  const text = input.message.trim();
+  if (text) return text.slice(0, 2000);
+  if (input.hasPhoto) return "📷 照片";
+  return "（訊息）";
+}
+
+/** Enrich turn content for AI memory only (UI still uses display content). */
+export function enrichTurnContentForAi(input: {
+  displayContent: string;
+  visionEvidenceSummary?: string | null;
+  customerCorrection?: string | null;
+}): string {
+  const parts = [input.displayContent.trim()];
+  if (input.customerCorrection?.trim()) {
+    parts.push(`[顧客更正] ${input.customerCorrection.trim()}`);
+  }
+  if (input.visionEvidenceSummary?.trim()) {
+    parts.push(`[近期影像觀察｜非已確認事實] ${input.visionEvidenceSummary.trim()}`);
+  }
+  return parts.join("\n").slice(0, 4000);
+}
+
+export function extractVisionFoodsHint(evidenceSummary: string | null | undefined): string | null {
+  if (!evidenceSummary?.trim()) return null;
+  const m = evidenceSummary.match(
+    /(?:像|為|是)?\s*([\u4e00-\u9fffA-Za-z0-9]{1,12}(?:茶|飯|麵|湯|蛋|肉|菜|果|奶|水|咖啡)?)/,
+  );
+  return m?.[1]?.trim() ?? evidenceSummary.trim().slice(0, 40);
+}
+
+/** Detect photo/food correction phrases for conversational priority. */
+export function detectPhotoFoodCorrection(message: string): string | null {
+  const text = message.trim();
+  const patterns = [
+    /那不是(.{1,20})[，,]?\s*是(.{1,30})/,
+    /不是(.{1,20})[，,]?\s*(?:是|其實是)(.{1,30})/,
+    /其實是(.{1,30})/,
+    /那是(.{1,30})/,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (!m) continue;
+    const corrected = (m[2] ?? m[1] ?? "").replace(/[。！？\s]+$/u, "").trim();
+    if (corrected.length >= 2 && corrected.length <= 40) return corrected;
+  }
+  return null;
+}
+
+/** Brain V3 principles — economy without a hard character quota. */
+export const GO21_BRAIN_V3_PRINCIPLES = [
+  "先理解",
+  "記得目標並護住它",
+  "記得，但別背誦",
+  "自然回應",
+  "有用才介入",
+] as const;
+
+export function go21SystemPromptIncludesShortPolicy(systemPrompt: string): boolean {
+  // V3: conversational economy via principles — not a 30–80 character script.
+  return (
+    (/有用才介入|自然回應/.test(systemPrompt) || /預設短回|一句到三句/.test(systemPrompt)) &&
+    !/30–80/.test(systemPrompt) &&
+    !/肯定\s*→\s*分析\s*→\s*建議/.test(systemPrompt)
+  );
+}
+
+export function go21SystemPromptPrefersConciseDefault(systemPrompt: string): boolean {
+  return /預設短回|一句到三句|寧可少一句/.test(systemPrompt);
+}
+
+export function go21SystemPromptAllowsTimelyConcreteTip(systemPrompt: string): boolean {
+  return /可執行的建議|一句具體建議|卡住|實際折衷|一句具體下一步|給可執行/.test(systemPrompt);
+}
+
+/** Human coach voice — short, opinionated, not a packed nutrition format. */
+export function go21SystemPromptUsesHumanCoachVoice(systemPrompt: string): boolean {
+  return (
+    /Human Coach Voice|最少、最自然的話|今天我不推/.test(systemPrompt) &&
+    /風險說明.*營養教育.*替代建議|風險→教育→替代|不要每則都塞/.test(systemPrompt)
+  );
+}
+
+export function go21SystemPromptAllowsNoQuestion(systemPrompt: string): boolean {
+  return (
+    /沒有固定順序|不必立刻|沒有.*必問|幾乎什麼都不說/.test(systemPrompt) ||
+    /不要習慣把每則回覆都收在問句|觀察或具體建議講完.*停|收尾不要預設問句/.test(
+      systemPrompt,
+    )
+  );
+}
+
+/** Prefer ending without a mandatory question — real coach judgment. */
+export function go21SystemPromptAllowsStopWithoutQuestion(systemPrompt: string): boolean {
+  return (
+    /不要習慣把每則回覆都收在問句/.test(systemPrompt) ||
+    /觀察或具體建議講完.*可以自然停住/.test(systemPrompt) ||
+    /收尾不要預設問句/.test(systemPrompt)
+  );
+}
+
+/** Meal photos: useful judgment over asking customer to self-evaluate. */
+export function go21SystemPromptPrefersMealPhotoJudgment(systemPrompt: string): boolean {
+  return (
+    /餐點照片/.test(systemPrompt) &&
+    (/優先給一句有用判斷|給判斷或一句具體建議後停/.test(systemPrompt) ||
+      /不要反問顧客.*這餐|不要叫顧客自己評價這餐/.test(systemPrompt))
+  );
+}
+
+/** Goal stewardship — protect goal without empty praise when choices conflict. */
+export function go21SystemPromptProtectsCustomerGoal(systemPrompt: string): boolean {
+  return (
+    /記得目標並護住它|護住目標/.test(systemPrompt) &&
+    /不要對偏離目標的食物空口稱讚|不要對偏離目標的食物說/.test(systemPrompt)
+  );
+}
+
+export function go21SystemPromptAnswersMemoryFirst(systemPrompt: string): boolean {
+  return (
+    /記得並用真實歷史|記憶／回想|據實回答/.test(systemPrompt) &&
+    /禁止捏造|還沒記到/.test(systemPrompt)
+  );
+}
+
+/** Heuristic: coach message ends with a question mark (Chinese or ASCII). */
+export function coachMessageEndsWithQuestion(message: string): boolean {
+  return /[？?]\s*$/u.test(message.trim());
+}
+
+/** Empty praise that should not appear when food conflicts with goal. */
+export function coachMessageHasEmptyFoodPraise(message: string): boolean {
+  return /看起來很讚|好好吃|好香|聽起來很讚|方向可以|沒什麼要念你/.test(message);
+}
+
+export function go21SystemPromptHandlesDisengagement(systemPrompt: string): boolean {
+  return /停跑|沒信心|不要硬留|不要激勵長文/.test(systemPrompt);
+}
+
+export function go21SystemPromptAllowsFoodLogRestraint(systemPrompt: string): boolean {
+  return /報一餐|有用才介入|每餐碎念/.test(systemPrompt);
+}
+
+export function go21SystemPromptAllowsOffTopicHuman(systemPrompt: string): boolean {
+  return /離題人情|當人聊/.test(systemPrompt);
+}
+
+export function go21SystemPromptAllowsMetaFeedback(systemPrompt: string): boolean {
+  return /像機器人/.test(systemPrompt) && /不要辯護/.test(systemPrompt);
+}
+
+export type Go21SendStatus =
+  | "idle"
+  | "sending"
+  | "customer_sent"
+  | "failed"
+  | "coach_failed";
+
+export function nextClientRequestId(existing?: string | null): string {
+  if (existing?.trim()) return existing.trim();
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return `go21-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+/** Client helper: interpret chat API durability fields. */
+export function interpretGo21ChatSendResult(payload: {
+  ok?: boolean;
+  customerAccepted?: boolean;
+  assistantStatus?: string | null;
+  coachMessage?: string | null;
+}): {
+  customerSent: boolean;
+  coachOk: boolean;
+  coachFailed: boolean;
+  messageRetry: boolean;
+} {
+  const assistantStatus = payload.assistantStatus ?? null;
+  const hasUsableCoach = Boolean(payload.coachMessage?.trim());
+  const customerSent =
+    payload.customerAccepted === true ||
+    (payload.ok === true && assistantStatus === "ok") ||
+    (payload.ok === true && assistantStatus === "failed");
+  // Usable coach_message supersedes a stale failed status (reconciliation).
+  const coachOk =
+    (payload.ok === true && assistantStatus === "ok") ||
+    (payload.ok === true && hasUsableCoach && assistantStatus !== "skipped");
+  const coachFailed = customerSent && assistantStatus === "failed" && !hasUsableCoach;
+  // Legacy responses without assistantStatus but with coachMessage
+  const legacyOk =
+    payload.ok === true && assistantStatus == null && hasUsableCoach;
+  return {
+    customerSent: customerSent || legacyOk,
+    coachOk: coachOk || legacyOk,
+    coachFailed: coachFailed && !legacyOk,
+    messageRetry: !(customerSent || legacyOk),
+  };
+}

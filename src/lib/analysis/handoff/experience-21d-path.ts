@@ -5,6 +5,8 @@ export const EXPERIENCE_21D_PRIMARY_CTA = "我想了解我的 21 天方案";
 export const EXPERIENCE_21D_SECONDARY_CTA = "我先看看自己的分析";
 export const EXPERIENCE_21D_FOOTER =
   "每個人的目標、生活與適合的方案不同。教練會先看過你的分析，再和你一起確認怎麼開始。";
+export const EXPERIENCE_21D_LANDING_CTA_HINT =
+  "你已經知道自己卡在哪裡。接下來，看看這 21 天我們可以怎麼陪你。";
 export const EXPERIENCE_21D_INCLUDES = [
   { id: "coach", label: "真人教練陪伴" },
   { id: "nutrition", label: "營養／產品方案" },
@@ -32,6 +34,10 @@ export const EXPERIENCE_21D_FUNNEL_EVENTS = [
   "21d_contact_captured",
   "21d_partner_viewed",
   "21d_contacted",
+  "21d_landing_viewed",
+  "21d_consultation_method_selected",
+  "21d_consultation_started",
+  "21d_consultation_submitted",
 ] as const;
 export type Experience21dFunnelEvent = (typeof EXPERIENCE_21D_FUNNEL_EVENTS)[number];
 

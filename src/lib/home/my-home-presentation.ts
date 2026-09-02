@@ -183,27 +183,17 @@ export function buildHomeProgressView(
 
   const rows: HomeProgressRow[] = [];
 
-  const vpStep = metrics.nextSteps.find(
-    (step) => step.stepKey.includes("vp") || step.stepKey.includes("map_monthly"),
-  );
+  const productVpTotal = metrics.productVp?.monthlyTotal ?? metrics.vp.totalVp;
 
-  if (vpStep) {
-    rows.push({
-      label: "本月 VP",
-      value: `${vpStep.current.toLocaleString("zh-Hant")} / ${vpStep.target.toLocaleString("zh-Hant")} VP`,
-      percent: vpStep.progressPercent,
-    });
-  } else {
-    rows.push({
-      label: "本月 VP",
-      value:
-        vpTarget != null
-          ? `${metrics.vp.totalVp.toLocaleString("zh-Hant")} / ${vpTarget.toLocaleString("zh-Hant")} VP`
-          : `${metrics.vp.totalVp.toLocaleString("zh-Hant")} VP`,
-      // Prefer engine percent only — never invent KPI math in UI.
-      percent: null,
-    });
-  }
+  rows.push({
+    label: "本月 VP",
+    value:
+      vpTarget != null
+        ? `${productVpTotal.toLocaleString("zh-Hant")} / ${vpTarget.toLocaleString("zh-Hant")} VP`
+        : `${productVpTotal.toLocaleString("zh-Hant")} VP`,
+    // Prefer engine/rule percent only — never invent KPI math in UI.
+    percent: null,
+  });
 
   rows.push({
     label: "本月量測",
@@ -240,10 +230,8 @@ export type HomeBusinessEntry = {
 
 /** Max 5 primary business navigation entries. */
 export const MY_HOME_BUSINESS_ENTRIES: HomeBusinessEntry[] = [
-  { href: "/goals", title: "目標與升級", iconKey: "goals" },
   { href: "/organization", title: "我的組織", iconKey: "organization" },
   { href: "/retail-house", title: "零售屋", iconKey: "retail" },
-  { href: "/leaderboard", title: "排行與表揚", iconKey: "leaderboard" },
   { href: "/learning", title: "學習", iconKey: "learning" },
 ];
 
@@ -253,11 +241,7 @@ export type HomeMoreEntry = {
 };
 
 export const MY_HOME_MORE_ENTRIES: HomeMoreEntry[] = [
-  { href: "/daily-action", title: "今日行動" },
-  { href: "/president-road", title: "晉升之路" },
-  { href: "/members", title: "夥伴關懷" },
   { href: "/promotions", title: "活動／促銷" },
-  { href: "/events", title: "活動紀錄" },
   { href: "/pre-meeting-graphic", title: "會前會圖" },
   { href: "/profile", title: "個人資料／設定" },
 ];

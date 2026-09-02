@@ -11,62 +11,47 @@ import {
   readMissionControlMetrics,
 } from "@/lib/mission-control/format";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
-import { EmptyState, HomeErrorState, HomeLoadingSkeleton } from "@/components/home/states";
-import { Card, ProgressBar, SectionLabel } from "@/components/home/ui";
+import { HomeErrorState, HomeLoadingSkeleton } from "@/components/home/states";
+import { ProgressBar } from "@/components/home/ui";
 import { GreetingHeader } from "@/components/ui/GreetingHeader";
 import { ROUTE_ICON_COMPONENTS, type QuickLinkHref } from "@/components/ui/BrandIcons";
 import { TabRootShell } from "@/components/ui/TabRootShell";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
-import {
-  buildDailyActionSnapshot,
-} from "@/lib/daily-action/daily-action-selectors";
+import { buildDailyActionSnapshot } from "@/lib/daily-action/daily-action-selectors";
 import {
   buildHomeProgressView,
-  buildHomeTodayPriorities,
   MY_HOME_BUSINESS_ENTRIES,
   MY_HOME_MORE_ENTRIES,
-  type HomeTodayPriorityCard,
 } from "@/lib/home/my-home-presentation";
 import { homeMoreEntriesForViewer } from "@/lib/auth/admin-access";
 import { useSuperAdmin } from "@/lib/auth/use-super-admin";
-import { APP_ICON } from "@/lib/ui/app-icons";
+import { useSoftRefresh } from "@/lib/hooks/use-soft-refresh";
+import { millisecondsUntilNextAppMidnight } from "@/lib/config/app-config";
 
 type LoadState = "loading" | "ready" | "error";
 
-function TodayPriorityRow({ card }: { card: HomeTodayPriorityCard }) {
-  const body = (
-    <div className="flex min-w-0 items-start gap-3">
-      <span
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1d1d1f] text-[0.875rem] font-bold text-white"
-        aria-hidden
-      >
-        {card.index}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="min-w-0 text-[1.0625rem] font-semibold leading-snug break-words text-[#1d1d1f] [overflow-wrap:anywhere]">
-          {card.title}
-        </p>
-        {card.description && card.description !== card.title ? (
-          <p className="mt-1 min-w-0 text-[0.875rem] leading-relaxed break-words text-[#86868b] [overflow-wrap:anywhere]">
-            {card.description}
-          </p>
-        ) : null}
+function MetricRow({
+  label,
+  value,
+  percent,
+}: {
+  label: string;
+  value: string;
+  percent: number | null;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex min-w-0 items-baseline justify-between gap-3">
+        <dt className="text-[0.8125rem] font-medium text-[var(--brand-text-secondary)]">{label}</dt>
+        <dd className="min-w-0 text-right text-[1.0625rem] font-semibold tabular-nums tracking-tight text-[var(--brand-text)] [overflow-wrap:anywhere]">
+          {value}
+        </dd>
       </div>
+      {percent != null ? (
+        <ProgressBar color="var(--brand-primary)" height="h-1" percent={percent} />
+      ) : null}
     </div>
   );
-
-  if (card.href) {
-    return (
-      <Link
-        href={card.href}
-        className="block min-w-0 rounded-2xl bg-[var(--brand-bg)] px-4 py-4"
-      >
-        {body}
-      </Link>
-    );
-  }
-
-  return <article className="min-w-0 rounded-2xl bg-[var(--brand-bg)] px-4 py-4">{body}</article>;
 }
 
 function BusinessHomeView({ metrics }: { metrics: MemberComputedMetrics }) {
@@ -74,20 +59,11 @@ function BusinessHomeView({ metrics }: { metrics: MemberComputedMetrics }) {
   const displayName = getMemberDisplayName();
   const avatarUrl = getMemberAvatarUrl();
   const referenceDate = metrics.missions.referenceDate;
-  const todayCards = useMemo(
-    () => buildHomeTodayPriorities(metrics.presidentAI.topPriorities),
-    [metrics.presidentAI.topPriorities],
-  );
   const daily = useMemo(() => buildDailyActionSnapshot(metrics, storage), [metrics, storage]);
   const progress = useMemo(() => buildHomeProgressView(metrics, daily), [metrics, daily]);
   const { isAdmin } = useSuperAdmin();
   const moreEntries = homeMoreEntriesForViewer(MY_HOME_MORE_ENTRIES, isAdmin === true);
   const [moreOpen, setMoreOpen] = useState(false);
-
-  const partnerHint =
-    metrics.downlinePartnerSuggestions.length > 0
-      ? `有 ${metrics.downlinePartnerSuggestions.length} 位夥伴值得關注`
-      : null;
 
   return (
     <>
@@ -97,126 +73,82 @@ function BusinessHomeView({ metrics }: { metrics: MemberComputedMetrics }) {
         subtitle={formatDisplayDate(referenceDate)}
       />
 
-      {/* Layer 1 — 今天 */}
-      <Card>
-        <SectionLabel icon={APP_ICON.section.presidentAi}>今天</SectionLabel>
-        <p className="mt-1 text-[0.9375rem] text-[#86868b]">先完成這 1–3 件</p>
-        <div className="mt-4 space-y-3">
-          {todayCards.length > 0 ? (
-            todayCards.map((card) => <TodayPriorityRow key={card.index} card={card} />)
-          ) : (
-            <EmptyState
-              icon={APP_ICON.mood.done}
-              title="今天目前沒有特別需要處理的任務"
-              description="可以查看今日行動，安排接下來要完成的事情。"
-            />
-          )}
-        </div>
-        <Link
-          href="/daily-action"
-          className="mt-5 flex min-h-11 w-full items-center justify-center rounded-full bg-[#1d1d1f] px-5 text-[0.9375rem] font-semibold text-white"
-        >
-          {todayCards.length > 0 ? "開始今天" : "查看今日行動"}
-        </Link>
-      </Card>
+      {/* 我的進度 — monthly metrics only (promotion target hidden) */}
+      <section className="rounded-[1.25rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] p-5 shadow-[0_1px_2px_rgba(29,29,31,0.04)]">
+        <h2 className="text-[0.8125rem] font-semibold tracking-[0.04em] text-[var(--brand-text-muted)]">
+          我的進度
+        </h2>
+        <dl className="mt-5 space-y-5">
+          {progress.rows.map((row) => (
+            <MetricRow key={row.label} label={row.label} percent={row.percent} value={row.value} />
+          ))}
+        </dl>
+      </section>
 
-      {/* Layer 2 — 我的進度 */}
-      <Card>
-        <SectionLabel icon={APP_ICON.page.profile}>我的進度</SectionLabel>
-        <div className="mt-4 space-y-4">
-          <div>
-            <p className="text-[0.8125rem] font-medium text-[#86868b]">{progress.nextGoalLabel}</p>
-            <p className="mt-1 text-[1.0625rem] font-semibold break-words text-[#1d1d1f] [overflow-wrap:anywhere]">
-              {progress.nextGoalValue ?? "—"}
-            </p>
-            {progress.nextGoalPercent != null ? (
-              <div className="mt-2">
-                <ProgressBar color="#77b539" percent={progress.nextGoalPercent} />
-              </div>
-            ) : null}
-          </div>
-
-          <dl className="space-y-3">
-            {progress.rows.map((row) => (
-              <div key={row.label}>
-                <div className="flex min-w-0 items-baseline justify-between gap-3">
-                  <dt className="text-[0.9375rem] text-[#636366]">{row.label}</dt>
-                  <dd className="min-w-0 text-right text-[0.9375rem] font-medium break-words text-[#1d1d1f] [overflow-wrap:anywhere]">
-                    {row.value}
-                  </dd>
-                </div>
-                {row.percent != null ? (
-                  <div className="mt-1.5">
-                    <ProgressBar color="#77b539" percent={row.percent} />
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </dl>
-        </div>
-        <Link
-          href={progress.fullProgressHref}
-          className="mt-5 inline-flex min-h-11 items-center text-[0.875rem] font-semibold text-[var(--brand-primary-dark)]"
-        >
-          查看完整進度 →
-        </Link>
-      </Card>
-
-      {/* Layer 3 — 我的事業 */}
-      <section className="home-section space-y-3">
-        <SectionLabel>我的事業</SectionLabel>
-        {partnerHint ? (
-          <Link
-            href="/organization"
-            className="block min-h-11 rounded-2xl bg-[#f7faf5] px-4 py-3 text-[0.875rem] font-medium text-[#3f6212] break-words"
-          >
-            我的組織 · {partnerHint}
-          </Link>
-        ) : null}
-        <div className="grid grid-cols-1 gap-2.5">
-          {MY_HOME_BUSINESS_ENTRIES.map((entry) => {
+      {/* 我的事業 */}
+      <section className="space-y-3">
+        <h2 className="px-0.5 text-[0.8125rem] font-semibold tracking-[0.04em] text-[var(--brand-text-muted)]">
+          我的事業
+        </h2>
+        <div className="overflow-hidden rounded-[1.25rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] shadow-[0_1px_2px_rgba(29,29,31,0.04)]">
+          {MY_HOME_BUSINESS_ENTRIES.map((entry, index) => {
             const Icon =
               ROUTE_ICON_COMPONENTS[entry.href as QuickLinkHref] ??
-              ROUTE_ICON_COMPONENTS["/goals"];
+              ROUTE_ICON_COMPONENTS["/organization"];
             return (
               <Link
                 key={entry.href}
                 href={entry.href}
-                className="flex min-h-14 min-w-0 items-center gap-4 rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-3.5"
+                className={`flex min-h-[3.25rem] min-w-0 items-center gap-3.5 px-4 py-3 transition-colors active:bg-[var(--brand-primary-muted)] ${
+                  index > 0 ? "border-t border-[var(--brand-border)]/70" : ""
+                }`}
               >
-                <Icon className="shrink-0 text-[var(--brand-primary)]" size={28} />
-                <span className="text-[1rem] font-semibold text-[#1d1d1f]">{entry.title}</span>
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.75rem] bg-[var(--brand-primary-muted)] text-[var(--brand-primary-dark)]">
+                  <Icon size={20} />
+                </span>
+                <span className="flex-1 text-[0.9375rem] font-semibold text-[var(--brand-text)]">
+                  {entry.title}
+                </span>
+                <span aria-hidden className="text-[0.875rem] text-[var(--brand-hint)]">
+                  ›
+                </span>
               </Link>
             );
           })}
         </div>
       </section>
 
-      {/* Layer 4 — 更多 */}
-      <section className="home-section space-y-2 pb-4">
+      {/* 更多 */}
+      <section className="space-y-2 pb-2">
         <button
           type="button"
-          className="flex min-h-11 w-full items-center justify-between rounded-2xl border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 text-left text-[0.9375rem] font-semibold text-[#1d1d1f]"
+          aria-expanded={moreOpen}
+          className="flex min-h-11 w-full items-center justify-between rounded-[1rem] px-1 text-left text-[0.8125rem] font-semibold tracking-[0.04em] text-[var(--brand-text-muted)]"
           onClick={() => setMoreOpen((value) => !value)}
         >
           <span>更多</span>
-          <span aria-hidden>{moreOpen ? "▴" : "▾"}</span>
+          <span aria-hidden className="text-[0.75rem]">
+            {moreOpen ? "▴" : "▾"}
+          </span>
         </button>
         {moreOpen ? (
-          <div className="space-y-1.5 rounded-2xl bg-[var(--brand-bg)] px-2 py-2">
-            {moreEntries.map((entry) => (
+          <div className="overflow-hidden rounded-[1.25rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] shadow-[0_1px_2px_rgba(29,29,31,0.04)]">
+            {moreEntries.map((entry, index) => (
               <Link
                 key={entry.href}
                 href={entry.href}
-                className="flex min-h-11 items-center rounded-xl px-3 text-[0.9375rem] font-medium text-[#1d1d1f]"
+                className={`flex min-h-11 items-center px-4 text-[0.9375rem] font-medium text-[var(--brand-text)] transition-colors active:bg-[var(--brand-primary-muted)] ${
+                  index > 0 ? "border-t border-[var(--brand-border)]/70" : ""
+                }`}
               >
                 {entry.title}
               </Link>
             ))}
           </div>
         ) : (
-          <p className="px-1 text-[0.8125rem] text-[#86868b]">
-            個人資料、促銷、活動紀錄、會前會圖…
+          <p className="px-1 text-[0.75rem] leading-relaxed text-[var(--brand-hint)]">
+            促銷、會前會圖、個人設定
+            {isAdmin ? "、管理中心" : ""}
           </p>
         )}
       </section>
@@ -231,7 +163,6 @@ export default function HomePage() {
 
   const softRecalc = useCallback(() => {
     try {
-      // Home path: skip MapUniverse presentation build (not rendered).
       const snapshot = loadMissionControlMetrics(undefined, createLocalStorageAdapter(), undefined, {
         includeMapUniverse: false,
       });
@@ -245,20 +176,22 @@ export default function HomePage() {
 
   const bootstrap = useCallback(() => {
     setErrorMessage("資料載入失敗，請稍後再試。");
+    let cached: MemberComputedMetrics | null = null;
     try {
-      const cached = readMissionControlMetrics();
-      if (cached) {
-        setMetrics(cached);
-        setLoadState("ready");
-        queueMicrotask(() => softRecalc());
-        return;
-      }
-      setLoadState("loading");
-      softRecalc();
+      cached = readMissionControlMetrics();
     } catch {
-      setLoadState("error");
-      setErrorMessage("系統無法完成計算，請重新載入或稍後再試。");
+      cached = null;
     }
+
+    if (cached) {
+      setMetrics(cached);
+      setLoadState("ready");
+      queueMicrotask(() => softRecalc());
+      return;
+    }
+
+    setLoadState("loading");
+    softRecalc();
   }, [softRecalc]);
 
   useEffect(() => {
@@ -267,11 +200,41 @@ export default function HomePage() {
     });
   }, [bootstrap]);
 
+  // Resume from background / focus — re-resolve Taipei "today" without restart.
+  useSoftRefresh(() => {
+    bootstrap();
+  });
+
+  // Schedule refresh at the next Asia/Taipei midnight boundary.
+  useEffect(() => {
+    let timerId: number | null = null;
+    let cancelled = false;
+
+    const schedule = () => {
+      if (cancelled) {
+        return;
+      }
+      const delay = millisecondsUntilNextAppMidnight();
+      timerId = window.setTimeout(() => {
+        bootstrap();
+        schedule();
+      }, delay + 50);
+    };
+
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timerId !== null) {
+        window.clearTimeout(timerId);
+      }
+    };
+  }, [bootstrap]);
+
   if (loadState === "loading" && !metrics) {
     return <HomeLoadingSkeleton />;
   }
 
-  if (loadState === "error" && !metrics) {
+  if ((loadState === "error" || !metrics) && !metrics) {
     return <HomeErrorState message={errorMessage} onRetry={bootstrap} />;
   }
 
@@ -280,7 +243,7 @@ export default function HomePage() {
   }
 
   return (
-    <TabRootShell decorated>
+    <TabRootShell>
       <BusinessHomeView metrics={metrics} />
     </TabRootShell>
   );

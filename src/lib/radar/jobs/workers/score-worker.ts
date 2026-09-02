@@ -5,6 +5,10 @@ import {
   memberAreasToLocationContext,
   resolveMemberLocationLevel,
 } from "../../scoring/compute-member-score";
+import {
+  promoteDueRegionPreference,
+  resolveEffectiveRadarRegion,
+} from "../../semantics/region-preference";
 import { validateUpstreamArtifact } from "../chain";
 import type { RadarJobRecord } from "../types";
 import {
@@ -54,6 +58,19 @@ export async function runScoreWorker(
       excluded_from_recommendations: memberState.excluded_from_recommendations,
     })
   ) {
+    // Excluded is a terminal score outcome for this (member, candidate) job.
+    // Progress must still advance or rank never enqueues (RADAR-MEMBER-SNAPSHOT-GAP-01).
+    if (job.pipeline_run_id) {
+      await ctx.repo.incrementMemberScoreProgress({
+        pipeline_run_id: job.pipeline_run_id,
+        member_id,
+      });
+      await maybeEnqueueRank(ctx, {
+        pipeline_run_id: job.pipeline_run_id,
+        run_date,
+        member_id,
+      });
+    }
     return {
       job_id: job.id,
       status: "succeeded",
@@ -74,7 +91,23 @@ export async function runScoreWorker(
     };
   }
 
-  const areas = await ctx.repo.getMemberDevelopmentAreas(member_id);
+  const preference = await ctx.repo.getMemberRadarRegionPreference(member_id);
+  const promoted = preference ? promoteDueRegionPreference(preference, run_date) : null;
+  if (promoted && preference && promoted !== preference) {
+    await ctx.repo.upsertMemberRadarRegionPreference(promoted);
+  }
+  const effective = resolveEffectiveRadarRegion(promoted ?? preference, run_date);
+  const areas = effective.city
+    ? [
+        {
+          member_id,
+          area_role: "primary" as const,
+          normalized_city: effective.city,
+          normalized_district: effective.district,
+          sort_order: 0,
+        },
+      ]
+    : await ctx.repo.getMemberDevelopmentAreas(member_id);
   const memberLocationContext = memberAreasToLocationContext(areas);
   const result = computeMemberOverlayScore({
     extraction: analysisRun.extraction_json,

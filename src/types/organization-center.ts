@@ -13,6 +13,12 @@ export interface OrganizationMemberView {
   avatarUrl?: string | null;
   qualificationLabel: string;
   monthlyVp: number;
+  /**
+   * ready = authoritative total available (may be 0)
+   * empty = no RH rows for month
+   * error = read/calc failed (UI must not present as a real 0)
+   */
+  productVpStatus?: "ready" | "empty" | "error";
   metMonthlyVp2500: boolean;
   monthlyVpTarget: number | null;
   nextQualification: OrganizationNextQualificationView;

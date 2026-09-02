@@ -293,7 +293,7 @@ export default function ReferralCenterPage() {
                     className="inline-flex min-h-11 items-center rounded-2xl bg-[#f5f5f7] px-4 text-[0.875rem] font-semibold text-[#1d1d1f]"
                     href={`/coaching/${item.enrollmentId}`}
                   >
-                    前往陪跑
+                    前往陪跑中心
                   </Link>
                 ) : (
                   <Link

@@ -33,7 +33,21 @@ describe("coaching-ui-copy", () => {
     expect(formatGrowthSummaryTone({ suitableNow: false, inviteCheckin: true })).toBe(
       GROWTH_UI_LABELS.summaryContinue,
     );
-    expect(formatGrowthSummaryTone({ suitableNow: false })).toBe(GROWTH_UI_LABELS.summaryNotSuitable);
+    expect(
+      formatGrowthSummaryTone({
+        suitableNow: false,
+        measurementStage: "baseline_only",
+        outcomeStatus: "not_yet_measurable",
+      }),
+    ).toBe(GROWTH_UI_LABELS.summaryNotEnoughData);
+    expect(
+      formatGrowthSummaryTone({
+        suitableNow: false,
+        measurementStage: "trend_available",
+        outcomeStatus: "worsening",
+        repairExperience: true,
+      }),
+    ).toBe(GROWTH_UI_LABELS.summaryContinue);
   });
 
   it("formats measured outcome without raw enums", () => {

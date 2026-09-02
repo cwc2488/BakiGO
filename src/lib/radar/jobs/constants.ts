@@ -54,6 +54,7 @@ export type PipelineRunStatus = (typeof PIPELINE_RUN_STATUSES)[number];
 
 export const RETRYABLE_ERROR_CODES = [
   "RATE_LIMIT",
+  "NETWORK",
   "UPSTREAM_TIMEOUT",
   "UPSTREAM_5XX",
   "LLM_INVALID_JSON",

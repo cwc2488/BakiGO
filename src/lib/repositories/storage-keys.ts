@@ -1,5 +1,7 @@
 export const STORAGE_KEYS = {
   retailTransactions: "baki-go:retail-transactions",
+  /** Durable delete markers so merge-first cloud sync cannot resurrect RH rows. */
+  retailTransactionDeletionTombstones: "baki-go:retail-transaction-deletion-tombstones",
   computedMetrics: "baki-go:computed-metrics",
   bakiEvents: "baki-go:baki-events",
   eventsMigrated: "baki-go:events-migrated",
@@ -15,6 +17,8 @@ export const STORAGE_KEYS = {
   calendarEventDeletionTombstones: "baki-go:calendar-event-deletion-tombstones",
   calendarGoogleDeletionTombstones: "baki-go:calendar-google-deletion-tombstones",
   calendarSharedAttendance: "baki-go:calendar-shared-attendance",
+  /** Coach-owned customer links to Alliance Shared events (not copied into personal calendar). */
+  calendarAllianceEventParticipants: "baki-go:calendar-alliance-event-participants",
   sharedCalendarEvents: "baki-go:shared-calendar-events",
   sharedCalendarCacheMeta: "baki-go:shared-calendar-cache-meta",
   sharedCalendarDataVersion: "baki-go:shared-calendar-data-version",
@@ -32,6 +36,7 @@ export const STORAGE_KEYS = {
   customerProgressPhotos: "baki-go:customer-progress-photos",
   customerReceiptPhotos: "baki-go:customer-receipt-photos",
   customerDeletionTombstones: "baki-go:customer-deletion-tombstones",
+  bodyRecordDeletionTombstones: "baki-go:body-record-deletion-tombstones",
   customerFollowUpReminderDate: "baki-go:customer-follow-up-reminder-date",
   partnerCareMeta: "baki-go:partner-care-meta",
 } as const;

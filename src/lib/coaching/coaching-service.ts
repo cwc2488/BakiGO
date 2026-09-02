@@ -478,6 +478,7 @@ async function ensureDailyLog(input: {
     .select("*")
     .eq("enrollment_id", input.enrollmentId)
     .eq("log_date", input.logDate)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (existingError) {
@@ -546,6 +547,8 @@ export async function upsertCoachingDailyLog(input: {
   bowelMovementCount?: number | null;
   sleepBedtime?: string | null;
   sleepWakeTime?: string | null;
+  /** Direct duration label when hours were reported without bed/wake. */
+  sleepDuration?: string | null;
   customerNote?: string | null;
   meals?: Partial<Record<CoachingMealSlot, { textNote?: string | null; eatenAt?: string | null }>>;
   markSubmitted?: boolean;
@@ -587,18 +590,52 @@ export async function upsertCoachingDailyLog(input: {
     }
   }
 
+  if (input.sleepDuration !== undefined && patch.sleep_duration === undefined) {
+    patch.sleep_duration = input.sleepDuration?.trim() || null;
+  }
+
   if (input.customerNote !== undefined) patch.customer_note = input.customerNote?.trim() || null;
   if (input.markSubmitted) patch.submitted_at = now;
 
-  // One round-trip for daily log identity + field patch.
-  const { data: dailyLogRow, error: upsertError } = await supabase
+  const { data: existingLog, error: existingLogError } = await supabase
     .from("coaching_daily_logs")
-    .upsert(patch, { onConflict: "enrollment_id,log_date" })
     .select("id")
-    .single();
+    .eq("enrollment_id", input.portal.enrollmentId)
+    .eq("log_date", input.logDate)
+    .is("deleted_at", null)
+    .maybeSingle();
 
-  if (upsertError || !dailyLogRow) {
-    throw new CoachingServiceError(upsertError?.message || "Failed to save daily log.", 500);
+  if (existingLogError) {
+    throw new CoachingServiceError(existingLogError.message, 500);
+  }
+
+  let dailyLogRow: { id: string } | null = existingLog as { id: string } | null;
+  if (dailyLogRow) {
+    const { data: updated, error: updateError } = await supabase
+      .from("coaching_daily_logs")
+      .update(patch)
+      .eq("id", dailyLogRow.id)
+      .is("deleted_at", null)
+      .select("id")
+      .single();
+    if (updateError || !updated) {
+      throw new CoachingServiceError(updateError?.message || "Failed to save daily log.", 500);
+    }
+    dailyLogRow = updated as { id: string };
+  } else {
+    const { data: inserted, error: insertError } = await supabase
+      .from("coaching_daily_logs")
+      .insert(patch)
+      .select("id")
+      .single();
+    if (insertError || !inserted) {
+      throw new CoachingServiceError(insertError?.message || "Failed to save daily log.", 500);
+    }
+    dailyLogRow = inserted as { id: string };
+  }
+
+  if (!dailyLogRow) {
+    throw new CoachingServiceError("Failed to save daily log.", 500);
   }
 
   if (input.meals) {
@@ -661,7 +698,7 @@ export async function getCoachingDailyLogDetail(input: {
     query = query.eq("owner_member_id", input.ownerMemberId);
   }
 
-  const { data, error } = await query.maybeSingle();
+  const { data, error } = await query.is("deleted_at", null).maybeSingle();
 
   if (error) {
     throw new CoachingServiceError(error.message, 500);
@@ -817,6 +854,7 @@ export async function listCoachingDailyLogsForEnrollment(input: {
     `)
     .eq("enrollment_id", input.enrollmentId)
     .eq("owner_member_id", input.ownerMemberId)
+    .is("deleted_at", null)
     .order("log_date", { ascending: false })
     .limit(input.limit ?? 30);
 

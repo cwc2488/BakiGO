@@ -78,3 +78,32 @@ export function buildCandidateId(platform: Platform, normalized_username: string
   const slug = normalized_username.replace(/[^a-z0-9._-]/gi, "_").slice(0, 48);
   return `cand_${platform}_${slug}`;
 }
+
+export function parseCandidateId(candidate_id: string): {
+  platform: Platform | null;
+  normalized_username: string | null;
+} {
+  const match = /^cand_(threads|instagram)_(.+)$/.exec(candidate_id);
+  if (!match) return { platform: null, normalized_username: null };
+  return {
+    platform: match[1] as Platform,
+    normalized_username: normalizeUsername(match[2]),
+  };
+}
+
+export function resolveEnrichUsername(input: {
+  payload_username?: string | null;
+  stored_username?: string | null;
+  candidate_id: string;
+  platform?: Platform | null;
+}): string | null {
+  const fromPayload = input.payload_username ? normalizeUsername(String(input.payload_username)) : "";
+  if (fromPayload) return fromPayload;
+  const fromStored = input.stored_username ? normalizeUsername(String(input.stored_username)) : "";
+  if (fromStored) return fromStored;
+  const parsed = parseCandidateId(input.candidate_id);
+  if (input.platform && parsed.platform && parsed.platform !== input.platform) {
+    return null;
+  }
+  return parsed.normalized_username;
+}

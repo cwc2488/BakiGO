@@ -1,6 +1,7 @@
 import type {
   BodyCompositionRecord,
   BodyCompositionRecordCreateInput,
+  BodyCompositionRecordUpdateInput,
   Customer,
   CustomerCreateInput,
   CustomerProgressPhoto,
@@ -14,6 +15,7 @@ import type { StorageAdapter } from "./storage-adapter";
 import { STORAGE_KEYS } from "./storage-keys";
 import { scheduleCustomerCloudPush, flushCustomerCloudPush } from "@/lib/cloud/customer-cloud-sync";
 import { addCustomerDeletionTombstone } from "@/lib/customers/customer-deletion-tombstones";
+import { addBodyRecordDeletionTombstone } from "@/lib/customers/body-record-deletion-tombstones";
 import {
   computeReceiptRetainUntil,
   isReceiptExpired,
@@ -55,6 +57,7 @@ export interface CustomerRepository {
   /** One parse + group — use for list/follow-up to avoid O(customers) full scans. */
   getBodyRecordsGroupedByCustomer(): Map<EntityId, BodyCompositionRecord[]>;
   createBodyRecord(input: BodyCompositionRecordCreateInput): BodyCompositionRecord;
+  updateBodyRecord(recordId: EntityId, input: BodyCompositionRecordUpdateInput): BodyCompositionRecord;
   deleteBodyRecord(recordId: EntityId): void;
   getAllProgressPhotos(): CustomerProgressPhoto[];
   getProgressPhotosByCustomer(customerId: EntityId): CustomerProgressPhoto[];
@@ -237,10 +240,43 @@ export class LocalStorageCustomerRepository implements CustomerRepository {
     return record;
   }
 
-  deleteBodyRecord(recordId: EntityId): void {
-    const next = this.getAllBodyRecords().filter((record) => record.id !== recordId);
+  updateBodyRecord(recordId: EntityId, input: BodyCompositionRecordUpdateInput): BodyCompositionRecord {
+    const records = this.getAllBodyRecords();
+    const index = records.findIndex((record) => record.id === recordId);
+    if (index < 0) {
+      throw new Error(`Body composition record not found: ${recordId}`);
+    }
+
+    const current = records[index];
+    const updated: BodyCompositionRecord = {
+      ...current,
+      updatedAt: new Date().toISOString(),
+      customerId: input.customerId,
+      recordDate: input.recordDate,
+      age: input.age ?? null,
+      weightKg: input.weightKg ?? null,
+      skeletalMuscleKg: input.skeletalMuscleKg ?? null,
+      bodyFatKg: input.bodyFatKg ?? null,
+      bmi: input.bmi ?? null,
+      bodyFatPercent: input.bodyFatPercent ?? null,
+      visceralFatLevel: input.visceralFatLevel ?? null,
+      basalMetabolicRate: input.basalMetabolicRate ?? null,
+      bodyAge: input.bodyAge ?? null,
+      note: input.note?.trim() || undefined,
+    };
+
+    const next = [...records];
+    next[index] = updated;
     this.storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(next));
     scheduleCustomerCloudPush(this.storage);
+    return updated;
+  }
+
+  deleteBodyRecord(recordId: EntityId): void {
+    addBodyRecordDeletionTombstone(this.storage, recordId);
+    const next = this.getAllBodyRecords().filter((record) => record.id !== recordId);
+    this.storage.setItem(STORAGE_KEYS.customerBodyRecords, JSON.stringify(next));
+    flushCustomerCloudPush(this.storage);
   }
 
   getAllProgressPhotos(): CustomerProgressPhoto[] {

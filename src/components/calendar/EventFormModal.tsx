@@ -1,5 +1,6 @@
 "use client";
 
+import { EventParticipantsSection } from "@/components/calendar/EventParticipantsSection";
 import { useState } from "react";
 import {
   MobileDismissibleSheet,
@@ -7,20 +8,25 @@ import {
   MobileDismissibleSheetHandle,
 } from "@/components/ui/MobileDismissibleSheet";
 import {
-  CALENDAR_OTHER_ACTIVITY_KEY,
-  getCalendarDailyActivityTypes,
-  getCalendarMeetingActivityTypes,
-  getCalendarSelectableActivityTypes,
+  CALENDAR_CATEGORY_KEYS,
+  getCalendarCategoryDefaultColor,
+  getCalendarSelectableCategories,
+  normalizeCalendarCategoryKeyForSave,
+  resolveCalendarCategoryKey,
 } from "@/lib/calendar/calendar-activity-types";
 import { DEFAULT_CALENDAR_REMINDER_MINUTES } from "@/lib/calendar/calendar-reminder-options";
 import { ReminderOptionsField } from "@/components/calendar/ReminderOptionsField";
 import {
+  CALENDAR_EVENT_COLOR_OPTIONS,
   CALENDAR_EVENT_COLORS,
+  normalizeCalendarEventColor,
   type CalendarEvent,
   type CalendarEventColor,
   type ExpandedCalendarEvent,
   type RecurrenceFrequency,
 } from "@/types/calendar-event";
+import type { Customer } from "@/types/customer";
+import type { EntityId } from "@/types";
 
 export interface EventFormValues {
   title: string;
@@ -58,9 +64,11 @@ export interface SharedEventFormContext {
 export interface PersonalEventLogContext {
   isLogged: boolean;
   isLogging?: boolean;
+  /** Primary CTA: complete activity / record result */
   onLogActivity: () => void;
+  /** Optional: close without counting KPI (customer no-show) */
   onSkipWithoutResult?: () => void;
-  activityKind?: "consultation";
+  activityKind?: "measurement" | "consultation" | "other";
 }
 
 export function buildDefaultFormValues(date: string, startTime = "09:00"): EventFormValues {
@@ -72,8 +80,8 @@ export function buildDefaultFormValues(date: string, startTime = "09:00"): Event
     startTime,
     endTime: addHoursToTime(startTime, 1),
     allDay: false,
-    color: "green",
-    activityTypeKey: CALENDAR_OTHER_ACTIVITY_KEY,
+    color: getCalendarCategoryDefaultColor(CALENDAR_CATEGORY_KEYS.MEETING),
+    activityTypeKey: CALENDAR_CATEGORY_KEYS.MEETING,
     recurrenceFrequency: "none",
     recurrenceCustomUnit: "weekly",
     recurrenceInterval: 1,
@@ -84,6 +92,7 @@ export function buildDefaultFormValues(date: string, startTime = "09:00"): Event
 }
 
 export function eventToFormValues(event: CalendarEvent): EventFormValues {
+  const categoryKey = resolveCalendarCategoryKey(event.activityTypeKey);
   return {
     title: event.title,
     notes: event.notes ?? "",
@@ -92,8 +101,8 @@ export function eventToFormValues(event: CalendarEvent): EventFormValues {
     startTime: event.startAt.slice(11, 16),
     endTime: event.endAt.slice(11, 16),
     allDay: event.allDay,
-    color: event.color,
-    activityTypeKey: event.activityTypeKey ?? CALENDAR_OTHER_ACTIVITY_KEY,
+    color: normalizeCalendarEventColor(event.color, getCalendarCategoryDefaultColor(categoryKey)),
+    activityTypeKey: categoryKey,
     recurrenceFrequency: event.recurrence.frequency,
     recurrenceCustomUnit: event.recurrence.customUnit ?? "weekly",
     recurrenceInterval: event.recurrence.interval,
@@ -104,6 +113,7 @@ export function eventToFormValues(event: CalendarEvent): EventFormValues {
 }
 
 export function expandedEventToFormValues(event: ExpandedCalendarEvent): EventFormValues {
+  const categoryKey = resolveCalendarCategoryKey(event.activityTypeKey);
   return {
     title: event.title,
     notes: event.notes ?? "",
@@ -112,8 +122,8 @@ export function expandedEventToFormValues(event: ExpandedCalendarEvent): EventFo
     startTime: event.startAt.slice(11, 16),
     endTime: event.endAt.slice(11, 16),
     allDay: event.allDay,
-    color: event.color,
-    activityTypeKey: event.activityTypeKey ?? CALENDAR_OTHER_ACTIVITY_KEY,
+    color: normalizeCalendarEventColor(event.color, getCalendarCategoryDefaultColor(categoryKey)),
+    activityTypeKey: categoryKey,
     recurrenceFrequency: "none",
     recurrenceCustomUnit: "weekly",
     recurrenceInterval: 1,
@@ -136,7 +146,7 @@ export function formValuesToPayload(values: EventFormValues) {
     endAt,
     allDay: values.allDay,
     color: values.color,
-    activityTypeKey: values.activityTypeKey,
+    activityTypeKey: normalizeCalendarCategoryKeyForSave(values.activityTypeKey),
     recurrence: {
       frequency: values.recurrenceFrequency,
       interval: Math.max(1, values.recurrenceInterval),
@@ -259,49 +269,35 @@ function applyRecurrencePreset(
   };
 }
 
-function ActivityTypeSelect({
+function CategorySelect({
   value,
   onChange,
   disabled = false,
 }: {
   value: string;
-  onChange: (next: string) => void;
+  onChange: (next: string, defaultColor: CalendarEventColor) => void;
   disabled?: boolean;
 }) {
-  const dailyTypes = getCalendarDailyActivityTypes();
-  const meetingTypes = getCalendarMeetingActivityTypes();
-  const otherType = getCalendarSelectableActivityTypes().find(
-    (type) => type.key === CALENDAR_OTHER_ACTIVITY_KEY,
-  );
+  const categories = getCalendarSelectableCategories();
+  const resolved = resolveCalendarCategoryKey(value);
 
   return (
     <label className="block space-y-2">
-      <span className="text-[0.875rem] font-medium text-[#636366]">行程種類</span>
+      <span className="text-[0.875rem] font-medium text-[#636366]">事件分類</span>
       <select
         className="w-full rounded-xl border border-[var(--cal-border)] px-4 py-3 disabled:bg-[var(--cal-primary-muted)] disabled:text-[var(--cal-text)]"
         disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
+        onChange={(event) => {
+          const nextKey = event.target.value;
+          onChange(nextKey, getCalendarCategoryDefaultColor(nextKey));
+        }}
+        value={resolved}
       >
-        <optgroup label="日常">
-          {dailyTypes.map((type) => (
-            <option key={type.key} value={type.key}>
-              {type.label}
-            </option>
-          ))}
-        </optgroup>
-        <optgroup label="會議">
-          {meetingTypes.map((type) => (
-            <option key={type.key} value={type.key}>
-              {type.label}
-            </option>
-          ))}
-        </optgroup>
-        {otherType ? (
-          <optgroup label="其他">
-            <option value={otherType.key}>{otherType.label}</option>
-          </optgroup>
-        ) : null}
+        {categories.map((category) => (
+          <option key={category.key} value={category.key}>
+            {category.label}
+          </option>
+        ))}
       </select>
     </label>
   );
@@ -346,6 +342,7 @@ export function EventFormModal({
   readOnly = false,
   sharedContext,
   personalLogContext,
+  participantsContext,
   onChange,
   onClose,
   onSubmit,
@@ -357,6 +354,13 @@ export function EventFormModal({
   readOnly?: boolean;
   sharedContext?: SharedEventFormContext;
   personalLogContext?: PersonalEventLogContext;
+  participantsContext?: {
+    participantCustomerIds: EntityId[];
+    customers: Customer[];
+    editable: boolean;
+    onAdd: (customerId: EntityId) => void;
+    onRemove: (customerId: EntityId) => void;
+  };
   onChange: (values: EventFormValues) => void;
   onClose: () => void;
   onSubmit: () => void;
@@ -403,8 +407,10 @@ export function EventFormModal({
             />
           </label>
 
-          <ActivityTypeSelect
-            onChange={(activityTypeKey) => onChange({ ...values, activityTypeKey })}
+          <CategorySelect
+            onChange={(activityTypeKey, defaultColor) =>
+              onChange({ ...values, activityTypeKey, color: defaultColor })
+            }
             value={values.activityTypeKey}
           />
 
@@ -486,17 +492,17 @@ export function EventFormModal({
 
           {!readOnly ? (
             <div>
-              <p className="text-[0.875rem] font-medium text-[#636366]">顏色</p>
+              <p className="text-[0.875rem] font-medium text-[#636366]">事件顏色</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {(Object.keys(CALENDAR_EVENT_COLORS) as CalendarEventColor[]).map((color) => (
+                {CALENDAR_EVENT_COLOR_OPTIONS.map((color) => (
                   <button
                     key={color}
                     aria-label={CALENDAR_EVENT_COLORS[color].label}
-                    className={`h-8 w-8 rounded-full border-2 ${
-                      values.color === color ? "border-[#1d1d1f]" : "border-transparent"
+                    className={`h-8 w-8 rounded-full border-2 transition-transform active:scale-95 ${
+                      values.color === color ? "border-[#1d1d1f] ring-2 ring-[#1d1d1f]/10" : "border-transparent"
                     }`}
                     onClick={() => onChange({ ...values, color })}
-                    style={{ backgroundColor: CALENDAR_EVENT_COLORS[color].bg }}
+                    style={{ backgroundColor: CALENDAR_EVENT_COLORS[color].accent }}
                     type="button"
                   />
                 ))}
@@ -606,6 +612,16 @@ export function EventFormModal({
             )}
           </div>
         ) : null}
+
+        {participantsContext ? (
+          <EventParticipantsSection
+            customers={participantsContext.customers}
+            editable={participantsContext.editable}
+            onAdd={participantsContext.onAdd}
+            onRemove={participantsContext.onRemove}
+            participantCustomerIds={participantsContext.participantCustomerIds}
+          />
+        ) : null}
       </MobileDismissibleSheetBody>
 
       <div className="shrink-0 space-y-3 border-t border-[var(--cal-border)] bg-[var(--cal-surface)] p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
@@ -639,53 +655,42 @@ export function EventFormModal({
         {!readOnly ? (
           <>
             {personalLogContext ? (
-              personalLogContext.activityKind === "consultation" ? (
-                <>
-                  <button
-                    className={`w-full rounded-xl px-4 py-3.5 text-[0.9375rem] font-semibold ${
-                      personalLogContext.isLogged
-                        ? "border border-[var(--cal-primary-dark)] bg-[var(--cal-primary-light)] text-[var(--cal-primary-dark)]"
-                        : "bg-[var(--cal-primary)] text-white"
-                    }`}
-                    disabled={personalLogContext.isLogged || personalLogContext.isLogging}
-                    onClick={personalLogContext.onLogActivity}
-                    type="button"
-                  >
-                    {personalLogContext.isLogged
-                      ? "已完成諮詢"
-                      : personalLogContext.isLogging
-                        ? "處理中…"
-                        : "完成諮詢"}
-                  </button>
-                  {!personalLogContext.isLogged && personalLogContext.onSkipWithoutResult ? (
-                    <button
-                      className="w-full rounded-xl border border-[var(--cal-border)] bg-[var(--cal-surface)] px-4 py-3 text-[0.875rem] font-medium text-[#86868b]"
-                      disabled={personalLogContext.isLogging}
-                      onClick={personalLogContext.onSkipWithoutResult}
-                      type="button"
-                    >
-                      未實際發生（不計入本月諮詢）
-                    </button>
-                  ) : null}
-                </>
-              ) : (
+              <>
                 <button
                   className={`w-full rounded-xl px-4 py-3.5 text-[0.9375rem] font-semibold ${
                     personalLogContext.isLogged
                       ? "border border-[var(--cal-primary-dark)] bg-[var(--cal-primary-light)] text-[var(--cal-primary-dark)]"
-                      : "border border-[var(--cal-border)] bg-[var(--cal-surface)] text-[#1d1d1f]"
+                      : "bg-[var(--cal-primary)] text-white"
                   }`}
                   disabled={personalLogContext.isLogged || personalLogContext.isLogging}
                   onClick={personalLogContext.onLogActivity}
                   type="button"
                 >
                   {personalLogContext.isLogged
-                    ? "已登記至紀錄中心"
+                    ? personalLogContext.activityKind === "consultation"
+                      ? "已完成諮詢"
+                      : "已完成活動"
                     : personalLogContext.isLogging
-                      ? "登記中…"
-                      : "完成並登記至紀錄中心"}
+                      ? "處理中…"
+                      : personalLogContext.activityKind === "measurement"
+                        ? "完成活動 · 記錄量測"
+                        : personalLogContext.activityKind === "consultation"
+                          ? "完成諮詢"
+                          : "完成活動"}
                 </button>
-              )
+                {!personalLogContext.isLogged && personalLogContext.onSkipWithoutResult ? (
+                  <button
+                    className="w-full rounded-xl border border-[var(--cal-border)] bg-[var(--cal-surface)] px-4 py-3 text-[0.875rem] font-medium text-[#86868b]"
+                    disabled={personalLogContext.isLogging}
+                    onClick={personalLogContext.onSkipWithoutResult}
+                    type="button"
+                  >
+                    {personalLogContext.activityKind === "consultation"
+                      ? "未實際發生（不計入本月諮詢）"
+                      : "未實際發生（不計入本月成果）"}
+                  </button>
+                ) : null}
+              </>
             ) : null}
             <button
               className="w-full rounded-xl bg-[var(--cal-primary)] px-4 py-3.5 text-[1rem] font-semibold text-white disabled:opacity-50"

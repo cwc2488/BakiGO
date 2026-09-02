@@ -1,6 +1,17 @@
 import { z } from "zod";
 import { FIT_POLICY_ID } from "../fit-policy/need-types";
 import { NEED_TYPE_SLUGS } from "../fit-policy/need-types";
+import {
+  HELP_SEEKING_LEVELS,
+  MARKET_ROLES,
+  NEED_CATEGORIES,
+  NEED_OWNERS,
+  NEED_STATES,
+  PRIMARY_LANGUAGES,
+  REGION_CONFIDENCE_LEVELS,
+  TRADITIONAL_CHINESE_USABLE,
+  URGENCY_LEVELS,
+} from "../semantics/candidate-understanding";
 import { AI_RADAR_SCORING_VERSION } from "../scoring/config";
 import { AI_RADAR_EXTRACTION_SCHEMA_VERSION, CORE_TRAIT_IDS } from "./constants";
 
@@ -237,6 +248,33 @@ export const candidateIntelligenceAdvisorySchema = z.object({
   recommendation_reasons: z.array(z.string()).optional(),
 });
 
+export const candidateUnderstandingExtractionSchema = z
+  .object({
+    need_owner: z.enum(NEED_OWNERS),
+    need_state: z.enum(NEED_STATES),
+    market_role: z.enum(MARKET_ROLES),
+    need_category: z.enum(NEED_CATEGORIES),
+    pain_points: z.array(z.string()),
+    attempts: z.array(z.string()),
+    unresolved_gap: z.string().nullable(),
+    urgency: z.enum(URGENCY_LEVELS),
+    help_seeking: z.enum(HELP_SEEKING_LEVELS),
+    evidence_confidence: z.number().min(0).max(1),
+    primary_language: z.enum(PRIMARY_LANGUAGES),
+    traditional_chinese_usable: z.enum(TRADITIONAL_CHINESE_USABLE),
+    candidate_region: z
+      .object({
+        city: z.string().nullable(),
+        district: z.string().nullable(),
+      })
+      .nullable(),
+    region_confidence: z.enum(REGION_CONFIDENCE_LEVELS),
+    region_evidence: z.string().nullable(),
+    recommendation_reason_zh: z.string().nullable(),
+    source_refs: z.array(sourceRefSchema),
+  })
+  .strict();
+
 export const aiRadarExtractionV1Schema = z
   .object({
     extraction_schema_version: z.literal(AI_RADAR_EXTRACTION_SCHEMA_VERSION),
@@ -252,6 +290,7 @@ export const aiRadarExtractionV1Schema = z
     location: locationSignalExtractionSchema,
     core_traits: z.array(coreTraitEvidenceSchema).length(4),
     advisory: candidateIntelligenceAdvisorySchema.optional(),
+    candidate_understanding: candidateUnderstandingExtractionSchema.optional(),
     model_id: z.string().optional(),
     prompt_version: z.string().optional(),
   })

@@ -1,3 +1,4 @@
+import { classifyCustomerFreeText, isFeelingClass } from "@/lib/coaching/semantics/free-text";
 import type {
   CoachingCustomerVoiceKey,
   CoachingCustomerVoiceSignal,
@@ -65,11 +66,15 @@ export function extractCustomerVoiceSignals(customerNote: string | null | undefi
   }
 
   if (matched.length === 0) {
-    matched.push({
-      key: "other_customer_concern",
-      rawExcerpt: note.slice(0, 80),
-      evidence: [evidence("customer_note", note), evidence("voice_key", "other_customer_concern")],
-    });
+    const classified = classifyCustomerFreeText(note);
+    // Facts / questions / ambiguous notes are not customer "concerns".
+    if (classified && isFeelingClass(classified.class)) {
+      matched.push({
+        key: "other_customer_concern",
+        rawExcerpt: note.slice(0, 80),
+        evidence: [evidence("customer_note", note), evidence("voice_key", "other_customer_concern")],
+      });
+    }
   }
 
   return matched;

@@ -47,13 +47,7 @@ export function QuizLeadsPage() {
       title="測驗名單"
       subtitle="完成你分享連結的受測者，會在這裡顯示情報摘要。"
     >
-      <div className="flex justify-end gap-4">
-        <Link
-          href="/quiz/21d"
-          className="text-sm font-medium text-[var(--brand-primary-dark)] underline-offset-2 hover:underline"
-        >
-          21 天體驗興趣
-        </Link>
+      <div className="flex justify-end">
         <Link
           href="/quiz/manage"
           className="text-sm font-medium text-[var(--brand-primary-dark)] underline-offset-2 hover:underline"

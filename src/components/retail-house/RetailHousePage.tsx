@@ -16,7 +16,6 @@ import {
 import {
   getMemberAvatarUrl,
   getMemberDisplayName,
-  loadMissionControlMetrics,
 } from "@/lib/mission-control/format";
 import { MemberNameWithAvatar } from "@/components/members/MemberNameWithAvatar";
 import { RetailHouseDateRangeSelector } from "@/components/retail-house/RetailHouseDateRangeSelector";
@@ -28,7 +27,14 @@ import { AppIcon, IconLabel } from "@/components/ui/AppIcon";
 import { APP_ICON, QUADRANT_ICONS } from "@/lib/ui/app-icons";
 import type { RetailHouseQuadrantView } from "@/types/retail-house";
 import type { RetailReportLineItem } from "@/types/retail-weekly-report";
-import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/lib/auth/auth-context";
+import {
+  bootstrapRetailHousePage,
+  RETAIL_HOUSE_LOAD_WATCHDOG_MS,
+  type RetailHousePagePhase,
+} from "@/lib/retail-house/retail-house-bootstrap";
+import { PageErrorState } from "@/components/ui/PageStates";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RetailTransactionForm } from "./RetailTransactionForm";
 import { PageShell } from "@/components/ui/PageShell";
 
@@ -306,6 +312,7 @@ function RetailHouseView({
   dateRange,
   presentationMode,
   editingItem,
+  listEpoch,
   onDateRangeChange,
   onEnterPresentationMode,
   onExitPresentationMode,
@@ -317,6 +324,8 @@ function RetailHouseView({
   dateRange: RetailHouseDateRange;
   presentationMode: boolean;
   editingItem: RetailReportLineItem | null;
+  /** Bumped on create/update/delete so the list rebuilds from repository truth. */
+  listEpoch: number;
   onDateRangeChange: (range: RetailHouseDateRange) => void;
   onEnterPresentationMode: () => void;
   onExitPresentationMode: () => void;
@@ -325,10 +334,11 @@ function RetailHouseView({
   onCloseEdit: () => void;
 }) {
   const storage = useMemo(() => createLocalStorageAdapter(), []);
-  const snapshot = useMemo(
-    () => buildRetailHouseView(metrics, dateRange, storage),
-    [metrics, dateRange, storage],
-  );
+  const snapshot = useMemo(() => {
+    // listEpoch is an intentional rebuild token after create/update/delete.
+    void listEpoch;
+    return buildRetailHouseView(metrics, dateRange, storage);
+  }, [metrics, dateRange, storage, listEpoch]);
   const displayName = getMemberDisplayName();
   const avatarUrl = getMemberAvatarUrl();
   const rangeLabel = formatReportDateRange(snapshot.weekStartDate, snapshot.weekEndDate);
@@ -429,20 +439,98 @@ function RetailHouseView({
 }
 
 export default function RetailHousePage() {
+  const { session, cloudSyncVersion, isLoading: authLoading } = useAuth();
+  const [phase, setPhase] = useState<RetailHousePagePhase>("initializing");
   const [metrics, setMetrics] = useState<MemberComputedMetrics | null>(null);
   const [presentationMode, setPresentationMode] = useState(false);
   const [dateRange, setDateRange] = useState<RetailHouseDateRange>(() =>
     resolveRetailHouseDateRange("week", todayISODate()),
   );
   const [editingItem, setEditingItem] = useState<RetailReportLineItem | null>(null);
+  const [listEpoch, setListEpoch] = useState(0);
+  const loadGenerationRef = useRef(0);
+  const metricsRef = useRef<MemberComputedMetrics | null>(null);
+  metricsRef.current = metrics;
 
+  const applyBootstrap = useCallback(
+    (options?: { soft?: boolean; memberId?: string }) => {
+      const soft = options?.soft === true;
+      const generation = ++loadGenerationRef.current;
+
+      if (!soft) {
+        setPhase("initializing");
+      }
+
+      queueMicrotask(() => {
+        if (generation !== loadGenerationRef.current) {
+          return;
+        }
+        const result = bootstrapRetailHousePage({
+          memberId: options?.memberId,
+        });
+        if (generation !== loadGenerationRef.current) {
+          return;
+        }
+        if (result.phase === "error" || !result.metrics) {
+          if (soft && metricsRef.current) {
+            return;
+          }
+          setMetrics(null);
+          setPhase("error");
+          return;
+        }
+        setMetrics(result.metrics);
+        setPhase("loaded");
+      });
+    },
+    [],
+  );
+
+  // Initial load + identity settle (session race must not leave permanent loading).
   useEffect(() => {
-    queueMicrotask(() => {
-      setMetrics(loadMissionControlMetrics());
-    });
-  }, []);
+    if (authLoading) {
+      return;
+    }
+    applyBootstrap({ memberId: session?.memberId });
+    return () => {
+      loadGenerationRef.current += 1;
+    };
+  }, [authLoading, session?.memberId, applyBootstrap]);
 
-  if (!metrics) {
+  // Soft refresh when background cloud sync finishes (local data may have merged).
+  const lastSoftSyncRef = useRef(0);
+  useEffect(() => {
+    if (authLoading || cloudSyncVersion === 0) {
+      return;
+    }
+    if (cloudSyncVersion === lastSoftSyncRef.current) {
+      return;
+    }
+    lastSoftSyncRef.current = cloudSyncVersion;
+    applyBootstrap({ soft: true, memberId: session?.memberId });
+  }, [authLoading, cloudSyncVersion, session?.memberId, applyBootstrap]);
+
+  // Watchdog: never remain on 「載入零售屋…」 indefinitely (safety net).
+  useEffect(() => {
+    if (phase !== "initializing") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setPhase((current) => (current === "initializing" ? "error" : current));
+    }, RETAIL_HOUSE_LOAD_WATCHDOG_MS);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
+
+  function handleMutationComplete(nextMetrics: MemberComputedMetrics) {
+    // Local repository is already updated — refresh presentation immediately,
+    // clear any selected edit target, then let cloud sync finish async.
+    setMetrics(nextMetrics);
+    setPhase("loaded");
+    setEditingItem(null);
+    setListEpoch((epoch) => epoch + 1);
+  }
+
+  if (phase === "initializing" && !metrics) {
     return (
       <div className="flex min-h-full items-center justify-center bg-[var(--brand-bg)] text-[#86868b]">
         <IconLabel icon={APP_ICON.mood.loading}>載入零售屋…</IconLabel>
@@ -450,17 +538,28 @@ export default function RetailHousePage() {
     );
   }
 
+  if (phase === "error" || !metrics) {
+    return (
+      <PageErrorState
+        message="請檢查網路後再試，或稍後重新進入零售屋。"
+        onRetry={() => applyBootstrap({ memberId: session?.memberId })}
+        title="零售屋暫時載入失敗"
+      />
+    );
+  }
+
   return (
     <RetailHouseView
       dateRange={dateRange}
       editingItem={editingItem}
+      listEpoch={listEpoch}
       metrics={metrics}
       onCloseEdit={() => setEditingItem(null)}
       onDateRangeChange={setDateRange}
       onEditItem={setEditingItem}
       onEnterPresentationMode={() => setPresentationMode(true)}
       onExitPresentationMode={() => setPresentationMode(false)}
-      onMetricsChange={setMetrics}
+      onMetricsChange={handleMutationComplete}
       presentationMode={presentationMode}
     />
   );

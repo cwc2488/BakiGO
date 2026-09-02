@@ -16,6 +16,20 @@ import {
 } from "@/lib/coaching/experience-21d";
 import { resolveEnrollmentStartDate } from "@/lib/coaching/enrollment-window";
 import {
+  ensureCustomerPortalTokenServiceRole,
+  ensureOwnedCloudCustomer,
+} from "@/lib/go21/ensure-cloud-customer";
+import {
+  buildGo21DailyTargetsSnapshot,
+  loadGo21DailyTargetsRecord,
+  saveGo21DailyTargets,
+} from "@/lib/go21/daily-targets";
+import {
+  buildGo21CoachPlanSnapshot,
+  loadGo21CoachPlanRecord,
+  saveGo21CoachPlan,
+} from "@/lib/go21/coach-plan";
+import {
   createSupabaseServiceClient,
   isSupabaseServiceConfigured,
 } from "@/lib/supabase/service-client";
@@ -199,19 +213,56 @@ export async function activateExperience21d(input: {
   customerId: string;
   productReceivedDate: string;
   interestId?: string | null;
+  /** Local CRM profile — used to upsert cloud customer when sync has not finished. */
+  customerProfile?: {
+    displayName?: string | null;
+    phone?: string | null;
+    lineId?: string | null;
+    heightCm?: number | null;
+    sex?: string | null;
+    birthYear?: number | null;
+    birthDate?: string | null;
+  } | null;
+  /** Optional daily coaching targets set at activation. */
+  dailyTargets?: {
+    waterMl?: number | null;
+    caloriesKcal?: number | null;
+    proteinG?: number | null;
+    sleepHours?: number | null;
+  } | null;
+  /** Optional coach-prescribed daily plan items (generic; not brand-specific). */
+  coachPlan?: {
+    items: Array<{
+      period: string;
+      name: string;
+      amount?: string | null;
+      instruction?: string | null;
+      recurrence?: "daily" | "weekdays" | "weekends" | number[];
+    }>;
+  } | null;
 }): Promise<{
   alreadyActive: boolean;
   enrollment: ReturnType<typeof serializeCoachingEnrollment>;
   schedule: ReturnType<typeof deriveExperience21dSchedule>;
   customerDisplayName: string;
+  portalToken: string;
 }> {
   if (!isIsoDate(input.productReceivedDate)) {
     throw new CoachingServiceError("請選擇顧客拿到產品的日期", 400);
   }
-  const customer = await loadOwnedCustomer(input.ownerMemberId, input.customerId);
-  if (!customer) {
-    throw new CoachingServiceError("Forbidden", 403);
-  }
+
+  // Ensure cloud customer exists (local CRM → cloud race is a common activation failure).
+  const ensured = await ensureOwnedCloudCustomer({
+    ownerMemberId: input.ownerMemberId,
+    customerId: input.customerId,
+    profile: input.customerProfile,
+  });
+  const customer = (await loadOwnedCustomer(input.ownerMemberId, input.customerId)) ?? {
+    id: ensured.id,
+    displayName: ensured.displayName,
+    phone: null,
+    lineId: null,
+  };
 
   let interestId: string | undefined;
   if (input.interestId) {
@@ -224,12 +275,30 @@ export async function activateExperience21d(input: {
   }
 
   const schedule = deriveExperience21dSchedule(input.productReceivedDate);
+  const portal = await ensureCustomerPortalTokenServiceRole(input.customerId);
   const existing = await getActiveEnrollmentForCustomer({
     customerId: input.customerId,
     ownerMemberId: input.ownerMemberId,
   });
   if (existing) {
     if (isExperience21dEnrollment(existing)) {
+      if (input.dailyTargets) {
+        await maybeSaveActivationTargets({
+          enrollmentId: existing.id,
+          customerId: input.customerId,
+          ownerMemberId: input.ownerMemberId,
+          dailyTargets: input.dailyTargets,
+        });
+      }
+      if (input.coachPlan?.items?.length) {
+        await maybeSaveActivationCoachPlan({
+          enrollmentId: existing.id,
+          customerId: input.customerId,
+          ownerMemberId: input.ownerMemberId,
+          coachPlan: input.coachPlan,
+          effectiveFrom: schedule.startDate,
+        });
+      }
       return {
         alreadyActive: true,
         enrollment: serializeCoachingEnrollment(existing),
@@ -240,6 +309,7 @@ export async function activateExperience21d(input: {
           plannedEndAt: existing.plannedEndAt ?? schedule.plannedEndAt,
         },
         customerDisplayName: customer.displayName,
+        portalToken: portal.token,
       };
     }
     throw new CoachingServiceError("這位顧客目前已在陪跑中", 409);
@@ -272,6 +342,7 @@ export async function activateExperience21d(input: {
           enrollment: serializeCoachingEnrollment(raced),
           schedule,
           customerDisplayName: customer.displayName,
+          portalToken: portal.token,
         };
       }
     }
@@ -287,12 +358,108 @@ export async function activateExperience21d(input: {
       .eq("owner_member_id", input.ownerMemberId);
   }
 
+  if (input.dailyTargets) {
+    await maybeSaveActivationTargets({
+      enrollmentId: enrollment.id,
+      customerId: input.customerId,
+      ownerMemberId: input.ownerMemberId,
+      dailyTargets: input.dailyTargets,
+    });
+  }
+  if (input.coachPlan?.items?.length) {
+    await maybeSaveActivationCoachPlan({
+      enrollmentId: enrollment.id,
+      customerId: input.customerId,
+      ownerMemberId: input.ownerMemberId,
+      coachPlan: input.coachPlan,
+      effectiveFrom: schedule.startDate,
+    });
+  }
+
   return {
     alreadyActive: false,
     enrollment: serializeCoachingEnrollment(enrollment),
     schedule,
     customerDisplayName: customer.displayName,
+    portalToken: portal.token,
   };
+}
+
+async function maybeSaveActivationTargets(input: {
+  enrollmentId: string;
+  customerId: string;
+  ownerMemberId: string;
+  dailyTargets: {
+    waterMl?: number | null;
+    caloriesKcal?: number | null;
+    proteinG?: number | null;
+    sleepHours?: number | null;
+  };
+}): Promise<void> {
+  const t = input.dailyTargets;
+  if (
+    t.waterMl == null &&
+    t.caloriesKcal == null &&
+    t.proteinG == null &&
+    t.sleepHours == null
+  ) {
+    return;
+  }
+  try {
+    const snapshot = buildGo21DailyTargetsSnapshot({
+      waterMl: t.waterMl,
+      caloriesKcal: t.caloriesKcal,
+      proteinG: t.proteinG,
+      sleepHours: t.sleepHours,
+      source: "activation",
+    });
+    const prior = await loadGo21DailyTargetsRecord(input.enrollmentId);
+    await saveGo21DailyTargets({
+      enrollmentId: input.enrollmentId,
+      customerId: input.customerId,
+      ownerMemberId: input.ownerMemberId,
+      snapshot,
+      reason: "activation",
+      prior,
+    });
+  } catch {
+    // Targets column may be missing pre-070 — activation must still succeed.
+  }
+}
+
+async function maybeSaveActivationCoachPlan(input: {
+  enrollmentId: string;
+  customerId: string;
+  ownerMemberId: string;
+  coachPlan: {
+    items: Array<{
+      period: string;
+      name: string;
+      amount?: string | null;
+      instruction?: string | null;
+      recurrence?: "daily" | "weekdays" | "weekends" | number[];
+    }>;
+  };
+  effectiveFrom: string;
+}): Promise<void> {
+  try {
+    const snapshot = buildGo21CoachPlanSnapshot({
+      items: input.coachPlan.items,
+      source: "activation",
+      effectiveFrom: input.effectiveFrom,
+    });
+    const prior = await loadGo21CoachPlanRecord(input.enrollmentId);
+    await saveGo21CoachPlan({
+      enrollmentId: input.enrollmentId,
+      customerId: input.customerId,
+      ownerMemberId: input.ownerMemberId,
+      snapshot,
+      reason: "activation",
+      prior,
+    });
+  } catch {
+    // Plan column may be missing pre-071 — activation must still succeed.
+  }
 }
 
 export function assertSafe21dReturnPath(raw: string | null | undefined): string | null {

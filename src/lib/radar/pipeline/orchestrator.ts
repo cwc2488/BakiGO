@@ -80,6 +80,8 @@ export async function runDailyPipelineOrchestrator(
           normalized_phrase: keyword.normalized_phrase,
           attributions: keyword.attributions,
           run_date: input.run_date,
+          keyword_search_request_allowance: allocation.request_allowance_per_job,
+          keyword_search_max_page_depth: allocation.effective.keyword_search_max_page_depth,
           artifact_refs: {},
         },
         priority: keyword.priority_score,

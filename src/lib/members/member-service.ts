@@ -15,7 +15,7 @@ export function getMemberDisplayName(
   if (!member) {
     return "";
   }
-  return member.nickname ?? member.displayName ?? "";
+  return member.nickname ?? member.displayName;
 }
 
 export function getMemberAvatarUrl(member: Member | undefined): string | null {

@@ -8,6 +8,7 @@ import type { SourceAdapterRegistry } from "../../sources/registry";
 import type { PipelineStore } from "../../pipeline/store";
 import { maybeFinalizePipelineRun } from "../../pipeline/run-finalizer";
 import type { AiRadarLlmProvider } from "../../ai/provider";
+import { resolveRetryPolicy } from "../retry-policy";
 import { runDiscoverWorker } from "./discover-worker";
 import { runEnrichWorker } from "./enrich-worker";
 import { runNormalizeWorker } from "./normalize-worker";
@@ -22,6 +23,7 @@ export type WorkerContext = {
   pipelineStore?: PipelineStore & { trackJob?: (pipeline_run_id: string, job: RadarJobRecord) => void };
   llm?: AiRadarLlmProvider;
   now?: Date;
+  scoreMemberIds?: string[];
 };
 
 export type WorkerResult = {
@@ -70,11 +72,12 @@ export async function processClaimedJob(ctx: WorkerContext, job: RadarJobRecord)
   if (result.status === "succeeded") {
     await ctx.queue.complete({ job_id: job.id, metrics: result.metrics }, now);
   } else {
+    const error_code = result.error_code ?? "WORKER_FAILED";
     await ctx.queue.fail({
       job_id: job.id,
-      error_code: result.error_code ?? "WORKER_FAILED",
+      error_code,
       error_message: result.error_message ?? "worker failed",
-      retryable: result.error_code !== "SCHEMA_VALIDATION",
+      retryable: resolveRetryPolicy(error_code).retryable,
       now,
     });
   }
@@ -160,6 +163,8 @@ export async function enqueueAnalyzeAfterNormalize(
         },
       },
       priority: input.priority ?? 0,
+      // Transient LLM rate-limit / network retries need headroom beyond UNKNOWN=3.
+      max_attempts: 5,
     },
     ctx.now,
   );
@@ -175,18 +180,8 @@ export async function enqueueScoreJobsForMembers(
     member_ids: string[];
   },
 ) {
-  if (input.pipeline_run_id) {
-    for (const member_id of input.member_ids) {
-      await ctx.repo.initMemberScoreProgress({
-        pipeline_run_id: input.pipeline_run_id,
-        member_id,
-        expected_score_jobs: 1,
-      });
-    }
-  }
-
   for (const member_id of input.member_ids) {
-    await ctx.queue.enqueue(
+    const { created } = await ctx.queue.enqueue(
       {
         pipeline_run_id: input.pipeline_run_id,
         job_type: "score",
@@ -207,6 +202,15 @@ export async function enqueueScoreJobsForMembers(
       },
       ctx.now,
     );
+    // Only count newly created score jobs toward expected progress. Re-enqueue
+    // of an existing idempotency key must not inflate expected (GAP-01).
+    if (created && input.pipeline_run_id) {
+      await ctx.repo.initMemberScoreProgress({
+        pipeline_run_id: input.pipeline_run_id,
+        member_id,
+        expected_score_jobs: 1,
+      });
+    }
   }
 }
 
@@ -220,24 +224,59 @@ export async function maybeEnqueueRank(
   });
   if (!should) return null;
 
+  const progress = await ctx.repo.getMemberScoreProgress({
+    pipeline_run_id: input.pipeline_run_id,
+    member_id: input.member_id,
+  });
+  if (progress) {
+    const visible = await ctx.repo.countMemberScoreSnapshotsForDate({
+      member_id: input.member_id,
+      snapshot_date: input.run_date,
+    });
+    // Excluded score jobs advance terminal without snapshots — visible < terminal is normal.
+    // Only wait when DB proves scored artifacts exist but the same-day filter sees none (race/gap).
+    if (
+      progress.terminal_score_jobs >= progress.expected_score_jobs &&
+      progress.expected_score_jobs > 0 &&
+      visible === 0
+    ) {
+      const aboveMinimum = await ctx.repo.countMemberScoreSnapshotsAboveMinimum({
+        member_id: input.member_id,
+        snapshot_date: input.run_date,
+        minimum_score: 40,
+      });
+      if (aboveMinimum > 0) {
+        return null;
+      }
+    }
+  }
+
   await ctx.repo.markMemberRankEnqueued({
     pipeline_run_id: input.pipeline_run_id,
     member_id: input.member_id,
   });
 
-  return ctx.queue.enqueue(
-    {
-      pipeline_run_id: input.pipeline_run_id,
-      job_type: "rank",
-      idempotency_key: pipelineJobKey(input.run_date, ["rank", input.member_id]),
-      payload: {
-        run_date: input.run_date,
-        member_id: input.member_id,
-        artifact_refs: {},
+  try {
+    return await ctx.queue.enqueue(
+      {
+        pipeline_run_id: input.pipeline_run_id,
+        job_type: "rank",
+        idempotency_key: pipelineJobKey(input.run_date, ["rank", input.member_id]),
+        payload: {
+          run_date: input.run_date,
+          member_id: input.member_id,
+          artifact_refs: {},
+        },
       },
-    },
-    ctx.now,
-  );
+      ctx.now,
+    );
+  } catch (error) {
+    await ctx.repo.clearMemberRankEnqueued({
+      pipeline_run_id: input.pipeline_run_id,
+      member_id: input.member_id,
+    });
+    throw error;
+  }
 }
 
 export function newNormalizationRunId(candidate_id: string, now = new Date()): string {
@@ -251,7 +290,18 @@ export function newAnalysisRunId(): string {
 export async function runWorkerBatch(ctx: WorkerContext, limit = 25): Promise<number> {
   const jobs = await ctx.queue.claim({ limit, now: ctx.now });
   for (const job of jobs) {
-    await processClaimedJob(ctx, job);
+    try {
+      await processClaimedJob(ctx, job);
+    } catch (error) {
+      const now = ctx.now ?? new Date();
+      await ctx.queue.fail({
+        job_id: job.id,
+        error_code: "WORKER_UNCAUGHT",
+        error_message: error instanceof Error ? error.message : "worker threw",
+        retryable: true,
+        now,
+      });
+    }
   }
   return jobs.length;
 }

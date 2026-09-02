@@ -122,15 +122,3 @@ export class MetaInstagramAdapter extends FixtureCandidateSourceAdapter {
     return [];
   }
 }
-
-export function createProductionSourceAdapters(auditor?: SourceFetchAuditor): CandidateSourceAdapter[] {
-  // V1: official-only policy — production tokens can replace fixture internals later.
-  const hasThreadsToken = Boolean(process.env.THREADS_ACCESS_TOKEN);
-  const hasInstagramToken = Boolean(process.env.INSTAGRAM_ACCESS_TOKEN);
-
-  if (!hasThreadsToken && !hasInstagramToken) {
-    return [new MetaThreadsAdapter(auditor), new MetaInstagramAdapter(auditor)];
-  }
-
-  return [new MetaThreadsAdapter(auditor), new MetaInstagramAdapter(auditor)];
-}

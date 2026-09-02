@@ -33,6 +33,8 @@ const observationItemSchema = z.object({
   uncertainties: z.array(z.string()).max(6).optional(),
   confidence: z.enum(["high", "medium", "low"]).optional(),
   followUpQuestion: z.string().nullable().optional(),
+  isFoodRelevant: z.boolean().nullable().optional(),
+  subjectKind: z.enum(["food", "beverage", "non_food", "unclear"]).nullable().optional(),
 });
 
 const observationResponseSchema = z.object({
@@ -179,6 +181,10 @@ async function callOpenAiMealVisionObservation(input: {
 }> {
   const system = [
     "你是餐點影像觀察器，只做可見事實與不確定性標記。",
+    "第一步：判斷影像是否為食物／飲料／營養相關（isFoodRelevant）。",
+    "若是貓、狗、寵物、風景、自拍、文件、meme、明顯非餐點：subjectKind=non_food、isFoodRelevant=false、observedFoods 可寫可見物體（如「貓」）、signals 空陣列、禁止捏造餐點。",
+    "不確定是否為食物：subjectKind=unclear、isFoodRelevant=false，不要猜成便當或午餐。",
+    "只有合理為食物／飲料時：isFoodRelevant=true，subjectKind=food 或 beverage。",
     "禁止估算 calories / grams / macros。",
     "禁止把「沒看到其他食物」寫成「確定沒吃其他食物」。",
     "若備註寫喝奶昔且照片主要是奶昔／本人，設 shakeObserved=true、noOtherFoodVisible=true；uncertainties 必須說明「照片沒看到≠實際沒吃」。",
@@ -187,7 +193,7 @@ async function callOpenAiMealVisionObservation(input: {
     "shakeObserved 是 observation，不是錯誤；禁止把奶昔本身寫成負面定罪。",
     "禁止把 noOtherFoodVisible 解讀成確定只喝奶昔。",
     "若看到炒飯，observedFoods 含「炒飯」，可標記 fried_food 或 starch_concentrated，蛋白質／青菜看不清就寫 uncertainty。",
-    "signals 只能使用指定 enum。",
+    "signals 只能使用指定 enum；非餐點時 signals 必須是 []。",
   ].join("\n");
 
   const mealNotes = input.generationInput.todayContext.primaryMeals.map((meal) => ({
@@ -267,6 +273,11 @@ async function callOpenAiMealVisionObservation(input: {
                       uncertainties: { type: "array", items: { type: "string" } },
                       confidence: { type: "string", enum: ["high", "medium", "low"] },
                       followUpQuestion: { type: ["string", "null"] },
+                      isFoodRelevant: { type: "boolean" },
+                      subjectKind: {
+                        type: "string",
+                        enum: ["food", "beverage", "non_food", "unclear"],
+                      },
                     },
                     required: [
                       "mealSlot",
@@ -286,6 +297,8 @@ async function callOpenAiMealVisionObservation(input: {
                       "uncertainties",
                       "confidence",
                       "followUpQuestion",
+                      "isFoodRelevant",
+                      "subjectKind",
                     ],
                     additionalProperties: false,
                   },
@@ -348,6 +361,11 @@ export async function observeCoachingMeals(input: {
   ownerMemberId?: string | null;
   persistTelemetry?: boolean;
   apiKey?: string | null;
+  /**
+   * Go21 realtime: never merge today's text meal heuristics into image observations.
+   * Stale lunch notes (飯糰) must not contaminate a cat photo labeled on the lunch API slot.
+   */
+  preferVisionOnly?: boolean;
 }): Promise<{
   observations: CoachingMealObservation[];
   source: "vision" | "heuristic" | "merged";
@@ -407,6 +425,16 @@ export async function observeCoachingMeals(input: {
         latencyMs: entry.latencyMs,
         status: entry.status,
       });
+    }
+
+    // Vision-only: current image semantics must not inherit today's text meals
+    if (input.preferVisionOnly) {
+      return {
+        observations: vision.observations.map(normalizeMealObservation),
+        source: "vision",
+        usage: vision.usage,
+        latencyMs: vision.latencyMs,
+      };
     }
 
     const bySlot = new Map<string, CoachingMealObservation>();

@@ -2,13 +2,13 @@
 
 Version: 1.0 (Architecture)
 
-Status: **Meta Capability Audit v1 accepted** — acquisition architecture updated; Live Meta adapter **not implemented**
+Status: **Radar V1 CLOSED** — Production Partner `/radar` + official job pipeline. Daily automation is **RADAR-AUTO-01** (06:00 Asia/Taipei cron → queue → self-continuing process worker). LIVE-01 stays blocked on Production. Scoring / Extraction / allocation / Top20 remain frozen.
 
 Product requirements: [`docs/prd.md`](./prd.md)
 
 Meta capability audit: [`docs/META_CAPABILITY_AUDIT_V1.md`](./META_CAPABILITY_AUDIT_V1.md)
 
-Last updated: 2026-08-09 (acquisition v1)
+Last updated: 2026-08-23 (RADAR-PROD-RECOVERY-01 Production autonomous worker)
 
 ---
 
@@ -47,7 +47,7 @@ It does **not** duplicate PRD product behavior (scoring UX, lifecycle, Candidate
 | **Candidate pool** | **Shared global pool** (system-populated) + **per-member personalized Top20** |
 | **Instagram keyword mapping** | **`mapKeywordToPlatforms()` → Threads discover; Instagram `skip`** — IG hashtag **never** creates Candidate (audit/analytics future only) |
 | **Partial data** | Candidates with incomplete 90-day IG data **still** enter Analyze → Score → Rank; `data_completeness = partial`; score adjustment **TBD** in Scoring spec |
-| **Threads <100 followers** | Discovery hit may create Candidate from `username`; enrich may be `partial` with `below_threads_profile_threshold` — **not** negative evidence |
+| **Threads <1,000 followers** | Discovery hit may create Candidate from `username`; enrich may be `partial` with `below_threads_profile_threshold` — **not** negative evidence |
 | **IG enrichment** | Only when exact username + Business Discovery succeeds; personal/consumer → `unsupported_account_type` / `partial` |
 | **Reply/comment enrichment** | **NOT SUPPORTED** for third-party media via official API |
 | **Cross-platform auto-link** | **NOT SUPPORTED** via official API — username match alone does **not** merge |
@@ -102,7 +102,7 @@ POST /api/radar/candidates (Threads or IG username/URL)
         → official enrich attempt → may remain partial
 
 Enrich (system token)
-        → Threads: profile_lookup + profile_posts (≥100 followers for full enrich)
+        → Threads: profile_lookup + profile_posts (≥1,000 followers for full enrich)
         → Instagram: business_discovery ONLY when exact username + Professional account
         → capability states: available | partial | below_threads_profile_threshold | unsupported_account_type | ...
 
@@ -526,6 +526,29 @@ Each member gets their own:
 
 When a member starts development on a candidate, that candidate **immediately leaves that member's ranking** (PRD §11). Pool record remains for others unless they also develop.
 
+Exclusion is evaluated at **read time** against `member_candidate_state`, not baked into the stored snapshot. A `member_daily_top20` row keeps every ranked candidate id; the Partner feed filters handled ones out on each read. Verified on Preview 2026-08-21: snapshot still listed both candidates while `/radar` showed the all-handled empty state.
+
+### 6.3.1 Same-day re-run idempotency (P2C, 2026-08-21)
+
+A member has **one logical Top20 per day**. `member_daily_top20` has a unique constraint on `(member_id, snapshot_date)`; re-running the pipeline for the same member and date replaces that day's content instead of creating a second snapshot.
+
+Snapshot identity belongs to the **member-day**, not to the run that filled it. The write upserts on `(member_id, snapshot_date)` and deliberately omits `id` from the payload, so:
+
+- the existing row keeps its `id`, and `member_recommendation_occurrences.member_daily_top20_id` (FK, `ON DELETE SET NULL`, no `ON UPDATE` action) keeps pointing at a live snapshot;
+- `items`, `item_count`, `generated_at`, and `pipeline_run_id` reflect the latest run — `pipeline_run_id` therefore means *which run last produced this snapshot*. Per-recommendation provenance stays in the occurrence rows (`recommended_at`, `analysis_run_id`, model/prompt versions), which are never rewritten.
+
+Rejected alternatives: delete-and-reinsert would null out the occurrence lineage; sending a fresh `id` on conflict would try to rewrite a referenced primary key and be refused by the foreign key.
+
+**Occurrence audit.** The table has no natural-key constraint on purpose — a genuine same-day re-recommendation is a legitimate second row (§6.5). A re-run is not, so the write path skips candidates already recorded for that member and date unless the item carries a re-recommendation reason. The rank worker reports `occurrences_appended` and `occurrences_skipped_existing`.
+
+**Score snapshots.** `radar_candidate_score_snapshots` stays append-only history, so a re-scored candidate has several rows for the day. Ranking reads the newest row per candidate; without that de-duplication a re-run would rank the same person twice.
+
+**Daily cap is a property of the day, not of the run.** `capDailyRecommendations()` takes the candidates already recorded in today's occurrences: they keep their place for free, and only a newcomer spends a slot. So re-running cannot push a member past `daily_recommendation_cap` distinct people for the date. Ranks are renumbered contiguously after the cap.
+
+**What a re-run does *not* preserve.** Candidates the member has already handled are excluded at rank time (§6.10), so they drop out of the stored `items` on the next run — the recommendation record for the day lives in `member_recommendation_occurrences`, not in the snapshot array. `failed` / `gave_up` stay available because they authorize on the claim, not on snapshot membership; `開始開發` / `略過` / `我認識他` are snapshot-gated and already refused for a handled candidate.
+
+No migration and no cron: idempotency is a property of the write path, and expiry/cooldown eligibility remains read-time (§6.10).
+
 ### 6.4 Cross-platform auto-merge (confirmed)
 
 **Username match alone does NOT constitute 100% identity confidence.**
@@ -611,6 +634,18 @@ Members must **not** access:
 - System-wide candidate lists beyond their own surfaced recommendations
 
 **Enforcement:** Supabase **RLS** + API authorization — **not** frontend hiding alone.
+
+### 6.7.2.1 Implemented boundary (RADAR-SECURITY-01, 2026-08-21)
+
+No browser code queries a Radar table. All 12 Radar API routes and all 6 modules that touch Radar tables use `createSupabaseServiceClient()`, so the `anon` and `authenticated` roles need **zero** table privileges. Migration `045_radar_security_rls.sql` enables RLS on all 26 tables from 014–020, revokes every privilege from `anon` and `authenticated`, and grants table access only to `service_role`. Policy count is deliberately **0**: RLS on with no policy is deny-all, and `service_role` is `BYPASSRLS`.
+
+The three Radar functions (`claim_radar_jobs`, `reclaim_abandoned_radar_jobs`, `list_adaptive_refresh_candidates`) had the Postgres default `EXECUTE` grant to `PUBLIC`, which let an unauthenticated caller claim pipeline jobs. `EXECUTE` is now `service_role` only.
+
+Member ownership is therefore enforced **in the API layer, not by an RLS predicate**: `member_id` is derived from the bearer token and never read from the request body, and an action is rejected unless the candidate is on that member's own Top20 snapshot. This is deliberate — `members.id` is resolved from the auth user's **email**, so an `auth.uid()`-based ownership policy would not be sound. Writing one anyway would be a false boundary.
+
+**Consequence for operations:** Radar rows can no longer be inspected or repaired with the anon key. Any state correction requires the service role or the Supabase dashboard.
+
+**Prior exposure, for the record:** before 045, all 26 tables were readable and the three member-scoped tables writable with the publishable browser key — including `candidate_content_snapshots_raw` and `candidate_content_normalized`, which hold third-party Threads content, and `candidate_analysis_runs`, which holds AI need analysis. Any Radar table added in a future phase must ship its lockdown in the same migration.
 
 ### 6.7.3 Leader Aggregate View (V1 — confirmed)
 
@@ -729,6 +764,355 @@ Before Candidate **Analysis / Scoring / Top20** eligibility, check whether the C
 | Forbidden | Classifying as existing member/customer merely because public content mentions Herbalife or related terms |
 | Timing | Run **before expensive AI analysis** when reliable match data is available |
 
+### 6.10 Candidate allocation model (RADAR-SCALE-01, confirmed 2026-08-21)
+
+How one shared pool serves many Partners daily. Business constants live in `docs/BUSINESS_RULES.md` → *Radar Candidate Supply & Allocation V1*; this section is the architecture that must enforce them.
+
+#### 6.10.1 Allocation pipeline
+
+```
+global pool
+   → eligibility (§6.9)
+   → allocation filter   (claim held by another member? global cooldown? )
+   → per-member filter   (skip within cooldown? already_known? in development?)
+   → score (§11.1.3)
+   → quality gate        (score ≥ 40 / 100)
+   → rank → take ≤ 20    (never pad)
+```
+
+Two filter layers, deliberately separate:
+
+| Layer | Scope | Effect |
+|---|---|---|
+| Allocation (global) | all members | active development claim, post-release global cooldown |
+| Personal | one member | skip cooldown, already_known, own in-progress work |
+
+A recommendation grants **no** claim. The same candidate may legitimately appear in several Partners' Top20 on the same day until someone claims it.
+
+#### 6.10.2 Claim state machine
+
+| Transition | Trigger | Global effect |
+|---|---|---|
+| unclaimed → claimed | 開始開發 | exclusive for 90 days |
+| claimed → released (early) | `failed` / `gave_up` | 14-day global cooldown, then allocatable |
+| claimed → expired | 90 days elapsed | 14-day global cooldown, then allocatable |
+| claimed → converted | Candidate becomes Customer | leaves Radar allocation; `customers.owner_member_id` is the authority |
+
+The claim is a **time-boxed allocation lock**, not ownership. It must not become a second permanent ownership list capable of disagreeing with `customers.owner_member_id` (§6.10.6).
+
+#### 6.10.3 Collision protection
+
+Claiming must be **atomic**. Between feed render and click another Partner may claim the candidate, so 開始開發 cannot be a read-then-write: the claim is taken by a single conditional write (unique active-claim constraint or conditional update), and losing the race returns a conflict rather than overwriting.
+
+The API returns **409** and the Partner sees only the neutral copy defined in Business Rules. The response must not carry the holder's member id, name, or development state — any of those leaks organization-internal activity into a Partner client.
+
+#### 6.10.4 Expiry is read-time, not a sweeper job
+
+Consistent with §6.3: skip cooldown, claim expiry, and global cooldown are evaluated **at read time** against stored timestamps. A stored Top20 snapshot keeps its ranked ids; eligibility is recomputed on each feed read. No cron is required for a cooldown to end, and a missed nightly run cannot leave candidates locked forever.
+
+#### 6.10.5 Idempotency requirement
+
+Allocation cannot be built on the current insert-only Top20 write (§6.3.1). Multi-member daily allocation implies retries, so the Top20 write must become idempotent (upsert on `(member_id, snapshot_date)`) and `member_recommendation_occurrences` must stay append-only without duplicating a same-day recommendation. This is the one LIVE pipeline write that RADAR-SCALE-01 must change; it is scoped to its own phase.
+
+#### 6.10.6 Invariants
+
+| Invariant | Rule |
+|---|---|
+| AI reuse | Extraction stays **candidate-global**, keyed by `analysis_input_fingerprint`. N Partners receiving one candidate must cause **one** OpenAI run, never N. |
+| Keywords | Acquisition input only — **never** a scoring input (§5.4, §6.2). |
+| Quality | Score < 40 never enters Top20; a short list is correct output, padding is a bug. |
+| Ownership | `customers.owner_member_id` is the only permanent ownership authority. |
+| Security | Every new Radar table follows RADAR-SECURITY-01 (§6.7.2.1): RLS enabled, `anon` + `authenticated` revoked, `service_role` only, ownership enforced in the API layer. |
+
+#### 6.10.7 Implemented integration (P2B, 2026-08-21)
+
+Allocation V1 is live on the Partner path. Where each rule is enforced:
+
+| Concern | Module |
+|---|---|
+| Constants (30 / 90 / 14 / 40 / 20) | `src/lib/radar/allocation/allocation-rules.ts`, overridable per environment via `radar_pipeline_config.allocation` |
+| Read-time gate (personal + global) | `src/lib/radar/allocation/allocation-eligibility.ts` |
+| Snapshot read model | `src/lib/radar/allocation/allocation-read-model.ts` — used by both `/api/radar/feed` and the `today` response, so one snapshot cannot be filtered two different ways |
+| Ranking | `rank-worker.ts` — quality gate then exclusions, then `capDailyRecommendations()` counted over the whole day (§6.3.1); the previous `.slice(0, 20)` is gone |
+| Claim / release | `apply-radar-partner-action.ts` over `claim_candidate_development()` and a conditional release update |
+
+Notes that constrain future work:
+
+- A `skipped` row written before `skip_expires_at` existed carries no expiry and stays excluded. Resurrecting a person a Partner already declined, with no record of when, would be worse than waiting for a fresh 略過 to start the 30-day clock.
+- `failed` / `gave_up` are accepted by `POST /api/radar/actions` but have no button yet: the Partner surface for development outcomes belongs to the customer flow, not the recommendation card.
+- `converted` is supported by the repository and the rules, and blocks allocation forever once written. Nothing writes it yet — that write belongs to the Candidate → Customer path.
+- Ranking reads the claim rows for the scored set in one query; feed reads do the same per snapshot. Neither path can see a claim holder's identity through the presentation layer.
+
+#### 6.10.8 Capacity model
+
+Daily demand is `members × 20` recommendation slots, but the pool requirement is larger than that number for two reasons: claims remove candidates from the **global** pool for up to 90 days, and per-member exclusions accumulate so each member's eligible subset shrinks over time even while the pool grows.
+
+Supply is bounded by acquisition quota (§4.1.3), the Threads **≥1,000 followers** enrichment gate (§9), and keyword inventory — item 38 in §13 remains unseeded, which currently caps discovery regardless of budget. The `<1,000 followers` loss rate must be **measured** before any enrichment-budget increase; scaling budget on estimates is not approved.
+
+#### 6.10.9 Measured supply funnel (RADAR-SCALE-01, 2026-08-21)
+
+Preview measurement against the live Threads API and the frozen pipeline. Sample:
+8 keywords, 63 Meta requests, 20 candidates enriched, 16 OpenAI extraction calls,
+2 qualified candidates. Small sample — directional, not precise.
+
+| Layer | Input | Output | Conversion | Dominant loss |
+|---|---|---|---|---|
+| keyword query → search result | 8 distinct keywords | 4 usable | 50% | 減脂 / 減肥 / 瘦身 / 增肌 fail every attempt with a generic Meta error; 健身 / 運動 / 健康生活 / 副業 work |
+| search result → username | 84 posts | 82 usernames | 98% | duplicates inside one search are rare |
+| username → new candidate | 82 | 67 | 82% | 18% were already in the pool (free reuse, not loss) |
+| new candidate → evidence | 20 enriched | 16 | 80% | 20% blocked by the ≥1,000 follower gate |
+| evidence → analyzable corpus | 18 | 16 | 89% | thin profiles (1–2 posts) |
+| corpus → extraction PASS | 16 OpenAI calls | 9 | 56% | **100% of failures are `SCHEMA_VALIDATION`**: fit-policy relevance ceilings, missing `trait_id`, `source_ref` ids not in the corpus |
+| extraction → score ≥ 40 | 11 scored | 2 | 18% | needs-fit, change-intent, solution-gap and contactability all score 0 for most discovered accounts |
+| score ≥ 40 → recommendation | 2 | 2 | 100% | allocation gates rejected nothing at this volume |
+
+End-to-end: **2.4% of unique discovered usernames** became a qualified
+recommendation (10% of candidates we paid to enrich). Cost per qualified
+candidate: **31.5 Meta requests, 8 OpenAI calls**. Extraction reuse worked
+perfectly where it applied — every re-processed candidate with an unchanged
+fingerprint was a cache hit, costing no OpenAI call.
+
+Bottleneck order, measured rather than assumed:
+
+1. **Extraction validation (44% loss)** — the model returns extractions the
+   fit-policy validator rejects. Largest single loss and entirely internal.
+2. **Qualification (82% loss of scored)** — keyword TOP results surface accounts
+   that publish content, not people expressing a need. This is a discovery
+   *targeting* problem, not a threshold problem; 40 stays.
+3. **Follower gate (20% loss)** — real but third, and both requests are still
+   spent on a sub-threshold account.
+4. **Discovery ceiling** — the client requests `limit=10` and ignores the
+   `paging.next` cursor Meta returns, so each keyword yields ~10 posts per run
+   regardless of budget.
+
+Quota arithmetic against the documented limits (2,200 keyword / 1,000 profile per
+24h): 20 qualified candidates per day needs ~833 unique discovered, which needs
+~90 keyword searches (inside the keyword limit) but ~1,366 profile requests —
+**over the profile limit**. Inverting it, 1,000 profile requests ÷ 2 per candidate
+× 8% end-to-end enrichment yield ≈ **40 qualified candidates per day per token**,
+i.e. two Partners at full cap from fresh acquisition alone. Anything beyond that
+must come from the standing pool, so pool depth is built over weeks and only
+replenished daily.
+
+#### 6.10.10 Yield recovery (RADAR-SCALE-02, 2026-08-21)
+
+Extraction Schema v1, the scoring weights and the minimum qualified score stay
+frozen. This round removes losses we were causing ourselves.
+
+**Extraction failure audit.** Every stored `SCHEMA_VALIDATION` failure was
+classified by the exact validator message. Nine were produced under structured
+outputs; four older failures predate it and show whole-object shape drift that
+strict `json_schema` already prevents.
+
+| Root cause | Count | Class | Resolution |
+|---|---|---|---|
+| relevance above the fit-policy ceiling | 4 | prompt semantic ambiguity | ceilings now stated in the prompt; deterministic clamp to the ceiling |
+| missing + duplicated `trait_id` in the same output | 2 | model output shape | deterministic dedupe and fill with an empty evidence list |
+| umbrella need inside scored `needs[]` | 1 | prompt semantic ambiguity | rule stated in the prompt; deterministic move to `advisory.umbrella_need_tags` |
+| `source_ref.content_id` not in the corpus | 1 | source-reference construction | per-request `enum` of the corpus ids; invented ids are now structurally impossible |
+| `location` available without a normalized place | 1 | model output shape | deterministic downgrade to `unknown` |
+| `level: none` with no reviewed evidence | 1 | prompt semantic ambiguity | requirement stated in the prompt; deterministic downgrade to `unknown` |
+| root-level shape drift (pre-structured-output) | 4 | model output shape | already prevented by strict `json_schema` |
+
+No failure was a genuinely invalid extraction that should stay failed, and no
+validation rule was loosened.
+
+**Deterministic conformance before any retry.** `extraction-conformance.ts` runs
+between the model output and the validator. Every action is either lossless
+(moving a value the policy already prescribes) or downward (a weaker claim than
+the model made): clamp relevance to the policy ceiling, move the umbrella need to
+advisory, dedupe/fill core traits, drop source refs outside the corpus, downgrade
+an assessment that has no remaining evidence to `unknown`, omit a need reported
+with strength `none`. It never invents evidence, text or levels, and it cannot
+rescue a forbidden score field.
+
+**Bounded repair.** Only if conformance still leaves a violation is one single
+re-ask issued, with the same corpus, the same allowed ids and the list of
+violations. A failed repair stays failed — no fixture, no fallback. Token usage
+is captured per call and surfaced through the analyze worker metrics. A forbidden
+score/rank field is a policy breach, not a shape slip, and is never re-asked.
+
+The prompt version moved to `ai_radar_extraction_v1.1`, which is part of
+`analysis_input_fingerprint`, so previously cached extractions are legitimately
+recomputed once against the aligned contract.
+
+**Keyword-search evidence is kept.** Threads keyword search already returns the
+matched post (`id`, `text`, `permalink`, `timestamp`, `username`). Discovery now
+persists it as a raw snapshot with `adapter_version = threads_meta_search_v1` and
+`payload.acquisition_source = keyword_search`, so provenance stays distinguishable
+from profile-post enrichment at both the raw and normalized layers. No migration:
+`candidate_content_snapshots_raw` is unique on
+`(candidate_id, platform, external_content_id, fetched_at)`, so a second
+acquisition of the same post is a second row, and the normalized corpus keeps one
+item per platform post (the most complete fetch wins). Candidate-global
+fingerprint semantics are unchanged: a post already in the corpus does not alter
+the analyzable set when `profile_posts` returns it again.
+
+**Cheap enrichment gate.** `profile_lookup` runs first. When Meta establishes
+that posts cannot be served for that account — either the threshold error or a
+follower count below 1,000 — `profile_posts` is not called at all. Follower count
+is capability and cost routing only; it never enters scoring, and neither does the
+discovery phrase.
+
+**Discovery quality audit.** The 82% qualification loss was re-examined across
+the existing scoring dimensions using the 16 stored successful extractions
+(aggregate only, no per-person judgement). The threshold stays at 40.
+
+| Failing dimension | Share | Reading |
+|---|---|---|
+| no relevant need at all | 8 / 16 | `needs.availability = unknown` with zero items — and 5 of those had 2–5 analyzable posts, so it is not thin content but content about a topic rather than a person expressing a need |
+| weak or no change intent | 12 / 16 | mostly `unknown`, or `emerging` at best |
+| closed or unestablished solution gap | 13 / 16 | `solution_gap` is left `unknown` even for otherwise strong candidates |
+| low natural entry | 15 / 16 | `generic` almost everywhere; one candidate reached `relevant` |
+| insufficient evidence (<3 analyzable posts) | 5 / 16 | thin profiles |
+
+Two distinct causes, and they need different answers. Half the scored population
+is a **discovery targeting** problem: topic nouns such as `健身` return people who
+publish about a topic, not people expressing a need, and no scoring change can fix
+that. Separately, `solution_gap` being unknown in 81% of extractions forfeits up
+to 15 of the 40 Change Window points; whether "the candidate shows no attempt at a
+solution" is `open` or genuinely `unknown` is a **fit-policy question, not a prompt
+tuning opportunity**, and is left open rather than nudged (§13).
+
+**Proposed V1 discovery phrase inventory (discovery only, never scored).** Built
+from what actually qualified: first-person need expressions, not topic nouns.
+
+| Family | Phrases | Basis |
+|---|---|---|
+| health / body | 想變健康 · 體態改變 · 想開始運動 · 練不出來 | `健身` / `運動` are served by Meta and produced both qualified candidates, but as nouns they over-return creators |
+| nutrition / routine | 外食族 · 想調整飲食 · 想改善作息 · 睡不好 | `nutrition_lifestyle` is a high-fit need with no phrase coverage today |
+| career / income | 想找副業 · 多一份收入 · 想離職 · 想自己創業 | `副業` is served and maps to a high-fit need |
+| life change | 想改變生活 · 今年想改變 | umbrella entry point; advisory only, never a scored need |
+
+Constraints: the phrase never enters scoring or adds points; blocked phrases
+(`減脂` / `減肥` / `瘦身` / `增肌`) are recorded as a Meta capability fact, not a
+quality fact, and are not retried as bare terms; each phrase carries its own
+measured qualified yield so the inventory is pruned by evidence. Not implemented
+in this round — this is the proposal only.
+
+**Controlled remesurement (Preview, 2026-08-22).** Same 8 keywords as SCALE-01.
+Paging was not followed. Acquisition budget was not increased (12 enrichments
+vs SCALE-01's 20; 9 of those 12 skipped `profile_posts`). 20 candidates were
+analysed — the 12 cheap-gated enrichments plus 8 search-evidence-only accounts.
+
+| Metric | SCALE-01 | SCALE-02 |
+|---|---|---|
+| unique discovered | 82 | 35 |
+| extraction PASS | 56% | **100%** (20 / 20, all first-pass) |
+| Meta requests / qualified | 32 | **13.5** (27 requests / 2 qualified) |
+| OpenAI calls / qualified | 8 | 10 (20 calls / 2 qualified) |
+| score ≥ 40 rate | 18% of scored | 10% of scored (2 / 20) |
+| end-to-end qualified yield | 2.4% | **5.7%** (2 / 35) |
+
+Additional observed:
+
+| Signal | Count |
+|---|---|
+| `profile_posts` calls avoided | 9 of 12 enrichments (below-threshold gate) |
+| candidates rescued by keyword-search evidence | 17 extracted who would previously have been evidence-less; **2 of the 2 qualified** were search-only / below-threshold |
+| duplicate evidence correctly deduplicated | mechanism covered by tests; 3 live candidates carried both search + profile-post fetches of the same post identity |
+| first-pass extraction success | 20 / 20 |
+| repair-attempt / success | 0 / 0 (deterministic conformance was not needed either) |
+| extraction reuse | 0 cache hits — expected: prompt version is now `v1.1`, so fingerprints legitimately recomputed once |
+
+Unique discovered fell 82 → 35 because Meta returned fewer page-1 hits this
+session (35 posts from the 4 working keywords), not because we reduced the
+keyword set. The 4 fat-loss terms still fail every attempt. Absolute qualified
+count stayed at 2. Efficiency improved: extraction is no longer the bottleneck,
+and both qualified candidates came from preserved search evidence rather than
+from `profile_posts`.
+
+**Decision after remesurement: C — pagination and the discovery phrase
+inventory are both still needed.** Extraction contract mismatch is closed.
+Remaining supply limit is discovery: page-1 volume is low and topic nouns still
+over-return publishers. Do not raise the score threshold or loosen Extraction v1.
+
+#### 6.10.11 Budget model gap
+
+`radar_pipeline_config.daily_caps` holds `keyword_search_daily_budget`,
+`profile_discovery_daily_budget`, `new_candidate_enrichment_budget`,
+`refresh_enrichment_budget`. Two problems: the numbers count candidates while the
+Meta limits count requests, and **there is no AI analysis budget at all** — OpenAI
+spend is bounded only by how many candidates reach the analyze stage. The three
+cost classes (discovery / enrichment / AI analysis) need separate request-denominated
+budgets before acquisition is scaled. `POST /api/radar/live/ingest` also bypasses
+the quota allocator entirely, so LIVE acquisition today is bounded by a call
+argument rather than by config.
+
+#### 6.10.12 Phrase Inventory V1 + SCALE-03 Phase 3 (2026-08-22)
+
+**Source of truth (approved, not inverted):**
+
+| Layer | Role |
+|---|---|
+| Versioned TypeScript Phrase Inventory V1 (`src/lib/radar/discovery/phrase-inventory-v1.ts`) | Phrase definition, version, experiment source |
+| `radar_system_keywords` | Daily-pipeline DB source of truth. SCALE-03 retained topic nouns are the V1 seed (`048_radar_system_keywords_v1_seed.sql`). Unmeasured and first-person phrases stay off |
+
+No second keyword table. No migration this round. Phrase metadata is discovery / attribution / measurement only — it does not enter Extraction need judgment, does not add score, and does not change the score ≥ 40 threshold.
+
+**Phrase classes:** `topic_noun` · `first_person_need` · `blocked_meta`.
+
+Blocked Meta terms stay blocked and were not sent: 減脂 / 減肥 / 瘦身 / 增肌. No synonym swap, no retry-until-success, no scraper / private-endpoint workaround.
+
+**Controlled experiment (Preview only, pagination off, cheap gate on):**
+
+| | A topic nouns | B first-person need/change |
+|---|---:|---:|
+| Meta `keyword_search` requests | 8 | 8 |
+| Successful phrases | 8 | 6 |
+| Raw hits | 74 | 38 |
+| Unique candidates | 74 | 38 |
+| Candidates scored | 74 | 38 |
+| score ≥ 40 count | 15 | 14 |
+| score ≥ 40 rate | 20.3% | 36.8% |
+| **qualified / Meta request** | **1.875** | **1.750** |
+| OpenAI calls | 73 | 39 (first-pass; a later overlap re-score was all cache) |
+| OpenAI calls / qualified | 4.87 | 2.79 |
+| Blocked / error phrases | 0 | 最近胖了 · 怎麼都瘦不下來 (Meta unexpected error; recorded, not retried) |
+| Unique / Meta request | 9.25 | 4.75 |
+| Extraction PASS | 74/74 | 38/38 |
+| A/B candidate overlap | 0 | 0 |
+
+Arm A first persist attempt failed (`keyword_id` is a UUID column; inventory slugs are not seeded). Those 8 searches found hits but wrote nothing; they are **not** in the table. Measurement used one subsequent 8-request A run after `keyword_id = null`. No extra phrases, no pagination, no budget top-up because an arm looked weaker.
+
+**Decision: C — first-person inventory did not raise qualified candidates / Meta request.** Precision rose (20% → 37%) but unique yield fell and two body-fat first-person phrases failed Meta. Do not activate first-person phrases into `radar_system_keywords`. Do not lower score 40. Do not loosen Extraction v1. Do not start pagination in this round.
+
+Next discovery lever (later): depth on working topic nouns (`paging.next` is still unused), not a yield-chasing threshold change.
+
+#### 6.10.13 Controlled pagination (RADAR-FINAL-01, 2026-08-22)
+
+`keyword_search_daily_budget` is now an **HTTP request** budget. Page 1 and every
+followed `paging.next` each cost 1. Phrase jobs no longer count as 1 request.
+
+| Knob | V1 |
+|---|---|
+| Default max page depth | 2 |
+| Hard depth ceiling | 3 |
+| Stop | no `paging.next` · max depth · request budget exhausted · capability / rate-limit / source failure · blocked phrase |
+| Cursor | `paging.cursors.after` or `after=` on `paging.next`. Arbitrary next URLs are not fetched |
+| Blocked Meta | 減脂 / 減肥 / 瘦身 / 增肌 — 0 HTTP, never paginated |
+
+Daily allocator reserves `floor(httpBudget / maxPageDepth)` phrase jobs, each with
+that many request tokens. LIVE ingest shares one budget (hard cap 4). Missing
+budget on the adapter defaults to 1 request (page 1 only). Meta usage headers are
+captured when present and never invented.
+
+**Preview acceptance (健身, not a new research study):**
+
+| Check | Result |
+|---|---|
+| Follow `paging.next` | PASS — 2 HTTP, 2 pages, `paging_followed=true` |
+| Page 2 persisted | PASS — 4 page-2-only candidates |
+| Budget stop | PASS — budget=1 → 1 HTTP, `budget_exhausted` |
+| Depth stop | PASS — depth=1, budget=3 → 1 HTTP, `max_depth` |
+| Cross-page dedup | PASS — 16 raw hits → 12 unique candidates |
+| Extraction reuse | PASS — second analyze 4/4 cache, 0 OpenAI |
+| Blocked not paginated | PASS — 減脂 0 HTTP |
+| Fixture contamination | 0 |
+
+Decision: pagination is the V1 depth lever. Do not activate first-person inventory.
+Do not lower score 40. Do not deploy Production from this round.
+
 ---
 
 ## 7. Daily Job Phases
@@ -773,9 +1157,25 @@ Connectors **only execute** refresh jobs handed by the queue; they do **not** de
 
 ### 7.2 Scheduler & job queue architecture (confirmed)
 
-**Pattern:** `Scheduler (03:00 trigger) → Job Queue → Workers`
+**Pattern:** `Scheduler (06:00 Asia/Taipei) → Job Queue → self-continuing process worker`
 
-The 03:00 scheduler **orchestrates** the daily pipeline. It must **not** execute Discover → Rank as one long-running cron/Edge Function.
+The daily scheduler **orchestrates** only. It must **not** execute Discover → Rank as one long-running cron/Edge Function.
+
+**Production topology (RADAR-AUTO-01, Hobby / Fluid Compute):**
+
+| Piece | Rule |
+|---|---|
+| Daily trigger | Vercel Cron `GET /api/radar/jobs/daily-pipeline` at `0 22 * * *` (UTC) = **06:00 Asia/Taipei**. Hobby may fire anywhere in that hour (±59 min). |
+| Same-day idempotency | Orchestrator returns `rerun: true` and enqueues **0** new jobs when the run_date already exists. |
+| Worker | `GET`/`POST /api/radar/jobs/process` claims **1** job at a time inside a **180s** budget **in the request**. Hourly process crons are the correctness wake. `after()` is only a backup hop. One claimed job hard-timeouts at **90s**. |
+| Continuation | Server-to-server `POST` with `continue: true`. Does not use Cursor or the browser. Failed continue work re-kicks the same worker. |
+| Periodic wake | Hobby forbids sub-daily crons, so process is registered on **staggered once-daily** hours (`30 23` plus even UTC hours). A dead `after()` chain is woken again within about two hours. |
+| Caching | Process / daily-pipeline / finalize are `force-dynamic` and `Cache-Control: no-store`. Cached 401/redirects are treated as cron completion and produce no runtime log. |
+| Finalize | When a continue invocation claims 0, it `after()` `POST /api/radar/jobs/finalize`. Abandoned `running` jobs reclaim after **30 minutes** via `reclaim_abandoned_radar_jobs`. |
+| Auth | `Authorization: Bearer $RADAR_CRON_SECRET` only (`isRadarCronAuthorized`). Vercel Cron sends `CRON_SECRET`; Production sets `CRON_SECRET` to the **same value** as `RADAR_CRON_SECRET`. Auth is not widened. |
+| Ops status | `platform_admin` `/api/admin/status` reports run_date, pipeline_run_id, job counts, stage breakdown, last progress, rank, and recommendation count. No candidate content. |
+| Duration | Fluid Hobby default **and** max = **300s**. Do not lower `maxDuration` on process. |
+| Frozen | score ≥ 40, Extraction v1, allocation V1, Top20 cap 20, pagination, live endpoints, fixtures — unchanged. |
 
 **Pipeline stages (queued jobs):**
 
@@ -796,7 +1196,7 @@ Scheduler → Discover → Refresh/Enrich → Analyze → Score → Rank → Mem
 
 **Separation:** Queue/worker **infrastructure** is separate from Radar **domain logic** (orchestrator, scoring, learning).
 
-**Technology:** Concrete queue (Supabase pg_cron + table queue, SQS, BullMQ, etc.) — **not selected yet** (§12.E).
+**Technology:** Supabase `radar_jobs` + `claim_radar_jobs` / `reclaim_abandoned_radar_jobs`; Vercel Cron (daily + staggered daily process wakes) + Node process worker with `after()` self-continue. No extra queue vendor.
 
 ### 7.3 Daily pipeline failure strategy — Partial Success (confirmed)
 
@@ -973,7 +1373,7 @@ Documented endpoints for next whitelist pass (already verified against Meta docs
 | Endpoint | Purpose | Notes |
 |---|---|---|
 | `GET /v1.0/keyword_search` | Keyword/tag search | System Threads token; 2,200 queries / 24h / token owner |
-| `GET /v1.0/profile_lookup` | Public profile by username | System Threads token; ≥100 followers; 1,000 req / 24h |
+| `GET /v1.0/profile_lookup` | Public profile by username | System Threads token; **≥1,000 followers**; 1,000 req / 24h |
 | `GET /v1.0/profile_posts` | Public posts by username | System Threads token; supports `since` / `until` |
 | `GET /v1.0/me?fields=recently_searched_keywords` | Keyword quota tracking | System Threads token (ops) |
 
@@ -1013,6 +1413,8 @@ Implementation pending; entities for schema design:
 | `radar_geographic_scoring_config` | System | Versioned Taiwan adjacency / living-area policy |
 | `radar_secondary_area_scoring_config` | System | Secondary-area modifier; exact-district cap **8** (proportional formula configurable) |
 | `member_development_areas` | Per-member | **1 primary** + **≤3 secondary**; normalized city/county + district; **not** device GPS |
+| `member_radar_region_preferences` | Per-member | Preferred development city/district. `current_*` used by score/rank; `pending_*` becomes effective on `pending_effective_date` (Asia/Taipei). Does not rewrite today's Top20 |
+| `member_radar_recommendation_feedback` | Per-member | 👍/👎 evaluation of a daily recommendation. Unique `(member_id, candidate_id, recommendation_date)`. `evaluation_context` is frozen; never auto-learns |
 | `radar_member_keyword_disabled` | Per-member | Disabled system keywords |
 | `member_candidate_scores_daily` | Per-member | Daily score/rank + **per-member `location_score`** + component breakdown |
 | `member_candidate_scores_weekly` | Per-member | Compacted weekly rollups |
@@ -3372,6 +3774,15 @@ To be confirmed item-by-item before implementation:
 42. **Refresh policy** initial thresholds / tier intervals
 43. **Leader aggregate** — downline depth + time window defaults
 44. **Manual merge scope** — global vs per-member (§6.5)
+~~Candidate allocation / collision / claim duration~~ — **resolved (§6.10):** skip 30d, claim 90d, post-release global cooldown 14d, min qualified score 40/100, neutral collision copy
+~~45. `<1,000 followers` loss rate~~ — **measured (§6.10.9): 20%** of enriched candidates; third bottleneck, not the first
+~~47. Extraction `SCHEMA_VALIDATION` failure rate~~ — **resolved (§6.10.10):** prompt states the fit-policy ceilings, trait ids and evidence-id contract; deterministic conformance plus one bounded repair; Extraction Schema v1 unchanged
+48. **Discovery targeting** — topic-noun TOP results still over-return publishers; first-person phrases raised score ≥ 40 rate (20% → 37%) but not qualified / Meta request (§6.10.12). Still a discovery-quality problem, not a threshold change
+49. **Discovery phrase inventory** — TypeScript Phrase Inventory V1 exists and was measured (§6.10.12). Decision C: do not activate first-person phrases into `radar_system_keywords`. 減脂 / 減肥 / 瘦身 / 增肌 remain `blocked_meta`
+50. **Request-denominated budget model** — split discovery / enrichment / AI analysis budgets and count requests, not candidates (§6.10.11)
+~~51. `keyword_search` pagination~~ — **resolved (§6.10.13):** request-budgeted page depth default 2; blocked phrases never paginated
+52. **`solution_gap` availability policy** — the model leaves it `unknown` in 81% of successful extractions, forfeiting up to 15 Change Window points. Does "no visible attempt at a solution" mean `open` or genuinely `unknown`? A fit-policy answer is required; it must not be solved by prompt nudging (§6.10.10)
+46. **Development-area write path** — Partner `/radar` now writes `member_radar_region_preferences` (next-day effective after a change). `member_development_areas` remains the fallback when no preference exists.
 
 ---
 
@@ -3442,3 +3853,20 @@ Do **not** start production implementation until:
 | 2026-08-09 | **Daily Pipeline P0/P1:** migration `016_radar_daily_pipeline_v1.sql`; global/member state split; `radar_jobs` queue + `claim_radar_jobs()`; analysis fingerprint without `normalization_run_id`; source vs semantic freshness helpers |
 | 2026-08-09 | **Content Normalization v1:** `src/lib/radar/normalization/` — deterministic corpus builder; activity/observability migrated off LLM extraction; `near_duplicate` dedup; migration `015_content_normalization_v1.sql` |
 | 2026-08-09 | **Fit Policy v1:** `src/lib/radar/fit-policy/` — 10 need types; Policy Ceiling + Evidence Exception; umbrella exclusion; health_management inference guard; wired into extraction validation |
+| 2026-08-21 | **RADAR-SECURITY-01:** RLS enabled + `anon`/`authenticated` revoked on 26 Radar tables and 3 RPCs; API-layer ownership (§6.7.2.1) |
+| 2026-08-21 | **RADAR-SCALE-01 allocation model (§6.10):** recommendation ≠ ownership; skip 30d / claim 90d / release 14d; min qualified score 40/100; atomic claim + neutral 409 collision; read-time expiry; Top20 idempotency requirement; candidate-global AI reuse |
+| 2026-08-21 | **Threads follower gate corrected to ≥1,000** (§2, §3.1, §9, `META_CAPABILITY_AUDIT_V1`) — matches actual Meta API behavior; previous 100 was wrong |
+| 2026-08-21 | **RADAR-SCALE-01 supply measurement (§6.10.9–§6.10.10):** live funnel measured end-to-end — 2.4% qualified yield per unique discovered, 31.5 Meta requests + 8 OpenAI calls per qualified candidate; bottlenecks ranked as extraction validation (44%) > qualification (82% of scored) > follower gate (20%) > discovery ceiling; `keyword_search` pagination and `follower_count` availability confirmed against live behaviour; no pipeline, scoring or schema change |
+| 2026-08-21 | **P2C Top20 same-day idempotency (§6.3.1):** snapshot identity is the member-day; natural-key upsert keeps the row `id` and occurrence lineage; retry-safe occurrence append; newest score snapshot per candidate wins in ranking; daily cap counted over the day; no migration, no cron |
+| 2026-08-21 | **RADAR-SCALE-02 yield recovery (§6.10.10):** extraction failures classified to root cause; prompt v1.1 states fit-policy ceilings, trait ids and the evidence-id contract; per-request `enum` makes invented `source_ref` ids impossible; deterministic downward-only conformance before one bounded repair with observable token usage; keyword-search posts preserved as raw evidence with `threads_meta_search_v1` provenance and post-identity dedup; cheap gate skips `profile_posts` when Meta cannot serve them; discovery phrase inventory proposed but not implemented; Extraction Schema v1, scoring weights, minimum score 40, allocation V1 and Partner UI unchanged; no migration |
+| 2026-08-22 | **RADAR-SCALE-02 remesurement:** extraction PASS 56% → 100% first-pass; Meta / qualified 32 → 13.5; end-to-end yield 2.4% → 5.7%; both qualified candidates were search-evidence rescues; 9 `profile_posts` calls avoided; decision C (pagination + phrase inventory); temporary measurement endpoint removed |
+| 2026-08-22 | **RADAR-SCALE-03 Phase 3 (§6.10.12):** Phrase Inventory V1 (TypeScript) is the phrase definition source; `radar_system_keywords` stays the daily-pipeline DB SoT; no second table, no seed, no migration. A/B 8+8 `keyword_search`, pagination off: topic nouns 1.875 qualified/request vs first-person 1.750; precision 20% → 37% but unique yield fell. Decision C — do not activate first-person inventory; do not lower score 40; do not start pagination this round. Temporary harness removed |
+| 2026-08-22 | **RADAR-FINAL-01 (§6.10.13):** controlled pagination on topic-noun `keyword_search` — each HTTP page consumes discovery request budget; default depth 2; blocked Meta terms never sent; LIVE ingest no longer unbounded. Live acceptance PASS. Temporary harness removed. Production not deployed |
+| 2026-08-22 | **Radar V1 system keyword seed:** `radar_system_keywords` seeded with SCALE-03 Arm A topic nouns only (健身 · 運動 · 健康生活 · 副業 · 重訓 · 跑步 · 兼職 · 創業). First-person inventory remains off. Blocked Meta terms remain blocked. Daily pipeline still reads this table as the only DB SoT. Migration `048` is idempotent and was not applied remotely in this round. Production not deployed |
+| 2026-08-22 | **RADAR-AUTO-01:** Production daily automation. Vercel Cron 06:00 Asia/Taipei orchestrates; process worker self-continues with 1-job / 60s batches via `after()`; 07:30 safety kick; abandoned reclaim stays 30 minutes. `CRON_SECRET` aliases existing `RADAR_CRON_SECRET` — auth not widened. Scoring 40, Extraction v1, allocation V1, Top20, live 403, fixtures unchanged. No migration. |
+| 2026-08-23 | **RADAR-PROD-RECOVERY-01:** Production 06:00/07:30 crons were registered but produced no application logs (cached GET / possible vercel.app 302). Process/daily-pipeline/finalize are now `force-dynamic` + `no-store`. Hobby staggered daily process wakes. 90s job hard-timeout keeps the continue chain alive. `platform_admin` `/api/admin/status` reports Radar ops counts only. Scoring 40, Extraction, allocation, Top20, live 403, fixtures unchanged. |
+| 2026-08-23 | **RADAR-PROD-RECOVERY-02:** Today's 29 attempted jobs were all refresh `enrich` and failed with `UPSTREAM_5XX` / `enrich missing Threads username`. Serverless `upsertCandidate` was rewriting `candidate_pool.normalized_username` to null after the first successful enrich. Refresh jobs then had no payload username and no stored username. Fix: merge persisted candidate fields on upsert; recover username from `cand_threads_*` / `cand_instagram_*`. Process now boosts the current run's job priority so leftover yesterday scores cannot starve today, starts the next hop immediately (`after()` is backup only), and finalizes today's run when it is empty even if yesterday leftovers are still claimed. Same-day run reused. Cron schedule unchanged. |
+| 2026-08-23 | **RADAR-SUPPLY-02:** Normalize, analyze/cache, and Top20 eligibility now share `buildCanonicalFingerprints`, including `profile_semantic_hash`. Cache-reuse no longer fails rank because one side hashed the profile and the other passed `null`. Freshness gate, score 40, allocation, and daily cap 20 are unchanged. |
+| 2026-08-24 | **RADAR-AUTO-01 continuation:** Next-day run stalled with 1979 pending / 0 running after 10:15. The 10:00 Taipei process cron ran; self-fetch/`after()` hops then died. The next even-hour cron was 12:00, so the morning gap had no deterministic wake. Process now drains **180s in-request** (under the 300s Fluid kill) and Hobby process crons fire **hourly**. Continue hops no longer abort or `cancel()` the child body (that killed the next isolate). `after()` remains backup only. Same-day run reused. Scoring 40 and allocation unchanged. |
+| 2026-08-24 | **RADAR-SEMANTIC-01:** Candidate understanding (need_owner / need_state / market_role) plus language eligibility and per-member development region. Topic-only, third-party, resolved-success, and confident ja/ko/en/zh-Hans corpora no longer qualify. Provider + genuine SELF unresolved need remains valid. Why-recommend is Traditional Chinese for new analyses. Region change is next-day effective and does not rewrite today's Top20. Score threshold 40 and no-pad Top20 unchanged. Historical runs not rebuilt. |
+| 2026-08-24 | **RADAR-FEEDBACK-01:** Partner card 👍/👎 human evaluation evidence. Member-specific; 👎 has compact reasons;「其他」note optional. Frozen evaluation_context for future quality reports. Never auto-learns, rescores, reranks, excludes, or rebuilds today's Top20. Score 40 / cap 20 / AUTO-01 unchanged. |

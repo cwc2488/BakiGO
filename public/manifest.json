@@ -1,7 +1,7 @@
 {
   "name": "Baki GO",
   "short_name": "Baki GO",
-  "description": "直銷組織的每日成長夥伴",
+  "description": "從了解自己、開始行動到持續進步，Baki Go 陪你一步一步完成改變。",
   "start_url": "/calendar",
   "display": "standalone",
   "background_color": "#f5faf6",

@@ -1,11 +1,8 @@
-import { computeCorpusFingerprint } from "../../analysis/fingerprint";
+import { decideAnalyzeCandidate } from "../../ai/analyze-candidate";
 import { normalizeCandidateContent } from "../../normalization/normalize-candidate-content";
 import type { RawContentSnapshot } from "../../normalization/schema";
 import { validateUpstreamArtifact } from "../chain";
 import type { RadarJobRecord } from "../types";
-import {
-  decideAnalyzeCandidate,
-} from "../../ai/analyze-candidate";
 import {
   enqueueAnalyzeAfterNormalize,
   enrichPayload,
@@ -76,25 +73,18 @@ export async function runNormalizeWorker(
 
   await ctx.repo.persistNormalizationRun(corpus);
 
-  const corpusFingerprint = computeCorpusFingerprint({
-    analyzable_content: corpus.items
-      .filter((item) => item.is_analyzable)
-      .map((item) => ({
-        normalized_content_id: item.normalized_content_id,
-        content_hash: item.content_hash,
-      })),
-    profile_semantic_hash: (await ctx.repo.getCandidate(candidate_id))?.profile_semantic_hash ?? null,
-  });
-
+  const decision = await decideAnalyzeCandidate(ctx.repo, corpus);
+  const cacheReused = Boolean(decision.cached_analysis_run_id) && !decision.reanalyze;
   await ctx.repo.updateRefreshStateAfterNormalize({
     candidate_id,
-    corpus_fingerprint: corpusFingerprint,
+    corpus_fingerprint: decision.corpus_fingerprint,
     profile_semantic_hash: (await ctx.repo.getCandidate(candidate_id))?.profile_semantic_hash ?? null,
     data_completeness: corpus.data_completeness,
+    current_analysis_run_id: cacheReused ? decision.cached_analysis_run_id : undefined,
+    validated_extraction_fingerprint: cacheReused ? decision.analysis_input_fingerprint : undefined,
     now,
   });
 
-  const decision = await decideAnalyzeCandidate(ctx.repo, corpus);
   if (decision.reanalyze || !decision.cached_analysis_run_id) {
     await enqueueAnalyzeAfterNormalize(ctx, {
       pipeline_run_id: job.pipeline_run_id,
@@ -120,9 +110,9 @@ export async function runNormalizeWorker(
     status: "succeeded",
     metrics: {
       normalization_run_id,
-      corpus_fingerprint: corpusFingerprint,
+      corpus_fingerprint: decision.corpus_fingerprint,
       analyze_enqueued: decision.reanalyze || !decision.cached_analysis_run_id,
-      cache_reused: Boolean(decision.cached_analysis_run_id) && !decision.reanalyze,
+      cache_reused: cacheReused,
     },
   };
 }

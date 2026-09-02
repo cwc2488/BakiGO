@@ -7,3 +7,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Production baseline (required)
+
+Before branching or promoting, read `docs/PRODUCTION_BASELINE.md`.
+
+- Branch new work from the **current integrated Production baseline**, not stale `main` or old feature branches.
+- Never promote a candidate whose ancestry does not include fixes already on Production.
+- Cross-branch regressions (e.g. Radar branch missing Home fixes) are deployment failures — integrate with cherry-pick/rebase, do not re-patch symptoms only.
+

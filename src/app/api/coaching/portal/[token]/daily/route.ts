@@ -133,14 +133,16 @@ export async function PUT(
     });
   } catch (error) {
     timing.response_total_ms = timer.sinceStart();
+    console.error("[coaching/portal/daily] save failed", error);
     console.info(
       JSON.stringify({
         type: "coaching_submit_critical_path_timing",
         error: true,
+        detail: error instanceof Error ? error.message : String(error),
         ...timing,
       }),
     );
-    const message = toCoachingApiErrorMessage(error, "Failed to save daily report.");
+    const message = toCoachingApiErrorMessage(error, "資料儲存失敗，請稍後再試。");
     const status = error instanceof CoachingServiceError ? error.status : 500;
     return NextResponse.json({ error: message }, { status });
   }

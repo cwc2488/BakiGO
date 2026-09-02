@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { MetaPixel } from "@/components/meta/MetaPixel";
 import { buildQuizPartnerShareMetadata } from "@/lib/quiz/partner/quiz-partner-share-metadata";
 
 export function generateMetadata(): Metadata {
@@ -6,5 +7,10 @@ export function generateMetadata(): Metadata {
 }
 
 export default function FatLossQuizLayout({ children }: LayoutProps<"/quiz/fat-loss">) {
-  return children;
+  return (
+    <>
+      <MetaPixel />
+      {children}
+    </>
+  );
 }

@@ -1,0 +1,674 @@
+/* Baki Go 21 — private coach shell: calm wellness, mobile-first */
+.go21-shell {
+  --go21-ink: #1c1f1a;
+  --go21-ink-soft: #4a4f45;
+  --go21-muted: #7a7f74;
+  --go21-forest: #2a4a38;
+  --go21-forest-mid: #3d6b52;
+  --go21-forest-soft: #5a8a6e;
+  --go21-leaf: #4f7a5c;
+  --go21-stone: #f4f2ee;
+  --go21-stone-deep: #ebe7e0;
+  --go21-line: #e2ddd4;
+  --go21-cream-wash: #f7f5f1;
+  --go21-user: #3d6b52;
+  --go21-danger: #b42318;
+  --go21-brand-font: Georgia, "Noto Serif TC", "Songti TC", "Songti SC", serif;
+  --go21-body-font: "PingFang TC", "Noto Sans TC", "Hiragino Sans GB", sans-serif;
+
+  height: var(--go21-vvh, 100dvh);
+  max-height: var(--go21-vvh, 100dvh);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(90, 138, 110, 0.12), transparent 55%),
+    linear-gradient(180deg, #f0ebe3 0%, var(--go21-cream-wash) 38%, #faf9f7 100%);
+  color: var(--go21-ink);
+  font-family: var(--go21-body-font);
+  max-width: 480px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.go21-header {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.75rem 1rem 0.7rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  border-bottom: 1px solid rgba(226, 221, 212, 0.85);
+  background: rgba(250, 249, 247, 0.92);
+  flex-shrink: 0;
+  z-index: 2;
+}
+
+.go21-brand {
+  font-family: var(--go21-brand-font);
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0;
+  color: var(--go21-forest);
+  line-height: 1.2;
+}
+
+.go21-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--go21-muted);
+  font-weight: 500;
+}
+
+.go21-day {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--go21-forest-mid);
+  background: transparent;
+  border: 1px solid rgba(61, 107, 82, 0.22);
+  padding: 0.32rem 0.7rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.go21-day-label {
+  opacity: 0.72;
+  font-weight: 400;
+  margin-right: 0.15rem;
+}
+
+.go21-linkish {
+  border: 0;
+  background: transparent;
+  color: var(--go21-forest-mid);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.25rem 0.15rem;
+  min-height: 2.25rem;
+}
+
+/* Quiet today-state strip — cues only, never fake % bars */
+.go21-daily-strip {
+  flex-shrink: 0;
+  padding: 0.45rem 1rem 0.55rem;
+  border-bottom: 1px solid rgba(226, 221, 212, 0.55);
+  background: rgba(247, 245, 241, 0.72);
+}
+
+.go21-daily-strip-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.55rem;
+  align-items: center;
+}
+
+.go21-daily-cue {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  color: var(--go21-ink-soft);
+  line-height: 1.2;
+  max-width: 100%;
+}
+
+.go21-daily-cue-dot {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--go21-forest-soft);
+  opacity: 0.55;
+}
+
+.go21-daily-cue[data-tone="quiet"] {
+  color: var(--go21-muted);
+}
+
+.go21-daily-cue[data-tone="quiet"] .go21-daily-cue-dot {
+  background: var(--go21-forest-soft);
+  opacity: 0.4;
+}
+
+.go21-daily-cue[data-tone="soft"] .go21-daily-cue-dot {
+  background: var(--go21-leaf);
+  opacity: 0.7;
+}
+
+.go21-daily-cue[data-tone="attention"] {
+  color: var(--go21-forest);
+}
+
+.go21-daily-cue[data-tone="attention"] .go21-daily-cue-dot {
+  background: #a67c52;
+  opacity: 0.75;
+}
+
+.go21-daily-presence {
+  display: inline-flex;
+  gap: 0.45rem;
+  opacity: 0.7;
+}
+
+.go21-daily-presence span {
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--go21-muted);
+  font-weight: 500;
+}
+
+.go21-daily-presence span[data-on="1"] {
+  color: var(--go21-forest-mid);
+  opacity: 1;
+}
+
+.go21-chat-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.go21-thread {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 1rem 1rem 1.15rem;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+
+.go21-thread-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-height: min-content;
+}
+
+.go21-thread-anchor {
+  width: 100%;
+  height: 1px;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.go21-bubble {
+  max-width: 82%;
+  padding: 0.7rem 0.9rem;
+  border-radius: 1.15rem;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  font-size: 0.9375rem;
+  letter-spacing: 0.01em;
+}
+
+.go21-user {
+  align-self: flex-end;
+  background: var(--go21-user);
+  color: #fafaf8;
+  border-bottom-right-radius: 0.35rem;
+}
+
+.go21-ai {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--go21-line);
+  color: var(--go21-ink);
+  border-bottom-left-radius: 0.35rem;
+  max-width: 88%;
+  box-shadow: 0 1px 0 rgba(28, 31, 26, 0.03);
+}
+
+.go21-thinking {
+  align-self: flex-start;
+  color: var(--go21-muted);
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+  padding-left: 0.15rem;
+}
+
+.go21-send-failed {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.9rem;
+  background: #fdf2f0;
+  color: var(--go21-danger);
+  font-size: 0.875rem;
+}
+
+.go21-send-failed p {
+  margin: 0;
+}
+
+.go21-send-failed button {
+  border: 0;
+  background: var(--go21-danger);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-weight: 600;
+  min-height: 2.25rem;
+}
+
+.go21-coach-failed {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.9rem;
+  background: var(--go21-stone);
+  color: var(--go21-ink-soft);
+  font-size: 0.875rem;
+  border: 1px solid var(--go21-line);
+}
+
+.go21-coach-failed p {
+  margin: 0;
+}
+
+.go21-coach-failed button {
+  border: 0;
+  background: var(--go21-forest);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-weight: 600;
+  min-height: 2.25rem;
+}
+
+.go21-jump-latest {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+  z-index: 4;
+  border: 1px solid var(--go21-line);
+  background: rgba(250, 249, 247, 0.96);
+  color: var(--go21-forest-mid);
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  box-shadow: 0 4px 14px rgba(28, 31, 26, 0.06);
+  pointer-events: auto;
+}
+
+.go21-jump-latest[hidden],
+.go21-jump-latest.is-hidden {
+  display: none !important;
+}
+
+.go21-composer {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 3;
+  padding: 0.7rem 1rem;
+  padding-bottom: max(0.7rem, env(safe-area-inset-bottom));
+  background: rgba(250, 249, 247, 0.96);
+  border-top: 1px solid rgba(226, 221, 212, 0.9);
+}
+
+.go21-composer-bar {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-end;
+  background: var(--go21-stone);
+  border-radius: 1.25rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid transparent;
+}
+
+.go21-composer-bar:focus-within {
+  border-color: rgba(61, 107, 82, 0.28);
+  background: #faf9f7;
+}
+
+.go21-composer-bar textarea {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  resize: none;
+  max-height: 120px;
+  padding: 0.55rem 0.35rem;
+  font-size: 1rem;
+  outline: none;
+  font-family: inherit;
+  color: var(--go21-ink);
+}
+
+.go21-composer-bar textarea::placeholder {
+  color: var(--go21-muted);
+}
+
+.go21-composer-bar button[type="submit"] {
+  border: 0;
+  background: var(--go21-forest);
+  color: white;
+  border-radius: 999px;
+  padding: 0.55rem 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.go21-composer-bar button:disabled {
+  opacity: 0.4;
+}
+
+.go21-attach-wrap {
+  position: relative;
+}
+
+.go21-attach {
+  border: 0;
+  background: transparent;
+  font-size: 1.2rem;
+  padding: 0.35rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  opacity: 0.75;
+}
+
+.go21-photo-menu {
+  position: absolute;
+  bottom: calc(100% + 0.35rem);
+  left: 0;
+  display: grid;
+  gap: 0.25rem;
+  background: #faf9f7;
+  border: 1px solid var(--go21-line);
+  border-radius: 0.9rem;
+  padding: 0.35rem;
+  box-shadow: 0 8px 24px rgba(28, 31, 26, 0.08);
+  z-index: 3;
+  min-width: 9.5rem;
+}
+
+.go21-photo-menu button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.9375rem;
+  border-radius: 0.7rem;
+  color: var(--go21-ink);
+}
+
+.go21-photo-menu button:active {
+  background: var(--go21-stone-deep);
+}
+
+.go21-teach p {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--go21-ink-soft);
+}
+
+.go21-photo-preview {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.go21-photo-preview img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 0.75rem;
+}
+
+.go21-turn-photo {
+  display: block;
+  width: min(100%, 220px);
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.go21-goal-hero {
+  font-family: var(--go21-brand-font);
+  font-size: 1.45rem;
+  line-height: 1.35;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  letter-spacing: 0.01em;
+  color: var(--go21-forest);
+}
+
+.go21-goal-options {
+  display: grid;
+  gap: 0.6rem;
+  margin: 1rem 0 1.25rem;
+}
+
+.go21-goal-option {
+  border: 1px solid var(--go21-line);
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 1rem;
+  padding: 0.95rem 1rem;
+  text-align: left;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--go21-ink);
+  min-height: 3rem;
+}
+
+.go21-goal-option.is-selected {
+  border-color: var(--go21-forest-mid);
+  background: rgba(61, 107, 82, 0.1);
+  color: var(--go21-forest);
+}
+
+.go21-field textarea {
+  width: 100%;
+  border: 1px solid var(--go21-line);
+  border-radius: 1rem;
+  padding: 0.85rem 1rem;
+  font: inherit;
+  resize: vertical;
+  min-height: 5rem;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.go21-start,
+.go21-progress {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.75rem 1.35rem 2rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.go21-start-brand {
+  font-family: var(--go21-brand-font);
+  font-size: 1.65rem;
+  font-weight: 600;
+  color: var(--go21-forest);
+  margin: 0 0 1rem;
+  letter-spacing: 0.01em;
+}
+
+.go21-teach {
+  display: grid;
+  gap: 0.85rem;
+  margin-bottom: 1.75rem;
+  font-size: 1.02rem;
+}
+
+.go21-cta {
+  width: 100%;
+  border: 0;
+  background: var(--go21-forest);
+  color: white;
+  font-size: 1.05rem;
+  font-weight: 600;
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  letter-spacing: 0.02em;
+}
+
+.go21-cta:disabled {
+  opacity: 0.45;
+}
+
+.go21-reminder {
+  flex-shrink: 0;
+  margin: 0.65rem 1rem 0;
+  padding: 0.7rem 0.85rem;
+  background: rgba(166, 124, 82, 0.1);
+  border-radius: 0.85rem;
+  font-size: 0.8125rem;
+  color: #6b5640;
+  line-height: 1.45;
+}
+
+.go21-error {
+  color: var(--go21-danger);
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+}
+
+.go21-muted {
+  padding: 2rem;
+  text-align: center;
+  color: var(--go21-muted);
+}
+
+.go21-progress h2 {
+  font-family: var(--go21-brand-font);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--go21-forest);
+  margin: 0 0 1rem;
+}
+
+.go21-progress h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--go21-ink);
+  margin: 0 0 0.5rem;
+}
+
+.go21-progress ul {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.go21-progress li {
+  padding: 0.7rem 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--go21-line);
+  font-size: 0.9375rem;
+  color: var(--go21-ink-soft);
+}
+
+.go21-progress li.is-done {
+  background: transparent;
+  color: var(--go21-forest-mid);
+}
+
+.go21-progress li.is-now {
+  color: var(--go21-forest);
+  font-weight: 600;
+}
+
+.go21-field {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+}
+
+.go21-field span {
+  font-size: 0.8125rem;
+  color: var(--go21-ink-soft);
+}
+
+.go21-field input,
+.go21-field select {
+  border: 1px solid var(--go21-line);
+  border-radius: 0.85rem;
+  padding: 0.75rem 0.9rem;
+  font-size: 1rem;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.go21-data {
+  margin-top: 1.35rem;
+  padding: 1rem 0 0;
+  border-radius: 0;
+  background: transparent;
+  border-top: 1px solid var(--go21-line);
+}
+
+.go21-data p {
+  margin: 0.35rem 0;
+  color: var(--go21-ink-soft);
+  line-height: 1.5;
+  font-size: 0.9375rem;
+}
+
+.go21-targets-summary {
+  margin-top: 1.35rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--go21-line);
+}
+
+.go21-targets-summary h3 {
+  margin-bottom: 0.65rem;
+}
+
+.go21-targets-list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.go21-targets-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid rgba(226, 221, 212, 0.6);
+  font-size: 0.875rem;
+  color: var(--go21-ink-soft);
+  background: transparent;
+}
+
+.go21-targets-list li span:last-child {
+  font-variant-numeric: tabular-nums;
+  color: var(--go21-forest);
+  font-weight: 500;
+}
+
+.go21-targets-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  color: var(--go21-muted);
+  line-height: 1.45;
+}

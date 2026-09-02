@@ -1,39 +1,45 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CrmButton, CrmCard, CrmField, CrmSectionTitle } from "@/components/members/ui";
-import { CoachingPlanConfirmForm } from "@/components/coaching/CoachingPlanConfirmForm";
-import {
-  ensureCustomerPortalToken,
-  fetchCustomerPortalToken,
-} from "@/lib/cloud/customer-cloud-service";
 import { fetchCoachingWithMemberAuth } from "@/lib/coaching/coaching-member-fetch";
 import { coachingTodayLogDate } from "@/lib/coaching/coaching-time";
-import {
-  cloneDefaultCoachingPlanSnapshot,
-  DEFAULT_COACHING_PLAN_SNAPSHOT,
-} from "@/lib/coaching/default-instructions";
-import {
-  planDraftToSnapshot,
-  planSnapshotToDraft,
-  type CoachingPlanDraft,
-} from "@/lib/coaching/coaching-plan-draft";
 import {
   defaultPlannedEndDate,
   resolveEnrollmentPlannedEndDate,
   resolveEnrollmentStartDate,
 } from "@/lib/coaching/enrollment-window";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isExperience21dEnrollment } from "@/lib/coaching/experience-21d";
+import { flushCustomerCloudPushAsync } from "@/lib/cloud/customer-cloud-service";
+import Link from "next/link";
 import {
   COACHING_STATUS_LABELS,
   type CoachingEnrollment,
 } from "@/types/coaching";
 
-function defaultEnrollmentDates() {
-  const startDate = coachingTodayLogDate();
-  return { startDate, plannedEndAt: defaultPlannedEndDate(startDate) };
+const LOAD_TIMEOUT_MS = 12_000;
+
+async function fetchWithTimeout(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = LOAD_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchCoachingWithMemberAuth(path, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
+/**
+ * Customer detail — Go21 is the default coaching product.
+ * Status loads via server API (service-role portal token) so the card cannot
+ * hang forever on browser Supabase RLS / getSession.
+ */
 export function CoachingCustomerSection({
   customerId,
   customerDisplayName,
@@ -41,47 +47,48 @@ export function CoachingCustomerSection({
   customerId: string;
   customerDisplayName: string;
 }) {
+  const router = useRouter();
   const [enrollment, setEnrollment] = useState<CoachingEnrollment | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [goal, setGoal] = useState("");
+  const [go21Link, setGo21Link] = useState<string | null>(null);
   const [portalLink, setPortalLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [showPlanConfirm, setShowPlanConfirm] = useState(false);
-  const [planDraft, setPlanDraft] = useState<CoachingPlanDraft>(() =>
-    planSnapshotToDraft(cloneDefaultCoachingPlanSnapshot()),
-  );
-  const [{ startDate, plannedEndAt }, setEnrollmentDates] = useState(defaultEnrollmentDates);
+  const [copiedGo21, setCopiedGo21] = useState(false);
   const [editStartDate, setEditStartDate] = useState("");
   const [editPlannedEndAt, setEditPlannedEndAt] = useState("");
 
   const reload = useCallback(async () => {
     if (!isSupabaseConfigured()) {
       setLoading(false);
-      setError("雲端尚未設定，無法使用陪跑功能");
+      setError("雲端尚未設定，無法使用 Baki Go 21");
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      const response = await fetchCoachingWithMemberAuth(
-        `/api/coaching/enrollments?customerId=${encodeURIComponent(customerId)}`,
+      // Best-effort local→cloud flush so activation/status see the customer.
+      await flushCustomerCloudPushAsync().catch(() => undefined);
+
+      const response = await fetchWithTimeout(
+        `/api/coaching/go21/status?customerId=${encodeURIComponent(customerId)}`,
       );
       const payload = (await response.json()) as {
         ok?: boolean;
         enrollment?: CoachingEnrollment | null;
+        isGo21?: boolean;
+        portalToken?: string | null;
+        go21Path?: string | null;
         error?: string;
       };
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error ?? "無法載入陪跑狀態");
+        throw new Error(payload.error ?? "無法載入 Baki Go 21 狀態");
       }
+
       const next = payload.enrollment ?? null;
       setEnrollment(next);
-      if (next?.goal) {
-        setGoal(next.goal);
-      }
       if (next) {
         const start = resolveEnrollmentStartDate(next.startedAt) ?? coachingTodayLogDate();
         const end =
@@ -93,14 +100,29 @@ export function CoachingCustomerSection({
         setEditPlannedEndAt(end);
       }
 
-      const token = await fetchCustomerPortalToken(customerId);
-      if (token && !token.revokedAt) {
-        setPortalLink(`${window.location.origin}/c/${token.token}/coaching`);
+      if (payload.go21Path) {
+        setGo21Link(`${window.location.origin}${payload.go21Path}`);
+      } else if (payload.portalToken) {
+        setGo21Link(`${window.location.origin}/c/${payload.portalToken}/go21`);
+      } else {
+        setGo21Link(null);
+      }
+
+      if (payload.portalToken && next && !isExperience21dEnrollment(next)) {
+        setPortalLink(`${window.location.origin}/c/${payload.portalToken}/coaching`);
       } else {
         setPortalLink(null);
       }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "無法載入陪跑狀態");
+      const message =
+        loadError instanceof Error && loadError.name === "AbortError"
+          ? "載入逾時，請下拉重試"
+          : loadError instanceof Error
+            ? loadError.message
+            : "無法載入 Baki Go 21 狀態";
+      setError(message);
+      setEnrollment(null);
+      setGo21Link(null);
     } finally {
       setLoading(false);
     }
@@ -110,38 +132,23 @@ export function CoachingCustomerSection({
     void reload();
   }, [reload]);
 
-  const openPlanConfirm = () => {
-    setPlanDraft(planSnapshotToDraft(cloneDefaultCoachingPlanSnapshot()));
-    setEnrollmentDates(defaultEnrollmentDates());
-    setShowPlanConfirm(true);
-    setError(null);
-  };
-
-  const confirmStartCoaching = async () => {
+  const openActivation = async () => {
     setBusy(true);
     setError(null);
     try {
-      const planSnapshot = planDraftToSnapshot(planDraft, DEFAULT_COACHING_PLAN_SNAPSHOT.reportingRules);
-      const response = await fetchCoachingWithMemberAuth("/api/coaching/enrollments", {
+      await flushCustomerCloudPushAsync().catch(() => undefined);
+      // Ensure cloud row exists before navigating (activation also upserts).
+      await fetchWithTimeout("/api/coaching/go21/status", {
         method: "POST",
         body: JSON.stringify({
           customerId,
-          goal: goal.trim() || null,
-          planSnapshot,
-          startDate,
-          plannedEndAt,
+          displayName: customerDisplayName,
+          ensurePortalToken: false,
         }),
-      });
-      const payload = (await response.json()) as { ok?: boolean; error?: string };
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error ?? "無法開始陪跑");
-      }
-      await ensureCustomerPortalToken(customerId);
-      setShowPlanConfirm(false);
-      await reload();
-    } catch (startError) {
-      setError(startError instanceof Error ? startError.message : "無法開始陪跑");
-    } finally {
+      }).catch(() => null);
+      router.push(`/customers/${encodeURIComponent(customerId)}/start-21d`);
+    } catch (navError) {
+      setError(navError instanceof Error ? navError.message : "無法開啟開通頁");
       setBusy(false);
     }
   };
@@ -151,7 +158,7 @@ export function CoachingCustomerSection({
     setBusy(true);
     setError(null);
     try {
-      const response = await fetchCoachingWithMemberAuth(
+      const response = await fetchWithTimeout(
         `/api/coaching/enrollments/${encodeURIComponent(enrollment.id)}`,
         {
           method: "PATCH",
@@ -178,7 +185,7 @@ export function CoachingCustomerSection({
     setBusy(true);
     setError(null);
     try {
-      const response = await fetchCoachingWithMemberAuth(
+      const response = await fetchWithTimeout(
         `/api/coaching/enrollments/${encodeURIComponent(enrollment.id)}`,
         {
           method: "PATCH",
@@ -204,20 +211,39 @@ export function CoachingCustomerSection({
     window.setTimeout(() => setCopied(false), 2000);
   };
 
+  const copyGo21Link = async () => {
+    if (!go21Link) return;
+    await navigator.clipboard.writeText(go21Link);
+    setCopiedGo21(true);
+    window.setTimeout(() => setCopiedGo21(false), 2000);
+  };
+
+  const isGo21 = enrollment ? isExperience21dEnrollment(enrollment) : false;
+
   return (
     <CrmCard className="space-y-4">
-      <CrmSectionTitle>AI 陪跑</CrmSectionTitle>
+      <CrmSectionTitle>Baki Go 21</CrmSectionTitle>
       <p className="text-[0.9375rem] leading-relaxed text-[#636366]">
-        為 {customerDisplayName} 建立每日陪跑。客戶使用既有 Portal 連結，不需建立 member 帳號。
+        為 {customerDisplayName} 開通 21 天 AI 飲食陪跑。客人使用專屬連結進入，不需建立帳號。
       </p>
 
       {loading ? <p className="text-[0.9375rem] text-[#86868b]">載入中…</p> : null}
-      {error ? <p className="text-[0.9375rem] text-[#cf1322]">{error}</p> : null}
+      {error ? (
+        <div className="space-y-2">
+          <p className="text-[0.9375rem] text-[#cf1322]">{error}</p>
+          <CrmButton disabled={busy} onClick={() => void reload()} type="button" variant="secondary">
+            重試載入
+          </CrmButton>
+        </div>
+      ) : null}
 
-      {enrollment ? (
+      {!loading && enrollment ? (
         <div className="space-y-3">
           <CrmField label="狀態" value={COACHING_STATUS_LABELS[enrollment.status]} />
-          <CrmField label="目標" value={enrollment.goal} />
+          <CrmField
+            label={isGo21 ? "21 天目標" : "目標"}
+            value={enrollment.goal || "—"}
+          />
           <CrmField
             label="開跑設定"
             value={enrollment.onboardingCompletedAt ? "已完成" : "尚未完成"}
@@ -248,14 +274,30 @@ export function CoachingCustomerSection({
               儲存日期
             </CrmButton>
           </div>
-          {portalLink ? (
+          {isGo21 && go21Link ? (
+            <div className="space-y-2 rounded-[1rem] border border-[#d7e8c8] bg-[#f4f9ef] p-3">
+              <p className="text-[0.8125rem] font-medium text-[#3d6b1e]">Baki Go 21 專屬連結</p>
+              <p className="break-all text-[0.875rem] text-[#1d1d1f]">{go21Link}</p>
+              <CrmButton disabled={busy} onClick={() => void copyGo21Link()} type="button">
+                {copiedGo21 ? "已複製" : "複製給客人"}
+              </CrmButton>
+            </div>
+          ) : null}
+          {isGo21 ? <Go21TargetsEditor customerId={customerId} disabled={busy} /> : null}
+          {isGo21 ? <Go21PlanEditor customerId={customerId} disabled={busy} /> : null}
+          {!isGo21 && portalLink ? (
             <div className="space-y-2">
-              <p className="text-[0.8125rem] font-medium text-[#86868b]">陪跑專屬連結</p>
+              <p className="text-[0.8125rem] font-medium text-[#86868b]">歷史陪跑連結</p>
               <p className="break-all text-[0.875rem] text-[#1d1d1f]">{portalLink}</p>
               <CrmButton disabled={busy} onClick={() => void copyLink()} type="button" variant="secondary">
                 {copied ? "已複製" : "複製連結給客戶"}
               </CrmButton>
             </div>
+          ) : null}
+          {!isGo21 ? (
+            <p className="text-[0.8125rem] leading-5 text-[#86868b]">
+              這是較早的陪跑紀錄。新開通請使用 Baki Go 21。
+            </p>
           ) : null}
           <div className="grid gap-2 sm:grid-cols-3">
             {enrollment.status === "active" ? (
@@ -274,41 +316,307 @@ export function CoachingCustomerSection({
               </CrmButton>
             ) : null}
           </div>
+          {isGo21 ? (
+            <Link
+              className="flex w-full items-center justify-center rounded-[1rem] border border-[#e5e5ea] px-4 py-3 text-center text-[0.9375rem] font-semibold text-[#1d1d1f]"
+              href={`/coaching/${encodeURIComponent(enrollment.id)}`}
+            >
+              查看陪跑中心
+            </Link>
+          ) : null}
         </div>
-      ) : showPlanConfirm ? (
-        <CoachingPlanConfirmForm
-          busy={busy}
-          customerDisplayName={customerDisplayName}
-          draft={planDraft}
-          goal={goal}
-          onCancel={() => setShowPlanConfirm(false)}
-          onChange={setPlanDraft}
-          onConfirm={() => void confirmStartCoaching()}
-          onPlannedEndAtChange={(value) =>
-            setEnrollmentDates((prev) => ({ ...prev, plannedEndAt: value }))
-          }
-          onStartDateChange={(value) =>
-            setEnrollmentDates((prev) => ({ ...prev, startDate: value }))
-          }
-          plannedEndAt={plannedEndAt}
-          startDate={startDate}
-        />
-      ) : (
+      ) : null}
+
+      {!loading && !enrollment ? (
         <div className="space-y-3">
-          <label className="block space-y-2">
-            <span className="text-[0.875rem] font-medium text-[#636366]">陪跑目標（選填）</span>
-            <input
-              className="w-full rounded-[1rem] border border-[#e5e5ea] px-4 py-3 text-[1rem]"
-              onChange={(event) => setGoal(event.target.value)}
-              placeholder="例如：12 週減脂陪跑"
-              value={goal}
-            />
-          </label>
-          <CrmButton disabled={busy || loading} onClick={openPlanConfirm} type="button">
-            開始陪跑
+          <CrmButton
+            disabled={busy}
+            onClick={() => void openActivation()}
+            type="button"
+            className="w-full"
+          >
+            {busy ? "準備中…" : "開通 21 天 AI 陪跑"}
           </CrmButton>
         </div>
-      )}
+      ) : null}
     </CrmCard>
+  );
+}
+
+function Go21TargetsEditor({
+  customerId,
+  disabled,
+}: {
+  customerId: string;
+  disabled?: boolean;
+}) {
+  const [waterMl, setWaterMl] = useState(2500);
+  const [caloriesKcal, setCaloriesKcal] = useState(1600);
+  const [proteinG, setProteinG] = useState(100);
+  const [sleepHours, setSleepHours] = useState(7.5);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetchWithTimeout(
+          `/api/coaching/go21/targets?customerId=${encodeURIComponent(customerId)}`,
+        );
+        const payload = (await res.json()) as {
+          targets?: {
+            waterMl?: number | null;
+            caloriesKcal?: number | null;
+            proteinG?: number | null;
+            sleepHours?: number | null;
+          } | null;
+        };
+        if (cancelled || !res.ok) return;
+        if (payload.targets) {
+          if (payload.targets.waterMl != null) setWaterMl(payload.targets.waterMl);
+          if (payload.targets.caloriesKcal != null) setCaloriesKcal(payload.targets.caloriesKcal);
+          if (payload.targets.proteinG != null) setProteinG(payload.targets.proteinG);
+          if (payload.targets.sleepHours != null) setSleepHours(payload.targets.sleepHours);
+        }
+        setLoaded(true);
+      } catch {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId]);
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetchWithTimeout("/api/coaching/go21/targets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId,
+          waterMl,
+          caloriesKcal,
+          proteinG,
+          sleepHours,
+          source: "coach_edit",
+        }),
+      });
+      const payload = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(payload.error ?? "無法儲存");
+      setMsg("已更新每日目標");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "無法儲存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!loaded) {
+    return <p className="text-[0.8125rem] text-[#86868b]">載入每日目標…</p>;
+  }
+
+  return (
+    <div className="space-y-3 rounded-[1rem] border border-[#e4ebe0] bg-white p-3">
+      <p className="text-[0.8125rem] font-medium text-[#5a7a3a]">每日陪跑目標</p>
+      <p className="text-[0.75rem] leading-5 text-[#86868b]">水／熱量／蛋白質／睡眠 — 可隨時調整，不用重開。</p>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="space-y-1">
+          <span className="text-[0.75rem] text-[#86868b]">水 ml</span>
+          <input
+            type="number"
+            className="w-full rounded-[0.75rem] border border-[#e5e5ea] px-3 py-2 text-[0.9375rem]"
+            value={waterMl}
+            onChange={(e) => setWaterMl(Number(e.target.value) || 0)}
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-[0.75rem] text-[#86868b]">熱量 kcal</span>
+          <input
+            type="number"
+            className="w-full rounded-[0.75rem] border border-[#e5e5ea] px-3 py-2 text-[0.9375rem]"
+            value={caloriesKcal}
+            onChange={(e) => setCaloriesKcal(Number(e.target.value) || 0)}
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-[0.75rem] text-[#86868b]">蛋白質 g</span>
+          <input
+            type="number"
+            className="w-full rounded-[0.75rem] border border-[#e5e5ea] px-3 py-2 text-[0.9375rem]"
+            value={proteinG}
+            onChange={(e) => setProteinG(Number(e.target.value) || 0)}
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-[0.75rem] text-[#86868b]">睡眠 小時</span>
+          <input
+            type="number"
+            step="0.5"
+            className="w-full rounded-[0.75rem] border border-[#e5e5ea] px-3 py-2 text-[0.9375rem]"
+            value={sleepHours}
+            onChange={(e) => setSleepHours(Number(e.target.value) || 0)}
+          />
+        </label>
+      </div>
+      <CrmButton disabled={disabled || saving} onClick={() => void save()} type="button" variant="secondary">
+        {saving ? "儲存中…" : "儲存每日目標"}
+      </CrmButton>
+      {msg ? <p className="text-[0.8125rem] text-[#636366]">{msg}</p> : null}
+    </div>
+  );
+}
+
+function Go21PlanEditor({
+  customerId,
+  disabled,
+}: {
+  customerId: string;
+  disabled?: boolean;
+}) {
+  const [rows, setRows] = useState<
+    Array<{ period: string; name: string; amount: string; id?: string }>
+  >([
+    { period: "breakfast", name: "", amount: "" },
+    { period: "lunch", name: "", amount: "" },
+    { period: "afternoon", name: "", amount: "" },
+    { period: "dinner", name: "", amount: "" },
+  ]);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetchWithTimeout(
+          `/api/coaching/go21/plan?customerId=${encodeURIComponent(customerId)}`,
+        );
+        const payload = (await res.json()) as {
+          plan?: {
+            items?: Array<{
+              id: string;
+              period: string;
+              name: string;
+              amount: string | null;
+            }>;
+          } | null;
+        };
+        if (cancelled || !res.ok) {
+          if (!cancelled) setLoaded(true);
+          return;
+        }
+        if (payload.plan?.items?.length) {
+          const byPeriod = new Map(payload.plan.items.map((i) => [i.period, i]));
+          setRows((prev) =>
+            prev.map((r) => {
+              const hit = byPeriod.get(r.period);
+              return hit
+                ? {
+                    period: r.period,
+                    name: hit.name,
+                    amount: hit.amount ?? "",
+                    id: hit.id,
+                  }
+                : r;
+            }),
+          );
+        }
+        setLoaded(true);
+      } catch {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId]);
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const items = rows
+        .filter((r) => r.name.trim())
+        .map((r, i) => ({
+          id: r.id,
+          period: r.period,
+          name: r.name.trim(),
+          amount: r.amount.trim() || null,
+          sortOrder: i,
+        }));
+      if (items.length === 0) throw new Error("請至少填一項安排");
+      const res = await fetchWithTimeout("/api/coaching/go21/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId, items, source: "coach_edit" }),
+      });
+      const payload = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(payload.error ?? "無法儲存");
+      setMsg("已更新每日安排");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "無法儲存");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!loaded) {
+    return <p className="text-[0.8125rem] text-[#86868b]">載入每日安排…</p>;
+  }
+
+  const labels: Record<string, string> = {
+    breakfast: "早餐",
+    lunch: "午餐",
+    afternoon: "下午",
+    dinner: "晚餐",
+  };
+
+  return (
+    <div className="space-y-3 rounded-[1rem] border border-[#e4ebe0] bg-white p-3">
+      <p className="text-[0.8125rem] font-medium text-[#5a7a3a]">每日執行安排</p>
+      <p className="text-[0.75rem] leading-5 text-[#86868b]">
+        教練開的一日節奏。改了不會重開 21 天；歷史天數仍依當時安排理解。
+      </p>
+      <div className="space-y-2">
+        {rows.map((row, index) => (
+          <div
+            key={row.period}
+            className="min-w-0 space-y-2 rounded-[0.75rem] border border-[#eef3ea] bg-[#fafcfa] p-2.5 sm:grid sm:grid-cols-[3.5rem_minmax(0,1fr)_4.5rem] sm:items-center sm:gap-2 sm:space-y-0 sm:border-0 sm:bg-transparent sm:p-0"
+          >
+            <span className="block text-[0.75rem] font-medium text-[#5a7a3a] sm:self-center sm:font-normal sm:text-[#86868b]">
+              {labels[row.period] ?? row.period}
+            </span>
+            <input
+              className="w-full min-w-0 rounded-[0.75rem] border border-[#e5e5ea] bg-white px-3 py-2 text-[0.9375rem]"
+              placeholder="項目名稱"
+              value={row.name}
+              onChange={(e) => {
+                const value = e.target.value;
+                setRows((rs) => rs.map((r, i) => (i === index ? { ...r, name: value } : r)));
+              }}
+            />
+            <input
+              className="w-full min-w-0 rounded-[0.75rem] border border-[#e5e5ea] bg-white px-3 py-2 text-[0.9375rem] sm:px-2 sm:text-[0.875rem]"
+              placeholder="份量"
+              value={row.amount}
+              onChange={(e) => {
+                const value = e.target.value;
+                setRows((rs) => rs.map((r, i) => (i === index ? { ...r, amount: value } : r)));
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      <CrmButton disabled={disabled || saving} onClick={() => void save()} type="button" variant="secondary">
+        {saving ? "儲存中…" : "儲存每日安排"}
+      </CrmButton>
+      {msg ? <p className="text-[0.8125rem] text-[#636366]">{msg}</p> : null}
+    </div>
   );
 }

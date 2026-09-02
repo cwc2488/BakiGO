@@ -25,6 +25,56 @@ export type CorpusFingerprintInput = {
   normalization_policy_version?: string;
 };
 
+export type CanonicalFingerprintCorpus = {
+  items: Array<{
+    is_analyzable: boolean;
+    normalized_content_id: string;
+    content_hash: string;
+  }>;
+};
+
+export type CanonicalFingerprints = {
+  corpus_fingerprint: string;
+  analysis_input_fingerprint: string;
+};
+
+export function analyzableContentFromCorpus(
+  corpus: CanonicalFingerprintCorpus,
+): CorpusFingerprintInput["analyzable_content"] {
+  return corpus.items
+    .filter((item) => item.is_analyzable)
+    .map((item) => ({
+      normalized_content_id: item.normalized_content_id,
+      content_hash: item.content_hash,
+    }));
+}
+
+/**
+ * Single corpus / analysis-input fingerprint for normalize, analyze/cache, and
+ * Top20 eligibility. `profile_semantic_hash` is a semantic input — omitting it
+ * on one side and including it on the other makes cache-reuse fail rank.
+ */
+export function buildCanonicalFingerprints(input: {
+  corpus: CanonicalFingerprintCorpus;
+  profile_semantic_hash: string | null;
+  prompt_version: string;
+  model_id: string;
+}): CanonicalFingerprints {
+  const analyzable_content = analyzableContentFromCorpus(input.corpus);
+  return {
+    corpus_fingerprint: computeCorpusFingerprint({
+      analyzable_content,
+      profile_semantic_hash: input.profile_semantic_hash,
+    }),
+    analysis_input_fingerprint: computeAnalysisInputFingerprint({
+      analyzable_content,
+      profile_semantic_hash: input.profile_semantic_hash,
+      prompt_version: input.prompt_version,
+      model_id: input.model_id,
+    }),
+  };
+}
+
 /** Semantic corpus identity — excludes normalization_run_id by design. */
 export function computeCorpusFingerprint(input: CorpusFingerprintInput): string {
   const sorted = [...input.analyzable_content].sort((a, b) =>

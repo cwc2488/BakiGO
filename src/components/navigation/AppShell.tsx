@@ -28,16 +28,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div
           className={
             showNav
-              ? "min-w-0 md:ml-[5.75rem] lg:ml-[15rem] pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-0"
+              ? "min-w-0 md:ml-[5.75rem] lg:ml-[15rem]"
               : undefined
           }
         >
-          {children}
+          <div
+            className={
+              showNav
+                ? "pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-0"
+                : undefined
+            }
+          >
+            {children}
+          </div>
         </div>
-        {/* Keep bottom nav a sibling of page content so body scroll-lock / page
-            overflow never reparents it into a scrolling containing block. */}
-        {showNav ? <AppBottomNav /> : null}
       </div>
+      {/* Viewport-fixed bottom nav must not sit inside max-w / page chrome
+          wrappers — those can become fixed containing blocks on mobile WebKit
+          during long Calendar/Radar scrolls (RADAR-BOTTOM-NAV-FIX-01). */}
+      {showNav ? <AppBottomNav /> : null}
     </>
   );
 }

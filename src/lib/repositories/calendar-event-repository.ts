@@ -1,4 +1,10 @@
 import { defaultRecurrence } from "@/lib/calendar/recurrence";
+import {
+  uniqueCustomerIds,
+  withParticipantAdded,
+  withParticipantRemoved,
+  stripCustomerFromAllEvents,
+} from "@/lib/calendar/calendar-event-participants";
 import type {
   CalendarEvent,
   CalendarEventCreateInput,
@@ -9,6 +15,7 @@ import type { StorageAdapter } from "./storage-adapter";
 import { STORAGE_KEYS } from "./storage-keys";
 import { addCalendarEventDeletionTombstone } from "@/lib/calendar/calendar-event-deletion-tombstones";
 import { flushPendingCloudSync } from "@/lib/repositories/syncing-storage-adapter";
+import { flushCalendarEventParticipantsCloud } from "@/lib/cloud/calendar-event-participants-cloud";
 
 export interface CalendarEventRepository {
   getAll(): CalendarEvent[];
@@ -18,6 +25,9 @@ export interface CalendarEventRepository {
   update(eventId: EntityId, input: CalendarEventUpdateInput): CalendarEvent;
   delete(eventId: EntityId): void;
   upsertGoogleEvent(input: CalendarEventCreateInput & { id?: EntityId }): CalendarEvent;
+  addParticipant(eventId: EntityId, customerId: EntityId): CalendarEvent;
+  removeParticipant(eventId: EntityId, customerId: EntityId): CalendarEvent;
+  removeCustomerFromAllEvents(customerId: EntityId): void;
 }
 
 function parseEvents(raw: string | null): CalendarEvent[] {
@@ -56,6 +66,7 @@ export class LocalStorageCalendarEventRepository implements CalendarEventReposit
 
   create(input: CalendarEventCreateInput): CalendarEvent {
     const now = new Date().toISOString();
+    const participantCustomerIds = uniqueCustomerIds(input.participantCustomerIds);
     const event: CalendarEvent = {
       id: createId(),
       createdAt: now,
@@ -73,10 +84,17 @@ export class LocalStorageCalendarEventRepository implements CalendarEventReposit
       attendedFromShared: input.attendedFromShared,
       googleEventId: input.googleEventId,
       googleCalendarId: input.googleCalendarId,
+      reminderMinutes: input.reminderMinutes,
+      participantCustomerIds:
+        participantCustomerIds.length > 0 ? participantCustomerIds : undefined,
     };
 
     const next = [...this.getAll(), event];
     this.storage.setItem(STORAGE_KEYS.calendarEvents, JSON.stringify(next));
+    void flushCalendarEventParticipantsCloud(event.memberId, event.id, {
+      eventSource: "personal",
+      participantCustomerIds: event.participantCustomerIds,
+    });
     return event;
   }
 
@@ -87,26 +105,80 @@ export class LocalStorageCalendarEventRepository implements CalendarEventReposit
       throw new Error(`Calendar event not found: ${eventId}`);
     }
 
+    const nextParticipants =
+      input.participantCustomerIds !== undefined
+        ? uniqueCustomerIds(input.participantCustomerIds)
+        : uniqueCustomerIds(events[index].participantCustomerIds);
+
     const updated: CalendarEvent = {
       ...events[index],
       ...input,
       title: input.title?.trim() ?? events[index].title,
       notes: input.notes !== undefined ? input.notes.trim() : events[index].notes,
+      participantCustomerIds: nextParticipants.length > 0 ? nextParticipants : undefined,
       updatedAt: new Date().toISOString(),
     };
 
     const next = [...events];
     next[index] = updated;
     this.storage.setItem(STORAGE_KEYS.calendarEvents, JSON.stringify(next));
+    if (input.participantCustomerIds !== undefined) {
+      void flushCalendarEventParticipantsCloud(updated.memberId, updated.id, {
+        eventSource: "personal",
+        participantCustomerIds: updated.participantCustomerIds,
+      });
+    }
     return updated;
   }
 
   delete(eventId: EntityId): void {
     addCalendarEventDeletionTombstone(this.storage, eventId);
-
+    const existing = this.getById(eventId);
     const next = this.getAll().filter((event) => event.id !== eventId);
     this.storage.setItem(STORAGE_KEYS.calendarEvents, JSON.stringify(next));
+    if (existing) {
+      void flushCalendarEventParticipantsCloud(existing.memberId, eventId, {
+        eventSource: "personal",
+        deleted: true,
+      });
+    }
     flushPendingCloudSync();
+  }
+
+  addParticipant(eventId: EntityId, customerId: EntityId): CalendarEvent {
+    const event = this.getById(eventId);
+    if (!event) {
+      throw new Error(`Calendar event not found: ${eventId}`);
+    }
+    const updated = withParticipantAdded(event, customerId);
+    return this.update(eventId, {
+      participantCustomerIds: updated.participantCustomerIds ?? [],
+    });
+  }
+
+  removeParticipant(eventId: EntityId, customerId: EntityId): CalendarEvent {
+    const event = this.getById(eventId);
+    if (!event) {
+      throw new Error(`Calendar event not found: ${eventId}`);
+    }
+    const updated = withParticipantRemoved(event, customerId);
+    return this.update(eventId, {
+      participantCustomerIds: updated.participantCustomerIds ?? [],
+    });
+  }
+
+  removeCustomerFromAllEvents(customerId: EntityId): void {
+    const events = this.getAll();
+    const ownerId = events.find((e) =>
+      uniqueCustomerIds(e.participantCustomerIds).includes(customerId),
+    )?.memberId;
+    const next = stripCustomerFromAllEvents(events, customerId);
+    this.storage.setItem(STORAGE_KEYS.calendarEvents, JSON.stringify(next));
+    flushPendingCloudSync();
+    void flushCalendarEventParticipantsCloud(ownerId, undefined, {
+      eventSource: "personal",
+      removedCustomerId: customerId,
+    });
   }
 
   upsertGoogleEvent(input: CalendarEventCreateInput & { id?: EntityId }): CalendarEvent {

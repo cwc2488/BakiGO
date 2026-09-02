@@ -73,6 +73,7 @@ export async function getCoachingAiOutputForDay(input: {
     .eq("enrollment_id", input.enrollmentId)
     .eq("log_date", input.logDate)
     .eq("point_key", COACHING_AI_POINT_KEY)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (error) {
@@ -91,6 +92,7 @@ export async function listCoachingAiOutputsForEnrollment(input: {
     .select("*")
     .eq("enrollment_id", input.enrollmentId)
     .eq("point_key", COACHING_AI_POINT_KEY)
+    .is("deleted_at", null)
     .order("log_date", { ascending: false })
     .limit(input.limit ?? 14);
 
@@ -111,7 +113,8 @@ export async function listCoachingAiOutputsForOwnerDay(input: {
     .select("*")
     .eq("owner_member_id", input.ownerMemberId)
     .eq("log_date", input.logDate)
-    .eq("point_key", COACHING_AI_POINT_KEY);
+    .eq("point_key", COACHING_AI_POINT_KEY)
+    .is("deleted_at", null);
 
   if (input.enrollmentIds && input.enrollmentIds.length > 0) {
     query = query.in("enrollment_id", input.enrollmentIds);
@@ -238,6 +241,8 @@ export async function upsertPendingCoachingAiOutput(input: {
     final_intervention_level: null,
     started_at: null,
     completed_at: null,
+    deleted_at: null,
+    deleted_by: null,
     updated_at: now,
   };
 
@@ -311,7 +316,8 @@ export async function markCoachingAiOutputProcessing(outputId: string): Promise<
       updated_at: now,
     })
     .eq("id", outputId)
-    .in("status", ["pending", "failed", "processing"]);
+    .in("status", ["pending", "failed", "processing"])
+    .is("deleted_at", null);
 
   if (error) {
     throw new Error(error.message);
@@ -345,7 +351,8 @@ export async function markCoachingAiOutputCompleted(input: {
       completed_at: now,
       updated_at: now,
     })
-    .eq("id", input.outputId);
+    .eq("id", input.outputId)
+    .is("deleted_at", null);
 
   if (error) {
     throw new Error(error.message);
@@ -369,7 +376,8 @@ export async function markCoachingAiOutputFailed(input: {
       completed_at: now,
     })
     .eq("id", input.outputId)
-    .neq("status", "completed");
+    .neq("status", "completed")
+    .is("deleted_at", null);
 
   if (input.expectedFingerprint) {
     query = query.eq("input_fingerprint", input.expectedFingerprint);

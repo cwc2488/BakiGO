@@ -142,7 +142,7 @@ export function QuizPartnerWorkbench() {
   );
 
   return (
-    <PageShell title="心理測驗" subtitle="有人主動想了解，你現在只要去跟他聊。" backHref="/customers">
+    <PageShell title="心理測驗" subtitle="21 天名單在這裡。有人主動想了解，你現在只要去跟他聊。" backHref="/customers">
       <nav className="flex gap-1 rounded-2xl bg-[#f4e6ea] p-1">
         {TABS.map((item) => (
           <button

@@ -46,7 +46,8 @@ function isActive(pathname: string, href: string): boolean {
       pathname.startsWith("/coaching") ||
       pathname.startsWith("/retail-pipeline") ||
       pathname.startsWith("/quiz") ||
-      pathname.startsWith("/consultation")
+      pathname.startsWith("/consultation") ||
+      pathname.startsWith("/radar")
     );
   }
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -88,12 +89,12 @@ function NavLink({
       href={item.href}
     >
       <span
-        className={`h-0.5 w-7 rounded-full transition-colors ${
+        className={`h-0.5 w-6 rounded-full transition-colors ${
           active ? "bg-[var(--brand-primary)]" : "bg-transparent"
         }`}
       />
-      <Icon size={28} />
-      <span className="text-[0.75rem] font-semibold leading-tight">{item.shortLabel}</span>
+      <Icon size={24} />
+      <span className="text-[0.6875rem] font-semibold leading-tight tracking-wide">{item.shortLabel}</span>
     </Link>
   );
 }

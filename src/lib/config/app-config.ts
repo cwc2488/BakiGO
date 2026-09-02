@@ -88,10 +88,52 @@ export function toYearMonthFromDate(date: string): YearMonth {
   return date.slice(0, 7);
 }
 
-export function todayISODate(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+/** Product day/month boundaries follow Taiwan local time. */
+export const APP_TIMEZONE = "Asia/Taipei" as const;
+
+/**
+ * Calendar date (YYYY-MM-DD) in Asia/Taipei.
+ * Do not use browser/UTC `getDate()` — that rolls over hours late for Taiwan.
+ */
+export function todayISODate(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+/** Hour 0–23 in Asia/Taipei (for greetings / day-part UI). */
+export function currentAppHour(now: Date = new Date()): number {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: APP_TIMEZONE,
+      hour: "numeric",
+      hour12: false,
+    }).format(now),
+  );
+  if (hour === 24) {
+    return 0;
+  }
+  return Number.isFinite(hour) ? hour : 0;
+}
+
+/**
+ * Milliseconds until the next Asia/Taipei calendar-day boundary.
+ * Used so Home/KPI can roll over without an app restart.
+ */
+export function millisecondsUntilNextAppMidnight(now: Date = new Date()): number {
+  const today = todayISODate(now);
+  let low = now.getTime();
+  let high = low + 36 * 60 * 60 * 1000;
+  while (high - low > 250) {
+    const mid = Math.floor((low + high) / 2);
+    if (todayISODate(new Date(mid)) === today) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return Math.max(250, high - now.getTime());
 }

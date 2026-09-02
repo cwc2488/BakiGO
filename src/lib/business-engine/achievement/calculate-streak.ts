@@ -3,17 +3,14 @@ import type { BusinessRulesConfig } from "../rules";
 import { DEFAULT_BUSINESS_RULES } from "../rules";
 import type { GamificationEvent } from "@/types/gamification";
 
-function toDateOnly(isoDate: string | null | undefined): string | null {
-  if (typeof isoDate !== "string" || isoDate.length < 10) {
-    return null;
-  }
+function toDateOnly(isoDate: string): string {
   return isoDate.slice(0, 10);
 }
 
 function previousDate(isoDate: string): string {
   const date = new Date(`${isoDate}T00:00:00`);
   date.setDate(date.getDate() - 1);
-  return toDateOnly(date.toISOString()) ?? isoDate;
+  return toDateOnly(date.toISOString());
 }
 
 function uniqueActiveDates(
@@ -23,12 +20,8 @@ function uniqueActiveDates(
   const dates = new Set<string>();
 
   events.forEach((event) => {
-    if (!qualifyingSources.includes(event.eventSource)) {
-      return;
-    }
-    const date = toDateOnly(event.eventDate);
-    if (date) {
-      dates.add(date);
+    if (qualifyingSources.includes(event.eventSource)) {
+      dates.add(toDateOnly(event.eventDate));
     }
   });
 
@@ -63,9 +56,6 @@ function computeCurrentStreak(sortedDates: string[], referenceDate: string): num
 
   const reference = toDateOnly(referenceDate);
   const lastDate = sortedDates[sortedDates.length - 1];
-  if (!reference) {
-    return 0;
-  }
   const dayBeforeReference = previousDate(reference);
 
   if (lastDate !== reference && lastDate !== dayBeforeReference) {
@@ -98,15 +88,6 @@ export function calculateStreak(
   const activeDates = uniqueActiveDates(events, qualifyingSources);
   const lastActiveDate = activeDates[activeDates.length - 1] ?? null;
   const reference = toDateOnly(referenceDate);
-  if (!reference) {
-    return {
-      memberId,
-      currentStreak: 0,
-      longestStreak: computeLongestStreak(activeDates),
-      lastActiveDate,
-      isActiveToday: false,
-    };
-  }
 
   return {
     memberId,

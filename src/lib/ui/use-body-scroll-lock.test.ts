@@ -17,12 +17,12 @@ describe("useBodyScrollLock — nested modal safety", () => {
     expect(lock).toContain("if (typeof document === \"undefined\" || savedStyles)");
   });
 
-  it("calendar recurrence edit stacks EventForm + RecurrenceScope sheets", () => {
+  it("calendar recurrence edit stacks EventForm + RecurrenceScope sheets without simultaneous mount", () => {
     const page = src("src/components/calendar/CalendarPage.tsx");
     expect(page).toContain("setRecurrenceScopeMode(\"edit\")");
     expect(page).toContain("<EventFormModal");
     expect(page).toContain("<RecurrenceScopeModal");
-    expect(page.indexOf("<EventFormModal")).toBeLessThan(page.indexOf("<RecurrenceScopeModal"));
+    expect(page).toContain("open={formOpen && recurrenceScopeMode === null}");
   });
 
   it("bottom nav stays a sibling of page content (not inside scrolling children)", () => {

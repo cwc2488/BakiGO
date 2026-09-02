@@ -46,6 +46,7 @@ describe("runDailyPipelineOrchestrator", () => {
       new_candidate_enrichment_budget: 30,
       refresh_enrichment_budget: 70,
       reserve_capacity_pct: 0,
+      keyword_search_max_page_depth: 2,
     };
     store.refreshCandidates = [
       refreshCandidate({ candidate_id: "cand-1" }),

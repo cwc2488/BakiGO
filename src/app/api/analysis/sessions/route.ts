@@ -11,6 +11,23 @@ import { isSupabaseServiceConfigured } from "@/lib/supabase/service-client";
 
 export const runtime = "nodejs";
 
+/** Warm the serverless + quiz definition cache before paid-traffic taps. No session writes. */
+export async function GET() {
+  if (!isSupabaseServiceConfigured()) {
+    return NextResponse.json({ error: "Analysis service unavailable." }, { status: 503 });
+  }
+  try {
+    const { getFatLossQuizIdCached } = await import("@/lib/quiz/quiz-service");
+    const quizId = await getFatLossQuizIdCached();
+    return NextResponse.json({ ok: true, warm: true, quizReady: Boolean(quizId) });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Warm failed." },
+      { status: 500 },
+    );
+  }
+}
+
 export async function POST(request: Request) {
   if (!isSupabaseServiceConfigured()) {
     return NextResponse.json({ error: "Analysis service unavailable." }, { status: 503 });
@@ -45,13 +62,22 @@ export async function POST(request: Request) {
         shareCode: body.shareCode,
         resultShareCode: body.resultShareCode,
       });
-      return NextResponse.json({
-        ok: true,
-        token: created.token,
-        expiresAt: created.expiresAt,
-        analysisState: "questions_in_progress",
-        entry: "reset_v1",
-      });
+      const timingParts = Object.entries(created.timings ?? {})
+        .map(([name, dur]) => `${name};dur=${dur}`)
+        .join(", ");
+      return NextResponse.json(
+        {
+          ok: true,
+          token: created.token,
+          expiresAt: created.expiresAt,
+          analysisState: "questions_in_progress",
+          entry: "reset_v1",
+          experience: created.experience,
+        },
+        timingParts
+          ? { headers: { "Server-Timing": timingParts } }
+          : undefined,
+      );
     }
 
     if (body.entry === "native_v1") {

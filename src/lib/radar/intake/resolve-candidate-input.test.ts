@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildCandidateId,
   normalizeUsername,
+  parseCandidateId,
   resolveCandidateInput,
+  resolveEnrichUsername,
 } from "./resolve-candidate-input";
 
 describe("resolveCandidateInput", () => {
@@ -35,5 +37,38 @@ describe("buildCandidateId", () => {
     expect(buildCandidateId("threads", normalizeUsername("User_A"))).toBe(
       "cand_threads_user_a",
     );
+  });
+});
+
+describe("resolveEnrichUsername", () => {
+  it("recovers a wiped stored username from cand_threads_* id", () => {
+    expect(parseCandidateId("cand_threads_gym_stranger")).toEqual({
+      platform: "threads",
+      normalized_username: "gym_stranger",
+    });
+    expect(
+      resolveEnrichUsername({
+        candidate_id: "cand_threads_gym_stranger",
+        platform: "threads",
+      }),
+    ).toBe("gym_stranger");
+  });
+
+  it("prefers payload then stored username over the id slug", () => {
+    expect(
+      resolveEnrichUsername({
+        payload_username: "@LiveUser",
+        stored_username: "old_user",
+        candidate_id: "cand_threads_gym_stranger",
+        platform: "threads",
+      }),
+    ).toBe("liveuser");
+    expect(
+      resolveEnrichUsername({
+        stored_username: "stored_user",
+        candidate_id: "cand_threads_gym_stranger",
+        platform: "threads",
+      }),
+    ).toBe("stored_user");
   });
 });

@@ -51,7 +51,50 @@ describe("allocateDailyQuota", () => {
     });
 
     expect(plan.keyword_jobs).toHaveLength(3);
-    expect(plan.effective.keyword_search).toBe(3);
+    expect(plan.effective.keyword_search_jobs).toBe(3);
+    expect(plan.request_allowance_per_job).toBe(2);
+    expect(plan.effective.keyword_search).toBe(6);
+    expect(plan.effective.keyword_search_http_budget).toBe(9);
+  });
+
+  it("counts keyword_search budget as HTTP requests and excludes blocked phrases", () => {
+    const plan = allocateDailyQuota({
+      org_keywords: [
+        keywordEntry("健身"),
+        keywordEntry("減肥"),
+        keywordEntry("減脂"),
+        keywordEntry("創業"),
+      ],
+      refresh_candidates: [],
+      budgets: {
+        ...DEFAULT_DAILY_QUOTA_BUDGET,
+        keyword_search_daily_budget: 4,
+        reserve_capacity_pct: 0,
+        keyword_search_max_page_depth: 2,
+      },
+      now,
+    });
+
+    expect(plan.keyword_jobs.map((job) => job.normalized_phrase)).toEqual(["健身", "創業"]);
+    expect(plan.effective.keyword_search_jobs).toBe(2);
+    expect(plan.effective.keyword_search).toBe(4);
+  });
+
+  it("stops allocating phrase jobs when HTTP budget cannot cover another page-depth slice", () => {
+    const plan = allocateDailyQuota({
+      org_keywords: [keywordEntry("a"), keywordEntry("b"), keywordEntry("c")],
+      refresh_candidates: [],
+      budgets: {
+        ...DEFAULT_DAILY_QUOTA_BUDGET,
+        keyword_search_daily_budget: 3,
+        reserve_capacity_pct: 0,
+        keyword_search_max_page_depth: 2,
+      },
+      now,
+    });
+
+    expect(plan.keyword_jobs).toHaveLength(1);
+    expect(plan.effective.keyword_search).toBe(2);
   });
 
   it("limits refresh jobs separately from keyword jobs", () => {

@@ -7,6 +7,7 @@ import {
   parseCustomerBodyNumber,
   type CustomerBodyFormValues,
 } from "@/components/customers/CustomerBodySection";
+import { CustomerNextActivitySection } from "@/components/customers/CustomerNextActivitySection";
 import { CustomerPhotoCompareSection } from "@/components/customers/CustomerPhotoCompareSection";
 import {
   CustomerProgressPhotoSection,
@@ -42,7 +43,9 @@ import { buildBodyCompositionTrendSeries } from "@/lib/customers/body-compositio
 import { computeBmi, computeAgeFromCustomerProfile } from "@/lib/customers/body-metrics";
 import { todayISODate } from "@/lib/config/app-config";
 import { formatShortDate } from "@/lib/mission-control/format";
+import { removeCustomerFromAllianceEvents } from "@/lib/calendar/alliance-event-participants";
 import { createCustomerRepository } from "@/lib/repositories/customer-repository";
+import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -198,6 +201,50 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
       ).catch(() => null);
       if (res?.ok) break;
       await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+    }
+  };
+
+  const handleUpdateRecord = async (recordId: string, values: CustomerBodyFormValues) => {
+    const currentCustomer = repo.getCustomerById(customerId);
+    const weightKg = parseCustomerBodyNumber(values.weightKg);
+    const bmi =
+      parseCustomerBodyNumber(values.bmi) ??
+      computeBmi(weightKg, currentCustomer?.heightCm ?? null);
+    const age =
+      parseCustomerBodyNumber(values.age) ??
+      computeAgeFromCustomerProfile(
+        { birthDate: currentCustomer?.birthDate, birthYear: currentCustomer?.birthYear },
+        values.recordDate,
+      );
+
+    repo.updateBodyRecord(recordId, {
+      customerId,
+      recordDate: values.recordDate,
+      age,
+      weightKg,
+      skeletalMuscleKg: parseCustomerBodyNumber(values.skeletalMuscleKg),
+      bmi,
+      bodyFatPercent: parseCustomerBodyNumber(values.bodyFatPercent),
+      visceralFatLevel: parseCustomerBodyNumber(values.visceralFatLevel),
+      basalMetabolicRate: parseCustomerBodyNumber(values.basalMetabolicRate),
+      bodyAge: parseCustomerBodyNumber(values.bodyAge),
+      note: values.note,
+    });
+    reload();
+    try {
+      await flushCustomerCloudPushAsync();
+    } catch {
+      // local update already applied
+    }
+  };
+
+  const handleDeleteRecord = async (recordId: string) => {
+    repo.deleteBodyRecord(recordId);
+    reload();
+    try {
+      await flushCustomerCloudPushAsync();
+    } catch {
+      // tombstone retained for retry
     }
   };
 
@@ -379,6 +426,15 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
         await revokeCustomerPortalToken(customerId).catch(() => undefined);
       }
       repo.deleteCustomer(customerId);
+      createCalendarEventRepository(storage).removeCustomerFromAllEvents(customerId);
+      removeCustomerFromAllianceEvents(storage, viewer.id, customerId);
+      try {
+        await flushCustomerCloudPushAsync();
+      } catch (error) {
+        setDeleteError(error instanceof Error ? error.message : "雲端刪除尚未完成，請稍後再試");
+        setDeleteBusy(false);
+        return;
+      }
       router.push("/customers/list");
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "無法刪除顧客");
@@ -434,6 +490,8 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
         birthDate={customer.birthDate}
         heightCm={customer.heightCm}
         onCreate={handleCreateRecord}
+        onDelete={handleDeleteRecord}
+        onUpdate={handleUpdateRecord}
         records={records}
         today={today}
       />
@@ -459,6 +517,14 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
           </button>
         </div>
       </section>
+
+      {viewer ? (
+        <CustomerNextActivitySection
+          customer={customer}
+          memberId={viewer.id}
+          storage={storage}
+        />
+      ) : null}
 
       <BodyCompositionTrendCharts seriesList={trendSeries} />
 

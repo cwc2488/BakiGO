@@ -348,6 +348,9 @@ export function applyCoachingDecisionContextToOutput(
   decision: CoachingDecisionContext,
   options?: { generationInput?: CoachingGenerationInput | null },
 ): CoachingDailyGenerationOutputJson {
+  const v2Message =
+    (output.customer as { coach_message?: string | null }).coach_message?.trim() || null;
+
   const priorities = decision.priorities;
   const adjustment_priorities = alignAdjustmentPriorities(
     output.customer.adjustment_priorities,
@@ -369,6 +372,46 @@ export function applyCoachingDecisionContextToOutput(
   }));
 
   const assessment = decision.dailyNutritionAssessment;
+
+  // V2 freeform path: keep coach-side authority, do not rewrite customer prose into templates.
+  if (v2Message) {
+    const withSystemFields: CoachingDailyGenerationOutputJson = {
+      ...output,
+      customer: {
+        ...output.customer,
+        coach_message: v2Message,
+        encouragement: v2Message.slice(0, 240),
+        today_feedback: v2Message.slice(0, 500),
+        adjustment_priorities,
+        tomorrow_focus,
+        // Do not inject canned follow-up / voice templates into the freeform experience.
+        customer_voice_response: output.customer.customer_voice_response,
+        follow_up_for_tomorrow: null,
+      },
+      coach: {
+        ...output.coach,
+        recurring_issue: decision.recurringIssue?.key ?? null,
+        improved_issue: decision.improvedIssue?.key ?? null,
+        coach_attention_required: decision.coachAttention.required,
+        attention_reason: decision.coachAttention.reason,
+        evidence: appendOutcomeEvidence(collectDeterministicEvidence(decision), decision),
+        proposed_intervention_level: decision.finalInterventionLevel,
+        follow_ups: followUps,
+        photo_reuse_flags:
+          photoReuseFlags.length > 0 ? photoReuseFlags : output.coach.photo_reuse_flags ?? [],
+        daily_nutrition_assessment: {
+          level: assessment.level,
+          label: dailyNutritionAssessmentCustomerLabel(assessment.level),
+          reasons: assessment.reasons,
+          positive_factors: assessment.positiveFactors,
+          adjustment_subjects: assessment.adjustmentSubjects,
+          confidence: assessment.confidence,
+        },
+      },
+    };
+    return withSystemFields;
+  }
+
   const customerVoiceResponse = sanitizeBaselineOnlyBodyClaims(
     ensureCustomerVoiceResponse(output.customer.customer_voice_response, decision) ?? "",
     decision,

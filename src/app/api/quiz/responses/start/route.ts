@@ -14,18 +14,7 @@ export async function POST(request: Request) {
       respondentName?: string;
       shareCode?: string;
       referrerMemberId?: string;
-      referralShareToken?: string | null;
-      /** Rejected: clients must not claim growth share UUID ownership. */
-      growthShareId?: unknown;
-      shareId?: unknown;
     };
-
-    if (body.growthShareId != null || body.shareId != null) {
-      return NextResponse.json(
-        { error: "Invalid attribution payload.", code: "forged_share_id" },
-        { status: 400 },
-      );
-    }
 
     if (!body.respondentName?.trim()) {
       return NextResponse.json({ error: "Respondent name is required." }, { status: 400 });
@@ -35,7 +24,6 @@ export async function POST(request: Request) {
       respondentName: body.respondentName,
       shareCode: body.shareCode,
       referrerMemberId: body.referrerMemberId,
-      referralShareToken: body.referralShareToken,
     });
 
     return NextResponse.json({ ok: true, responseId: response.id });

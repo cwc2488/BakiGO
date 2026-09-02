@@ -47,7 +47,8 @@ describe("CHARACTER-01 + ART-02 official animal artwork", () => {
     const landing = src("src/components/reset/ResetExperienceViews.tsx").split("export function ResetQuizView")[0]!;
     expect(landing).not.toContain("ResetLandingCast");
     expect(landing).toContain("/reset/landing-final.png");
-    expect(landing).toContain('aria-label="開始測驗"');
+    expect(landing).toContain("開始測驗");
+    expect(landing).toContain("準備測驗中…");
     expect(landing).toContain("rx-kv-hit");
     expect(landing).not.toContain("rx-land-cta");
     expect(landing).not.toMatch(/characters\/[A-F]\.png/);
@@ -93,7 +94,8 @@ describe("CHARACTER-01 + ART-02 official animal artwork", () => {
     expect(isProductionRuntime()).toBe(false);
     expect(src("src/components/reset/ResetShell.tsx")).toContain('data-art="design-board"');
     expect(src("src/components/reset/ResetExperienceViews.tsx")).toContain("rx-kv-hit");
-    expect(src("src/components/reset/ResetExperienceViews.tsx")).toContain('aria-label="開始測驗"');
+    expect(src("src/components/reset/ResetExperienceViews.tsx")).toContain("開始測驗");
+    expect(src("src/components/reset/ResetExperienceViews.tsx")).toContain("準備測驗中…");
     expect(src("src/components/reset/ResetExperienceViews.tsx")).not.toContain("ResetLandingCast");
     expect(src("src/app/globals.css")).toContain("overflow: visible");
     expect(src("src/app/globals.css")).toContain(".rx-kv-img");

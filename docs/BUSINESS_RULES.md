@@ -658,6 +658,79 @@ Decision Tree segment after Phase 1 body measurement. All step payloads live in 
 - Deterministic from `bowel_movement_count` (+ recent high days / discomfort note).
 - Coach copy may note elevated frequency; Customer copy is non-diagnostic (no diarrhea/disease claims unless Customer used those words).
 
+### Coach Console semantic truth (canonical)
+
+Customer and Coach surfaces derive **the same** daily-state and measurement semantics. Day boundaries are Asia/Taipei (`coachingTodayLogDate`). UI is a renderer of this layer — it must not invent “尚未回報”, “顧客感受”, or fake before→after from one measurement.
+
+#### Daily report completeness
+
+| State | Meaning |
+|-------|---------|
+| `NO_REPORT` | No structured meals, water, sleep, exercise, bowel, or customer free text today |
+| `PARTIAL_REPORT` | At least one meaningful item exists; required day items are not all present |
+| `COMPLETE_REPORT` | Required items are all present: breakfast, lunch, dinner, water, sleep |
+
+- `submittedAt` is not the completeness authority. Go21 chat can fill slots without a portal “submit”.
+- Never describe `PARTIAL_REPORT` as 「尚未回報」 / 「今天還沒回報」.
+- Partial copy: 「今天已開始回報，尚有項目未完成」 plus the **actual** missing items.
+- Exercise and bowel are shown as facts but do not block `COMPLETE_REPORT`.
+
+#### Structured data vs free text
+
+Canonical structured fields (water, meals, sleep, exercise, bowel, measurements) outrank inferred text.
+
+- If structured water is 1200 ml and free text says 「再喝了2000的水」, the known water value remains 1200 ml unless a validated update writes the field.
+- Free text is preserved verbatim. It is never stored as a participant name, and never silently merged into structured totals.
+
+#### Free-text semantic class
+
+Customer free text is classified with confidence. Allowed classes:
+
+`OBSERVED_FACT` | `INTENT_OR_PLAN` | `FEELING` | `QUESTION` | `PREFERENCE` | `CONCERN` | `AMBIGUOUS`
+
+- Insufficient confidence → `AMBIGUOUS` (raw note). Do not invent meaning.
+- Do not label a note as 「心得」 / 「顧客感受」 unless class is `FEELING` with evidence.
+- 「再喝了2000的水」 is `OBSERVED_FACT` or `AMBIGUOUS`, never `FEELING`.
+- 「今天真的很餓，很難忍」 may be `FEELING` / `CONCERN` with the original wording as evidence.
+
+#### Measurement comparison
+
+| State | Meaning |
+|-------|---------|
+| `INSUFFICIENT_DATA` | Fewer than two distinct comparable measurement records |
+| `UNCHANGED` | Two legitimate records; metric value equal |
+| `INCREASED` / `DECREASED` | Two legitimate records; numeric change |
+
+- `UNCHANGED` requires two records (different ids). The same baseline rendered twice is `INSUFFICIENT_DATA`, not “no change”.
+- Never render `125.4 → 125.4` from a single baseline.
+- Preferred insufficient copy: 「目前只有起始量測」「等待下一次量測後比較」.
+
+#### Coach next action (one primary)
+
+Rank, do not stack competing CTAs:
+
+1. Explicit customer question / problem
+2. Safety / coach-attention signal
+3. Meaningful incomplete action (name the missing item)
+4. Adherence issue
+5. Measurement / progress signal
+6. Normal encouragement
+7. No action required
+
+Do not recommend 「提醒她完成今天的回報」 merely because the day object is not complete when meaningful reporting already exists. If no intervention is needed: 「今天狀況正常，不需要主動追蹤」.
+
+#### Share / outcome opportunity
+
+Distinguish lack of evidence from negative evidence:
+
+`NOT_ENOUGH_DATA` | `NOT_READY` | `POSSIBLE_SIGNAL` | `READY`
+
+Baseline-only → `NOT_ENOUGH_DATA` → 「資料還不足，等待下一次量測」. Never imply a negative customer judgment from missing data.
+
+#### AI evidence contract
+
+Every Coach AI conclusion carries: `conclusion`, `confidence`, `evidence[]` (`evidence_type`, `source_date`). Low confidence uses 「顧客提到……」「可能表示……」「目前資料不足以判斷……」. Never 「顧客感受是……」 without feeling evidence.
+
 ## Coaching Growth Intelligence (Phase 4c–4e)
 
 **Layers must never merge:**
@@ -782,6 +855,28 @@ Customer (Referral Center parent set)
 
 Document any intentional exceptions to the rules above in this section.
 
+## Radar FEEDBACK-01 — human evaluation evidence
+
+Partners may mark each of today's recommendations 👍 值得開發 or 👎 不值得開發.
+
+This is **evaluation evidence only**. Feedback must never auto-learn, rescore, rerank, exclude, change allocation, change the semantic prompt, or alter another member's Top20.
+
+👎 requires a compact reason. Only「其他」may include an optional short note.
+
+Feedback is member-specific: Member A 👍 and Member B 👎 on the same candidate is valid. One member's 👎 must not globally blacklist the candidate.
+
+Each evaluation freezes recommendation-time context (score, shown reason, prompt/semantic version, understanding fields). Later reanalyze/rescore must not rewrite that historical context. Changing 👍/👎 must not rebuild today's `member_daily_top20`.
+
+## Radar SEMANTIC-01 — candidate understanding
+
+Radar identifies people worth starting a conversation with. Topic keywords alone are not a strong recommendation.
+
+New analyses (prompt `ai_radar_extraction_v1.2`) write `candidate_understanding.recommendation_reason_zh` in Traditional Chinese. The card prefers that line. Historical cards may still show the model's original `reasoning` language; do not spend new AI calls only to translate completed recommendations.
+
+Each Partner sets their own preferred development region. Nearer *qualified* candidates rank higher via the existing location score (max 5). Unknown candidate location stays eligible with no proximity boost. Changing region after a current value exists becomes effective the next Asia/Taipei calendar day and must not rewrite today's Top20.
+
+`minimum_qualified_score` stays 40. Daily cap 20 is a ceiling, not a quota to fill.
+
 ## Change Log
 
 | Date | Change | Author |
@@ -799,3 +894,5 @@ Document any intentional exceptions to the rules above in this section.
 | 2026-08 | Coaching Product Correction P0/P1 — enrollment window, portal Home, directives, bowel signal, Hub IA | — |
 | 2026-08 | Recognition Center Phase 2 — domain rules freeze, admin allowlist, multi-event month support, 27-award default catalog | — |
 | 2026-08 | Recognition Center — self-service validation, AUTO PASS, Exception-only Admin, submitter crop | — |
+| 2026-08-24 | RADAR-SEMANTIC-01 — candidate understanding, language eligibility, next-day region preference | — |
+| 2026-08-24 | RADAR-FEEDBACK-01 — member 👍/👎 evaluation evidence; no auto-learning | — |

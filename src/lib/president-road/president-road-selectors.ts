@@ -260,10 +260,13 @@ function buildWorldTeamNode(
 
       lines.push({
         label: "本月 VP",
-        value: `${metrics.vp.totalVp}`,
+        value: `${(metrics.productVp?.monthlyTotal ?? metrics.vp.totalVp).toLocaleString("zh-Hant")}`,
       });
     } else {
-      lines.push({ label: "本月 VP", value: `${metrics.vp.totalVp}` });
+      lines.push({
+        label: "本月 VP",
+        value: `${(metrics.productVp?.monthlyTotal ?? metrics.vp.totalVp).toLocaleString("zh-Hant")}`,
+      });
     }
   }
 

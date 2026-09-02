@@ -1,5 +1,6 @@
-import LeaderboardPage from "@/components/leaderboard/LeaderboardPage";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return <LeaderboardPage />;
+/** Obsolete Partner gamification route — silent redirect, no user-facing notice. */
+export default function LeaderboardRoutePage() {
+  redirect("/");
 }

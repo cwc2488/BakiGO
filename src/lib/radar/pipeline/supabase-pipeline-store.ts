@@ -125,19 +125,26 @@ export class SupabasePipelineStore implements PipelineStore {
   }
 
   async listPipelineJobs(pipeline_run_id: string): Promise<import("../jobs/types").RadarJobRecord[]> {
-    const { data, error } = await this.client
-      .from("radar_jobs")
-      .select("*")
-      .eq("pipeline_run_id", pipeline_run_id);
+    const pageSize = 1000;
+    const rows: Record<string, unknown>[] = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await this.client
+        .from("radar_jobs")
+        .select("*")
+        .eq("pipeline_run_id", pipeline_run_id)
+        .range(from, from + pageSize - 1);
+      if (error) throw new Error(error.message);
+      const page = (data ?? []) as Record<string, unknown>[];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
 
-    if (error) throw new Error(error.message);
-
-    return (data ?? []).map((row) => ({
+    return rows.map((row) => ({
       id: String(row.id),
       pipeline_run_id: row.pipeline_run_id ? String(row.pipeline_run_id) : null,
-      job_type: row.job_type,
+      job_type: row.job_type as import("../jobs/types").RadarJobRecord["job_type"],
       idempotency_key: String(row.idempotency_key),
-      status: row.status,
+      status: row.status as import("../jobs/types").RadarJobRecord["status"],
       payload: (row.payload as Record<string, unknown>) ?? {},
       priority: Number(row.priority ?? 0),
       attempt_count: Number(row.attempt_count ?? 0),

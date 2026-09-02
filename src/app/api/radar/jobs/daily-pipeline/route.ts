@@ -1,3 +1,4 @@
+import { noStoreJson, scheduleRadarProcessContinuation } from "@/lib/radar/jobs/auto-drain";
 import { createSupabaseRadarJobQueue } from "@/lib/radar/jobs/supabase-queue-store";
 import { runDailyPipelineOrchestrator } from "@/lib/radar/pipeline/orchestrator";
 import { resolveDailyPipelineRunDate } from "@/lib/radar/pipeline/run-date";
@@ -7,9 +8,9 @@ import {
   isRadarCronAuthorized,
   isSupabaseServiceConfigured,
 } from "@/lib/supabase/service-client";
-import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type DailyPipelineRequestBody = {
   run_date?: string;
@@ -17,13 +18,13 @@ type DailyPipelineRequestBody = {
   trace_id?: string;
 };
 
-export async function POST(request: Request) {
+async function handleDailyPipeline(request: Request) {
   if (!isRadarCronAuthorized(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return noStoreJson({ error: "Unauthorized" }, { status: 401 });
   }
 
   if (!isSupabaseServiceConfigured()) {
-    return NextResponse.json(
+    return noStoreJson(
       { error: "Supabase service role is not configured" },
       { status: 503 },
     );
@@ -31,11 +32,11 @@ export async function POST(request: Request) {
 
   let body: DailyPipelineRequestBody = {};
   try {
-    if (request.headers.get("content-type")?.includes("application/json")) {
+    if (request.method === "POST" && request.headers.get("content-type")?.includes("application/json")) {
       body = (await request.json()) as DailyPipelineRequestBody;
     }
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return noStoreJson({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   const timezone = body.timezone ?? "Asia/Taipei";
@@ -59,7 +60,9 @@ export async function POST(request: Request) {
       },
     );
 
-    return NextResponse.json(
+    scheduleRadarProcessContinuation({ pipeline_run_id: result.pipeline_run_id });
+
+    return noStoreJson(
       {
         ok: true,
         run_date: result.run_date,
@@ -77,6 +80,15 @@ export async function POST(request: Request) {
     );
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : "Daily pipeline orchestration failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return noStoreJson({ error: message }, { status: 500 });
   }
+}
+
+export async function POST(request: Request) {
+  return handleDailyPipeline(request);
+}
+
+/** Vercel Cron invokes GET. Same-day orchestrate is idempotent; always kicks the worker. */
+export async function GET(request: Request) {
+  return handleDailyPipeline(request);
 }
