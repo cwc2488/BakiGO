@@ -1,5 +1,5 @@
 import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
-import { processEventForCurrentMember } from "@/lib/event-center/process-event";
+import { completeActivityEventForCurrentMember, processEventForCurrentMember } from "@/lib/event-center/process-event";
 import {
   createQuickRecruitMember,
   type QuickRecruitInput,
@@ -30,14 +30,26 @@ export function logTodayActivity(
     throw new Error("請輸入姓名");
   }
 
-  const eventTypeKey =
-    activityType === "measurement"
-      ? ACTIVITY_EVENT_KEYS.MEASUREMENT
-      : ACTIVITY_EVENT_KEYS.CONSULTATION;
+  if (activityType === "measurement") {
+    return processEventForCurrentMember(
+      {
+        eventTypeKey: ACTIVITY_EVENT_KEYS.MEASUREMENT,
+        eventCategory: "activity",
+        eventDate: todayISODate(),
+        metadata: {
+          customerName,
+          customerPhone: input.customerPhone?.trim() || undefined,
+          region: input.region?.trim() || undefined,
+          note: input.note?.trim() || undefined,
+        },
+      },
+      storage,
+    );
+  }
 
-  return processEventForCurrentMember(
+  return completeActivityEventForCurrentMember(
     {
-      eventTypeKey,
+      eventTypeKey: ACTIVITY_EVENT_KEYS.CONSULTATION,
       eventCategory: "activity",
       eventDate: todayISODate(),
       metadata: {
@@ -48,6 +60,7 @@ export function logTodayActivity(
       },
     },
     storage,
+    "quick",
   );
 }
 

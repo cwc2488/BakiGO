@@ -67,10 +67,13 @@ import {
 import { getSharedCalendarIds, getSharedCalendarSyncRange, syncSharedGoogleCalendars } from "@/lib/calendar/sync-shared-calendars";
 import { buildMeetingAttendanceSummary } from "@/lib/calendar/meeting-attendance-summary";
 import {
+  completeCalendarActivityEvent,
+  ensureScheduledConsultationCalendarEvent,
   isPersonalCalendarEventLogged,
   isRecordableCalendarActivityKey,
   removeBakiEventForPersonalCalendarEvent,
   removeBakiEventForSharedAttendance,
+  skipCalendarActivityEvent,
   syncPersonalCalendarEventToBakiEvent,
   syncSharedAttendanceToBakiEvent,
 } from "@/lib/calendar/calendar-baki-event-sync";
@@ -119,6 +122,21 @@ function resolveActivityKind(
     return "consultation";
   }
   return "other";
+}
+
+function resolveEditingOccurrenceDate(
+  editingOccurrence: ExpandedCalendarEvent | null,
+  source: CalendarEvent | undefined,
+  fallbackDate: string,
+): string {
+  if (editingOccurrence && source) {
+    return getOccurrenceDateFromExpanded(editingOccurrence, source) ?? fallbackDate;
+  }
+  return fallbackDate;
+}
+
+function isConsultationActivity(activityTypeKey: string | undefined): boolean {
+  return activityTypeKey === ACTIVITY_EVENT_KEYS.CONSULTATION;
 }
 
 const VIEW_OPTIONS: Array<{ value: CalendarViewMode; label: string }> = [
@@ -580,7 +598,12 @@ export default function CalendarPage() {
       activityTypeKey: expanded.activityTypeKey ?? source.activityTypeKey ?? formValues.activityTypeKey,
     });
     setPersonalEventLogged(
-      isPersonalCalendarEventLogged(storage, memberId, source.id, expanded.startAt.slice(0, 10)),
+      isPersonalCalendarEventLogged(
+        storage,
+        memberId,
+        source.id,
+        getOccurrenceDateFromExpanded(expanded, source) ?? expanded.startAt.slice(0, 10),
+      ),
     );
     setFormOpen(true);
   }
@@ -591,8 +614,9 @@ export default function CalendarPage() {
     }
 
     const kind = resolveActivityKind(formValues.activityTypeKey);
-    if (kind === "measurement" || kind === "consultation") {
-      // Capture actual result before writing the canonical activity event.
+    // Measurement still captures result via QuickActivityModal (unchanged UX).
+    // Consultation is one-tap: scheduled → completed on the same BakiEvent.
+    if (kind === "measurement") {
       setCompletionResultOpen(true);
       return;
     }
@@ -610,11 +634,25 @@ export default function CalendarPage() {
         ...payload,
         activityTypeKey: formValues.activityTypeKey,
       };
+      const occurrenceDate = resolveEditingOccurrenceDate(
+        editingOccurrence,
+        source,
+        formValues.date,
+      );
+
+      if (isConsultationActivity(formValues.activityTypeKey)) {
+        completeCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
+        setPersonalEventLogged(true);
+        setStatusMessage("已完成諮詢");
+        closeEventForm();
+        return;
+      }
+
       syncPersonalCalendarEventToBakiEvent(
         storage,
         memberId,
         calendarEvent,
-        formValues.date,
+        occurrenceDate,
       );
       setPersonalEventLogged(true);
       setStatusMessage("已完成活動");
@@ -627,6 +665,41 @@ export default function CalendarPage() {
   }
 
   function handleSkipPersonalEventWithoutResult() {
+    if (!editingEventId) {
+      return;
+    }
+    const source = createCalendarEventRepository(storage).getById(editingEventId);
+    if (!source) {
+      return;
+    }
+
+    const kind = resolveActivityKind(formValues.activityTypeKey);
+    if (kind === "consultation") {
+      setIsLoggingPersonalEvent(true);
+      try {
+        const payload = formValuesToPayload(formValues);
+        const calendarEvent: CalendarEvent = {
+          ...source,
+          ...payload,
+          activityTypeKey: formValues.activityTypeKey,
+        };
+        const occurrenceDate = resolveEditingOccurrenceDate(
+          editingOccurrence,
+          source,
+          formValues.date,
+        );
+        skipCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
+        setPersonalEventLogged(true);
+        setStatusMessage("已標記未實際發生（不計入本月諮詢）");
+        closeEventForm();
+      } catch (caught) {
+        setStatusMessage(caught instanceof Error ? caught.message : "操作失敗");
+      } finally {
+        setIsLoggingPersonalEvent(false);
+      }
+      return;
+    }
+
     setPersonalEventLogged(true);
     setStatusMessage("已標記未實際發生（不計入本月量測／諮詢）");
     closeEventForm();
@@ -636,6 +709,10 @@ export default function CalendarPage() {
     activityType: QuickRecordKind,
     input: QuickActivityInput,
   ) {
+    // Measurement-only result capture. Consultation never opens this modal.
+    if (activityType !== "measurement") {
+      return;
+    }
     if (!editingEventId) {
       return;
     }
@@ -650,12 +727,14 @@ export default function CalendarPage() {
       const calendarEvent: CalendarEvent = {
         ...source,
         ...payload,
-        activityTypeKey:
-          activityType === "measurement"
-            ? ACTIVITY_EVENT_KEYS.MEASUREMENT
-            : ACTIVITY_EVENT_KEYS.CONSULTATION,
+        activityTypeKey: ACTIVITY_EVENT_KEYS.MEASUREMENT,
       };
-      syncPersonalCalendarEventToBakiEvent(storage, memberId, calendarEvent, formValues.date, {
+      const occurrenceDate = resolveEditingOccurrenceDate(
+        editingOccurrence,
+        source,
+        formValues.date,
+      );
+      syncPersonalCalendarEventToBakiEvent(storage, memberId, calendarEvent, occurrenceDate, {
         customerName: input.customerName,
         customerPhone: input.customerPhone,
         region: input.region,
@@ -663,9 +742,7 @@ export default function CalendarPage() {
       });
       setPersonalEventLogged(true);
       setCompletionResultOpen(false);
-      setStatusMessage(
-        activityType === "measurement" ? "已記錄量測成果" : "已記錄諮詢成果",
-      );
+      setStatusMessage("已記錄量測成果");
       closeEventForm();
     } catch (caught) {
       throw caught instanceof Error ? caught : new Error("儲存失敗，請稍後再試");
@@ -839,6 +916,9 @@ export default function CalendarPage() {
           ...payload,
           participantCustomerIds: draftParticipantIds,
         });
+        if (!isRecurringSeries(created) && isConsultationActivity(created.activityTypeKey)) {
+          ensureScheduledConsultationCalendarEvent(storage, memberId, created);
+        }
         await awaitPendingCloudSync();
         googleWarning = await syncToGoogleWithWarning(created, "create");
         setFormOpen(false);
@@ -1355,15 +1435,11 @@ export default function CalendarPage() {
 
       <QuickActivityModal
         activityType={
-          completionResultOpen
-            ? personalActivityKind === "measurement" || personalActivityKind === "consultation"
-              ? personalActivityKind
-              : null
-            : null
+          completionResultOpen && personalActivityKind === "measurement" ? "measurement" : null
         }
         onClose={() => setCompletionResultOpen(false)}
         onSubmit={handleCompletionResultSubmit}
-        open={completionResultOpen}
+        open={completionResultOpen && personalActivityKind === "measurement"}
       />
     </div>
   );

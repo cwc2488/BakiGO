@@ -3,6 +3,7 @@ import {
   ACTIVITY_KEYS,
   RETAIL_TRANSACTION_TYPE_KEYS,
 } from "@/lib/business-engine/rules/keys";
+import { isActivityCountedForKpi } from "@/lib/event-center/activity-lifecycle";
 import type { ActivityEvent } from "@/lib/business-engine/types";
 import type { BakiEvent } from "@/types/baki-event";
 import type { RetailTransaction } from "@/types/retail-transaction";
@@ -67,6 +68,9 @@ export function projectEventsForEngines(events: BakiEvent[]): ProjectedEvents {
   const transactions: RetailTransaction[] = [];
 
   events.forEach((event) => {
+    if (!event || typeof event !== "object" || !event.id || !event.eventDate) {
+      return;
+    }
     if (event.eventCategory === "transaction") {
       const transaction = toRetailTransaction(event);
       if (transaction) {
@@ -84,6 +88,9 @@ export function projectEventsForEngines(events: BakiEvent[]): ProjectedEvents {
     }
 
     if (event.eventCategory === "activity") {
+      if (!isActivityCountedForKpi(event)) {
+        return;
+      }
       activities.push(toActivityEvent(event));
     }
   });

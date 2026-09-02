@@ -667,13 +667,15 @@ export function EventFormModal({
                   type="button"
                 >
                   {personalLogContext.isLogged
-                    ? "已完成活動"
+                    ? personalLogContext.activityKind === "consultation"
+                      ? "已完成諮詢"
+                      : "已完成活動"
                     : personalLogContext.isLogging
                       ? "處理中…"
                       : personalLogContext.activityKind === "measurement"
                         ? "完成活動 · 記錄量測"
                         : personalLogContext.activityKind === "consultation"
-                          ? "完成活動 · 記錄諮詢"
+                          ? "完成諮詢"
                           : "完成活動"}
                 </button>
                 {!personalLogContext.isLogged && personalLogContext.onSkipWithoutResult ? (
@@ -683,7 +685,9 @@ export function EventFormModal({
                     onClick={personalLogContext.onSkipWithoutResult}
                     type="button"
                   >
-                    未實際發生（不計入本月成果）
+                    {personalLogContext.activityKind === "consultation"
+                      ? "未實際發生（不計入本月諮詢）"
+                      : "未實際發生（不計入本月成果）"}
                   </button>
                 ) : null}
               </>

@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:production-baseline": "npx tsx scripts/assert-production-baseline.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

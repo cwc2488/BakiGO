@@ -1,6 +1,9 @@
 import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
-import { processEventForCurrentMember } from "@/lib/event-center/process-event";
+import { upsertActivityEventForCurrentMember } from "@/lib/event-center/process-event";
 import { todayISODate } from "@/lib/config/app-config";
+import {
+  buildCompletedActivityMetadata,
+} from "@/lib/event-center/activity-lifecycle";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { EntityId } from "@/types";
 
@@ -11,7 +14,8 @@ export function emitConsultationCompletedActivity(
   },
   storage: StorageAdapter,
 ): void {
-  processEventForCurrentMember(
+  const completedAt = new Date().toISOString();
+  upsertActivityEventForCurrentMember(
     {
       eventTypeKey: ACTIVITY_EVENT_KEYS.CONSULTATION,
       eventCategory: "activity",
@@ -19,8 +23,11 @@ export function emitConsultationCompletedActivity(
       metadata: {
         customerId: input.customerId,
         consultationSessionId: input.consultationSessionId,
+        source: "consultation_flow",
+        ...buildCompletedActivityMetadata(undefined, completedAt),
       },
     },
     storage,
+    (metadata) => metadata?.consultationSessionId === input.consultationSessionId,
   );
 }
