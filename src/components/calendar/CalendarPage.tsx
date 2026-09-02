@@ -59,7 +59,6 @@ import { buildMeetingAttendanceSummary } from "@/lib/calendar/meeting-attendance
 import {
   completeCalendarActivityEvent,
   ensureScheduledConsultationCalendarEvent,
-  getLinkedCalendarActivityEventId,
   isPersonalCalendarEventLogged,
   isRecordableCalendarActivityKey,
   removeBakiEventForPersonalCalendarEvent,
@@ -92,8 +91,6 @@ import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
 import type { CalendarEvent, CalendarSlotInterval, ExpandedCalendarEvent, RecurrenceEditScope } from "@/types/calendar-event";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
-import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal";
-import type { QuickActivityInput } from "@/lib/daily-action/log-today-action";
 
 type CalendarViewMode = "day" | "week" | "month" | "stats";
 
@@ -186,7 +183,6 @@ export default function CalendarPage() {
   const [personalEventLogged, setPersonalEventLogged] = useState(false);
   const [isLoggingPersonalEvent, setIsLoggingPersonalEvent] = useState(false);
   const [interactionResetKey, setInteractionResetKey] = useState(0);
-  const [completionResultOpen, setCompletionResultOpen] = useState(false);
 
   const resetCalendarInteraction = useCallback(() => {
     setInteractionResetKey((current) => current + 1);
@@ -197,7 +193,6 @@ export default function CalendarPage() {
     setViewingExpandedEvent(null);
     setEditingOccurrence(null);
     setRecurrenceScopeMode(null);
-    setCompletionResultOpen(false);
     resetCalendarInteraction();
   }, [resetCalendarInteraction]);
 
@@ -527,11 +522,6 @@ export default function CalendarPage() {
       return;
     }
 
-    if (isConsultationActivity(formValues.activityTypeKey)) {
-      setCompletionResultOpen(true);
-      return;
-    }
-
     const source = createCalendarEventRepository(storage).getById(editingEventId);
     if (!source) {
       return;
@@ -550,6 +540,15 @@ export default function CalendarPage() {
         source,
         formValues.date,
       );
+
+      if (isConsultationActivity(formValues.activityTypeKey)) {
+        completeCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
+        setPersonalEventLogged(true);
+        setStatusMessage("已完成諮詢");
+        closeEventForm();
+        return;
+      }
+
       syncPersonalCalendarEventToBakiEvent(
         storage,
         memberId,
@@ -593,70 +592,6 @@ export default function CalendarPage() {
       closeEventForm();
     } catch (caught) {
       setStatusMessage(caught instanceof Error ? caught.message : "操作失敗");
-    } finally {
-      setIsLoggingPersonalEvent(false);
-    }
-  }
-
-  async function handleConsultationCompletionSubmit(
-    activityType: "measurement" | "consultation",
-    input: QuickActivityInput,
-  ) {
-    if (activityType !== "consultation") {
-      return;
-    }
-    if (!editingEventId) {
-      return;
-    }
-    const source = createCalendarEventRepository(storage).getById(editingEventId);
-    if (!source) {
-      return;
-    }
-
-    setIsLoggingPersonalEvent(true);
-    try {
-      const payload = formValuesToPayload(formValues);
-      const calendarEvent: CalendarEvent = {
-        ...source,
-        ...payload,
-        activityTypeKey: ACTIVITY_EVENT_KEYS.CONSULTATION,
-      };
-      const occurrenceDate = resolveEditingOccurrenceDate(
-        editingOccurrence,
-        source,
-        formValues.date,
-      );
-      const beforeId = getLinkedCalendarActivityEventId(
-        storage,
-        memberId,
-        source.id,
-        occurrenceDate,
-      );
-
-      completeCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate, {
-        customerName: input.customerName,
-        customerPhone: input.customerPhone,
-        region: input.region,
-        note: input.note,
-      });
-
-      const afterId = getLinkedCalendarActivityEventId(
-        storage,
-        memberId,
-        source.id,
-        occurrenceDate,
-      );
-
-      if (beforeId && afterId && beforeId !== afterId) {
-        throw new Error("諮詢完成失敗：偵測到重複事件，請重新整理後再試");
-      }
-
-      setPersonalEventLogged(true);
-      setCompletionResultOpen(false);
-      setStatusMessage("已記錄諮詢成果");
-      closeEventForm();
-    } catch (caught) {
-      throw caught instanceof Error ? caught : new Error("儲存失敗，請稍後再試");
     } finally {
       setIsLoggingPersonalEvent(false);
     }
@@ -1266,13 +1201,6 @@ export default function CalendarPage() {
         }}
         onConfirm={(scope) => void handleRecurrenceScopeConfirm(scope)}
         open={recurrenceScopeMode !== null}
-      />
-
-      <QuickActivityModal
-        activityType={completionResultOpen ? "consultation" : null}
-        onClose={() => setCompletionResultOpen(false)}
-        onSubmit={handleConsultationCompletionSubmit}
-        open={completionResultOpen}
       />
     </div>
   );

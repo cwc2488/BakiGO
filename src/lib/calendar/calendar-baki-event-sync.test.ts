@@ -5,10 +5,12 @@ import {
   findLinkedCalendarBakiEvent,
   getLinkedCalendarActivityEventId,
   isPersonalCalendarEventLogged,
+  skipCalendarActivityEvent,
   syncPersonalCalendarEventToBakiEvent,
 } from "@/lib/calendar/calendar-baki-event-sync";
 import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
 import { ACTIVITY_LIFECYCLE_STATUS } from "@/lib/event-center/activity-lifecycle";
+import { projectEventsForEngines } from "@/lib/event-center/project-events";
 import { createEventRepository } from "@/lib/repositories/event-repository";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
@@ -79,16 +81,13 @@ describe("calendar consultation single event lifecycle", () => {
       occurrenceDate,
     );
 
-    completeCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate, {
-      customerName: "王小姐",
-      region: "台北",
-    });
+    completeCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
 
     const events = createEventRepository(storage).getByMemberId(memberId);
     expect(events).toHaveLength(1);
     expect(events[0]?.id).toBe(scheduledId);
     expect(events[0]?.metadata?.lifecycleStatus).toBe(ACTIVITY_LIFECYCLE_STATUS.COMPLETED);
-    expect(events[0]?.metadata?.customerName).toBe("王小姐");
+    expect(events[0]?.metadata?.customerName).toBeUndefined();
     expect(isPersonalCalendarEventLogged(storage, memberId, calendarEvent.id, occurrenceDate)).toBe(
       true,
     );
@@ -100,6 +99,7 @@ describe("calendar consultation single event lifecycle", () => {
 
     completeCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate, {
       customerName: "王小姐",
+      note: "第一次完成",
     });
     const firstId = getLinkedCalendarActivityEventId(
       storage,
@@ -107,6 +107,7 @@ describe("calendar consultation single event lifecycle", () => {
       calendarEvent.id,
       occurrenceDate,
     );
+    const firstNote = createEventRepository(storage).getByMemberId(memberId)[0]?.metadata?.note;
 
     completeCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate, {
       customerName: "王小姐",
@@ -116,7 +117,7 @@ describe("calendar consultation single event lifecycle", () => {
     const events = createEventRepository(storage).getByMemberId(memberId);
     expect(events).toHaveLength(1);
     expect(events[0]?.id).toBe(firstId);
-    expect(events[0]?.metadata?.note).toContain("第二次點擊");
+    expect(events[0]?.metadata?.note).toBe(firstNote);
   });
 
   it("does not duplicate when completing without a prior scheduled row", () => {
@@ -181,5 +182,59 @@ describe("calendar consultation single event lifecycle", () => {
     const events = createEventRepository(storage).getByMemberId(memberId);
     expect(events).toHaveLength(1);
     expect(events[0]?.metadata?.lifecycleStatus).toBeUndefined();
+  });
+
+  it("does not count scheduled or skipped consultations toward KPI projection", () => {
+    const calendarEvent = buildCalendarEvent();
+    ensureScheduledConsultationCalendarEvent(storage, memberId, calendarEvent, occurrenceDate);
+
+    const scheduledOnly = projectEventsForEngines(createEventRepository(storage).getAll());
+    expect(
+      scheduledOnly.activities.filter((a) => a.activityKey === ACTIVITY_EVENT_KEYS.CONSULTATION),
+    ).toHaveLength(0);
+
+    skipCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
+    const skippedOnly = projectEventsForEngines(createEventRepository(storage).getAll());
+    expect(
+      skippedOnly.activities.filter((a) => a.activityKey === ACTIVITY_EVENT_KEYS.CONSULTATION),
+    ).toHaveLength(0);
+  });
+
+  it("counts exactly one KPI after one-tap calendar completion", () => {
+    const calendarEvent = buildCalendarEvent();
+    ensureScheduledConsultationCalendarEvent(storage, memberId, calendarEvent, occurrenceDate);
+    completeCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
+
+    const once = projectEventsForEngines(createEventRepository(storage).getAll());
+    expect(
+      once.activities.filter((a) => a.activityKey === ACTIVITY_EVENT_KEYS.CONSULTATION),
+    ).toHaveLength(1);
+
+    completeCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
+    const twice = projectEventsForEngines(createEventRepository(storage).getAll());
+    expect(
+      twice.activities.filter((a) => a.activityKey === ACTIVITY_EVENT_KEYS.CONSULTATION),
+    ).toHaveLength(1);
+    expect(createEventRepository(storage).getByMemberId(memberId)).toHaveLength(1);
+  });
+
+  it("preserves existing customer linkage metadata on one-tap completion", () => {
+    const calendarEvent = buildCalendarEvent();
+    ensureScheduledConsultationCalendarEvent(storage, memberId, calendarEvent, occurrenceDate);
+    const repository = createEventRepository(storage);
+    const scheduled = repository.getByMemberId(memberId)[0]!;
+    repository.update(scheduled.id, {
+      metadata: {
+        ...scheduled.metadata,
+        customerId: "customer-123",
+        customerName: "既有客戶",
+      },
+    });
+
+    completeCalendarActivityEvent(storage, memberId, calendarEvent, occurrenceDate);
+    const completed = repository.getByMemberId(memberId)[0];
+    expect(completed?.id).toBe(scheduled.id);
+    expect(completed?.metadata?.customerId).toBe("customer-123");
+    expect(completed?.metadata?.customerName).toBe("既有客戶");
   });
 });
