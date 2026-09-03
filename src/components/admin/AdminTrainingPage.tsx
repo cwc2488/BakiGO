@@ -155,18 +155,18 @@ export function AdminTrainingPage() {
       title="培訓檢核管理"
     >
       {feedback ? (
-        <p className="rounded-[1rem] border border-[#b7f0c2] bg-[#e8f9ec] px-3.5 py-2.5 text-[0.875rem] font-medium text-[#248a3d]">
+        <p className="rounded-[1.1rem] border border-[var(--brand-primary)]/25 bg-[var(--brand-primary-muted)] px-3.5 py-2.5 text-[0.875rem] font-medium text-[var(--brand-primary-dark)]">
           {feedback}
         </p>
       ) : null}
       {error ? (
-        <p className="rounded-[1rem] border border-[#ffd0d0] bg-[#fff5f5] px-3.5 py-2.5 text-[0.875rem] text-[#c62828]">
+        <p className="rounded-[1.1rem] border border-[#f0c7c7] bg-[#fff7f7] px-3.5 py-2.5 text-[0.875rem] text-[#b42318]">
           {error}
         </p>
       ) : null}
 
-      <section className="space-y-3 rounded-[1.25rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-4">
-        <h2 className="text-[1.0625rem] font-semibold text-[var(--brand-text)]">新增項目</h2>
+      <section className="space-y-3 rounded-[1.35rem] border border-[var(--brand-border)]/70 bg-[var(--brand-surface)] px-4 py-4 shadow-[0_1px_2px_rgba(29,29,31,0.035)]">
+        <h2 className="text-[1.0625rem] font-semibold tracking-tight text-[var(--brand-text)]">新增項目</h2>
         <input
           className="min-h-11 w-full rounded-[0.875rem] border border-[var(--brand-border)] px-3.5"
           onChange={(e) => setNewKey(e.target.value)}
@@ -195,7 +195,7 @@ export function AdminTrainingPage() {
           {items.map((item) => (
             <li
               key={item.id}
-              className="rounded-[1.25rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] px-4 py-4"
+              className="rounded-[1.35rem] border border-[var(--brand-border)]/70 bg-[var(--brand-surface)] px-4 py-4 shadow-[0_1px_2px_rgba(29,29,31,0.035)]"
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
