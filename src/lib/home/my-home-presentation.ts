@@ -225,7 +225,7 @@ export function buildHomeProgressView(
 export type HomeBusinessEntry = {
   href: string;
   title: string;
-  iconKey: "goals" | "organization" | "retail" | "leaderboard" | "learning";
+  iconKey: "goals" | "organization" | "retail" | "leaderboard" | "learning" | "training";
 };
 
 /** Max 5 primary business navigation entries. */
@@ -233,6 +233,7 @@ export const MY_HOME_BUSINESS_ENTRIES: HomeBusinessEntry[] = [
   { href: "/organization", title: "我的組織", iconKey: "organization" },
   { href: "/retail-house", title: "零售屋", iconKey: "retail" },
   { href: "/learning", title: "學習", iconKey: "learning" },
+  { href: "/training", title: "培訓檢核", iconKey: "training" },
 ];
 
 export type HomeMoreEntry = {

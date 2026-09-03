@@ -41,6 +41,15 @@ export function AdminCenterPage() {
             </p>
           </BrandCard>
         </Link>
+        <Link href="/admin/training" className="block">
+          <BrandCard variant="bordered" className="transition-shadow hover:shadow-md active:scale-[0.99]">
+            <p className="text-[0.8125rem] font-medium text-[#248a3d]">培訓檢核</p>
+            <h3 className="mt-1 text-[1.0625rem] font-semibold text-[#1d1d1f]">培訓項目管理</h3>
+            <p className="mt-1 text-[0.875rem] leading-relaxed text-[#86868b]">
+              維護培訓 Master List、排序、停用，以及選用學習庫教材對應。
+            </p>
+          </BrandCard>
+        </Link>
       </section>
 
       <section className="space-y-3">
