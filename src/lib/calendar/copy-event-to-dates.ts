@@ -10,7 +10,14 @@ function daySpan(startDate: string, endDate: string): number {
   return Math.max(0, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
 }
 
-/** Copy event fields onto each target date; keep clock times / duration; clear recurrence. */
+/**
+ * Copy event fields onto each target date; keep clock times / duration; clear recurrence.
+ *
+ * Intentional omissions (never copied into create payloads):
+ * - event id / googleEventId / googleCalendarId
+ * - completion / lifecycle / KPI identity
+ * - participantCustomerIds (managed separately; copy path leaves them empty)
+ */
 export function buildCopiedEventPayloads(source: EventFormValues, targetDates: string[]) {
   const uniqueDates = [...new Set(targetDates)].sort();
   const span = daySpan(source.date, source.endDate);

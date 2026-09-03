@@ -45,12 +45,13 @@ function makeExpandedEvent(input: Partial<ExpandedCalendarEvent> & Pick<Expanded
 }
 
 describe("Calendar V2 — categories", () => {
-  it("exposes exactly four selectable categories", () => {
+  it("exposes five selectable categories including 開發", () => {
     expect(CALENDAR_CATEGORIES.map((item) => item.label)).toEqual([
       "會議",
       "諮詢",
       "教練課",
       "量測",
+      "開發",
     ]);
   });
 
@@ -64,9 +65,10 @@ describe("Calendar V2 — categories", () => {
   it("normalizes save payload to canonical category keys", () => {
     expect(normalizeCalendarCategoryKeyForSave("hom")).toBe(CALENDAR_CATEGORY_KEYS.MEETING);
     expect(normalizeCalendarCategoryKeyForSave("consultation")).toBe(CALENDAR_CATEGORY_KEYS.CONSULTATION);
+    expect(normalizeCalendarCategoryKeyForSave("development")).toBe(CALENDAR_CATEGORY_KEYS.DEVELOPMENT);
   });
 
-  it("creates events for each of the four categories", () => {
+  it("creates events for each selectable category", () => {
     for (const key of Object.values(CALENDAR_CATEGORY_KEYS)) {
       const values = {
         ...buildDefaultFormValues("2026-08-31"),
@@ -78,6 +80,11 @@ describe("Calendar V2 — categories", () => {
       expect(payload.activityTypeKey).toBe(key);
       expect(payload.title).toBe(`Test ${key}`);
     }
+  });
+
+  it("development uses teal default color and 開發 label", () => {
+    expect(getCalendarCategoryLabel(CALENDAR_CATEGORY_KEYS.DEVELOPMENT)).toBe("開發");
+    expect(getCalendarCategoryDefaultColor(CALENDAR_CATEGORY_KEYS.DEVELOPMENT)).toBe("teal");
   });
 
   it("editing legacy event shows 會議 category without corrupting title", () => {
