@@ -945,6 +945,20 @@ Customer-facing freeform message lives in `coaching_ai_outputs.output_json.custo
 
 **RADAR-FEEDBACK-01 (`050_radar_member_recommendation_feedback.sql`):** Additive `member_radar_recommendation_feedback` (unique `member_id + candidate_id + recommendation_date`). Stores 👍/👎, optional rejection reason/note, and immutable `evaluation_context` JSON for future quality reports. RLS enabled; `anon` / `authenticated` have no grants; `service_role` only. Does not mutate scores, Top20, allocation, or exclusion.
 
+### Training Checklist V1 (`076_training_checklist_v1.sql`)
+
+Upline-signed training checklist. Reading Learning Library content never completes an item. Organization hierarchy is reused from `members` + `organization_relationships` (no parallel tree).
+
+| Table | Purpose |
+|-------|---------|
+| `training_items` | Master list (`item_key`, `name`, `sort_order`, `is_active`). Prefer deactivate over delete. |
+| `training_item_learning_links` | Optional admin-managed links to in-code Learning Library catalog ids (`learning_resource_id` text). |
+| `training_signoffs` | Completions: `training_item_id`, `trainee_member_id`, `signer_member_id`, `signed_at`. Unique `(trainee_member_id, training_item_id)`. DB check blocks self-signoff. |
+
+**Authorization:** Service-role only tables. APIs resolve signer from authenticated session (`getMemberIdFromRequest`); downline scope uses `collectDownlineMemberNumbers` (relationships ∪ sponsor). Members cannot sign themselves. Inactive items leave historical sign-offs visible; they do not appear in new incomplete lists.
+
+**XPRO:** `xpro_deep_nutrition` / 「XPRO 深度營養培訓」 must not receive Learning Library mappings (enforced in admin link API).
+
 ## Migrations
 
 - All schema changes go through versioned migrations.

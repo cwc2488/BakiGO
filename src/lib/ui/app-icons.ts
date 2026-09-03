@@ -97,6 +97,7 @@ export const ROUTE_ICONS: Record<string, AppIconName> = {
   "/events": "events",
   "/pre-meeting-graphic": "preMeetingGraphic",
   "/learning": "learning",
+  "/training": "missions",
   "/president-road": "presidentRoad",
   "/profile": "profile",
 };
