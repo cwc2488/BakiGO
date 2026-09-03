@@ -347,6 +347,7 @@ export function EventFormModal({
   onClose,
   onSubmit,
   onDelete,
+  onCopy,
 }: {
   open: boolean;
   mode: "create" | "edit" | "view";
@@ -365,6 +366,8 @@ export function EventFormModal({
   onClose: () => void;
   onSubmit: () => void;
   onDelete?: () => void;
+  /** Personal editable events only — opens multi-date copy sheet. */
+  onCopy?: () => void;
 }) {
   const title =
     mode === "create" ? "新增行程" : mode === "view" ? "共用行程" : "編輯行程";
@@ -700,6 +703,15 @@ export function EventFormModal({
             >
               {mode === "create" ? "新增" : "儲存"}
             </button>
+            {mode === "edit" && onCopy ? (
+              <button
+                className="w-full rounded-xl border border-[var(--cal-border)] bg-[var(--cal-surface)] px-4 py-3 text-[0.9375rem] font-semibold text-[#1d1d1f]"
+                onClick={onCopy}
+                type="button"
+              >
+                複製事件
+              </button>
+            ) : null}
             {mode === "edit" && onDelete ? (
               <button
                 className="w-full rounded-xl border border-[#ff375f] px-4 py-3 text-[0.9375rem] font-semibold text-[#ff375f]"

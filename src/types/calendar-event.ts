@@ -63,7 +63,7 @@ export interface CalendarEvent extends StoredEntity {
   color: CalendarEventColor;
   recurrence: RecurrenceRule;
   recurrenceExceptions?: RecurrenceException[];
-  /** 行程分類 key（會議 / 諮詢 / 教練課 / 量測）；舊資料可能仍為 meeting subtype */
+  /** 行程分類 key（會議 / 諮詢 / 教練課 / 量測 / 開發）；舊資料可能仍為 meeting subtype */
   activityTypeKey?: CalendarActivityTypeKey;
   /** 從共用行事曆標記「會參加」後固定顯示 */
   attendedFromShared?: boolean;

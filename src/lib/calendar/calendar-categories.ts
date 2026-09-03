@@ -8,6 +8,8 @@ export const CALENDAR_CATEGORY_KEYS = {
   CONSULTATION: ACTIVITY_EVENT_KEYS.CONSULTATION,
   COACH_CLASS: ACTIVITY_EVENT_KEYS.COACH_CLASS,
   MEASUREMENT: ACTIVITY_EVENT_KEYS.MEASUREMENT,
+  /** Calendar-only category — not a KPI / activity-scoring event type. */
+  DEVELOPMENT: "development",
 } as const;
 
 export type CalendarCategoryKey =
@@ -24,6 +26,7 @@ export const CALENDAR_CATEGORIES: CalendarCategoryDefinition[] = [
   { key: CALENDAR_CATEGORY_KEYS.CONSULTATION, label: "諮詢", defaultColor: "purple" },
   { key: CALENDAR_CATEGORY_KEYS.COACH_CLASS, label: "教練課", defaultColor: "orange" },
   { key: CALENDAR_CATEGORY_KEYS.MEASUREMENT, label: "量測", defaultColor: "blue" },
+  { key: CALENDAR_CATEGORY_KEYS.DEVELOPMENT, label: "開發", defaultColor: "teal" },
 ];
 
 const LEGACY_MEETING_KEYS = new Set<string>(MEETING_KEY_LIST);
