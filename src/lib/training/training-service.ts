@@ -3,6 +3,8 @@ import {
   canSignOffTrainingMember,
   canViewTrainingMember,
   listTrainingDownlineMembers,
+  loadTrainingMemberById,
+  loadTrainingMemberNamesByIds,
   loadTrainingOrgAuthContext,
   type TrainingOrgAuthContext,
 } from "@/lib/training/training-organization-access";
@@ -305,18 +307,39 @@ export async function getTrainingChecklist(input: {
   traineeMemberId: string;
   orgCtx?: TrainingOrgAuthContext;
 }): Promise<TrainingChecklistView> {
-  const orgCtx = input.orgCtx ?? (await loadTrainingOrgAuthContext());
-  if (!canViewTrainingMember(input.viewerMemberId, input.traineeMemberId, orgCtx)) {
-    throw new TrainingServiceError("無權限查看此培訓檢核。", 403, "forbidden");
-  }
+  const isOwnChecklist = input.viewerMemberId === input.traineeMemberId;
+  let orgCtx = input.orgCtx;
+  let traineeName: string;
+  let canSignOff = false;
 
-  const trainee = orgCtx.membersById.get(input.traineeMemberId);
-  if (!trainee) {
-    throw new TrainingServiceError("找不到夥伴。", 404, "not_found");
+  if (isOwnChecklist && !orgCtx) {
+    // Own checklist: skip full org graph — auth is identity equality.
+    const trainee = await loadTrainingMemberById(input.traineeMemberId);
+    if (!trainee) {
+      throw new TrainingServiceError("找不到夥伴。", 404, "not_found");
+    }
+    traineeName = trainee.name;
+    canSignOff = false;
+  } else {
+    orgCtx = orgCtx ?? (await loadTrainingOrgAuthContext());
+    if (!canViewTrainingMember(input.viewerMemberId, input.traineeMemberId, orgCtx)) {
+      throw new TrainingServiceError("無權限查看此培訓檢核。", 403, "forbidden");
+    }
+    const trainee = orgCtx.membersById.get(input.traineeMemberId);
+    if (!trainee) {
+      throw new TrainingServiceError("找不到夥伴。", 404, "not_found");
+    }
+    traineeName = trainee.name;
+    canSignOff = canSignOffTrainingMember(
+      input.viewerMemberId,
+      input.traineeMemberId,
+      orgCtx,
+    );
   }
 
   const supabase = createSupabaseServiceClient();
-  const [itemsResult, signoffsResult] = await Promise.all([
+  // Fixed 3 parallel queries — never per-item / per-link requests.
+  const [itemsResult, signoffsResult, linksResult] = await Promise.all([
     supabase
       .from("training_items")
       .select("*")
@@ -326,6 +349,7 @@ export async function getTrainingChecklist(input: {
       .from("training_signoffs")
       .select("*")
       .eq("trainee_member_id", input.traineeMemberId),
+    supabase.from("training_item_learning_links").select("*"),
   ]);
 
   if (itemsResult.error) {
@@ -334,24 +358,43 @@ export async function getTrainingChecklist(input: {
   if (signoffsResult.error) {
     throw new TrainingServiceError(signoffsResult.error.message, 500);
   }
+  if (linksResult.error) {
+    throw new TrainingServiceError(linksResult.error.message, 500);
+  }
 
   const items = (itemsResult.data ?? []).map((row) => mapItem(row as TrainingItemRow));
   const signoffs = (signoffsResult.data ?? []) as SignoffRow[];
   const signoffByItemId = new Map(signoffs.map((row) => [row.training_item_id, row]));
 
-  const signerIds = Array.from(new Set(signoffs.map((row) => row.signer_member_id)));
   const signerNameById = new Map<string, string>();
-  for (const signerId of signerIds) {
-    const signer = orgCtx.membersById.get(signerId);
-    if (signer) {
-      signerNameById.set(signerId, signer.name);
+  const signerIds = Array.from(new Set(signoffs.map((row) => row.signer_member_id)));
+  if (orgCtx) {
+    for (const signerId of signerIds) {
+      const signer = orgCtx.membersById.get(signerId);
+      if (signer) {
+        signerNameById.set(signerId, signer.name);
+      }
+    }
+  }
+  const missingSignerIds = signerIds.filter((id) => !signerNameById.has(id));
+  if (missingSignerIds.length > 0) {
+    const names = await loadTrainingMemberNamesByIds(missingSignerIds);
+    for (const [id, name] of names) {
+      signerNameById.set(id, name);
     }
   }
 
-  const relevantItemIds = items
-    .filter((item) => item.isActive || signoffByItemId.has(item.id))
-    .map((item) => item.id);
-  const linksByItem = await listLearningLinksForItems(relevantItemIds);
+  const linksByItem = new Map<string, TrainingLearningLink[]>();
+  for (const row of linksResult.data ?? []) {
+    const link = mapLearningLink(row as LearningLinkRow);
+    // Drop invalid/stale catalog ids — never invent mappings.
+    if (!link.learningResourceYoutubeUrl) {
+      continue;
+    }
+    const list = linksByItem.get(link.trainingItemId) ?? [];
+    list.push(link);
+    linksByItem.set(link.trainingItemId, list);
+  }
 
   const incomplete: TrainingChecklistEntry[] = [];
   const completed: TrainingChecklistEntry[] = [];
@@ -359,7 +402,6 @@ export async function getTrainingChecklist(input: {
   for (const item of items) {
     const signoffRow = signoffByItemId.get(item.id) ?? null;
     if (!item.isActive && !signoffRow) {
-      // Inactive + never completed → hide from new incomplete lists.
       continue;
     }
     const signoff = signoffRow ? mapSignoff(signoffRow, signerNameById) : null;
@@ -383,14 +425,10 @@ export async function getTrainingChecklist(input: {
   );
 
   return {
-    traineeMemberId: trainee.id,
-    traineeDisplayName: trainee.name,
+    traineeMemberId: input.traineeMemberId,
+    traineeDisplayName: traineeName,
     viewerMemberId: input.viewerMemberId,
-    canSignOff: canSignOffTrainingMember(
-      input.viewerMemberId,
-      input.traineeMemberId,
-      orgCtx,
-    ),
+    canSignOff,
     incomplete,
     completed,
   };

@@ -3,12 +3,7 @@ import type { ReactNode } from "react";
 
 import { IconChevronDown, IconLearning } from "@/components/ui/BrandIcons";
 import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
-
-export const TRAINING_SURFACE =
-  "rounded-[1.35rem] border border-[var(--brand-border)]/70 bg-[var(--brand-surface)] shadow-[0_1px_2px_rgba(29,29,31,0.035)]";
-
-export const TRAINING_SURFACE_SOFT =
-  "rounded-[1.35rem] border border-[var(--brand-border)]/55 bg-[color-mix(in_srgb,var(--brand-surface)_88%,var(--brand-primary-muted))]";
+import type { TrainingLearningLink } from "@/types/training-checklist";
 
 export function formatTrainingDisplayDate(iso: string): string {
   const day = iso.slice(0, 10);
@@ -20,6 +15,16 @@ export function formatTrainingDisplayDate(iso: string): string {
 
 export function formatTrainingItemNumber(sortOrder: number): string {
   return String(Math.max(0, Math.trunc(sortOrder))).padStart(2, "0");
+}
+
+export function getValidTrainingLearningLinks(
+  links: TrainingLearningLink[],
+): TrainingLearningLink[] {
+  return links.filter(
+    (link) =>
+      Boolean(link.learningResourceYoutubeUrl) &&
+      Boolean(link.learningResourceTitle || link.learningResourceId),
+  );
 }
 
 export function TrainingPageFrame({
@@ -35,10 +40,10 @@ export function TrainingPageFrame({
 }) {
   return (
     <div className={`min-h-full ${PAGE_GRADIENT_CLASS}`}>
-      <main className="home-container flex flex-col gap-6 pb-28 pt-10 sm:pt-12">
-        <div className="home-section flex items-start justify-between gap-3">
+      <main className="home-container flex flex-col gap-4 pb-28 pt-8 sm:pt-10">
+        <div className="home-section flex items-center justify-between gap-3">
           <Link
-            className="inline-flex min-h-11 items-center text-[0.875rem] font-medium text-[var(--brand-primary-dark)] transition-opacity active:opacity-70"
+            className="inline-flex min-h-11 min-w-11 items-center text-[0.875rem] font-medium text-[var(--brand-primary-dark)] transition-opacity active:opacity-70"
             href={backHref}
           >
             ← {backLabel}
@@ -51,63 +56,47 @@ export function TrainingPageFrame({
   );
 }
 
-export function TrainingHero({
+export function TrainingHeroCompact({
   eyebrow,
   title,
   tagline,
   incompleteCount,
   completedCount,
-  actions,
 }: {
   eyebrow?: string;
   title: string;
   tagline: string;
   incompleteCount: number;
   completedCount: number;
-  actions?: ReactNode;
 }) {
   return (
-    <header className="home-section space-y-5">
-      <div className="space-y-2">
+    <header className="home-section space-y-3">
+      <div className="space-y-1">
         {eyebrow ? (
-          <p className="text-[0.8125rem] font-medium tracking-[0.04em] text-[var(--brand-text-muted)]">
+          <p className="text-[0.8125rem] font-medium text-[var(--brand-text-muted)]">
             {eyebrow}
           </p>
         ) : null}
-        <h1 className="break-words text-[2rem] font-semibold tracking-tight text-[var(--brand-text)] sm:text-[2.125rem]">
+        <h1 className="break-words text-[1.75rem] font-semibold tracking-tight text-[var(--brand-text)]">
           {title}
         </h1>
-        <p className="max-w-[22rem] text-[0.9375rem] leading-relaxed text-[var(--brand-text-secondary)]">
+        <p className="text-[0.875rem] leading-relaxed text-[var(--brand-text-secondary)]">
           {tagline}
         </p>
       </div>
-
-      <div className="grid grid-cols-2 gap-2.5">
-        <div className={`${TRAINING_SURFACE} px-4 py-3.5`}>
-          <p className="text-[0.75rem] font-medium tracking-wide text-[var(--brand-text-muted)]">
-            尚未完成
-          </p>
-          <p className="mt-1.5 text-[1.75rem] font-semibold tabular-nums tracking-tight text-[var(--brand-text)]">
-            {incompleteCount}
-            <span className="ml-1 text-[0.875rem] font-medium text-[var(--brand-text-muted)]">
-              項
-            </span>
-          </p>
-        </div>
-        <div className={`${TRAINING_SURFACE_SOFT} px-4 py-3.5`}>
-          <p className="text-[0.75rem] font-medium tracking-wide text-[var(--brand-text-muted)]">
-            已完成
-          </p>
-          <p className="mt-1.5 text-[1.75rem] font-semibold tabular-nums tracking-tight text-[var(--brand-primary-dark)]">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[0.875rem]">
+        <p className="text-[var(--brand-text)]">
+          <span className="text-[var(--brand-text-muted)]">尚未完成</span>{" "}
+          <span className="font-semibold tabular-nums">{incompleteCount}</span> 項
+        </p>
+        <p className="text-[var(--brand-text)]">
+          <span className="text-[var(--brand-text-muted)]">已完成</span>{" "}
+          <span className="font-semibold tabular-nums text-[var(--brand-primary-dark)]">
             {completedCount}
-            <span className="ml-1 text-[0.875rem] font-medium text-[var(--brand-text-muted)]">
-              項
-            </span>
-          </p>
-        </div>
+          </span>{" "}
+          項
+        </p>
       </div>
-
-      {actions}
     </header>
   );
 }
@@ -122,93 +111,54 @@ export function TrainingSectionHeading({
   trailing?: ReactNode;
 }) {
   return (
-    <div className="flex items-end justify-between gap-3 px-0.5">
-      <div className="min-w-0">
-        <h2 className="text-[1.0625rem] font-semibold tracking-tight text-[var(--brand-text)]">
+    <div className="flex items-center justify-between gap-3 px-0.5">
+      <div className="flex min-w-0 items-baseline gap-2">
+        <h2 className="text-[0.9375rem] font-semibold tracking-tight text-[var(--brand-text)]">
           {children}
         </h2>
-        <div className="mt-2 h-px w-10 bg-[var(--brand-primary)]/55" aria-hidden />
-      </div>
-      <div className="flex items-center gap-2">
         {typeof count === "number" ? (
           <span className="text-[0.8125rem] tabular-nums text-[var(--brand-text-muted)]">
-            {count}
+            {count} 項
           </span>
         ) : null}
-        {trailing}
       </div>
+      {trailing}
     </div>
   );
 }
 
-export function TrainingStatusChip({
-  tone = "pending",
-  children,
-}: {
-  tone?: "pending" | "verified";
-  children: ReactNode;
-}) {
-  const styles =
-    tone === "verified"
-      ? "bg-[var(--brand-primary-muted)] text-[var(--brand-primary-dark)]"
-      : "bg-[var(--brand-bg)] text-[var(--brand-text-secondary)]";
+export function TrainingListSurface({ children }: { children: ReactNode }) {
   return (
-    <span
-      className={`inline-flex min-h-7 items-center rounded-full px-2.5 text-[0.75rem] font-medium ${styles}`}
-    >
+    <div className="overflow-hidden rounded-[1.15rem] border border-[var(--brand-border)]/70 bg-[var(--brand-surface)] shadow-[0_1px_2px_rgba(29,29,31,0.03)]">
       {children}
-    </span>
+    </div>
   );
 }
 
-export function TrainingLearningLink({ href }: { href: string }) {
-  return (
-    <a
-      className="mt-3 inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-[0.95rem] bg-[var(--brand-bg)] px-3.5 text-[0.875rem] font-medium text-[var(--brand-primary-dark)] transition-opacity active:opacity-75"
-      href={href}
-      rel="noopener noreferrer"
-      target="_blank"
-    >
-      <span className="inline-flex min-w-0 items-center gap-2">
-        <IconLearning className="shrink-0" size={18} />
-        <span className="truncate">前往學習</span>
-      </span>
-      <span aria-hidden className="text-[1.1rem] text-[var(--brand-hint)]">
-        ›
-      </span>
-    </a>
-  );
+export function TrainingListDivider() {
+  return <div aria-hidden className="mx-4 h-px bg-[var(--brand-border)]/70" />;
 }
 
-export function TrainingVerifiedSeal() {
+export function TrainingSkeletonList({ rows = 8 }: { rows?: number }) {
   return (
-    <span
-      aria-hidden
-      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--brand-primary)]/25 bg-[var(--brand-primary-muted)] text-[0.875rem] font-semibold text-[var(--brand-primary-dark)]"
-    >
-      ✓
-    </span>
-  );
-}
-
-export function TrainingSkeletonList({ rows = 4 }: { rows?: number }) {
-  return (
-    <div className="home-section space-y-6" aria-busy="true" aria-live="polite">
-      <div className="space-y-3">
-        <div className="h-3 w-24 animate-pulse rounded bg-[var(--brand-border)]/70" />
-        <div className="h-9 w-48 animate-pulse rounded bg-[var(--brand-border)]/80" />
-        <div className="h-4 w-64 max-w-full animate-pulse rounded bg-[var(--brand-border)]/60" />
-        <div className="grid grid-cols-2 gap-2.5 pt-2">
-          <div className={`${TRAINING_SURFACE} h-[4.75rem] animate-pulse`} />
-          <div className={`${TRAINING_SURFACE} h-[4.75rem] animate-pulse`} />
-        </div>
+    <div className="home-section space-y-4" aria-busy="true" aria-live="polite">
+      <div className="space-y-2">
+        <div className="h-7 w-40 animate-pulse rounded bg-[var(--brand-border)]/70" />
+        <div className="h-4 w-52 max-w-full animate-pulse rounded bg-[var(--brand-border)]/55" />
+        <div className="h-4 w-44 animate-pulse rounded bg-[var(--brand-border)]/45" />
       </div>
-      <div className="space-y-2.5">
+      <div className="overflow-hidden rounded-[1.15rem] border border-[var(--brand-border)]/70 bg-[var(--brand-surface)]">
         {Array.from({ length: rows }).map((_, index) => (
-          <div
-            key={index}
-            className={`${TRAINING_SURFACE} h-[6.5rem] animate-pulse`}
-          />
+          <div key={index}>
+            {index > 0 ? <div className="mx-4 h-px bg-[var(--brand-border)]/60" /> : null}
+            <div className="flex min-h-14 items-center gap-3 px-4 py-3">
+              <div className="h-3 w-6 animate-pulse rounded bg-[var(--brand-border)]/70" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="h-3.5 w-2/3 max-w-[12rem] animate-pulse rounded bg-[var(--brand-border)]/75" />
+                <div className="h-3 w-16 animate-pulse rounded bg-[var(--brand-border)]/50" />
+              </div>
+            </div>
+          </div>
         ))}
       </div>
     </div>
@@ -228,7 +178,7 @@ export function TrainingFeedbackBanner({
       : "border-[#f0c7c7] bg-[#fff7f7] text-[#b42318]";
   return (
     <p
-      className={`rounded-[1.1rem] border px-4 py-3 text-[0.875rem] font-medium leading-relaxed ${styles}`}
+      className={`rounded-[1rem] border px-3.5 py-2.5 text-[0.875rem] font-medium leading-relaxed ${styles}`}
       role={tone === "error" ? "alert" : "status"}
     >
       {children}
@@ -258,5 +208,66 @@ export function TrainingCollapseToggle({
         size={16}
       />
     </button>
+  );
+}
+
+export function TrainingSheetShell({
+  title,
+  subtitle,
+  children,
+  footer,
+  onClose,
+}: {
+  title: string;
+  subtitle?: ReactNode;
+  children?: ReactNode;
+  footer?: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(29,29,31,0.42)] sm:items-center sm:p-4"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        aria-modal="true"
+        className="w-full max-w-md overflow-hidden rounded-t-[1.35rem] border border-[var(--brand-border)]/70 bg-[var(--brand-surface)] shadow-[0_18px_48px_rgba(29,29,31,0.16)] sm:rounded-[1.35rem]"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="flex items-start justify-between gap-3 px-5 pb-2 pt-4">
+          <div className="min-w-0 pt-1">
+            <h3 className="text-[1.125rem] font-semibold tracking-tight text-[var(--brand-text)]">
+              {title}
+            </h3>
+            {subtitle ? (
+              <div className="mt-1 text-[0.875rem] leading-relaxed text-[var(--brand-text-muted)]">
+                {subtitle}
+              </div>
+            ) : null}
+          </div>
+          <button
+            aria-label="關閉"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-[1.25rem] text-[var(--brand-text-muted)] transition-opacity active:opacity-70"
+            onClick={onClose}
+            type="button"
+          >
+            ×
+          </button>
+        </div>
+        {children}
+        {footer}
+      </div>
+    </div>
+  );
+}
+
+export function TrainingLearningActionLabel() {
+  return (
+    <span className="inline-flex items-center gap-1 text-[0.75rem] font-medium text-[var(--brand-primary-dark)]">
+      <IconLearning size={14} />
+      學習內容
+    </span>
   );
 }

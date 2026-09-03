@@ -4,11 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  TRAINING_SURFACE,
-  TRAINING_SURFACE_SOFT,
   TrainingFeedbackBanner,
+  TrainingListDivider,
+  TrainingListSurface,
   TrainingPageFrame,
-  TrainingStatusChip,
 } from "@/components/training/training-ui";
 import { fetchWithMemberAuth } from "@/lib/quiz/quiz-member-fetch";
 import type { TrainingOrgMemberSummary } from "@/types/training-checklist";
@@ -66,17 +65,17 @@ export function TrainingOrganizationPage() {
   }, [debouncedQuery, loading]);
 
   return (
-    <TrainingPageFrame backHref="/training" backLabel="返回培訓檢核">
-      <header className="home-section space-y-2">
-        <h1 className="text-[2rem] font-semibold tracking-tight text-[var(--brand-text)]">
+    <TrainingPageFrame backHref="/training" backLabel="培訓檢核">
+      <header className="home-section space-y-1.5">
+        <h1 className="text-[1.75rem] font-semibold tracking-tight text-[var(--brand-text)]">
           我的組織
         </h1>
-        <p className="text-[0.9375rem] leading-relaxed text-[var(--brand-text-secondary)]">
+        <p className="text-[0.875rem] leading-relaxed text-[var(--brand-text-secondary)]">
           選擇夥伴，檢視並簽核其培訓進度。
         </p>
       </header>
 
-      <label className="home-section block space-y-2">
+      <label className="home-section block space-y-1.5">
         <span className="px-0.5 text-[0.8125rem] font-medium text-[var(--brand-text-muted)]">
           搜尋姓名
         </span>
@@ -93,55 +92,65 @@ export function TrainingOrganizationPage() {
         {error ? <TrainingFeedbackBanner tone="error">{error}</TrainingFeedbackBanner> : null}
 
         {loading ? (
-          <ul className="space-y-2" aria-busy="true">
-            {Array.from({ length: 5 }).map((_, index) => (
-              <li
-                key={index}
-                className={`${TRAINING_SURFACE} h-[4.25rem] animate-pulse`}
-              />
+          <TrainingListSurface>
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index}>
+                {index > 0 ? <TrainingListDivider /> : null}
+                <div className="flex min-h-14 items-center gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-3.5 w-24 animate-pulse rounded bg-[var(--brand-border)]/75" />
+                    <div className="h-3 w-20 animate-pulse rounded bg-[var(--brand-border)]/50" />
+                  </div>
+                </div>
+              </div>
             ))}
-          </ul>
+          </TrainingListSurface>
         ) : members.length === 0 ? (
-          <p className={`${TRAINING_SURFACE} px-4 py-5 text-[0.9375rem] text-[var(--brand-text-muted)]`}>
-            {emptyLabel}
-          </p>
+          <TrainingListSurface>
+            <p className="px-4 py-5 text-[0.9375rem] text-[var(--brand-text-muted)]">
+              {emptyLabel}
+            </p>
+          </TrainingListSurface>
         ) : (
-          <ul className="space-y-2">
-            {members.map((member) => {
+          <TrainingListSurface>
+            {members.map((member, index) => {
               const complete = member.incompleteCount === 0;
               return (
-                <li key={member.memberId}>
+                <div key={member.memberId}>
+                  {index > 0 ? <TrainingListDivider /> : null}
                   <Link
-                    className={`flex min-h-[4.25rem] items-center gap-3 px-4 py-3 transition-[opacity,transform] active:scale-[0.99] active:opacity-90 ${
-                      complete ? TRAINING_SURFACE_SOFT : TRAINING_SURFACE
-                    }`}
+                    className="flex min-h-14 items-center gap-3 px-4 py-3 transition-opacity active:opacity-80"
                     href={`/training/${member.memberId}`}
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[1.0625rem] font-semibold tracking-tight text-[var(--brand-text)]">
+                      <p className="truncate text-[0.975rem] font-semibold tracking-tight text-[var(--brand-text)]">
                         {member.displayName}
                       </p>
-                      {complete ? (
-                        <div className="mt-1.5">
-                          <TrainingStatusChip tone="verified">全部完成</TrainingStatusChip>
-                        </div>
-                      ) : (
-                        <p className="mt-1 text-[0.8125rem] text-[var(--brand-text-muted)]">
-                          尚未完成 {member.incompleteCount} 項
-                        </p>
-                      )}
+                      <p
+                        className={`mt-0.5 text-[0.75rem] ${
+                          complete
+                            ? "font-medium text-[var(--brand-primary-dark)]"
+                            : "text-[var(--brand-text-muted)]"
+                        }`}
+                      >
+                        {complete ? "全部完成" : `尚未完成 ${member.incompleteCount} 項`}
+                      </p>
                     </div>
                     <span
                       aria-hidden
-                      className="shrink-0 text-[1.25rem] leading-none text-[var(--brand-hint)]"
+                      className={`shrink-0 text-[1.1rem] ${
+                        complete
+                          ? "text-[var(--brand-primary-dark)]"
+                          : "text-[var(--brand-hint)]"
+                      }`}
                     >
                       {complete ? "✓" : "›"}
                     </span>
                   </Link>
-                </li>
+                </div>
               );
             })}
-          </ul>
+          </TrainingListSurface>
         )}
       </div>
     </TrainingPageFrame>

@@ -172,7 +172,8 @@ describe("training V1 seed contract", () => {
       resolve(process.cwd(), "src/components/training/TrainingChecklistViewPanel.tsx"),
       "utf8",
     );
-    expect(panel).toContain("TrainingLearningLink");
+    expect(panel).toContain("TrainingLearningActionLabel");
+    expect(panel).toContain("LearningPickerSheet");
     expect(panel).not.toContain("目前沒有教材");
     expect(panel).not.toContain("尚未建立教材");
 
@@ -180,7 +181,7 @@ describe("training V1 seed contract", () => {
       resolve(process.cwd(), "src/components/training/training-ui.tsx"),
       "utf8",
     );
-    expect(learningUi).toContain("前往學習");
+    expect(learningUi).toContain("學習內容");
   });
 
   it("home entry and admin center are wired without preloading training on home", () => {
