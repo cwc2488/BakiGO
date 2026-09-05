@@ -45,13 +45,15 @@ function makeExpandedEvent(input: Partial<ExpandedCalendarEvent> & Pick<Expanded
 }
 
 describe("Calendar V2 — categories", () => {
-  it("exposes five selectable categories including 開發", () => {
+  it("exposes seven selectable categories including 開發／私人時間／其他", () => {
     expect(CALENDAR_CATEGORIES.map((item) => item.label)).toEqual([
       "會議",
       "諮詢",
       "教練課",
       "量測",
       "開發",
+      "私人時間",
+      "其他",
     ]);
   });
 

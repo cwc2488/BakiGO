@@ -8,6 +8,10 @@ import {
 } from "@/components/ui/MobileDismissibleSheet";
 import { getMonthGridDates } from "@/lib/calendar/recurrence";
 import { shiftMonth } from "@/lib/calendar/calendar-stats";
+import {
+  getCalendarWeekdayLabels,
+  type CalendarWeekStart,
+} from "@/lib/calendar/calendar-week-start-preferences";
 import { formatChineseYearMonth, getTodayDateString } from "@/lib/calendar/time-grid";
 import { formatSelectedCopyDatesZh } from "@/lib/calendar/copy-event-to-dates";
 
@@ -17,18 +21,26 @@ export function CopyEventDatesSheet({
   sourceDate,
   onClose,
   onConfirm,
+  weekStart = "monday",
+  weekStartsOn = 1,
 }: {
   open: boolean;
   title: string;
   sourceDate: string;
   onClose: () => void;
   onConfirm: (dates: string[]) => void | Promise<void>;
+  weekStart?: CalendarWeekStart;
+  weekStartsOn?: 0 | 1;
 }) {
   const [anchorDate, setAnchorDate] = useState(sourceDate || getTodayDateString());
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const today = getTodayDateString();
-  const gridDates = useMemo(() => getMonthGridDates(anchorDate), [anchorDate]);
+  const weekdayLabels = getCalendarWeekdayLabels(weekStart);
+  const gridDates = useMemo(
+    () => getMonthGridDates(anchorDate, weekStartsOn),
+    [anchorDate, weekStartsOn],
+  );
   const selectedSet = useMemo(() => new Set(selected), [selected]);
 
   const toggleDate = (date: string) => {
@@ -107,7 +119,7 @@ export function CopyEventDatesSheet({
           </div>
 
           <div className="mb-2 grid grid-cols-7 text-center text-[0.6875rem] font-medium text-[var(--cal-text-muted)]">
-            {["一", "二", "三", "四", "五", "六", "日"].map((label) => (
+            {weekdayLabels.map((label) => (
               <span key={label}>{label}</span>
             ))}
           </div>

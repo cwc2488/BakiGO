@@ -10,6 +10,10 @@ export const CALENDAR_CATEGORY_KEYS = {
   MEASUREMENT: ACTIVITY_EVENT_KEYS.MEASUREMENT,
   /** Calendar-only category — not a KPI / activity-scoring event type. */
   DEVELOPMENT: "development",
+  /** Calendar-only — personal blocked time; not KPI. */
+  PRIVATE_TIME: "private_time",
+  /** Calendar-only catch-all; not KPI. Distinct from legacy `calendar_other`. */
+  OTHER: "other",
 } as const;
 
 export type CalendarCategoryKey =
@@ -27,6 +31,8 @@ export const CALENDAR_CATEGORIES: CalendarCategoryDefinition[] = [
   { key: CALENDAR_CATEGORY_KEYS.COACH_CLASS, label: "教練課", defaultColor: "orange" },
   { key: CALENDAR_CATEGORY_KEYS.MEASUREMENT, label: "量測", defaultColor: "blue" },
   { key: CALENDAR_CATEGORY_KEYS.DEVELOPMENT, label: "開發", defaultColor: "teal" },
+  { key: CALENDAR_CATEGORY_KEYS.PRIVATE_TIME, label: "私人時間", defaultColor: "lavender" },
+  { key: CALENDAR_CATEGORY_KEYS.OTHER, label: "其他", defaultColor: "gray" },
 ];
 
 const LEGACY_MEETING_KEYS = new Set<string>(MEETING_KEY_LIST);
