@@ -32,6 +32,7 @@ export function WeekView({
   onSelectDate,
   onEventSelect,
   swipeHandlers,
+  weekStartsOn = 1,
 }: {
   anchorDate: string;
   selectedDate: string;
@@ -39,8 +40,9 @@ export function WeekView({
   onSelectDate: (date: string) => void;
   onEventSelect: (event: ExpandedCalendarEvent) => void;
   swipeHandlers?: SwipeHandlers;
+  weekStartsOn?: 0 | 1;
 }) {
-  const weekDates = getWeekDates(anchorDate);
+  const weekDates = getWeekDates(anchorDate, weekStartsOn);
   const grouped = groupEventsByDay(events);
   const today = getTodayDateString();
 

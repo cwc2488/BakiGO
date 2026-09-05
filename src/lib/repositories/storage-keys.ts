@@ -23,6 +23,8 @@ export const STORAGE_KEYS = {
   sharedCalendarCacheMeta: "baki-go:shared-calendar-cache-meta",
   sharedCalendarDataVersion: "baki-go:shared-calendar-data-version",
   showSharedCalendar: "baki-go:show-shared-calendar",
+  /** Calendar layout: week starts on monday | sunday. Default monday (production legacy). */
+  calendarWeekStart: "baki-go:calendar-week-start",
   googleCalendarAuth: "baki-go:google-calendar-auth",
   appDataResetVersion: "baki-go:app-data-reset-version",
   pointRedemptions: "baki-go:point-redemptions",
