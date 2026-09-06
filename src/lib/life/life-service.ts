@@ -1179,8 +1179,27 @@ export async function getDashboard(ownerMemberId: string) {
     month: "long",
   }).format(new Date());
 
-  const activeGoals = goals.filter((g) => g.status === "active" || g.status === "planning");
-  const topGoal = activeGoals[0] ?? null;
+  // Same sort as listGoals (sort_order, created_at). Show in-progress goals on home.
+  // Exclude completed/archived; keep paused (muted in UI) as unfinished life goals.
+  const dashboardGoals = goals
+    .filter(
+      (g) =>
+        g.status === "active" || g.status === "planning" || g.status === "paused",
+    )
+    .map((g) => ({
+      id: g.id,
+      title: g.title,
+      icon: g.icon,
+      status: g.status,
+      preparedAmountCents: g.preparedAmountCents,
+      targetAmountCents: g.targetAmountCents,
+      progressPercent: goalProgressPercent(
+        g.preparedAmountCents,
+        g.targetAmountCents,
+      ),
+      sortOrder: g.sortOrder,
+    }));
+  const topGoal = dashboardGoals[0] ?? null;
 
   return {
     monthLabel,
@@ -1191,15 +1210,10 @@ export async function getDashboard(ownerMemberId: string) {
     topExpenseCategory: analytics.expense.byCategory[0] ?? null,
     netWorthCents: snapshots[0]?.netWorthCents ?? netWorthCents(accounts),
     latestSnapshot: snapshots[0] ?? null,
-    topGoal: topGoal
-      ? {
-          ...topGoal,
-          progressPercent: goalProgressPercent(
-            topGoal.preparedAmountCents,
-            topGoal.targetAmountCents,
-          ),
-        }
-      : null,
+    /** All in-progress goals for home (single request; preserves listGoals order). */
+    goals: dashboardGoals,
+    /** @deprecated Prefer `goals`; kept for older clients. */
+    topGoal,
     preferences: prefsRow.data ? mapPreferences(prefsRow.data) : null,
     assetTotalCents: sumAssetCents(accounts),
     liabilityTotalCents: sumLiabilityCents(accounts),

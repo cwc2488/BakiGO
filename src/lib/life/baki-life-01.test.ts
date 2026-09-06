@@ -81,7 +81,6 @@ describe("baki-life-01 source gates", () => {
     );
     expect(css).toMatch(/\.life-content\s*\{[\s\S]*?padding-bottom:\s*var\(--life-nav-offset\)/);
   });
-});
 
   it("exposes account transfer UI and records management", () => {
     const assets = read("src/components/life/LifeAssetsPage.tsx");
@@ -100,3 +99,18 @@ describe("baki-life-01 source gates", () => {
     expect(shell).toContain("onPressStart(item.id)");
     expect(shell).toContain("onSelect(item.id)");
   });
+
+  it("dashboard returns all in-progress goals in one response", () => {
+    const service = read("src/lib/life/life-service.ts");
+    const page = read("src/components/life/LifeDashboardPage.tsx");
+    expect(service).toContain("goals: dashboardGoals");
+    expect(service).toMatch(
+      /g\.status === "active" \|\| g\.status === "planning" \|\| g\.status === "paused"/,
+    );
+    expect(service).toContain("listGoals(ownerMemberId)");
+    expect(page).toContain('title="人生目標"');
+    expect(page).toContain("data.goals");
+    expect(page).toContain('lifeFetch<Dashboard>("/api/life/dashboard")');
+    expect(page).not.toContain("/api/life/goals");
+  });
+});
