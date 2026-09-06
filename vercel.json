@@ -1,9 +1,4 @@
 {
-  "functions": {
-    "src/app/api/life/acceptance-run/route.ts": {
-      "maxDuration": 300
-    }
-  },
   "crons": [
     {
       "path": "/api/radar/jobs/one-time-recovery-0901",
