@@ -5,7 +5,8 @@ import {
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+/** Fluid/Pro allows up to 300s; suite touches many ledger writes. */
+export const maxDuration = 300;
 
 /**
  * One-time Production acceptance runner (service-role).
