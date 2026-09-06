@@ -160,7 +160,9 @@ export async function runLifeProductionAcceptance(): Promise<{
   ok: boolean;
   ownerMemberId: string;
   checks: LifeAcceptanceCheck[];
+  elapsedMs: number;
 }> {
+  const started = Date.now();
   const checks: LifeAcceptanceCheck[] = [];
   const ownerId = await resolveOwnerMemberId();
   await cleanupDisposable(ownerId);
@@ -421,14 +423,14 @@ export async function runLifeProductionAcceptance(): Promise<{
         snap1.snapshot.totalAssetsCents - snap1.snapshot.totalLiabilitiesCents,
     );
 
-    await new Promise((r) => setTimeout(r, 50));
+    const postSnapAt = new Date().toISOString();
     await createTransaction(ownerId, {
       kind: "income",
       amountCents: 300_000,
       categoryId: incCat.id,
       accountId: ctbc.id,
       note: `post-snap1-income ${LIFE_ACCEPTANCE_MARKER}`,
-      occurredAt: new Date().toISOString(),
+      occurredAt: postSnapAt,
     });
     await createTransaction(ownerId, {
       kind: "expense",
@@ -436,7 +438,7 @@ export async function runLifeProductionAcceptance(): Promise<{
       categoryId: expCat.id,
       accountId: jko.id,
       note: `post-snap1-expense ${LIFE_ACCEPTANCE_MARKER}`,
-      occurredAt: new Date().toISOString(),
+      occurredAt: postSnapAt,
     });
     await createTransaction(ownerId, {
       kind: "transfer",
@@ -444,7 +446,7 @@ export async function runLifeProductionAcceptance(): Promise<{
       accountId: cash.id,
       counterpartyAccountId: jko.id,
       note: `post-snap1-transfer ${LIFE_ACCEPTANCE_MARKER}`,
-      occurredAt: new Date().toISOString(),
+      occurredAt: postSnapAt,
     });
 
     liveAccounts = await listAccounts(ownerId);
@@ -628,7 +630,12 @@ export async function runLifeProductionAcceptance(): Promise<{
     );
     must(checks, "cleanup_goals", goalsLeft.length === 0);
 
-    return { ok: checks.every((c) => c.ok), ownerMemberId: ownerId, checks };
+    return {
+      ok: checks.every((c) => c.ok),
+      ownerMemberId: ownerId,
+      checks,
+      elapsedMs: Date.now() - started,
+    };
   } catch (error) {
     try {
       await cleanupDisposable(ownerId);
@@ -642,6 +649,11 @@ export async function runLifeProductionAcceptance(): Promise<{
     } else if (!checks.some((c) => c.name === "fatal")) {
       checks.push({ name: "fatal", ok: false, detail: message });
     }
-    return { ok: false, ownerMemberId: ownerId, checks };
+    return {
+      ok: false,
+      ownerMemberId: ownerId,
+      checks,
+      elapsedMs: Date.now() - started,
+    };
   }
 }
