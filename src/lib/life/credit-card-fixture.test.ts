@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { applyLedgerDelta, netExpenseCentsForStats, netWorthCents } from "@/lib/life/accounting";
+import type { LifeAccountType } from "@/types/life";
+
+type Acct = { accountType: LifeAccountType; balanceCents: number };
 
 /**
  * Future credit-card fixture: swipe / pay / refund invariants
@@ -7,9 +10,9 @@ import { applyLedgerDelta, netExpenseCentsForStats, netWorthCents } from "@/lib/
  */
 describe("life credit card fixture", () => {
   it("swipe adds expense + liability; payment reduces bank + liability; no second expense", () => {
-    let map = new Map([
-      ["ctbc", { accountType: "bank" as const, balanceCents: 100_000_00 }],
-      ["visa", { accountType: "credit_card" as const, balanceCents: 0 }],
+    let map = new Map<string, Acct>([
+      ["ctbc", { accountType: "bank", balanceCents: 100_000_00 }],
+      ["visa", { accountType: "credit_card", balanceCents: 0 }],
     ]);
 
     map = applyLedgerDelta(map, {
@@ -51,9 +54,9 @@ describe("life credit card fixture", () => {
   });
 
   it("partial payment and refund keep liability coherent", () => {
-    let map = new Map([
-      ["ctbc", { accountType: "bank" as const, balanceCents: 50_000_00 }],
-      ["visa", { accountType: "credit_card" as const, balanceCents: 28_650_00 }],
+    let map = new Map<string, Acct>([
+      ["ctbc", { accountType: "bank", balanceCents: 50_000_00 }],
+      ["visa", { accountType: "credit_card", balanceCents: 28_650_00 }],
     ]);
 
     map = applyLedgerDelta(map, {
