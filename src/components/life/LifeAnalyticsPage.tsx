@@ -1,6 +1,7 @@
 "use client";
 
 import { useLifeData } from "@/components/life/LifeDataProvider";
+import { useLifePanelActive } from "@/components/life/LifePanelActivity";
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import {
@@ -37,11 +38,13 @@ type Period = "this_month" | "last_month" | "this_year";
 
 export function LifeAnalyticsPage() {
   const { mutationEpoch } = useLifeData();
+  const panelActive = useLifePanelActive("analytics");
   const [period, setPeriod] = useState<Period>("this_month");
   const [data, setData] = useState<Analytics | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!panelActive) return;
     let cancelled = false;
     // Keep previous data visible (SWR) — do not blank the panel on tab/period refresh.
     lifeFetch<Analytics>(`/api/life/analytics?period=${period}`)
@@ -54,7 +57,7 @@ export function LifeAnalyticsPage() {
     return () => {
       cancelled = true;
     };
-  }, [period, mutationEpoch]);
+  }, [period, mutationEpoch, panelActive]);
 
   return (
     <div>

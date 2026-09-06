@@ -1,6 +1,7 @@
 "use client";
 
 import { useLifeData } from "@/components/life/LifeDataProvider";
+import { useLifePanelActive } from "@/components/life/LifePanelActivity";
 
 import {
   LifeHeader,
@@ -33,11 +34,13 @@ type Dashboard = {
 
 export function LifeDashboardPage() {
   const { mutationEpoch } = useLifeData();
+  const panelActive = useLifePanelActive("home");
   const lifeTab = useOptionalLifeTab();
   const [data, setData] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!panelActive) return;
     let cancelled = false;
     lifeFetch<Dashboard>("/api/life/dashboard")
       .then((d) => {
@@ -49,7 +52,7 @@ export function LifeDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [mutationEpoch]);
+  }, [mutationEpoch, panelActive]);
 
   if (error) {
     return (

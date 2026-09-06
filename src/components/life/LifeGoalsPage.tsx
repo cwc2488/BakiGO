@@ -1,6 +1,7 @@
 "use client";
 
 import { useLifeData } from "@/components/life/LifeDataProvider";
+import { useLifePanelActive } from "@/components/life/LifePanelActivity";
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import {
@@ -19,6 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 
 export function LifeGoalsPage() {
   const { mutationEpoch } = useLifeData();
+  const panelActive = useLifePanelActive("goals");
   const [goals, setGoals] = useState<LifeGoal[]>([]);
   const [accounts, setAccounts] = useState<LifeAccount[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -42,11 +44,93 @@ export function LifeGoalsPage() {
   }, []);
 
   useEffect(() => {
+    if (!panelActive) return;
     refresh().catch((e: Error) => {
       setMessage(e.message);
       setLoaded(true);
     });
-  }, [refresh, mutationEpoch]);
+  }, [refresh, mutationEpoch, panelActive]);
+
+  
+  async function saveGoal(goal: LifeGoal) {
+    const title = window.prompt("目標名稱", goal.title);
+    if (title == null) return;
+    const target = window.prompt(
+      "目標金額（元，可留空）",
+      goal.targetAmountCents != null ? String(goal.targetAmountCents / 100) : "",
+    );
+    if (target == null) return;
+    try {
+      await lifeFetch("/api/life/goals", {
+        method: "PATCH",
+        body: JSON.stringify({
+          id: goal.id,
+          title: title.trim() || goal.title,
+          targetAmountYuan: target.trim() === "" ? null : target,
+        }),
+      });
+      setMessage("目標已更新");
+      await refresh();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "更新失敗");
+    }
+  }
+
+  async function archiveGoal(goal: LifeGoal) {
+    if (!confirm(`封存目標「${goal.title}」？不會刪除已綁定口袋。`)) return;
+    try {
+      await lifeFetch("/api/life/goals", {
+        method: "PATCH",
+        body: JSON.stringify({ id: goal.id, status: "archived" }),
+      });
+      setMessage("目標已封存");
+      await refresh();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "封存失敗");
+    }
+  }
+
+  async function editPocket(pocket: LifeAccount) {
+    const name = window.prompt("口袋名稱", pocket.name);
+    if (name == null || !name.trim()) return;
+    const link = window.prompt(
+      "綁定目標 ID（留空解除綁定）",
+      pocket.linkedGoalId ?? "",
+    );
+    if (link == null) return;
+    try {
+      await lifeFetch("/api/life/accounts", {
+        method: "PATCH",
+        body: JSON.stringify({
+          id: pocket.id,
+          name: name.trim(),
+          linkedGoalId: link.trim() === "" ? null : link.trim(),
+        }),
+      });
+      setMessage("口袋已更新");
+      await refresh();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "更新失敗");
+    }
+  }
+
+  async function deletePocket(pocket: LifeAccount) {
+    if (pocket.balanceCents !== 0) {
+      setMessage("請先將口袋餘額轉出至 0 元後才能刪除。");
+      return;
+    }
+    if (!confirm(`刪除口袋「${pocket.name}」？歷史轉帳仍會保留。`)) return;
+    try {
+      await lifeFetch("/api/life/accounts", {
+        method: "PATCH",
+        body: JSON.stringify({ id: pocket.id, status: "archived", linkedGoalId: null }),
+      });
+      setMessage("口袋已刪除");
+      await refresh();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "刪除失敗");
+    }
+  }
 
   if (!loaded) {
     return <LifeShellSkeleton title="目標" />;
@@ -151,6 +235,14 @@ export function LifeGoalsPage() {
                       <LifeProgress percent={pct} />
                     </div>
                   ) : null}
+                  <div className="mt-3 flex gap-2">
+                    <button type="button" className="text-xs text-[var(--life-muted)]" onClick={() => void saveGoal(g)}>
+                      修改
+                    </button>
+                    <button type="button" className="text-xs text-[var(--life-muted)]" onClick={() => void archiveGoal(g)}>
+                      刪除
+                    </button>
+                  </div>
                 </li>
               );
             })
@@ -209,6 +301,12 @@ export function LifeGoalsPage() {
                 >
                   更新
                 </LifeButton>
+                <button type="button" className="text-xs text-[var(--life-muted)]" onClick={() => void editPocket(p)}>
+                  修改
+                </button>
+                <button type="button" className="text-xs text-[var(--life-muted)]" onClick={() => void deletePocket(p)}>
+                  刪除
+                </button>
               </div>
             </li>
           ))}

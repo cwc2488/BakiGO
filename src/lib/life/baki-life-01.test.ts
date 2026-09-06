@@ -83,3 +83,20 @@ describe("baki-life-01 source gates", () => {
   });
 });
 
+  it("exposes account transfer UI and records management", () => {
+    const assets = read("src/components/life/LifeAssetsPage.tsx");
+    const quick = read("src/components/life/LifeQuickPage.tsx");
+    const service = read("src/lib/life/life-service.ts");
+    expect(assets).toContain("LifeTransferCard");
+    expect(quick).toContain("LifeRecordsPanel");
+    expect(service).toContain("pocket_not_empty");
+    expect(service).toContain("deleteSnapshot");
+  });
+
+  it("shell gates inactive panel work and switches on pointerdown", () => {
+    const shell = read("src/components/life/LifeShell.tsx");
+    expect(shell).toContain("LifePanelActivityProvider");
+    expect(shell).toContain("queueMicrotask");
+    expect(shell).toContain("onPressStart(item.id)");
+    expect(shell).toContain("onSelect(item.id)");
+  });

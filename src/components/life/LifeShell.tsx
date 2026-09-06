@@ -6,6 +6,7 @@ import { LifeDashboardPage } from "@/components/life/LifeDashboardPage";
 import { LifeDataProvider } from "@/components/life/LifeDataProvider";
 import { LifeGoalsPage } from "@/components/life/LifeGoalsPage";
 import { LifeQuickPage } from "@/components/life/LifeQuickPage";
+import { LifePanelActivityProvider } from "@/components/life/LifePanelActivity";
 import {
   LifeTabProvider,
   syncLifeTabUrl,
@@ -54,14 +55,11 @@ function LifeBottomNav({
                 aria-current={activeTab === item.id ? "page" : undefined}
                 onPointerDown={(e: ReactPointerEvent<HTMLButtonElement>) => {
                   if (e.button !== 0) return;
-                  // Pressed feedback must paint before any URL work.
+                  // Instant pressed + active on touch down — never wait for pointerup/router.
                   onPressStart(item.id);
-                }}
-                onPointerUp={(e: ReactPointerEvent<HTMLButtonElement>) => {
-                  if (e.button !== 0) return;
                   onSelect(item.id);
-                  onPressEnd();
                 }}
+                onPointerUp={onPressEnd}
                 onPointerCancel={onPressEnd}
                 onPointerLeave={onPressEnd}
                 onKeyDown={(e) => {
@@ -155,12 +153,14 @@ export function LifeShell({ children }: { children: React.ReactNode }) {
       setActiveTab(tab);
       setMounted((prev) => (prev[tab] ? prev : { ...prev, [tab]: true }));
       skipPathSync.current = true;
-      if (isLifeAuxPath(pathnameRef.current)) {
-        // Realign Next after leaving ledger; do not await.
-        router.replace(lifeHrefForTab(tab));
-      } else {
-        syncLifeTabUrl(tab);
-      }
+      // URL sync after paint — never blocks activeTab commit.
+      queueMicrotask(() => {
+        if (isLifeAuxPath(pathnameRef.current)) {
+          router.replace(lifeHrefForTab(tab));
+        } else {
+          syncLifeTabUrl(tab);
+        }
+      });
       if (typeof window !== "undefined") {
         const elapsed =
           (typeof performance !== "undefined"
@@ -212,6 +212,7 @@ export function LifeShell({ children }: { children: React.ReactNode }) {
   return (
     <LifeDataProvider>
       <LifeTabProvider activeTab={activeTab} onSelectTab={selectTab}>
+        <LifePanelActivityProvider activeTab={activeTab}>
         <div className="life-app">
           <div className="life-content mx-auto max-w-lg">
             {showAux ? (
@@ -279,6 +280,7 @@ export function LifeShell({ children }: { children: React.ReactNode }) {
             onPressEnd={() => setPressedTab(null)}
           />
         </div>
+        </LifePanelActivityProvider>
       </LifeTabProvider>
     </LifeDataProvider>
   );

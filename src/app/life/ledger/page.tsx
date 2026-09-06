@@ -1,5 +1,6 @@
-import { LifeLedgerPage } from "@/components/life/LifeLedgerPage";
+import { LifeRecordsPanel } from "@/components/life/LifeRecordsPanel";
 
-export default function Page() {
-  return <LifeLedgerPage />;
+/** Aux ledger route — full record management (also available inside Quick 明細). */
+export default function LifeLedgerRoutePage() {
+  return <LifeRecordsPanel />;
 }
