@@ -16,7 +16,7 @@ import {
   formatLifeMoney,
 } from "@/components/life/LifeUi";
 import { lifeFetch } from "@/lib/life/client";
-import type { LifeAccount, LifeSnapshot } from "@/types/life";
+import type { LifeAccount, LifeCategory, LifeSnapshot } from "@/types/life";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -26,6 +26,92 @@ const TYPE_LABEL: Record<string, string> = {
   credit_card: "信用卡",
   goal_pocket: "目標口袋",
 };
+
+
+function CategoryManager({ onMessage }: { onMessage: (m: string | null) => void }) {
+  const [categories, setCategories] = useState<LifeCategory[]>([]);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<"expense" | "income">("expense");
+
+  const refresh = useCallback(async () => {
+    const res = await lifeFetch<{ categories: LifeCategory[] }>("/api/life/categories?includeArchived=1");
+    setCategories(res.categories.filter((c) => c.status === "active"));
+  }, []);
+
+  useEffect(() => {
+    refresh().catch((e: Error) => onMessage(e.message));
+  }, [refresh, onMessage]);
+
+  async function add() {
+    if (!name.trim()) return;
+    try {
+      await lifeFetch("/api/life/categories", {
+        method: "POST",
+        body: JSON.stringify({ kind, name: name.trim() }),
+      });
+      setName("");
+      onMessage("分類已新增");
+      await refresh();
+    } catch (e) {
+      onMessage(e instanceof Error ? e.message : "新增失敗");
+    }
+  }
+
+  async function rename(id: string, current: string) {
+    const next = window.prompt("分類名稱", current);
+    if (!next || next.trim() === current) return;
+    try {
+      await lifeFetch("/api/life/categories", {
+        method: "PATCH",
+        body: JSON.stringify({ id, name: next.trim() }),
+      });
+      await refresh();
+    } catch (e) {
+      onMessage(e instanceof Error ? e.message : "重新命名失敗");
+    }
+  }
+
+  async function archive(id: string) {
+    if (!confirm("封存此分類？歷史紀錄仍會保留原名稱。")) return;
+    try {
+      await lifeFetch("/api/life/categories", {
+        method: "PATCH",
+        body: JSON.stringify({ id, status: "archived" }),
+      });
+      onMessage("分類已封存");
+      await refresh();
+    } catch (e) {
+      onMessage(e instanceof Error ? e.message : "封存失敗");
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <ul className="divide-y divide-[var(--life-border)] rounded-2xl border border-[var(--life-border)] bg-[var(--life-surface)]">
+        {categories.map((c) => (
+          <li key={c.id} className="flex items-center justify-between gap-2 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">{c.name}</p>
+              <p className="text-[11px] text-[var(--life-muted)]">{c.kind === "income" ? "收入" : "支出"}</p>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" className="text-[11px] text-[var(--life-muted)]" onClick={() => rename(c.id, c.name)}>修改</button>
+              <button type="button" className="text-[11px] text-[var(--life-muted)]" onClick={() => archive(c.id)}>封存</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-2">
+        <LifeSelect value={kind} onChange={(e) => setKind(e.target.value as "expense" | "income")}> 
+          <option value="expense">支出</option>
+          <option value="income">收入</option>
+        </LifeSelect>
+        <LifeInput placeholder="新分類" value={name} onChange={(e) => setName(e.target.value)} />
+        <LifeButton onClick={() => void add()}>新增</LifeButton>
+      </div>
+    </div>
+  );
+}
 
 export function LifeAssetsPage() {
   const { mutationEpoch } = useLifeData();
@@ -275,6 +361,22 @@ export function LifeAssetsPage() {
                     待繳 {formatLifeMoney(c.balanceCents)}
                   </span>
                 </div>
+                <div className="mt-2 flex gap-3">
+                  <button
+                    type="button"
+                    className="text-[11px] text-[var(--life-muted)]"
+                    onClick={() => renameAccount(c.id, c.name)}
+                  >
+                    修改
+                  </button>
+                  <button
+                    type="button"
+                    className="text-[11px] text-[var(--life-muted)]"
+                    onClick={() => archiveAccount(c.id)}
+                  >
+                    封存
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -339,6 +441,11 @@ export function LifeAssetsPage() {
             </div>
           </div>
         ) : null}
+      </LifeSection>
+
+      
+      <LifeSection title="分類管理">
+        <CategoryManager onMessage={setMessage} />
       </LifeSection>
 
       <LifeSection title="財務快照">
