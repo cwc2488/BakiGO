@@ -16,6 +16,16 @@ import Link from "next/link";
 import { useOptionalLifeTab } from "@/components/life/LifeTabContext";
 import { useEffect, useState } from "react";
 
+type DashboardGoal = {
+  id: string;
+  title: string;
+  icon: string | null;
+  status: string;
+  preparedAmountCents: number;
+  targetAmountCents: number | null;
+  progressPercent: number | null;
+};
+
 type Dashboard = {
   monthLabel: string;
   incomeCents: number;
@@ -24,12 +34,9 @@ type Dashboard = {
   topExpenseCategory: { name: string; amountCents: number } | null;
   netWorthCents: number;
   latestSnapshot: { capturedAt: string; unrecordedExpenseCents: number } | null;
-  topGoal: {
-    title: string;
-    preparedAmountCents: number;
-    targetAmountCents: number | null;
-    progressPercent: number | null;
-  } | null;
+  goals?: DashboardGoal[];
+  /** Legacy single-goal field; prefer `goals`. */
+  topGoal: DashboardGoal | null;
 };
 
 export function LifeDashboardPage() {
@@ -98,31 +105,55 @@ export function LifeDashboardPage() {
         />
       </section>
 
-      {data.topGoal ? (
-        <LifeSection title="人生目標">
-          <div className="rounded-2xl border border-[var(--life-border)] bg-[var(--life-surface)] px-4 py-4">
-            <div className="flex items-baseline justify-between gap-2">
-              <p className="font-medium">{data.topGoal.title}</p>
-              {data.topGoal.progressPercent != null ? (
-                <span className="text-sm text-[var(--life-accent)]">
-                  {data.topGoal.progressPercent}%
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-1 text-sm text-[var(--life-secondary)]">
-              {formatLifeMoney(data.topGoal.preparedAmountCents)}
-              {data.topGoal.targetAmountCents != null
-                ? ` / ${formatLifeMoney(data.topGoal.targetAmountCents)}`
-                : ""}
-            </p>
-            {data.topGoal.progressPercent != null ? (
-              <div className="mt-3">
-                <LifeProgress percent={data.topGoal.progressPercent} />
-              </div>
-            ) : null}
-          </div>
-        </LifeSection>
-      ) : null}
+      {(() => {
+        const goals =
+          data.goals && data.goals.length > 0
+            ? data.goals
+            : data.topGoal
+              ? [data.topGoal]
+              : [];
+        if (goals.length === 0) return null;
+        return (
+          <LifeSection title="人生目標">
+            <ul className="space-y-3">
+              {goals.map((goal, index) => {
+                const muted = goal.status === "paused";
+                return (
+                  <li
+                    key={goal.id ?? `goal-${index}`}
+                    className={`rounded-2xl border border-[var(--life-border)] bg-[var(--life-surface)] px-4 py-4 ${
+                      muted ? "opacity-70" : ""
+                    }`}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="font-medium">
+                        {goal.icon ? `${goal.icon} ` : ""}
+                        {goal.title}
+                      </p>
+                      {goal.progressPercent != null ? (
+                        <span className="text-sm text-[var(--life-accent)]">
+                          {goal.progressPercent}%
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-sm text-[var(--life-secondary)]">
+                      {formatLifeMoney(goal.preparedAmountCents)}
+                      {goal.targetAmountCents != null
+                        ? ` / ${formatLifeMoney(goal.targetAmountCents)}`
+                        : ""}
+                    </p>
+                    {goal.progressPercent != null ? (
+                      <div className="mt-3">
+                        <LifeProgress percent={goal.progressPercent} />
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </LifeSection>
+        );
+      })()}
 
       <LifeSection title="淨資產">
         <div className="rounded-2xl border border-[var(--life-border)] bg-[var(--life-surface)] px-4 py-4">
