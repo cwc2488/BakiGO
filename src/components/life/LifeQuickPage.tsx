@@ -1,6 +1,6 @@
 "use client";
 
-import { LifeButton, formatLifeMoney } from "@/components/life/LifeUi";
+import { LifeButton } from "@/components/life/LifeUi";
 import { lifeFetch } from "@/lib/life/client";
 import type { LifeAccount, LifeCategory } from "@/types/life";
 import { useEffect, useRef, useState } from "react";
@@ -18,6 +18,7 @@ export function LifeQuickPage() {
   const [accountId, setAccountId] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "ok" | "err">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [lastSavedLabel, setLastSavedLabel] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -69,6 +70,7 @@ export function LifeQuickPage() {
           accountId,
         }),
       });
+      setLastSavedLabel(amount);
       setAmount("");
       setStatus("ok");
       setLastAccountId(accountId);
@@ -148,9 +150,9 @@ export function LifeQuickPage() {
         >
           {status === "saving" ? "記錄中…" : status === "ok" ? "已記錄 ✓" : "完成"}
         </LifeButton>
-        {status === "ok" ? (
+        {status === "ok" && lastSavedLabel ? (
           <p className="mt-2 text-center text-sm text-[var(--life-positive)]">
-            已記 {formatLifeMoney(Math.round(Number(amount || 0) * 100) || 0)} — 可繼續下一筆
+            已記一筆 — 可繼續下一筆
           </p>
         ) : null}
         {error ? (
