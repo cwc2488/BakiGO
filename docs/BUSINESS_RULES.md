@@ -72,6 +72,16 @@ Frozen rules:
 - 重新開啟後仍必須遵守原本的收件時間窗判定
 - 旋轉 public collection token 時，舊 token **立即失效**
 
+### Baki Life (Owner-only)
+
+Baki Life（`/life/*`）是 Owner 私人生活／財務 OS。
+
+- 僅 Super Admin（Owner）可進入與讀寫
+- 權限與管理中心相同：`resolveIsSuperAdmin` / `assertSuperAdmin`
+- 非 Owner 直接開啟 URL 必須無法看到任何財務資料（server layout + API + service-role DB）
+- 不得把財務金額寫入 console / client logs
+- 詳見 `docs/BAKI_LIFE.md`
+
 ### Recognition Admin rules
 
 BakiGO 唯一 Super Admin 為會員編號 `20699471`。
@@ -81,6 +91,7 @@ Canonical source: `src/lib/auth/super-admin.ts` (`SUPER_ADMIN_MEMBER_NUMBERS` / 
 Frozen rules:
 
 - 管理中心（`/admin`）僅 Super Admin 可進入
+- Baki Life（`/life`）僅 Super Admin / Owner 可進入
 - 表揚中心（Recognition Center）是管理中心的一個功能，不是管理中心的替代品
 - Recognition Center 僅 Super Admin 可進入、建立、更新、刪除表揚活動
 - 權限**不得**由 rank 推論

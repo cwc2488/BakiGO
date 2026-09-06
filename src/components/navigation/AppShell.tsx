@@ -10,10 +10,16 @@ import { AppBottomNav, AppSideNav } from "./AppNav";
 import { CalendarReminderScheduler } from "@/components/calendar/CalendarReminderScheduler";
 import { CustomerFollowUpReminderScheduler } from "@/components/customers/CustomerFollowUpReminderScheduler";
 
+function isLifePath(pathname: string): boolean {
+  return pathname === "/life" || pathname.startsWith("/life/");
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
   const pathname = normalizePathname(usePathname());
-  const showNav = Boolean(session) && !isPublicPath(pathname);
+  const lifeSurface = isLifePath(pathname);
+  // Baki Life uses its own shell/nav — keep Baki Go chrome off /life/*
+  const showNav = Boolean(session) && !isPublicPath(pathname) && !lifeSurface;
 
   useEffect(() => {
     runAppDataResetIfNeeded(createLocalStorageAdapter());
@@ -21,8 +27,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <CalendarReminderScheduler />
-      <CustomerFollowUpReminderScheduler />
+      {lifeSurface ? null : (
+        <>
+          <CalendarReminderScheduler />
+          <CustomerFollowUpReminderScheduler />
+        </>
+      )}
       <div className="min-h-full max-w-[100vw]">
         {showNav ? <AppSideNav /> : null}
         <div

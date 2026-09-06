@@ -38,6 +38,17 @@
   --cal-text-secondary: var(--brand-text-secondary);
   --cal-text-muted: var(--brand-text-muted);
   --cal-hint: var(--brand-hint);
+
+  /* Baki Life — Owner private Life OS (dark mature surface) */
+  --life-bg: #0f1412;
+  --life-surface: #171d1a;
+  --life-border: #2a332e;
+  --life-text: #e8e4dc;
+  --life-secondary: #a8b0aa;
+  --life-muted: #6f7a74;
+  --life-accent: #c8a96b;
+  --life-positive: #7cbc8a;
+  --life-negative: #d9897a;
 }
 
 @theme inline {
