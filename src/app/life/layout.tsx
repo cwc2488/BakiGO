@@ -51,9 +51,11 @@ export default async function LifeLayout({ children }: { children: ReactNode }) 
   }
 
   return (
-    <SuperAdminGuard>
-      <LifePwaLinks />
-      <LifeShell>{children}</LifeShell>
-    </SuperAdminGuard>
+    <div className="life-root">
+      <SuperAdminGuard>
+        <LifePwaLinks />
+        <LifeShell>{children}</LifeShell>
+      </SuperAdminGuard>
+    </div>
   );
 }
