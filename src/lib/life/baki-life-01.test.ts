@@ -42,7 +42,8 @@ describe("baki-life-01 source gates", () => {
   it("scoped life PWA manifest exists", () => {
     const manifest = read("public/life/manifest.webmanifest");
     expect(manifest).toContain('"name": "Baki Life"');
-    expect(manifest).toContain('"start_url": "/life"');
+    expect(manifest).toContain('"start_url": "/life/quick"');
+    expect(manifest).toContain('"background_color": "#f5faf6"');
     expect(manifest).toContain("/life-icons/");
   });
 

@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: "Baki Life",
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
   },
   icons: {
     apple: [{ url: "/life-icons/apple-touch-icon.png", sizes: "180x180" }],
@@ -31,7 +31,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#0f1412",
+  themeColor: "#f5faf6",
 };
 
 /**

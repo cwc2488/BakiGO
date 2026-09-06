@@ -1081,8 +1081,9 @@ export async function getDashboard(ownerMemberId: string) {
 
 export async function getQuickBootstrap(ownerMemberId: string) {
   await ensureLifeSeeded(ownerMemberId);
-  const [categories, accounts, prefsRow] = await Promise.all([
+  const [expenseCategories, incomeCategories, accounts, prefsRow] = await Promise.all([
     listCategories(ownerMemberId, { kind: "expense" }),
+    listCategories(ownerMemberId, { kind: "income" }),
     listAccounts(ownerMemberId),
     db()
       .from("life_preferences")
@@ -1095,9 +1096,13 @@ export async function getQuickBootstrap(ownerMemberId: string) {
     (a) => isAssetAccountType(a.accountType) || a.accountType === "credit_card",
   );
   return {
-    categories: categories.slice(0, 12),
+    /** @deprecated prefer expenseCategories — kept for older clients */
+    categories: expenseCategories.slice(0, 12),
+    expenseCategories: expenseCategories.slice(0, 12),
+    incomeCategories: incomeCategories.slice(0, 12),
     accounts: assetAccounts,
     lastExpenseAccountId: prefs?.lastExpenseAccountId ?? null,
+    lastIncomeAccountId: prefs?.lastIncomeAccountId ?? null,
   };
 }
 

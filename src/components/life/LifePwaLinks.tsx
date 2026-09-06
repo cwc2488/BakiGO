@@ -31,6 +31,14 @@ export function LifePwaLinks() {
       document.head.appendChild(metaApp);
     }
     metaApp.setAttribute("content", "Baki Life");
+
+    let theme = document.querySelector('meta[name="theme-color"]');
+    if (!theme) {
+      theme = document.createElement("meta");
+      theme.setAttribute("name", "theme-color");
+      document.head.appendChild(theme);
+    }
+    theme.setAttribute("content", "#f5faf6");
   }, []);
 
   return null;

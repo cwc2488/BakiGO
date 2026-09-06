@@ -6,6 +6,7 @@ import {
   LifeSection,
   LifeStat,
   formatLifeMoney,
+  LifeShellSkeleton,
 } from "@/components/life/LifeUi";
 import { lifeFetch } from "@/lib/life/client";
 import { useEffect, useState } from "react";
@@ -80,7 +81,7 @@ export function LifeAnalyticsPage() {
 
       {error ? <p className="px-5 pt-4 text-sm text-[var(--life-negative)]">{error}</p> : null}
       {!data && !error ? (
-        <p className="px-5 pt-4 text-sm text-[var(--life-muted)]">載入中…</p>
+        <LifeShellSkeleton title="載入中" />
       ) : null}
 
       {data ? (
