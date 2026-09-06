@@ -81,13 +81,35 @@ async function persistBalances(
   balances: Map<string, { balanceCents: number }>,
 ) {
   const updatedAt = nowIso();
-  for (const [id, row] of balances) {
-    const { error } = await db()
-      .from("life_accounts")
-      .update({ balance_cents: row.balanceCents, updated_at: updatedAt })
-      .eq("id", id)
-      .eq("owner_member_id", ownerMemberId);
+  const entries = [...balances.entries()];
+  if (entries.length === 0) return;
+  const results = await Promise.all(
+    entries.map(([id, row]) =>
+      db()
+        .from("life_accounts")
+        .update({ balance_cents: row.balanceCents, updated_at: updatedAt })
+        .eq("id", id)
+        .eq("owner_member_id", ownerMemberId),
+    ),
+  );
+  for (const { error } of results) {
     if (error) throw new LifeError(error.message, 500, "db_error");
+  }
+}
+
+/** Asset accounts (incl. goal pockets) must not go negative after ledger ops. */
+function assertNoNegativeAssetBalances(
+  balances: Map<string, { accountType: LifeAccountType; balanceCents: number }>,
+) {
+  for (const [id, row] of balances) {
+    if (!isAssetAccountType(row.accountType)) continue;
+    if (row.balanceCents < 0) {
+      throw new LifeError(
+        "餘額不足，無法完成此操作（會造成帳戶負餘額）",
+        400,
+        "insufficient_balance",
+      );
+    }
   }
 }
 
@@ -256,7 +278,37 @@ export async function updateAccount(
     if (!name) throw new LifeError("帳戶名稱不可為空");
     updates.name = name;
   }
-  if (patch.status != null) updates.status = patch.status;
+  if (patch.status != null) {
+    if (patch.status === "archived" && existing.status !== "archived") {
+      const bal = existing.balanceCents;
+      if (existing.accountType === "goal_pocket" && bal !== 0) {
+        throw new LifeError(
+          "請先將口袋餘額轉出至 0 元後才能刪除。",
+          400,
+          "pocket_not_empty",
+        );
+      }
+      if (existing.accountType === "credit_card" && bal !== 0) {
+        throw new LifeError(
+          "請先繳清信用卡待繳餘額後才能封存。",
+          400,
+          "credit_not_cleared",
+        );
+      }
+      if (isAssetAccountType(existing.accountType) && existing.accountType !== "goal_pocket" && bal !== 0) {
+        throw new LifeError(
+          "請先將帳戶餘額轉出至 0 元後才能封存。",
+          400,
+          "account_not_empty",
+        );
+      }
+      // Soft-delete: unlink pocket from goal so goal remains.
+      if (existing.accountType === "goal_pocket" && existing.linkedGoalId) {
+        updates.linked_goal_id = null;
+      }
+    }
+    updates.status = patch.status;
+  }
   if (patch.parentAccountId !== undefined) updates.parent_account_id = patch.parentAccountId;
   if (patch.linkedGoalId !== undefined) updates.linked_goal_id = patch.linkedGoalId;
   if (patch.defaultPaymentAccountId !== undefined) {
@@ -555,10 +607,16 @@ export async function createTransaction(
 
   if (input.kind === "transfer") {
     if (!input.counterpartyAccountId) throw new LifeError("請選擇轉入帳戶");
+    if (input.counterpartyAccountId === input.accountId) {
+      throw new LifeError("轉出與轉入帳戶不可相同", 400, "same_account");
+    }
     const to = accounts.get(input.counterpartyAccountId);
     if (!to || to.status === "archived") throw new LifeError("轉入帳戶不可用");
     if (!isAssetAccountType(primary.accountType) || !isAssetAccountType(to.accountType)) {
       throw new LifeError("轉帳僅限資產帳戶之間");
+    }
+    if (primary.balanceCents < amountCents) {
+      throw new LifeError("轉出帳戶餘額不足", 400, "insufficient_balance");
     }
   }
 
@@ -585,15 +643,6 @@ export async function createTransaction(
     if (primary.accountType !== "credit_card") throw new LifeError("退款帳戶必須是信用卡");
   }
 
-  const nextBalances = applyLedgerDelta(accounts, {
-    kind: input.kind,
-    amountCents,
-    accountId: input.accountId,
-    counterpartyAccountId: input.counterpartyAccountId ?? null,
-    direction: 1,
-  });
-
-  // Soft-check: don't allow asset to go deeply negative without blocking (allow for flexibility)
   // Credit payment shouldn't exceed liability
   if (input.kind === "credit_payment" && input.counterpartyAccountId) {
     const before = accounts.get(input.counterpartyAccountId)!.balanceCents;
@@ -601,6 +650,15 @@ export async function createTransaction(
       throw new LifeError("繳款金額不可超過待繳餘額");
     }
   }
+
+  const nextBalances = applyLedgerDelta(accounts, {
+    kind: input.kind,
+    amountCents,
+    accountId: input.accountId,
+    counterpartyAccountId: input.counterpartyAccountId ?? null,
+    direction: 1,
+  });
+  assertNoNegativeAssetBalances(nextBalances);
 
   const { data, error } = await db()
     .from("life_transactions")
@@ -620,29 +678,37 @@ export async function createTransaction(
 
   await persistBalances(ownerMemberId, nextBalances);
 
-  if (input.categoryId) await bumpCategoryUsage(ownerMemberId, input.categoryId);
-
-  // Update last used account prefs
+  // Non-blocking for UX: run side effects in parallel after balances are durable.
+  const sideEffects: Promise<unknown>[] = [];
+  if (input.categoryId) sideEffects.push(bumpCategoryUsage(ownerMemberId, input.categoryId));
   if (input.kind === "expense" || input.kind === "income") {
     const prefKey =
       input.kind === "expense" ? "last_expense_account_id" : "last_income_account_id";
-    await db()
-      .from("life_preferences")
-      .upsert({
-        owner_member_id: ownerMemberId,
-        [prefKey]: input.accountId,
-        updated_at: nowIso(),
-      });
+    sideEffects.push(
+      (async () => {
+        const { error } = await db()
+          .from("life_preferences")
+          .upsert({
+            owner_member_id: ownerMemberId,
+            [prefKey]: input.accountId,
+            updated_at: nowIso(),
+          });
+        if (error) throw new LifeError(error.message, 500, "db_error");
+      })(),
+    );
   }
-
-  // Sync goal prepared from pocket transfers / balance changes
   const touchedPocketIds = [input.accountId, input.counterpartyAccountId].filter(Boolean) as string[];
   for (const id of touchedPocketIds) {
-    const acct = await getAccountOrThrow(ownerMemberId, id);
-    if (acct.accountType === "goal_pocket" && acct.linkedGoalId) {
-      await syncGoalPreparedFromPocket(ownerMemberId, acct.linkedGoalId);
-    }
+    sideEffects.push(
+      (async () => {
+        const acct = await getAccountOrThrow(ownerMemberId, id);
+        if (acct.accountType === "goal_pocket" && acct.linkedGoalId) {
+          await syncGoalPreparedFromPocket(ownerMemberId, acct.linkedGoalId);
+        }
+      })(),
+    );
   }
+  if (sideEffects.length) await Promise.all(sideEffects);
 
   return mapTransaction(data);
 }
@@ -701,6 +767,21 @@ export async function updateTransaction(
     );
   }
 
+  if (existing.kind === "transfer") {
+    if (!next.counterpartyAccountId) throw new LifeError("請選擇轉入帳戶");
+    if (next.counterpartyAccountId === next.accountId) {
+      throw new LifeError("轉出與轉入帳戶不可相同", 400, "same_account");
+    }
+    const fromAcct = balances.get(next.accountId);
+    const toAcct = balances.get(next.counterpartyAccountId);
+    if (!fromAcct || !isAssetAccountType(fromAcct.accountType)) {
+      throw new LifeError("轉出帳戶無效");
+    }
+    if (!toAcct || !isAssetAccountType(toAcct.accountType)) {
+      throw new LifeError("轉入帳戶無效");
+    }
+  }
+
   balances = applyLedgerDelta(balances, {
     kind: next.kind,
     amountCents: next.amountCents,
@@ -726,7 +807,19 @@ export async function updateTransaction(
     .single();
   if (upErr) throw new LifeError(upErr.message, 500, "db_error");
 
+  assertNoNegativeAssetBalances(balances);
   await persistBalances(ownerMemberId, balances);
+
+  const touched = [existing.accountId, existing.counterpartyAccountId, next.accountId, next.counterpartyAccountId].filter(Boolean) as string[];
+  const goalIds = new Set<string>();
+  for (const id of [...new Set(touched)]) {
+    const acct = await getAccountOrThrow(ownerMemberId, id);
+    if (acct.accountType === "goal_pocket" && acct.linkedGoalId) goalIds.add(acct.linkedGoalId);
+  }
+  for (const goalId of goalIds) {
+    await syncGoalPreparedFromPocket(ownerMemberId, goalId);
+  }
+
   return mapTransaction(data);
 }
 
@@ -752,6 +845,7 @@ export async function deleteTransaction(
     counterpartyAccountId: existing.counterpartyAccountId,
     direction: -1,
   });
+  assertNoNegativeAssetBalances(balances);
 
   const { error: delErr } = await db()
     .from("life_transactions")
@@ -916,6 +1010,39 @@ function resolvePeriod(
   if (period === "this_year") return taipeiYearBounds();
   if (!from || !to) throw new LifeError("自訂期間需要起迄日期");
   return { start: new Date(from), end: new Date(to) };
+}
+
+
+export async function deleteSnapshot(ownerMemberId: string, snapshotId: string): Promise<void> {
+  const { data: existing, error } = await db()
+    .from("life_snapshots")
+    .select("id")
+    .eq("id", snapshotId)
+    .eq("owner_member_id", ownerMemberId)
+    .maybeSingle();
+  if (error) throw new LifeError(error.message, 500, "db_error");
+  if (!existing) throw new LifeError("快照不存在", 404, "not_found");
+
+  // Clear forward links that point at this snapshot.
+  const { error: unlinkErr } = await db()
+    .from("life_snapshots")
+    .update({ previous_snapshot_id: null })
+    .eq("owner_member_id", ownerMemberId)
+    .eq("previous_snapshot_id", snapshotId);
+  if (unlinkErr) throw new LifeError(unlinkErr.message, 500, "db_error");
+
+  const { error: balErr } = await db()
+    .from("life_snapshot_balances")
+    .delete()
+    .eq("snapshot_id", snapshotId);
+  if (balErr) throw new LifeError(balErr.message, 500, "db_error");
+
+  const { error: delErr } = await db()
+    .from("life_snapshots")
+    .delete()
+    .eq("id", snapshotId)
+    .eq("owner_member_id", ownerMemberId);
+  if (delErr) throw new LifeError(delErr.message, 500, "db_error");
 }
 
 export async function getAnalytics(

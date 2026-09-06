@@ -1,8 +1,10 @@
 "use client";
 
 import { useLifeData } from "@/components/life/LifeDataProvider";
+import { useLifePanelActive } from "@/components/life/LifePanelActivity";
 /* eslint-disable react-hooks/set-state-in-effect */
 
+import { LifeTransferCard } from "@/components/life/LifeTransferCard";
 import {
   LifeButton,
   LifeHeader,
@@ -27,6 +29,7 @@ const TYPE_LABEL: Record<string, string> = {
 
 export function LifeAssetsPage() {
   const { mutationEpoch } = useLifeData();
+  const panelActive = useLifePanelActive("assets");
   const [accounts, setAccounts] = useState<LifeAccount[]>([]);
   const [snapshots, setSnapshots] = useState<LifeSnapshot[]>([]);
   const [balances, setBalances] = useState<Record<string, string>>({});
@@ -57,11 +60,12 @@ export function LifeAssetsPage() {
   }, []);
 
   useEffect(() => {
+    if (!panelActive) return;
     refresh().catch((e: Error) => {
       setMessage(e.message);
       setLoaded(true);
     });
-  }, [refresh, mutationEpoch]);
+  }, [refresh, mutationEpoch, panelActive]);
 
   const active = useMemo(() => accounts.filter((a) => a.status === "active"), [accounts]);
   const assets = active.filter((a) => a.accountType !== "credit_card");
@@ -168,6 +172,31 @@ export function LifeAssetsPage() {
     }
   }
 
+
+  async function deleteSnapshot(id: string) {
+    if (!confirm("確定刪除此快照？")) return;
+    try {
+      await lifeFetch(`/api/life/snapshots?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      setMessage("快照已刪除");
+      await refresh();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "刪除失敗");
+    }
+  }
+
+  async function renameAccount(id: string, current: string) {
+    const name = window.prompt("帳戶名稱", current);
+    if (!name || name.trim() === current) return;
+    try {
+      await lifeFetch("/api/life/accounts", {
+        method: "PATCH",
+        body: JSON.stringify({ id, name: name.trim() }),
+      });
+      await refresh();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "重新命名失敗");
+    }
+  }
   return (
     <div>
       <LifeHeader title="資產" subtitle="帳戶、信用卡與財務快照" />
@@ -181,6 +210,8 @@ export function LifeAssetsPage() {
         <LifeStat label="淨資產" value={formatLifeMoney(assetTotal - liabTotal)} tone="positive" />
       </section>
 
+      <LifeTransferCard accounts={accounts} onDone={() => void refresh()} />
+
       <LifeSection title="帳戶">
         <ul className="divide-y divide-[var(--life-border)] rounded-2xl border border-[var(--life-border)] bg-[var(--life-surface)]">
           {assets.map((a) => (
@@ -193,6 +224,13 @@ export function LifeAssetsPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">{formatLifeMoney(a.balanceCents)}</span>
+                <button
+                  type="button"
+                  className="text-[11px] text-[var(--life-muted)]"
+                  onClick={() => renameAccount(a.id, a.name)}
+                >
+                  修改
+                </button>
                 <button
                   type="button"
                   className="text-[11px] text-[var(--life-muted)]"
@@ -331,6 +369,13 @@ export function LifeAssetsPage() {
               {new Date(snapshots[0].capturedAt).toLocaleString("zh-TW")}
             </p>
             <p className="mt-1">淨資產 {formatLifeMoney(snapshots[0].netWorthCents)}</p>
+            <button
+              type="button"
+              className="mt-2 text-xs text-[var(--life-muted)]"
+              onClick={() => deleteSnapshot(snapshots[0].id)}
+            >
+              刪除錯誤快照
+            </button>
             {snapshots[0].unrecordedExpenseCents > 0 ? (
               <p className="mt-1 text-[var(--life-negative)]">
                 未記錄生活費 {formatLifeMoney(snapshots[0].unrecordedExpenseCents)}

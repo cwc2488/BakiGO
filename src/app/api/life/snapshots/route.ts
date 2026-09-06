@@ -1,5 +1,5 @@
 import { lifeErrorResponse, requireLifeOwner } from "@/lib/life/api";
-import { createSnapshot, listSnapshots } from "@/lib/life/life-service";
+import { createSnapshot, deleteSnapshot, listSnapshots } from "@/lib/life/life-service";
 import { yuanToCents } from "@/lib/life/money";
 import { NextResponse } from "next/server";
 
@@ -32,6 +32,19 @@ export async function POST(request: Request) {
       balances,
     });
     return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    return lifeErrorResponse(error);
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const ownerId = await requireLifeOwner(request);
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id");
+    if (!id) throw new Error("Missing id");
+    await deleteSnapshot(ownerId, id);
+    return NextResponse.json({ ok: true });
   } catch (error) {
     return lifeErrorResponse(error);
   }

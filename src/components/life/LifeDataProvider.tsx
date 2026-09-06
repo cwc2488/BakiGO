@@ -32,6 +32,8 @@ type LifeDataContextValue = {
   lastExpenseAccountId: string | null;
   lastIncomeAccountId: string | null;
   refreshQuick: () => Promise<void>;
+  /** Reload bootstrap without bumping mutationEpoch (non-blocking for other panels). */
+  softRefresh: () => void;
   invalidate: () => void;
   /** Bumps when finance mutations land — panels soft-refresh. */
   mutationEpoch: number;
@@ -80,6 +82,10 @@ export function LifeDataProvider({ children }: { children: ReactNode }) {
     void load();
   }, [load]);
 
+  const softRefresh = useCallback(() => {
+    void load();
+  }, [load]);
+
   const invalidate = useCallback(() => {
     setMutationEpoch((n) => n + 1);
     void load();
@@ -96,10 +102,11 @@ export function LifeDataProvider({ children }: { children: ReactNode }) {
       lastExpenseAccountId: data?.lastExpenseAccountId ?? null,
       lastIncomeAccountId: data?.lastIncomeAccountId ?? null,
       refreshQuick: load,
+      softRefresh,
       invalidate,
       mutationEpoch,
     }),
-    [ready, error, data, load, invalidate, mutationEpoch],
+    [ready, error, data, load, softRefresh, invalidate, mutationEpoch],
   );
 
   return <LifeDataContext.Provider value={value}>{children}</LifeDataContext.Provider>;
