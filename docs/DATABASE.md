@@ -956,3 +956,19 @@ Customer-facing freeform message lives in `coaching_ai_outputs.output_json.custo
 - [BUSINESS_RULES.md](./BUSINESS_RULES.md)
 - [COACHING.md](./COACHING.md)
 - [RECOGNITION.md](./RECOGNITION.md)
+
+
+### Baki Life (`076_baki_life_v1.sql`)
+
+Owner-only private Life OS tables (service-role only; API enforces Super Admin):
+
+| Table | Purpose |
+|-------|---------|
+| `life_accounts` | bank / cash / e_payment / credit_card / goal_pocket; `balance_cents` integer |
+| `life_categories` | custom income/expense categories (archive, not hard-delete) |
+| `life_goals` | life goals (optional target amount) |
+| `life_transactions` | ledger: income, expense, transfer, credit_payment, credit_refund |
+| `life_snapshots` / `life_snapshot_balances` | financial snapshots + unrecorded living expense |
+| `life_preferences` | seed flag + last used accounts |
+
+Amounts are `bigint` cents (TWD). See `docs/BAKI_LIFE.md`.

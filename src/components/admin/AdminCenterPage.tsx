@@ -41,6 +41,15 @@ export function AdminCenterPage() {
             </p>
           </BrandCard>
         </Link>
+        <Link href="/life" className="block">
+          <BrandCard variant="bordered" className="transition-shadow hover:shadow-md active:scale-[0.99]">
+            <p className="text-[0.8125rem] font-medium text-[#248a3d]">Baki Life</p>
+            <h3 className="mt-1 text-[1.0625rem] font-semibold text-[#1d1d1f]">私人生活 OS</h3>
+            <p className="mt-1 text-[0.875rem] leading-relaxed text-[#86868b]">
+              Owner-only 記帳、人生目標、財務快照與快速記帳。
+            </p>
+          </BrandCard>
+        </Link>
       </section>
 
       <section className="space-y-3">
