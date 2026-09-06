@@ -307,6 +307,20 @@ export async function runLifeProductionAcceptance(): Promise<{
       accountId: future.id,
       note: `headroom-future ${LIFE_ACCEPTANCE_MARKER}`,
     });
+    await createTransaction(ownerId, {
+      kind: "income",
+      amountCents: 5_000_000,
+      categoryId: incCat.id,
+      accountId: cash.id,
+      note: `headroom-cash ${LIFE_ACCEPTANCE_MARKER}`,
+    });
+    await createTransaction(ownerId, {
+      kind: "income",
+      amountCents: 5_000_000,
+      categoryId: incCat.id,
+      accountId: jko.id,
+      note: `headroom-jko ${LIFE_ACCEPTANCE_MARKER}`,
+    });
     check(checks, "headroom_funded", true);
 
     const analyticsBefore = await getAnalytics(ownerId, { period: "this_month" });
