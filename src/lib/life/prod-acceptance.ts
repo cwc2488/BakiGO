@@ -284,6 +284,31 @@ export async function runLifeProductionAcceptance(): Promise<{
       note: `income-keep ${LIFE_ACCEPTANCE_MARKER}`,
     });
 
+    // Headroom so transfers / pocket / unrecorded never drive live seed balances negative
+    // (createSnapshot rejects negative balances).
+    await createTransaction(ownerId, {
+      kind: "income",
+      amountCents: 100_000_000,
+      categoryId: incCat.id,
+      accountId: ctbc.id,
+      note: `headroom-ctbc ${LIFE_ACCEPTANCE_MARKER}`,
+    });
+    await createTransaction(ownerId, {
+      kind: "income",
+      amountCents: 20_000_000,
+      categoryId: incCat.id,
+      accountId: esun.id,
+      note: `headroom-esun ${LIFE_ACCEPTANCE_MARKER}`,
+    });
+    await createTransaction(ownerId, {
+      kind: "income",
+      amountCents: 20_000_000,
+      categoryId: incCat.id,
+      accountId: future.id,
+      note: `headroom-future ${LIFE_ACCEPTANCE_MARKER}`,
+    });
+    check(checks, "headroom_funded", true);
+
     const analyticsBefore = await getAnalytics(ownerId, { period: "this_month" });
     const incomeBefore = analyticsBefore.income.totalCents;
     const expenseBefore = analyticsBefore.expense.totalCents;
