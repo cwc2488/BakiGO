@@ -9,7 +9,7 @@ export function SuperAdminGuard({ children }: { children: ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center bg-[var(--brand-bg)] text-[var(--brand-text-muted)]">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--life-bg)] text-[var(--life-muted)]">
         載入中…
       </div>
     );
