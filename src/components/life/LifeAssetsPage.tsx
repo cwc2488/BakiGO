@@ -1,4 +1,6 @@
 "use client";
+
+import { useLifeData } from "@/components/life/LifeDataProvider";
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import {
@@ -7,6 +9,7 @@ import {
   LifeInput,
   LifeSection,
   LifeSelect,
+  LifeShellSkeleton,
   LifeStat,
   formatLifeMoney,
 } from "@/components/life/LifeUi";
@@ -23,9 +26,11 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export function LifeAssetsPage() {
+  const { mutationEpoch } = useLifeData();
   const [accounts, setAccounts] = useState<LifeAccount[]>([]);
   const [snapshots, setSnapshots] = useState<LifeSnapshot[]>([]);
   const [balances, setBalances] = useState<Record<string, string>>({});
+  const [loaded, setLoaded] = useState(false);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("bank");
   const [ccName, setCcName] = useState("");
@@ -48,11 +53,15 @@ export function LifeAssetsPage() {
       next[acct.id] = String(acct.balanceCents / 100);
     }
     setBalances(next);
+    setLoaded(true);
   }, []);
 
   useEffect(() => {
-    refresh().catch((e: Error) => setMessage(e.message));
-  }, [refresh]);
+    refresh().catch((e: Error) => {
+      setMessage(e.message);
+      setLoaded(true);
+    });
+  }, [refresh, mutationEpoch]);
 
   const active = useMemo(() => accounts.filter((a) => a.status === "active"), [accounts]);
   const assets = active.filter((a) => a.accountType !== "credit_card");
@@ -63,6 +72,10 @@ export function LifeAssetsPage() {
 
   const assetTotal = assets.reduce((s, a) => s + a.balanceCents, 0);
   const liabTotal = cards.reduce((s, a) => s + a.balanceCents, 0);
+
+  if (!loaded) {
+    return <LifeShellSkeleton title="資產" />;
+  }
 
   async function addAccount() {
     try {

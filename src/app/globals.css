@@ -102,17 +102,34 @@ html {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* LIFE-PWA-SAFE-AREA — paint full standalone viewport (no iPhone bottom white strip). */
+/* LIFE-PWA — full standalone viewport + single safe-area source of truth.
+   Nav surface owns env(safe-area-inset-bottom). Content only reserves --life-nav-offset.
+   Do NOT also pad body/html with safe-area (that creates the extra pale band). */
 html:has(.life-root),
 body:has(.life-root) {
   background: var(--life-bg);
+  /* Prevent iOS rubber-band from revealing a mismatched root color under the nav. */
+  overscroll-behavior-y: none;
 }
 
-.life-root {
+.life-root,
+.life-app {
+  --life-nav-height: 3.5rem;
+  /* Single content inset: visible nav row + Home Indicator. Nav itself draws the safe-area. */
+  --life-nav-offset: calc(var(--life-nav-height) + env(safe-area-inset-bottom, 0px));
   min-height: 100dvh;
-  min-height: 100svh;
   background: var(--life-bg);
   color: var(--life-text);
+}
+
+.life-content {
+  min-height: 100dvh;
+  padding-bottom: var(--life-nav-offset);
+  box-sizing: border-box;
+}
+
+.life-panel[hidden] {
+  display: none !important;
 }
 
 .life-bottom-nav {
@@ -123,9 +140,21 @@ body:has(.life-root) {
   z-index: 100;
   width: 100%;
   border-top: 1px solid var(--life-border);
-  /* Solid surface — translucent blur over light body caused the white strip. */
-  background: var(--life-surface);
+  /* One continuous surface from icon row through Home Indicator — same paint. */
+  background-color: var(--life-surface);
+  background-image: none;
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-sizing: border-box;
+  /* Avoid parent transform containing-block bugs on iOS without creating a gap. */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.life-bottom-nav-inner {
+  height: var(--life-nav-height);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .home-container {

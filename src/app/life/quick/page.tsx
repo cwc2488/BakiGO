@@ -1,5 +1,7 @@
-import { LifeQuickPage } from "@/components/life/LifeQuickPage";
-
+/**
+ * Route stub for quick. Content is rendered by persistent LifeShell panels.
+ * Keeps /life/* URLs addressable without remounting the Life app on tab change.
+ */
 export default function Page() {
-  return <LifeQuickPage />;
+  return null;
 }

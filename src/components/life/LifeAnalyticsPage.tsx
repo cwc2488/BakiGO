@@ -1,4 +1,6 @@
 "use client";
+
+import { useLifeData } from "@/components/life/LifeDataProvider";
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import {
@@ -34,13 +36,14 @@ type Analytics = {
 type Period = "this_month" | "last_month" | "this_year";
 
 export function LifeAnalyticsPage() {
+  const { mutationEpoch } = useLifeData();
   const [period, setPeriod] = useState<Period>("this_month");
   const [data, setData] = useState<Analytics | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setData(null);
+    // Keep previous data visible (SWR) — do not blank the panel on tab/period refresh.
     lifeFetch<Analytics>(`/api/life/analytics?period=${period}`)
       .then((d) => {
         if (!cancelled) setData(d);
@@ -51,7 +54,7 @@ export function LifeAnalyticsPage() {
     return () => {
       cancelled = true;
     };
-  }, [period]);
+  }, [period, mutationEpoch]);
 
   return (
     <div>
