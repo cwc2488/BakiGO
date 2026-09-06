@@ -2,11 +2,11 @@
   "name": "Baki Life",
   "short_name": "Baki Life",
   "description": "私人生活與財務作業系統",
-  "start_url": "/life",
+  "start_url": "/life/quick",
   "scope": "/life",
   "display": "standalone",
-  "background_color": "#0f1412",
-  "theme_color": "#0f1412",
+  "background_color": "#f5faf6",
+  "theme_color": "#f5faf6",
   "lang": "zh-Hant",
   "icons": [
     {

@@ -6,6 +6,7 @@ import {
   LifeSection,
   LifeStat,
   formatLifeMoney,
+  LifeShellSkeleton,
 } from "@/components/life/LifeUi";
 import { lifeFetch } from "@/lib/life/client";
 import Link from "next/link";
@@ -51,9 +52,7 @@ export function LifeDashboardPage() {
     );
   }
   if (!data) {
-    return (
-      <div className="px-5 pt-16 text-sm text-[var(--life-muted)]">載入中…</div>
-    );
+    return <LifeShellSkeleton title="首頁" />;
   }
 
   return (
@@ -64,7 +63,7 @@ export function LifeDashboardPage() {
         right={
           <Link
             href="/life/quick"
-            className="rounded-full bg-[var(--life-accent)] px-3.5 py-2 text-xs font-medium text-white"
+            className="rounded-full bg-[var(--brand-cta)] px-3.5 py-2 text-xs font-medium text-white"
           >
             快速記帳
           </Link>
