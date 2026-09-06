@@ -1,4 +1,6 @@
 "use client";
+
+import { useLifeData } from "@/components/life/LifeDataProvider";
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import {
@@ -8,6 +10,7 @@ import {
   LifeProgress,
   LifeSection,
   LifeSelect,
+  LifeShellSkeleton,
   formatLifeMoney,
 } from "@/components/life/LifeUi";
 import { lifeFetch } from "@/lib/life/client";
@@ -15,8 +18,10 @@ import type { LifeAccount, LifeGoal } from "@/types/life";
 import { useCallback, useEffect, useState } from "react";
 
 export function LifeGoalsPage() {
+  const { mutationEpoch } = useLifeData();
   const [goals, setGoals] = useState<LifeGoal[]>([]);
   const [accounts, setAccounts] = useState<LifeAccount[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [title, setTitle] = useState("");
   const [target, setTarget] = useState("");
   const [icon, setIcon] = useState("🎯");
@@ -33,11 +38,19 @@ export function LifeGoalsPage() {
     ]);
     setGoals(g.goals);
     setAccounts(a.accounts);
+    setLoaded(true);
   }, []);
 
   useEffect(() => {
-    refresh().catch((e: Error) => setMessage(e.message));
-  }, [refresh]);
+    refresh().catch((e: Error) => {
+      setMessage(e.message);
+      setLoaded(true);
+    });
+  }, [refresh, mutationEpoch]);
+
+  if (!loaded) {
+    return <LifeShellSkeleton title="目標" />;
+  }
 
   const banks = accounts.filter((a) => a.accountType === "bank" && a.status === "active");
   const pockets = accounts.filter((a) => a.accountType === "goal_pocket");

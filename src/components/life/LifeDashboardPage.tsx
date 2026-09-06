@@ -1,5 +1,7 @@
 "use client";
 
+import { useLifeData } from "@/components/life/LifeDataProvider";
+
 import {
   LifeHeader,
   LifeProgress,
@@ -10,6 +12,7 @@ import {
 } from "@/components/life/LifeUi";
 import { lifeFetch } from "@/lib/life/client";
 import Link from "next/link";
+import { useOptionalLifeTab } from "@/components/life/LifeTabContext";
 import { useEffect, useState } from "react";
 
 type Dashboard = {
@@ -29,6 +32,8 @@ type Dashboard = {
 };
 
 export function LifeDashboardPage() {
+  const { mutationEpoch } = useLifeData();
+  const lifeTab = useOptionalLifeTab();
   const [data, setData] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,7 +49,7 @@ export function LifeDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [mutationEpoch]);
 
   if (error) {
     return (
@@ -61,12 +66,22 @@ export function LifeDashboardPage() {
         title={data.monthLabel}
         subtitle="本月財務概況"
         right={
-          <Link
-            href="/life/quick"
-            className="rounded-full bg-[var(--brand-cta)] px-3.5 py-2 text-xs font-medium text-white"
-          >
-            快速記帳
-          </Link>
+          lifeTab ? (
+            <button
+              type="button"
+              onClick={() => lifeTab.selectTab("quick")}
+              className="rounded-full bg-[var(--brand-cta)] px-3.5 py-2 text-xs font-medium text-white"
+            >
+              快速記帳
+            </button>
+          ) : (
+            <Link
+              href="/life/quick"
+              className="rounded-full bg-[var(--brand-cta)] px-3.5 py-2 text-xs font-medium text-white"
+            >
+              快速記帳
+            </Link>
+          )
         }
       />
 

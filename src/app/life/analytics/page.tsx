@@ -1,5 +1,7 @@
-import { LifeAnalyticsPage } from "@/components/life/LifeAnalyticsPage";
-
+/**
+ * Route stub for analytics. Content is rendered by persistent LifeShell panels.
+ * Keeps /life/* URLs addressable without remounting the Life app on tab change.
+ */
 export default function Page() {
-  return <LifeAnalyticsPage />;
+  return null;
 }

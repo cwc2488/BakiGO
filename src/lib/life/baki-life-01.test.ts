@@ -52,4 +52,34 @@ describe("baki-life-01 source gates", () => {
     expect(manifest).toContain("Baki GO");
     expect(manifest).not.toContain("Baki Life");
   });
+
+  it("Life shell uses persistent client tabs (no router.push for main tabs)", () => {
+    const shell = read("src/components/life/LifeShell.tsx");
+    expect(shell).toContain("syncLifeTabUrl");
+    expect(shell).toContain("setActiveTab");
+    expect(shell).toContain("shellMode");
+    expect(read("src/components/life/LifeTabContext.tsx")).toContain("history.pushState");
+    // Main tab bar must not drive Next App Router navigations.
+    expect(shell).not.toContain("router.push(");
+    expect(shell).toContain("LifeDashboardPage");
+    expect(shell).toContain("LifeQuickPage");
+  });
+
+  it("life tab path helpers map main routes", () => {
+    const tabs = read("src/components/life/life-tabs.ts");
+    expect(tabs).toContain('href: "/life/quick"');
+    expect(tabs).toContain("lifeTabFromPath");
+  });
+
+  it("life nav CSS: fixed bottom + single safe-area owner", () => {
+    const css = read("src/app/globals.css");
+    expect(css).toContain(".life-bottom-nav");
+    expect(css).toContain("--life-nav-offset");
+    expect(css).toMatch(/\.life-bottom-nav\s*\{[\s\S]*?bottom:\s*0/);
+    expect(css).toMatch(
+      /\.life-bottom-nav\s*\{[\s\S]*?padding-bottom:\s*env\(safe-area-inset-bottom/,
+    );
+    expect(css).toMatch(/\.life-content\s*\{[\s\S]*?padding-bottom:\s*var\(--life-nav-offset\)/);
+  });
 });
+
