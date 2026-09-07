@@ -56,8 +56,12 @@ export function isRecordableCalendarActivityKey(activityTypeKey: string | undefi
   if (!activityTypeKey || activityTypeKey === CALENDAR_OTHER_ACTIVITY_KEY) {
     return false;
   }
-  // Calendar-only category — never auto-records into consultation / measurement KPIs.
-  if (activityTypeKey === CALENDAR_CATEGORY_KEYS.DEVELOPMENT) {
+  // Calendar-only categories — never auto-record into consultation / measurement KPIs.
+  if (
+    activityTypeKey === CALENDAR_CATEGORY_KEYS.DEVELOPMENT ||
+    activityTypeKey === CALENDAR_CATEGORY_KEYS.PRIVATE_TIME ||
+    activityTypeKey === CALENDAR_CATEGORY_KEYS.OTHER
+  ) {
     return false;
   }
   if (activityTypeKey === CALENDAR_CATEGORY_KEYS.MEETING) {

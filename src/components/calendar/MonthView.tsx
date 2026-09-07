@@ -2,6 +2,10 @@
 
 import { getCalendarEventDotColor } from "@/lib/calendar/event-styles";
 import { getMonthGridDates } from "@/lib/calendar/recurrence";
+import {
+  getCalendarWeekdayLabels,
+  type CalendarWeekStart,
+} from "@/lib/calendar/calendar-week-start-preferences";
 import { formatChineseYearMonth, getTodayDateString } from "@/lib/calendar/time-grid";
 import type { SwipeHandlers } from "@/lib/hooks/use-swipe-navigation";
 import type { ExpandedCalendarEvent } from "@/types/calendar-event";
@@ -31,6 +35,8 @@ export function MonthView({
   onSelectDate,
   onShiftMonth,
   swipeHandlers,
+  weekStart = "monday",
+  weekStartsOn = 1,
 }: {
   anchorDate: string;
   selectedDate: string;
@@ -38,8 +44,11 @@ export function MonthView({
   onSelectDate: (date: string) => void;
   onShiftMonth: (nextAnchor: string) => void;
   swipeHandlers?: SwipeHandlers;
+  weekStart?: CalendarWeekStart;
+  weekStartsOn?: 0 | 1;
 }) {
-  const gridDates = getMonthGridDates(anchorDate);
+  const gridDates = getMonthGridDates(anchorDate, weekStartsOn);
+  const weekdayLabels = getCalendarWeekdayLabels(weekStart);
   const currentMonth = anchorDate.slice(0, 7);
   const counts = countEventsByDay(events);
   const today = getTodayDateString();
@@ -71,7 +80,7 @@ export function MonthView({
       <p className="mb-3 text-center text-[0.6875rem] text-[var(--cal-hint)]">左右滑動切換月份</p>
 
       <div className="mb-2 grid grid-cols-7 text-center text-[0.6875rem] font-medium text-[var(--cal-text-muted)]">
-        {["一", "二", "三", "四", "五", "六", "日"].map((label) => (
+        {weekdayLabels.map((label) => (
           <span key={label}>{label}</span>
         ))}
       </div>

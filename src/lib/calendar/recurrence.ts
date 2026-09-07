@@ -233,24 +233,38 @@ export function defaultRecurrence(): RecurrenceRule {
   return { frequency: "none", interval: 1 };
 }
 
-export function getWeekDates(anchorDate: string): string[] {
+/**
+ * Return the 7 dates of the week containing `anchorDate`.
+ * @param weekStartsOn JS weekday of the first column: 1=Monday (default, production), 0=Sunday.
+ */
+export function getWeekDates(anchorDate: string, weekStartsOn: 0 | 1 = 1): string[] {
   const anchor = new Date(`${anchorDate}T12:00:00`);
   const day = anchor.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  const monday = new Date(anchor);
-  monday.setDate(anchor.getDate() + mondayOffset);
+  const startOffset =
+    weekStartsOn === 0 ? -day : day === 0 ? -6 : 1 - day;
+  const weekStart = new Date(anchor);
+  weekStart.setDate(anchor.getDate() + startOffset);
 
   return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(monday);
-    date.setDate(monday.getDate() + index);
+    const date = new Date(weekStart);
+    date.setDate(weekStart.getDate() + index);
     return formatDateOnly(date);
   });
 }
 
-export function getMonthGridDates(anchorDate: string): string[] {
+/**
+ * 6×7 month grid starting on the week that contains the 1st of the month.
+ * @param weekStartsOn JS weekday of the first column: 1=Monday (default), 0=Sunday.
+ */
+export function getMonthGridDates(anchorDate: string, weekStartsOn: 0 | 1 = 1): string[] {
   const anchor = new Date(`${anchorDate}T12:00:00`);
   const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const startOffset = first.getDay() === 0 ? 6 : first.getDay() - 1;
+  const startOffset =
+    weekStartsOn === 0
+      ? first.getDay()
+      : first.getDay() === 0
+        ? 6
+        : first.getDay() - 1;
   const gridStart = new Date(first);
   gridStart.setDate(first.getDate() - startOffset);
 

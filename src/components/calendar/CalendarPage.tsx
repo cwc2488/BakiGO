@@ -66,6 +66,14 @@ import {
   loadShowSharedCalendar,
   saveShowSharedCalendar,
 } from "@/lib/calendar/shared-calendar-preferences";
+import {
+  CALENDAR_WEEK_STARTS,
+  getCalendarWeekdayLabels,
+  loadCalendarWeekStart,
+  saveCalendarWeekStart,
+  weekStartToJsDay,
+  type CalendarWeekStart,
+} from "@/lib/calendar/calendar-week-start-preferences";
 import { getSharedCalendarIds, getSharedCalendarSyncRange, syncSharedGoogleCalendars } from "@/lib/calendar/sync-shared-calendars";
 import { buildMeetingAttendanceSummary } from "@/lib/calendar/meeting-attendance-summary";
 import {
@@ -196,6 +204,12 @@ export default function CalendarPage() {
   const [showSharedCalendar, setShowSharedCalendar] = useState(() =>
     loadShowSharedCalendar(storage),
   );
+  const [weekStart, setWeekStart] = useState<CalendarWeekStart>(() =>
+    loadCalendarWeekStart(storage),
+  );
+  const weekStartsOn = weekStartToJsDay(weekStart);
+  const weekdayLabels = useMemo(() => getCalendarWeekdayLabels(weekStart), [weekStart]);
+
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<"create" | "edit" | "view">("create");
   const [formReadOnly, setFormReadOnly] = useState(false);
@@ -308,13 +322,16 @@ export default function CalendarPage() {
     };
   }, [memberId, reloadEvents, storage]);
 
-  const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
+  const weekDates = useMemo(
+    () => getWeekDates(selectedDate, weekStartsOn),
+    [selectedDate, weekStartsOn],
+  );
   const weekRangeStart = weekDates[0];
   const weekRangeEnd = weekDates[6];
   const monthGridDates = useMemo(() => {
-    const dates = getMonthGridDates(monthAnchor);
+    const dates = getMonthGridDates(monthAnchor, weekStartsOn);
     return { start: dates[0], end: dates[dates.length - 1] };
-  }, [monthAnchor]);
+  }, [monthAnchor, weekStartsOn]);
 
   const withSharedCalendarColor = useCallback((event: CalendarEvent): CalendarEvent => {
     if (!isSharedGoogleCalendarId(event.googleCalendarId)) {
@@ -385,18 +402,23 @@ export default function CalendarPage() {
     saveShowSharedCalendar(storage, next);
   }
 
+  function updateWeekStart(next: CalendarWeekStart) {
+    setWeekStart(next);
+    saveCalendarWeekStart(storage, next);
+  }
+
   const weekStrip = useMemo(
     () =>
       weekDates.map((value, index) => ({
         value,
-        weekday: ["一", "二", "三", "四", "五", "六", "日"][index],
+        weekday: weekdayLabels[index] ?? "",
         day: Number(value.slice(8, 10)),
         isSelected:
           value === selectedDate ||
           (isTabletUp && viewMode === "day" && value === addDays(selectedDate, 1)),
         isToday: value === getTodayDateString(),
       })),
-    [isTabletUp, selectedDate, viewMode, weekDates],
+    [isTabletUp, selectedDate, viewMode, weekDates, weekdayLabels],
   );
 
   function selectDate(date: string, switchToDay = false) {
@@ -1353,23 +1375,49 @@ export default function CalendarPage() {
               weekLabel={`${formatChineseMonthDay(weekRangeStart)} – ${formatChineseMonthDay(weekRangeEnd)}`}
             />
 
-            <div className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-[var(--cal-border)] bg-[var(--cal-surface)] px-4 py-3">
-              <p className="text-[0.875rem] font-medium text-[#636366]">時間間隔</p>
-              <div className="flex gap-1 rounded-lg bg-[var(--cal-primary-muted)] p-1">
-                {INTERVAL_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    className={`rounded-md px-3 py-1.5 text-[0.8125rem] font-medium ${
-                      slotInterval === option.value
-                        ? "bg-[var(--brand-surface)] text-[#1d1d1f] shadow-sm"
-                        : "text-[#86868b]"
-                    }`}
-                    onClick={() => setSlotInterval(option.value)}
-                    type="button"
-                  >
-                    {option.label}
-                  </button>
-                ))}
+            <div className="space-y-2 rounded-[1.25rem] border border-[var(--cal-border)] bg-[var(--cal-surface)] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[0.875rem] font-medium text-[#636366]">時間間隔</p>
+                <div className="flex gap-1 rounded-lg bg-[var(--cal-primary-muted)] p-1">
+                  {INTERVAL_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      className={`rounded-md px-3 py-1.5 text-[0.8125rem] font-medium ${
+                        slotInterval === option.value
+                          ? "bg-[var(--brand-surface)] text-[#1d1d1f] shadow-sm"
+                          : "text-[#86868b]"
+                      }`}
+                      onClick={() => setSlotInterval(option.value)}
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[0.875rem] font-medium text-[#636366]">每週開始日</p>
+                <div className="flex gap-1 rounded-lg bg-[var(--cal-primary-muted)] p-1">
+                  {(
+                    [
+                      { value: CALENDAR_WEEK_STARTS.MONDAY, label: "星期一" },
+                      { value: CALENDAR_WEEK_STARTS.SUNDAY, label: "星期日" },
+                    ] as const
+                  ).map((option) => (
+                    <button
+                      key={option.value}
+                      className={`rounded-md px-3 py-1.5 text-[0.8125rem] font-medium ${
+                        weekStart === option.value
+                          ? "bg-[var(--brand-surface)] text-[#1d1d1f] shadow-sm"
+                          : "text-[#86868b]"
+                      }`}
+                      onClick={() => updateWeekStart(option.value)}
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -1408,6 +1456,7 @@ export default function CalendarPage() {
               onSelectDate={(date) => selectDate(date, true)}
               selectedDate={selectedDate}
               swipeHandlers={weekSwipeHandlers}
+              weekStartsOn={weekStartsOn}
             />
           </div>
         ) : null}
@@ -1421,6 +1470,8 @@ export default function CalendarPage() {
               onShiftMonth={setMonthAnchor}
               selectedDate={selectedDate}
               swipeHandlers={monthSwipeHandlers}
+              weekStart={weekStart}
+              weekStartsOn={weekStartsOn}
             />
             <MonthDayAgenda
               date={selectedDate}
@@ -1466,6 +1517,8 @@ export default function CalendarPage() {
         open={copyOpen}
         sourceDate={formValues.date}
         title={formValues.title}
+        weekStart={weekStart}
+        weekStartsOn={weekStartsOn}
       />
 
       <RecurrenceScopeModal
