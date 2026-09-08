@@ -59,6 +59,15 @@ export function AdminCenterPage() {
             </p>
           </BrandCard>
         </Link>
+        <Link href="/admin/lose2kg" className="block">
+          <BrandCard variant="bordered" className="transition-shadow hover:shadow-md active:scale-[0.99]">
+            <p className="text-[0.8125rem] font-medium text-[#248a3d]">再瘦2公斤</p>
+            <h3 className="mt-1 text-[1.0625rem] font-semibold text-[#1d1d1f]">減重挑戰與抽獎</h3>
+            <p className="mt-1 text-[0.875rem] leading-relaxed text-[#86868b]">
+              期數、量測、抽獎券與正式／臨時抽獎，獨立於其他營運工具。
+            </p>
+          </BrandCard>
+        </Link>
       </section>
 
       <section className="space-y-3">

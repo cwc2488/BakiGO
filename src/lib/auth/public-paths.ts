@@ -24,7 +24,8 @@ export function isOpenPublicPath(pathname: string): boolean {
     normalized.startsWith("/analysis/") ||
     normalized.startsWith("/experience/") ||
     normalized.startsWith("/join/") ||
-    normalized.startsWith("/transform/")
+    normalized.startsWith("/transform/") ||
+    normalized.startsWith("/lose2kg/")
   );
 }
 
