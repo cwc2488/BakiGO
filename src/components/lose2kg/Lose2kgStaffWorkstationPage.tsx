@@ -1,6 +1,5 @@
 "use client";
 
-import { DrawRevealOverlay } from "@/components/lose2kg/DrawRevealOverlay";
 import { Lose2kgButton, Lose2kgToast } from "@/components/lose2kg/Lose2kgUi";
 import type {
   Lose2kgDraw,
@@ -10,6 +9,7 @@ import type {
   Lose2kgPrize,
   Lose2kgTicketEvent,
 } from "@/types/lose2kg";
+import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import {
   useEffect,
@@ -20,7 +20,13 @@ import {
   type MutableRefObject,
 } from "react";
 
-type Tab = "participants" | "measure" | "tickets" | "draw";
+const DrawRevealOverlay = dynamic(
+  () =>
+    import("@/components/lose2kg/DrawRevealOverlay").then((m) => m.DrawRevealOverlay),
+  { ssr: false },
+);
+
+type Tab = "measure" | "tickets" | "draw";
 
 type Bootstrap = {
   period: Lose2kgPeriod;
@@ -28,6 +34,11 @@ type Bootstrap = {
   nextMeasurementDate: string | null;
   participants: Lose2kgParticipant[];
   measurements: Lose2kgMeasurement[];
+  participantCount: number;
+  totalTickets: number;
+};
+
+type DrawBootstrap = {
   prizes: Lose2kgPrize[];
   draws: Lose2kgDraw[];
 };
@@ -52,31 +63,38 @@ function weightOf(
   slot: number,
 ): number | null {
   return (
-    measurements.find((m) => m.participantId === participantId && m.slot === slot)?.weightKg ?? null
+    measurements.find((m) => m.participantId === participantId && m.slot === slot)?.weightKg ??
+    null
   );
 }
 
-function lastWeight(
-  measurements: Lose2kgMeasurement[],
-  participantId: string,
-  beforeSlot: number,
-): number | null {
-  for (let s = beforeSlot - 1; s >= 1; s -= 1) {
-    const w = weightOf(measurements, participantId, s);
-    if (w != null) return w;
-  }
-  return null;
+function shortDate(iso: string) {
+  const parts = iso.split("-");
+  if (parts.length < 3) return iso;
+  return `${Number(parts[1])}/${Number(parts[2])}`;
+}
+
+function WorkstationSkeleton() {
+  return (
+    <div className="min-h-dvh bg-[#f4f1ea] p-4 md:p-6">
+      <div className="mx-auto max-w-6xl space-y-4">
+        <div className="h-20 animate-pulse rounded-xl bg-[#ebe6dc]" />
+        <div className="h-10 w-64 animate-pulse rounded-lg bg-[#ebe6dc]" />
+        <div className="h-72 animate-pulse rounded-xl bg-[#ebe6dc]" />
+      </div>
+    </div>
+  );
 }
 
 export function Lose2kgStaffWorkstationPage() {
   const params = useParams<{ token: string }>();
   const token = params.token;
-  const [gate, setGate] = useState<{
-    periodName: string;
-    authenticated: boolean;
-  } | null>(null);
+  const [gate, setGate] = useState<{ periodName: string; authenticated: boolean } | null>(
+    null,
+  );
   const [password, setPassword] = useState("");
   const [data, setData] = useState<Bootstrap | null>(null);
+  const [drawData, setDrawData] = useState<DrawBootstrap | null>(null);
   const [tab, setTab] = useState<Tab>("measure");
   const [toast, setToast] = useState<string | null>(null);
   const [toastTone, setToastTone] = useState<"success" | "error" | "info">("success");
@@ -84,10 +102,10 @@ export function Lose2kgStaffWorkstationPage() {
   const [pending, startTransition] = useTransition();
   const [addOpen, setAddOpen] = useState(false);
   const [addName, setAddName] = useState("");
-  const [addPublic, setAddPublic] = useState("");
-  const [addNote, setAddNote] = useState("");
-  const [addAdvanced, setAddAdvanced] = useState(false);
   const [measureFeedback, setMeasureFeedback] = useState<Record<string, string>>({});
+  const [cellStatus, setCellStatus] = useState<Record<string, "idle" | "saving" | "ok" | "err">>(
+    {},
+  );
   const [history, setHistory] = useState<Lose2kgTicketEvent[] | null>(null);
   const [historyName, setHistoryName] = useState("");
   const [drawOpen, setDrawOpen] = useState(false);
@@ -96,12 +114,38 @@ export function Lose2kgStaffWorkstationPage() {
   const [tempMode, setTempMode] = useState(false);
   const [tempSelected, setTempSelected] = useState<Set<string>>(new Set());
   const [tempQuery, setTempQuery] = useState("");
+  const [ticketMenuId, setTicketMenuId] = useState<string | null>(null);
+  const [expandedMobile, setExpandedMobile] = useState<Set<string>>(new Set());
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   function showToast(msg: string, tone: "success" | "error" | "info" = "success") {
     setToast(msg);
     setToastTone(tone);
     window.setTimeout(() => setToast(null), 2400);
+  }
+
+  function patchParticipant(updated: Lose2kgParticipant) {
+    setData((prev) => {
+      if (!prev) return prev;
+      const participants = prev.participants.map((p) =>
+        p.id === updated.id ? updated : p,
+      );
+      const active = participants.filter((p) => p.status === "active");
+      return {
+        ...prev,
+        participants,
+        participantCount: active.length,
+        totalTickets: active.reduce((s, p) => s + p.totalTicketBalance, 0),
+      };
+    });
+  }
+
+  function patchMeasurements(participantId: string, next: Lose2kgMeasurement[]) {
+    setData((prev) => {
+      if (!prev) return prev;
+      const others = prev.measurements.filter((m) => m.participantId !== participantId);
+      return { ...prev, measurements: [...others, ...next] };
+    });
   }
 
   async function loadGate() {
@@ -120,6 +164,16 @@ export function Lose2kgStaffWorkstationPage() {
     setTempSelected(
       new Set(body.data.participants.filter((p) => p.status === "active").map((p) => p.id)),
     );
+  }
+
+  async function ensureDrawBootstrap() {
+    if (drawData) return drawData;
+    const body = await staffFetch<{ ok: true; data: DrawBootstrap }>(
+      token,
+      "/draw-bootstrap",
+    );
+    setDrawData(body.data);
+    return body.data;
   }
 
   useEffect(() => {
@@ -158,20 +212,79 @@ export function Lose2kgStaffWorkstationPage() {
     });
   }
 
-  if (!gate) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-[#f7f3ea] text-[#86868b]">
-        載入中…
-      </div>
-    );
+  async function saveMeasure(
+    participantId: string,
+    slot: 1 | 2 | 3 | 4,
+    weightKg: number,
+    nextKey?: string,
+  ) {
+    const cellKey = `${participantId}:${slot}`;
+    setCellStatus((s) => ({ ...s, [cellKey]: "saving" }));
+    try {
+      const body = await staffFetch<{
+        ok: true;
+        participant: Lose2kgParticipant;
+        measurements: Lose2kgMeasurement[];
+        feedback: { message: string; deltaTickets: number; weightChangePct: number | null };
+      }>(token, "/measure", {
+        method: "POST",
+        body: JSON.stringify({ participantId, slot, weightKg }),
+      });
+      patchParticipant(body.participant);
+      patchMeasurements(participantId, body.measurements);
+      setCellStatus((s) => ({ ...s, [cellKey]: "ok" }));
+      const fb = body.feedback;
+      const pct =
+        fb.weightChangePct != null ? ` ${fb.weightChangePct.toFixed(2)}%` : "";
+      const ticketHint =
+        fb.deltaTickets > 0
+          ? ` 🎟 +${fb.deltaTickets}`
+          : fb.deltaTickets < 0
+            ? ` 🎟 ${fb.deltaTickets}`
+            : "";
+      setMeasureFeedback((prev) => ({
+        ...prev,
+        [participantId]: `✓ 已儲存${pct}${ticketHint}`,
+      }));
+      showToast(fb.message);
+      window.setTimeout(() => {
+        setCellStatus((s) => ({ ...s, [cellKey]: "idle" }));
+      }, 1200);
+      if (nextKey) {
+        window.setTimeout(() => inputRefs.current[nextKey]?.focus(), 40);
+      }
+    } catch (err) {
+      setCellStatus((s) => ({ ...s, [cellKey]: "err" }));
+      throw err;
+    }
   }
+
+  async function addTickets(
+    participantId: string,
+    delta: number,
+    reason: string,
+  ) {
+    const body = await staffFetch<{ ok: true; participant: Lose2kgParticipant }>(
+      token,
+      "/tickets",
+      {
+        method: "POST",
+        body: JSON.stringify({ participantId, delta, reason }),
+      },
+    );
+    patchParticipant(body.participant);
+    setTicketMenuId(null);
+    showToast(`🎟 ${delta > 0 ? `+${delta}` : delta} 已新增活動票`);
+  }
+
+  if (!gate) return <WorkstationSkeleton />;
 
   if (!gate.authenticated) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-[radial-gradient(circle_at_top,#efe6d4_0%,#f7f3ea_45%,#ffffff_100%)] px-4">
-        <div className="w-full max-w-md space-y-5 rounded-[1.75rem] border border-[#e8e4dc] bg-[#fffcf7] p-6 shadow-[0_24px_60px_rgba(29,29,31,0.08)]">
+      <div className="flex min-h-dvh items-center justify-center bg-[radial-gradient(circle_at_top,#efe6d4_0%,#f4f1ea_45%,#ffffff_100%)] px-4">
+        <div className="w-full max-w-md space-y-5 rounded-2xl border border-[#e8e4dc] bg-white p-6 shadow-[0_16px_40px_rgba(29,29,31,0.08)]">
           <div className="space-y-1 text-center">
-            <p className="text-[0.75rem] font-semibold tracking-[0.18em] text-[#c4a35a]">
+            <p className="text-[0.7rem] font-semibold tracking-[0.18em] text-[#8a7350]">
               再瘦2公斤
             </p>
             <h1 className="text-[1.5rem] font-semibold text-[#1d1d1f]">{gate.periodName}</h1>
@@ -180,7 +293,7 @@ export function Lose2kgStaffWorkstationPage() {
           {error ? <p className="text-center text-[0.875rem] text-[#d70015]">{error}</p> : null}
           <input
             type="password"
-            className="w-full rounded-2xl border border-[#ddd6c8] bg-white px-4 py-3 text-center text-[1.125rem] tracking-[0.25em]"
+            className="w-full rounded-lg border border-[#ddd6c8] bg-white px-4 py-3 text-center text-[1.125rem] tracking-[0.25em]"
             placeholder="工作人員密碼"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -193,14 +306,13 @@ export function Lose2kgStaffWorkstationPage() {
                   });
                   setGate({ ...gate, authenticated: true });
                   await loadBootstrap();
-                  showToast("已進入工作站");
+                  showToast("✓ 已進入工作站");
                 });
               }
             }}
           />
           <Lose2kgButton
             className="w-full"
-            tone="gold"
             loading={pending}
             onClick={() =>
               run(async () => {
@@ -210,7 +322,7 @@ export function Lose2kgStaffWorkstationPage() {
                 });
                 setGate({ ...gate, authenticated: true });
                 await loadBootstrap();
-                showToast("已進入工作站");
+                showToast("✓ 已進入工作站");
               })
             }
           >
@@ -221,24 +333,17 @@ export function Lose2kgStaffWorkstationPage() {
     );
   }
 
-  if (!data) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-[#f7f3ea] text-[#86868b]">
-        載入工作站…
-      </div>
-    );
-  }
+  if (!data) return <WorkstationSkeleton />;
 
   const slot = data.currentSlot;
   const navItems: { id: Tab; label: string }[] = [
-    { id: "participants", label: "參賽者" },
-    { id: "measure", label: "今日量測" },
-    { id: "tickets", label: "抽獎券" },
+    { id: "measure", label: "量測" },
+    { id: "tickets", label: "票數" },
     { id: "draw", label: "抽獎" },
   ];
 
   return (
-    <div className="min-h-dvh bg-[#f7f3ea] text-[#1d1d1f]">
+    <div className="min-h-dvh bg-[#f4f1ea] text-[#1d1d1f]">
       <Lose2kgToast message={toast} tone={toastTone} />
       <DrawRevealOverlay
         open={drawOpen}
@@ -247,22 +352,47 @@ export function Lose2kgStaffWorkstationPage() {
         onDone={() => setDrawOpen(false)}
       />
 
-      <div className="mx-auto flex min-h-dvh max-w-6xl gap-0 md:gap-6 md:px-6 md:py-6">
-        <aside className="hidden w-56 shrink-0 flex-col gap-2 rounded-[1.5rem] border border-[#e8e4dc] bg-[#fffcf7] p-4 md:flex">
-          <p className="text-[0.7rem] font-semibold tracking-[0.16em] text-[#c4a35a]">再瘦2公斤</p>
-          <h1 className="text-[1.125rem] font-semibold leading-snug">{data.period.name}</h1>
-          <p className="text-[0.8125rem] text-[#86868b]">目前：第 {slot} 次量測</p>
-          <p className="text-[0.8125rem] text-[#86868b]">
-            下一次：{data.nextMeasurementDate ?? "—"}
+      <div className="mx-auto flex min-h-dvh max-w-7xl gap-0 md:gap-5 md:px-5 md:py-5">
+        <aside className="hidden w-52 shrink-0 flex-col gap-2 rounded-xl border border-[#e8e4dc] bg-white p-4 md:flex">
+          <p className="text-[0.65rem] font-semibold tracking-[0.16em] text-[#8a7350]">
+            再瘦2公斤
           </p>
-          <nav className="mt-4 flex flex-col gap-1">
+          <h1 className="text-[1.0625rem] font-semibold leading-snug">{data.period.name}</h1>
+          <p className="text-[0.8125rem] text-[#86868b]">目前：第 {slot} / 4 次量測</p>
+          <div className="flex flex-wrap gap-1 py-1">
+            {data.period.measurementDates.map((d, i) => (
+              <span
+                key={i}
+                className={`rounded px-1.5 py-0.5 text-[0.7rem] tabular-nums ${
+                  i + 1 === slot ? "bg-[#1d1d1f] text-white" : "bg-[#f4f1ea] text-[#86868b]"
+                }`}
+              >
+                {shortDate(d)}
+              </span>
+            ))}
+          </div>
+          <p className="text-[0.8125rem]">
+            參賽者 <strong>{data.participantCount}</strong> · 總票{" "}
+            <strong className="text-[#8a7350]">{data.totalTickets}</strong>
+          </p>
+          <nav className="mt-3 flex flex-col gap-1">
             {navItems.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setTab(item.id)}
-                className={`rounded-xl px-3 py-2.5 text-left text-[0.9375rem] font-medium transition active:scale-[0.98] ${
-                  tab === item.id ? "bg-[#1d1d1f] text-white" : "hover:bg-[#f3eee4]"
+                onClick={() => {
+                  setTab(item.id);
+                  if (item.id === "draw") {
+                    void ensureDrawBootstrap().catch((err) => {
+                      showToast(
+                        err instanceof Error ? err.message : "抽獎資料載入失敗",
+                        "error",
+                      );
+                    });
+                  }
+                }}
+                className={`rounded-lg px-3 py-2.5 text-left text-[0.9375rem] font-medium transition duration-[140ms] active:scale-[0.97] ${
+                  tab === item.id ? "bg-[#1d1d1f] text-white" : "hover:bg-[#f4f1ea]"
                 }`}
               >
                 {item.label}
@@ -272,30 +402,80 @@ export function Lose2kgStaffWorkstationPage() {
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col pb-24 md:pb-0">
-          <header className="border-b border-[#e8e4dc] bg-[#fffcf7] px-4 py-4 md:rounded-[1.5rem] md:border">
-            <p className="text-[0.7rem] font-semibold tracking-[0.16em] text-[#c4a35a] md:hidden">
+          <header className="border-b border-[#e8e4dc] bg-white px-4 py-3 md:rounded-xl md:border">
+            <p className="text-[0.65rem] font-semibold tracking-[0.16em] text-[#8a7350] md:hidden">
               再瘦2公斤
             </p>
-            <h1 className="text-[1.25rem] font-semibold md:hidden">{data.period.name}</h1>
-            <p className="text-[0.875rem] text-[#86868b]">
-              目前第 {slot} 次量測
-              {data.nextMeasurementDate ? ` · 下一次 ${data.nextMeasurementDate}` : ""}
-            </p>
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h1 className="text-[1.25rem] font-semibold md:hidden">{data.period.name}</h1>
+                <p className="text-[0.875rem] text-[#86868b]">
+                  第 {slot} / 4 次 · 參賽 {data.participantCount} · 總票 {data.totalTickets}
+                </p>
+              </div>
+              {tab === "measure" ? (
+                <Lose2kgButton onClick={() => setAddOpen(true)}>＋ 新增參賽者</Lose2kgButton>
+              ) : null}
+            </div>
+            <div className="mt-2 flex gap-1 overflow-x-auto md:hidden">
+              {data.period.measurementDates.map((d, i) => (
+                <span
+                  key={i}
+                  className={`shrink-0 rounded px-2 py-1 text-[0.7rem] tabular-nums ${
+                    i + 1 === slot ? "bg-[#1d1d1f] text-white" : "bg-[#f4f1ea] text-[#86868b]"
+                  }`}
+                >
+                  第{i + 1}次 {shortDate(d)}
+                </span>
+              ))}
+            </div>
           </header>
 
-          <div className="flex-1 space-y-4 px-4 py-4">
+          <div className="flex-1 space-y-4 px-3 py-4 md:px-0 md:pt-4">
             {error ? (
-              <p className="rounded-xl bg-[#fff2f2] px-3 py-2 text-[0.875rem] text-[#d70015]">
+              <p className="rounded-lg bg-[#fff2f2] px-3 py-2 text-[0.875rem] text-[#d70015]">
                 {error}
               </p>
             ) : null}
 
-            {tab === "participants" ? (
-              <ParticipantsPanel
+            {tab === "measure" ? (
+              <MeasureGrid
                 participants={activeParticipants}
                 measurements={data.measurements}
-                onAdd={() => setAddOpen(true)}
-                onAddTicket={(p) =>
+                feedback={measureFeedback}
+                cellStatus={cellStatus}
+                inputRefs={inputRefs}
+                ticketMenuId={ticketMenuId}
+                setTicketMenuId={setTicketMenuId}
+                expandedMobile={expandedMobile}
+                setExpandedMobile={setExpandedMobile}
+                onSave={(participantId, slotNum, weightKg, nextKey) =>
+                  run(async () => {
+                    await saveMeasure(participantId, slotNum, weightKg, nextKey);
+                  })
+                }
+                onAddTicket={(id, delta, reason) =>
+                  run(async () => {
+                    await addTickets(id, delta, reason);
+                  })
+                }
+                onWithdraw={(p) =>
+                  run(async () => {
+                    const ok = window.confirm(`將「${p.name}」移出參賽名單？（不會 hard delete）`);
+                    if (!ok) return;
+                    const body = await staffFetch<{ ok: true; participant: Lose2kgParticipant }>(
+                      token,
+                      `/participants/${encodeURIComponent(p.id)}`,
+                      {
+                        method: "PATCH",
+                        body: JSON.stringify({ status: "withdrawn" }),
+                      },
+                    );
+                    patchParticipant(body.participant);
+                    showToast(`✓ 已移出 ${p.name}`);
+                  })
+                }
+                onCustomTicket={(p) =>
                   run(async () => {
                     const deltaRaw = window.prompt("加票張數", "1");
                     if (!deltaRaw) return;
@@ -306,176 +486,158 @@ export function Lose2kgStaffWorkstationPage() {
                         "原因（參加指定活動 / 完成任務 / 帶朋友 / 其他）",
                         "參加指定活動",
                       ) ?? "活動票";
-                    await staffFetch(token, "/tickets", {
-                      method: "POST",
-                      body: JSON.stringify({
-                        participantId: p.id,
-                        delta,
-                        reason,
-                      }),
-                    });
-                    await loadBootstrap();
-                    showToast(`🎟 ${delta > 0 ? `+${delta}` : delta} 已新增活動票`);
-                  })
-                }
-                onHistory={(p) =>
-                  run(async () => {
-                    const body = await staffFetch<{ ok: true; events: Lose2kgTicketEvent[] }>(
-                      token,
-                      `/tickets?participantId=${encodeURIComponent(p.id)}`,
-                    );
-                    setHistory(body.events);
-                    setHistoryName(p.name);
-                  })
-                }
-              />
-            ) : null}
-
-            {tab === "measure" ? (
-              <MeasurePanel
-                slot={slot}
-                participants={activeParticipants}
-                measurements={data.measurements}
-                feedback={measureFeedback}
-                inputRefs={inputRefs}
-                pending={pending}
-                onSave={(participantId, weightKg, nextId) =>
-                  run(async () => {
-                    const body = await staffFetch<{
-                      ok: true;
-                      feedback: { message: string; deltaTickets: number; weightChangePct: number | null };
-                    }>(token, "/measure", {
-                      method: "POST",
-                      body: JSON.stringify({ participantId, slot, weightKg }),
-                    });
-                    const fb = body.feedback;
-                    const pct =
-                      fb.weightChangePct != null ? ` ${fb.weightChangePct.toFixed(1)}%` : "";
-                    const ticketHint =
-                      fb.deltaTickets > 0
-                        ? ` 🎟 +${fb.deltaTickets}`
-                        : fb.deltaTickets < 0
-                          ? ` 🎟 ${fb.deltaTickets}`
-                          : "";
-                    setMeasureFeedback((prev) => ({
-                      ...prev,
-                      [participantId]: `✓ 已儲存${pct}${ticketHint}`,
-                    }));
-                    showToast(fb.message);
-                    await loadBootstrap();
-                    if (nextId) {
-                      window.setTimeout(() => inputRefs.current[nextId]?.focus(), 50);
-                    }
+                    await addTickets(p.id, delta, reason);
                   })
                 }
               />
             ) : null}
 
             {tab === "tickets" ? (
-              <div className="space-y-3">
-                <p className="text-[0.875rem] text-[#86868b]">點參賽者查看票券紀錄，或從參賽者頁加票。</p>
+              <div className="space-y-2">
                 {activeParticipants.map((p) => (
-                  <button
+                  <div
                     key={p.id}
-                    type="button"
-                    className="flex w-full items-center justify-between rounded-2xl border border-[#e8e4dc] bg-white px-4 py-3 text-left active:scale-[0.99]"
-                    onClick={() =>
-                      run(async () => {
-                        const body = await staffFetch<{ ok: true; events: Lose2kgTicketEvent[] }>(
-                          token,
-                          `/tickets?participantId=${encodeURIComponent(p.id)}`,
-                        );
-                        setHistory(body.events);
-                        setHistoryName(p.name);
-                      })
-                    }
+                    className="flex items-center justify-between rounded-lg border border-[#e8e4dc] bg-white px-3 py-3"
                   >
-                    <span className="font-semibold">{p.name}</span>
-                    <span className="text-[#c4a35a]">🎟 {p.totalTicketBalance}</span>
-                  </button>
+                    <div>
+                      <p className="font-semibold">{p.name}</p>
+                      <p className="text-[0.75rem] text-[#86868b]">
+                        體重票 {p.weightTicketBalance} · 活動票 {p.activityTicketBalance}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-[#8a7350]">🎟 {p.totalTicketBalance}</span>
+                      <Lose2kgButton
+                        tone="secondary"
+                        onClick={() =>
+                          run(async () => {
+                            const body = await staffFetch<{
+                              ok: true;
+                              events: Lose2kgTicketEvent[];
+                            }>(
+                              token,
+                              `/tickets?participantId=${encodeURIComponent(p.id)}`,
+                            );
+                            setHistory(body.events);
+                            setHistoryName(p.name);
+                          })
+                        }
+                      >
+                        紀錄
+                      </Lose2kgButton>
+                      <Lose2kgButton
+                        onClick={() =>
+                          run(async () => {
+                            await addTickets(p.id, 1, "參加指定活動");
+                          })
+                        }
+                      >
+                        ＋加票
+                      </Lose2kgButton>
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : null}
 
             {tab === "draw" ? (
-              <DrawPanel
-                prizes={data.prizes}
-                participants={activeParticipants}
-                pending={pending}
-                tempMode={tempMode}
-                setTempMode={setTempMode}
-                tempSelected={tempSelected}
-                setTempSelected={setTempSelected}
-                tempQuery={tempQuery}
-                setTempQuery={setTempQuery}
-                onFormal={(prize) =>
-                  run(async () => {
-                    const eligible = activeParticipants.filter((p) => p.totalTicketBalance > 0);
-                    const total = eligible.reduce((s, p) => s + p.totalTicketBalance, 0);
-                    const ok = window.confirm(
-                      `確認抽獎？\n獎項：${prize.name}\n有效參賽者：${eligible.length} 人\n有效抽獎券：${total} 張`,
-                    );
-                    if (!ok) return;
-                    const result = await staffFetch<{
-                      ok: true;
-                      winners: { name: string }[];
-                    }>(token, "/draws", {
-                      method: "POST",
-                      body: JSON.stringify({
-                        prizeId: prize.id,
-                        idempotencyKey: crypto.randomUUID(),
-                      }),
-                    });
-                    setDrawNames(eligible.map((p) => p.publicDisplayName || p.name));
-                    setDrawWinner(result.winners[0]?.name ?? null);
-                    window.setTimeout(() => setDrawOpen(true), 200);
-                    await loadBootstrap();
-                  })
-                }
-                onTempDraw={() =>
-                  run(async () => {
-                    const present = [...tempSelected];
-                    if (present.length === 0) throw new Error("請至少選擇一位");
-                    const created = await staffFetch<{
-                      ok: true;
-                      session: { publicToken: string };
-                    }>(token, "/temp-draws", {
-                      method: "POST",
-                      body: JSON.stringify({ presentParticipantIds: present }),
-                    });
-                    const names = activeParticipants
-                      .filter((p) => tempSelected.has(p.id))
-                      .map((p) => p.publicDisplayName || p.name);
-                    const executed = await staffFetch<{
-                      ok: true;
-                      winnerName: string;
-                    }>(token, "/temp-draws", {
-                      method: "POST",
-                      body: JSON.stringify({
-                        action: "execute",
-                        tempToken: created.session.publicToken,
-                      }),
-                    });
-                    setDrawNames(names);
-                    setDrawWinner(executed.winnerName);
-                    window.setTimeout(() => setDrawOpen(true), 200);
-                    await loadBootstrap();
-                  })
-                }
-              />
+              drawData ? (
+                <DrawPanel
+                  prizes={drawData.prizes}
+                  participants={activeParticipants}
+                  pending={pending}
+                  tempMode={tempMode}
+                  setTempMode={setTempMode}
+                  tempSelected={tempSelected}
+                  setTempSelected={setTempSelected}
+                  tempQuery={tempQuery}
+                  setTempQuery={setTempQuery}
+                  onFormal={(prize) =>
+                    run(async () => {
+                      const eligible = activeParticipants.filter(
+                        (p) => p.totalTicketBalance > 0,
+                      );
+                      const total = eligible.reduce((s, p) => s + p.totalTicketBalance, 0);
+                      const ok = window.confirm(
+                        `確認抽獎？\n獎項：${prize.name}\n有效參賽者：${eligible.length} 人\n總票數：${total} 張`,
+                      );
+                      if (!ok) return;
+                      const result = await staffFetch<{
+                        ok: true;
+                        winners: { name: string }[];
+                      }>(token, "/draws", {
+                        method: "POST",
+                        body: JSON.stringify({
+                          prizeId: prize.id,
+                          idempotencyKey: crypto.randomUUID(),
+                        }),
+                      });
+                      setDrawNames(eligible.map((p) => p.publicDisplayName || p.name));
+                      setDrawWinner(result.winners[0]?.name ?? null);
+                      window.setTimeout(() => setDrawOpen(true), 120);
+                      const refreshed = await staffFetch<{ ok: true; data: DrawBootstrap }>(
+                        token,
+                        "/draw-bootstrap",
+                      );
+                      setDrawData(refreshed.data);
+                    })
+                  }
+                  onTempDraw={() =>
+                    run(async () => {
+                      const present = [...tempSelected];
+                      if (present.length === 0) throw new Error("請至少選擇一位");
+                      const created = await staffFetch<{
+                        ok: true;
+                        session: { publicToken: string };
+                      }>(token, "/temp-draws", {
+                        method: "POST",
+                        body: JSON.stringify({ presentParticipantIds: present }),
+                      });
+                      const names = activeParticipants
+                        .filter((p) => tempSelected.has(p.id))
+                        .map((p) => p.publicDisplayName || p.name);
+                      const executed = await staffFetch<{
+                        ok: true;
+                        winnerName: string;
+                      }>(token, "/temp-draws", {
+                        method: "POST",
+                        body: JSON.stringify({
+                          action: "execute",
+                          tempToken: created.session.publicToken,
+                        }),
+                      });
+                      setDrawNames(names);
+                      setDrawWinner(executed.winnerName);
+                      window.setTimeout(() => setDrawOpen(true), 120);
+                    })
+                  }
+                />
+              ) : (
+                <div className="h-40 animate-pulse rounded-xl bg-[#ebe6dc]" />
+              )
             ) : null}
           </div>
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e8e4dc] bg-[#fffcf7]/95 backdrop-blur md:hidden">
-        <div className="grid grid-cols-4 gap-1 px-2 py-2">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e8e4dc] bg-white/95 backdrop-blur md:hidden">
+        <div className="grid grid-cols-3 gap-1 px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           {navItems.map((item) => (
             <button
               key={item.id}
               type="button"
-              onClick={() => setTab(item.id)}
-              className={`rounded-xl py-2 text-[0.75rem] font-semibold active:scale-[0.97] ${
+              onClick={() => {
+                setTab(item.id);
+                if (item.id === "draw") {
+                  void ensureDrawBootstrap().catch((err) => {
+                    showToast(
+                      err instanceof Error ? err.message : "抽獎資料載入失敗",
+                      "error",
+                    );
+                  });
+                }
+              }}
+              className={`rounded-lg py-2.5 text-[0.8125rem] font-semibold transition duration-[140ms] active:scale-[0.97] ${
                 tab === item.id ? "bg-[#1d1d1f] text-white" : "text-[#86868b]"
               }`}
             >
@@ -487,64 +649,61 @@ export function Lose2kgStaffWorkstationPage() {
 
       {addOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-          <div className="w-full max-w-md space-y-3 rounded-[1.5rem] bg-white p-5">
+          <div className="w-full max-w-md space-y-3 rounded-xl bg-white p-5">
             <h2 className="text-[1.125rem] font-semibold">＋ 新增參賽者</h2>
             <input
-              className="w-full rounded-xl border border-[#ddd6c8] px-3 py-2.5"
+              className="w-full rounded-lg border border-[#ddd6c8] px-3 py-2.5"
               placeholder="姓名"
               value={addName}
-              onChange={(e) => {
-                setAddName(e.target.value);
-                if (!addAdvanced) setAddPublic(e.target.value);
+              autoFocus
+              onChange={(e) => setAddName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  (e.target as HTMLInputElement).blur();
+                  document.getElementById("lose2kg-add-submit")?.click();
+                }
               }}
             />
-            <button
-              type="button"
-              className="text-[0.8125rem] text-[#86868b]"
-              onClick={() => setAddAdvanced((v) => !v)}
-            >
-              {addAdvanced ? "收合進階" : "進階"}
-            </button>
-            {addAdvanced ? (
-              <>
-                <input
-                  className="w-full rounded-xl border border-[#ddd6c8] px-3 py-2.5"
-                  placeholder="公開顯示名稱"
-                  value={addPublic}
-                  onChange={(e) => setAddPublic(e.target.value)}
-                />
-                <input
-                  className="w-full rounded-xl border border-[#ddd6c8] px-3 py-2.5"
-                  placeholder="備註"
-                  value={addNote}
-                  onChange={(e) => setAddNote(e.target.value)}
-                />
-              </>
-            ) : null}
+            <p className="text-[0.75rem] text-[#86868b]">公開名稱將自動同步為姓名</p>
             <div className="flex gap-2">
               <Lose2kgButton tone="secondary" className="flex-1" onClick={() => setAddOpen(false)}>
                 取消
               </Lose2kgButton>
               <Lose2kgButton
+                id="lose2kg-add-submit"
                 className="flex-1"
                 loading={pending}
                 onClick={() =>
                   run(async () => {
                     if (!addName.trim()) throw new Error("請填寫姓名");
-                    await staffFetch(token, "/participants", {
+                    const body = await staffFetch<{
+                      ok: true;
+                      participant: Lose2kgParticipant;
+                    }>(token, "/participants", {
                       method: "POST",
                       body: JSON.stringify({
                         name: addName.trim(),
-                        publicDisplayName: addPublic.trim() || addName.trim(),
-                        note: addNote.trim() || undefined,
+                        publicDisplayName: addName.trim(),
                       }),
                     });
+                    setData((prev) => {
+                      if (!prev) return prev;
+                      const participants = [...prev.participants, body.participant];
+                      return {
+                        ...prev,
+                        participants,
+                        participantCount: participants.filter((p) => p.status === "active")
+                          .length,
+                        totalTickets: participants
+                          .filter((p) => p.status === "active")
+                          .reduce((s, p) => s + p.totalTicketBalance, 0),
+                      };
+                    });
+                    setTempSelected((prev) => new Set([...prev, body.participant.id]));
                     setAddOpen(false);
+                    const name = addName.trim();
                     setAddName("");
-                    setAddPublic("");
-                    setAddNote("");
-                    await loadBootstrap();
-                    showToast(`已新增 ${addName.trim()}`);
+                    showToast(`✓ 已新增 ${name}`);
                   })
                 }
               >
@@ -557,7 +716,7 @@ export function Lose2kgStaffWorkstationPage() {
 
       {history ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-          <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-[1.5rem] bg-white p-5">
+          <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold">{historyName} · 票券紀錄</h2>
               <button type="button" onClick={() => setHistory(null)}>
@@ -569,7 +728,7 @@ export function Lose2kgStaffWorkstationPage() {
                 <p className="text-[0.875rem] text-[#86868b]">尚無紀錄</p>
               ) : (
                 history.map((e) => (
-                  <div key={e.id} className="rounded-xl border border-[#f0ebe1] px-3 py-2">
+                  <div key={e.id} className="rounded-lg border border-[#f0ebe1] px-3 py-2">
                     <p className="text-[0.875rem] font-medium">
                       {e.reason ?? e.eventType} · {e.delta > 0 ? `+${e.delta}` : e.delta}
                     </p>
@@ -585,167 +744,264 @@ export function Lose2kgStaffWorkstationPage() {
   );
 }
 
-function ParticipantsPanel({
-  participants,
-  measurements,
-  onAdd,
-  onAddTicket,
-  onHistory,
-}: {
-  participants: Lose2kgParticipant[];
-  measurements: Lose2kgMeasurement[];
-  onAdd: () => void;
-  onAddTicket: (p: Lose2kgParticipant) => void;
-  onHistory: (p: Lose2kgParticipant) => void;
-}) {
-  return (
-    <div className="space-y-3">
-      <Lose2kgButton onClick={onAdd}>＋ 新增參賽者</Lose2kgButton>
-      <div className="hidden overflow-x-auto rounded-2xl border border-[#e8e4dc] bg-white md:block">
-        <table className="min-w-full text-left text-[0.8125rem]">
-          <thead className="bg-[#f7f3ea] text-[#86868b]">
-            <tr>
-              <th className="px-3 py-2">姓名</th>
-              <th className="px-3 py-2">目前體重</th>
-              <th className="px-3 py-2">變化 %</th>
-              <th className="px-3 py-2">體重票</th>
-              <th className="px-3 py-2">活動票</th>
-              <th className="px-3 py-2">總票</th>
-              <th className="px-3 py-2">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {participants.map((p) => {
-              const current =
-                weightOf(measurements, p.id, 4) ??
-                weightOf(measurements, p.id, 3) ??
-                weightOf(measurements, p.id, 2) ??
-                weightOf(measurements, p.id, 1);
-              return (
-                <tr key={p.id} className="border-t border-[#f3efe6]">
-                  <td className="px-3 py-2 font-semibold">{p.name}</td>
-                  <td className="px-3 py-2">{current ?? "—"}</td>
-                  <td className="px-3 py-2">
-                    {p.currentWeightChangePct != null
-                      ? `${p.currentWeightChangePct.toFixed(1)}%`
-                      : "—"}
-                  </td>
-                  <td className="px-3 py-2">{p.weightTicketBalance}</td>
-                  <td className="px-3 py-2">{p.activityTicketBalance}</td>
-                  <td className="px-3 py-2 font-semibold text-[#c4a35a]">{p.totalTicketBalance}</td>
-                  <td className="px-3 py-2">
-                    <button type="button" className="mr-2 text-[#248a3d]" onClick={() => onAddTicket(p)}>
-                      ＋ 加票
-                    </button>
-                    <button type="button" className="text-[#86868b]" onClick={() => onHistory(p)}>
-                      紀錄
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <div className="space-y-2 md:hidden">
-        {participants.map((p) => (
-          <div key={p.id} className="rounded-2xl border border-[#e8e4dc] bg-white px-3 py-3">
-            <div className="flex items-center justify-between">
-              <p className="font-semibold">{p.name}</p>
-              <p className="text-[#c4a35a]">🎟 {p.totalTicketBalance}</p>
-            </div>
-            <p className="text-[0.75rem] text-[#86868b]">
-              體重票 {p.weightTicketBalance} · 活動票 {p.activityTicketBalance}
-              {p.currentWeightChangePct != null
-                ? ` · ${p.currentWeightChangePct.toFixed(1)}%`
-                : ""}
-            </p>
-            <div className="mt-2 flex gap-3 text-[0.8125rem]">
-              <button type="button" className="text-[#248a3d]" onClick={() => onAddTicket(p)}>
-                ＋ 加票
-              </button>
-              <button type="button" className="text-[#86868b]" onClick={() => onHistory(p)}>
-                紀錄
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MeasurePanel({
-  slot,
+function MeasureGrid({
   participants,
   measurements,
   feedback,
+  cellStatus,
   inputRefs,
-  pending,
+  ticketMenuId,
+  setTicketMenuId,
+  expandedMobile,
+  setExpandedMobile,
   onSave,
+  onAddTicket,
+  onWithdraw,
+  onCustomTicket,
 }: {
-  slot: number;
   participants: Lose2kgParticipant[];
   measurements: Lose2kgMeasurement[];
   feedback: Record<string, string>;
+  cellStatus: Record<string, "idle" | "saving" | "ok" | "err">;
   inputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
-  pending: boolean;
-  onSave: (participantId: string, weightKg: number, nextId?: string) => void;
+  ticketMenuId: string | null;
+  setTicketMenuId: (id: string | null) => void;
+  expandedMobile: Set<string>;
+  setExpandedMobile: (s: Set<string>) => void;
+  onSave: (
+    participantId: string,
+    slot: 1 | 2 | 3 | 4,
+    weightKg: number,
+    nextKey?: string,
+  ) => void;
+  onAddTicket: (id: string, delta: number, reason: string) => void;
+  onWithdraw: (p: Lose2kgParticipant) => void;
+  onCustomTicket: (p: Lose2kgParticipant) => void;
 }) {
+  const slots: (1 | 2 | 3 | 4)[] = [1, 2, 3, 4];
+
+  function cellBorder(key: string) {
+    const st = cellStatus[key];
+    if (st === "ok") return "border-[#34c759] ring-1 ring-[#34c759]/40";
+    if (st === "err") return "border-[#d70015]";
+    if (st === "saving") return "border-[#c4a35a]";
+    return "border-[#ddd6c8]";
+  }
+
   return (
     <div className="space-y-3">
-      <h2 className="text-[1.125rem] font-semibold">第 {slot} 次量測</h2>
-      {participants.map((p, index) => {
-        const prev = lastWeight(measurements, p.id, slot);
-        const next = participants[index + 1]?.id;
-        return (
-          <div
-            key={p.id}
-            className="flex flex-col gap-2 rounded-2xl border border-[#e8e4dc] bg-white px-3 py-3 sm:flex-row sm:items-center"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold">{p.name}</p>
-              <p className="text-[0.75rem] text-[#86868b]">
-                上次 {prev != null ? `${prev} kg` : "—"}
-              </p>
-              {feedback[p.id] ? (
-                <p className="text-[0.8125rem] font-medium text-[#248a3d]">{feedback[p.id]}</p>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                ref={(el) => {
-                  inputRefs.current[p.id] = el;
-                }}
-                type="number"
-                inputMode="decimal"
-                step="0.1"
-                className="w-24 rounded-xl border border-[#ddd6c8] px-2 py-2 text-[1rem]"
-                placeholder="kg"
-                defaultValue={weightOf(measurements, p.id, slot) ?? ""}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    const value = Number((e.target as HTMLInputElement).value);
-                    if (value > 0) onSave(p.id, value, next);
-                  }
-                }}
-              />
-              <Lose2kgButton
-                tone="secondary"
-                loading={pending}
+      {/* Desktop 4-week grid */}
+      <div className="hidden overflow-x-auto rounded-xl border border-[#e8e4dc] bg-white md:block">
+        <table className="min-w-full text-left text-[0.8125rem]">
+          <thead className="bg-[#f4f1ea] text-[#86868b]">
+            <tr>
+              <th className="sticky left-0 bg-[#f4f1ea] px-3 py-2.5">姓名</th>
+              {slots.map((s) => (
+                <th key={s} className="px-2 py-2.5">
+                  第{s}次
+                </th>
+              ))}
+              <th className="px-2 py-2.5">變化%</th>
+              <th className="px-2 py-2.5">體重票</th>
+              <th className="px-2 py-2.5">活動票</th>
+              <th className="px-2 py-2.5">總票</th>
+              <th className="px-2 py-2.5">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {participants.map((p, rowIndex) => (
+              <tr key={p.id} className="border-t border-[#f3efe6]">
+                <td className="sticky left-0 bg-white px-3 py-2 font-semibold">
+                  {p.name}
+                  {feedback[p.id] ? (
+                    <p className="text-[0.7rem] font-medium text-[#248a3d]">{feedback[p.id]}</p>
+                  ) : null}
+                </td>
+                {slots.map((s, colIndex) => {
+                  const key = `${p.id}:${s}`;
+                  const nextSlot = slots[colIndex + 1];
+                  const nextKey = nextSlot
+                    ? `${p.id}:${nextSlot}`
+                    : participants[rowIndex + 1]
+                      ? `${participants[rowIndex + 1]!.id}:1`
+                      : undefined;
+                  return (
+                    <td key={s} className="px-1.5 py-1.5">
+                      <input
+                        ref={(el) => {
+                          inputRefs.current[key] = el;
+                        }}
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        defaultValue={weightOf(measurements, p.id, s) ?? ""}
+                        key={`${key}-${weightOf(measurements, p.id, s) ?? "empty"}`}
+                        className={`w-[4.5rem] rounded-md border px-1.5 py-1.5 text-[0.875rem] tabular-nums outline-none transition ${cellBorder(key)}`}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const value = Number((e.target as HTMLInputElement).value);
+                            if (value > 0) onSave(p.id, s, value, nextKey);
+                          }
+                        }}
+                      />
+                    </td>
+                  );
+                })}
+                <td className="px-2 py-2 tabular-nums">
+                  {p.currentWeightChangePct != null
+                    ? `${p.currentWeightChangePct.toFixed(2)}%`
+                    : "—"}
+                </td>
+                <td className="px-2 py-2">{p.weightTicketBalance}</td>
+                <td className="px-2 py-2">{p.activityTicketBalance}</td>
+                <td className="px-2 py-2 font-semibold text-[#8a7350]">
+                  {p.totalTicketBalance}
+                </td>
+                <td className="relative px-2 py-2">
+                  <button
+                    type="button"
+                    className="rounded-md bg-[#1d1d1f] px-2.5 py-1.5 text-[0.75rem] font-semibold text-white transition active:scale-[0.97]"
+                    onClick={() => setTicketMenuId(ticketMenuId === p.id ? null : p.id)}
+                  >
+                    ＋加票
+                  </button>
+                  {ticketMenuId === p.id ? (
+                    <div className="absolute right-2 z-20 mt-1 w-36 rounded-lg border border-[#e8e4dc] bg-white p-1 shadow-lg">
+                      {[1, 2, 3].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          className="block w-full rounded-md px-2 py-1.5 text-left text-[0.8125rem] hover:bg-[#f4f1ea] active:scale-[0.98]"
+                          onClick={() => onAddTicket(p.id, n, "參加指定活動")}
+                        >
+                          +{n}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="block w-full rounded-md px-2 py-1.5 text-left text-[0.8125rem] hover:bg-[#f4f1ea]"
+                        onClick={() => onCustomTicket(p)}
+                      >
+                        自訂
+                      </button>
+                      <button
+                        type="button"
+                        className="block w-full rounded-md px-2 py-1.5 text-left text-[0.75rem] text-[#86868b] hover:bg-[#f4f1ea]"
+                        onClick={() => onWithdraw(p)}
+                      >
+                        移出名單
+                      </button>
+                    </div>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile compact rows */}
+      <div className="space-y-2 md:hidden">
+        {participants.map((p) => {
+          const open = expandedMobile.has(p.id);
+          return (
+            <div key={p.id} className="rounded-xl border border-[#e8e4dc] bg-white px-3 py-3">
+              <button
+                type="button"
+                className="flex w-full items-start justify-between text-left active:scale-[0.99]"
                 onClick={() => {
-                  const el = inputRefs.current[p.id];
-                  const value = Number(el?.value);
-                  if (!(value > 0)) return;
-                  onSave(p.id, value, next);
+                  const next = new Set(expandedMobile);
+                  if (next.has(p.id)) next.delete(p.id);
+                  else next.add(p.id);
+                  setExpandedMobile(next);
                 }}
               >
-                儲存
-              </Lose2kgButton>
+                <div>
+                  <p className="font-semibold">{p.name}</p>
+                  <p className="text-[0.75rem] text-[#86868b]">
+                    目前{" "}
+                    {p.currentWeightChangePct != null
+                      ? `${p.currentWeightChangePct.toFixed(1)}%`
+                      : "—"}
+                  </p>
+                </div>
+                <p className="font-semibold text-[#8a7350]">🎟 {p.totalTicketBalance}</p>
+              </button>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {slots.map((s) => {
+                  const key = `${p.id}:${s}`;
+                  return (
+                    <label key={s} className="space-y-0.5">
+                      <span className="text-[0.65rem] text-[#86868b]">第{s}次</span>
+                      <input
+                        ref={(el) => {
+                          inputRefs.current[`m-${key}`] = el;
+                        }}
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        defaultValue={weightOf(measurements, p.id, s) ?? ""}
+                        key={`m-${key}-${weightOf(measurements, p.id, s) ?? "empty"}`}
+                        className={`w-full rounded-md border px-2 py-2 text-[0.9375rem] tabular-nums ${cellBorder(key)}`}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const value = Number((e.target as HTMLInputElement).value);
+                            if (value > 0) onSave(p.id, s, value);
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const value = Number(e.target.value);
+                          const prev = weightOf(measurements, p.id, s);
+                          if (value > 0 && value !== prev) onSave(p.id, s, value);
+                        }}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+              {feedback[p.id] ? (
+                <p className="mt-1 text-[0.75rem] font-medium text-[#248a3d]">{feedback[p.id]}</p>
+              ) : null}
+              {open ? (
+                <div className="mt-2 space-y-2 border-t border-[#f3efe6] pt-2 text-[0.8125rem]">
+                  <p>
+                    體重票 {p.weightTicketBalance} · 活動票 {p.activityTicketBalance} · 總票{" "}
+                    {p.totalTicketBalance}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {[1, 2, 3].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        className="rounded-md border border-[#ddd6c8] px-3 py-1.5 font-semibold active:scale-[0.97]"
+                        onClick={() => onAddTicket(p.id, n, "參加指定活動")}
+                      >
+                        +{n}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="rounded-md bg-[#1d1d1f] px-3 py-1.5 font-semibold text-white active:scale-[0.97]"
+                      onClick={() => onCustomTicket(p)}
+                    >
+                      ＋活動票
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md px-2 py-1.5 text-[#86868b]"
+                      onClick={() => onWithdraw(p)}
+                    >
+                      移出名單
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -788,13 +1044,12 @@ function DrawPanel({
   return (
     <div className="space-y-5">
       {prizes.map((prize) => (
-        <div key={prize.id} className="space-y-3 rounded-[1.5rem] border border-[#e8e4dc] bg-white p-4">
+        <div key={prize.id} className="space-y-3 rounded-xl border border-[#e8e4dc] bg-white p-4">
           <h2 className="text-[1.125rem] font-semibold">{prize.name}</h2>
           <p className="text-[0.875rem] text-[#86868b]">
-            目前有效參賽者 {eligible.length} 人 · 有效抽獎券 {totalTickets} 張
+            有效參賽者 {eligible.length} 人 · 總票數 {totalTickets} 張
           </p>
           <Lose2kgButton
-            tone="gold"
             loading={pending}
             disabled={prize.status === "drawn"}
             onClick={() => onFormal(prize)}
@@ -804,11 +1059,17 @@ function DrawPanel({
         </div>
       ))}
 
-      <div className="space-y-3 rounded-[1.5rem] border border-[#e8e4dc] bg-[#fffcf7] p-4">
+      <div className="space-y-3 rounded-xl border border-[#e8e4dc] bg-white p-4">
         <h2 className="text-[1.125rem] font-semibold">臨時抽獎</h2>
-        <p className="text-[0.875rem] text-[#86868b]">每人機率相等，不看票數。</p>
+        <p className="text-[0.875rem] text-[#86868b]">每人等機率，不看票數。</p>
         {!tempMode ? (
-          <Lose2kgButton tone="secondary" onClick={() => setTempMode(true)}>
+          <Lose2kgButton
+            tone="secondary"
+            onClick={() => {
+              setTempSelected(new Set(participants.map((p) => p.id)));
+              setTempMode(true);
+            }}
+          >
             臨時抽獎
           </Lose2kgButton>
         ) : (
@@ -824,13 +1085,13 @@ function DrawPanel({
                 全部取消
               </Lose2kgButton>
               <input
-                className="min-w-[8rem] flex-1 rounded-xl border border-[#ddd6c8] px-3 py-2 text-[0.875rem]"
+                className="min-w-[8rem] flex-1 rounded-lg border border-[#ddd6c8] px-3 py-2 text-[0.875rem]"
                 placeholder="搜尋"
                 value={tempQuery}
                 onChange={(e) => setTempQuery(e.target.value)}
               />
             </div>
-            <div className="max-h-64 overflow-y-auto rounded-xl border border-[#eee8dc] bg-white">
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-[#eee8dc]">
               {filtered.map((p) => (
                 <label
                   key={p.id}
@@ -850,8 +1111,8 @@ function DrawPanel({
                 </label>
               ))}
             </div>
-            <p className="text-[0.875rem] text-[#86868b]">本次抽獎：{tempSelected.size} 人</p>
-            <Lose2kgButton tone="gold" loading={pending} onClick={onTempDraw}>
+            <p className="text-[0.875rem] text-[#86868b]">本次抽獎 {tempSelected.size} 人</p>
+            <Lose2kgButton loading={pending} onClick={onTempDraw}>
               開始抽獎
             </Lose2kgButton>
           </>
