@@ -16,11 +16,12 @@ import type {
   Lose2kgTicketEvent,
   Lose2kgWeightMilestone,
 } from "@/types/lose2kg";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
 export function Lose2kgParticipantPage() {
   const params = useParams<{ periodId: string; participantId: string }>();
+  const router = useRouter();
   const [participant, setParticipant] = useState<Lose2kgParticipant | null>(null);
   const [measurements, setMeasurements] = useState<Lose2kgMeasurement[]>([]);
   const [milestones, setMilestones] = useState<Lose2kgWeightMilestone[]>([]);
@@ -143,7 +144,7 @@ export function Lose2kgParticipantPage() {
                 const ok = window.confirm("確定移除（標記為 withdrawn）？");
                 if (!ok) return;
                 await removeLose2kgParticipant(participant.id);
-                window.location.href = `/admin/lose2kg/${params.periodId}`;
+                router.push(`/admin/lose2kg/${params.periodId}`);
               })
             }
           >

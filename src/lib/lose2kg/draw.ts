@@ -95,8 +95,7 @@ export function pickWeightedWinnersWithoutReplacement(
   }
   const winners: WeightedCandidate[] = [];
   const rolls: number[] = [];
-  let totalTickets = remaining.reduce((sum, c) => sum + c.tickets, 0);
-  const initialTotal = totalTickets;
+  const initialTotal = remaining.reduce((sum, c) => sum + c.tickets, 0);
 
   for (let i = 0; i < count; i += 1) {
     const { winner, roll } = pickWeightedWinner(remaining, random);

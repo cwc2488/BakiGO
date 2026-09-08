@@ -89,17 +89,27 @@ export function Lose2kgHomePage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!firstDate) {
+  const derivedDates = (() => {
+    if (!firstDate) return null;
+    try {
+      return dates ?? computeDefaultMeasurementDates(firstDate);
+    } catch {
+      return null;
+    }
+  })();
+
+  function onFirstDateChange(value: string) {
+    setFirstDate(value);
+    if (!value) {
       setDates(null);
       return;
     }
     try {
-      setDates(computeDefaultMeasurementDates(firstDate));
+      setDates(computeDefaultMeasurementDates(value));
     } catch {
       setDates(null);
     }
-  }, [firstDate]);
+  }
 
   function createPeriod() {
     if (!name.trim() || !firstDate) {
@@ -112,7 +122,7 @@ export function Lose2kgHomePage() {
           await createLose2kgPeriod({
             name: name.trim(),
             firstMeasurementDate: firstDate,
-            measurementDates: dates ?? undefined,
+            measurementDates: derivedDates ?? undefined,
           });
           setName("");
           setFirstDate("");
@@ -147,12 +157,12 @@ export function Lose2kgHomePage() {
             type="date"
             className="w-full rounded-xl border border-[#d2d2d7] px-3 py-2.5 text-[1rem]"
             value={firstDate}
-            onChange={(e) => setFirstDate(e.target.value)}
+            onChange={(e) => onFirstDateChange(e.target.value)}
           />
         </label>
-        {dates ? (
+        {derivedDates ? (
           <div className="grid grid-cols-2 gap-2">
-            {dates.map((d, i) => (
+            {derivedDates.map((d, i) => (
               <label key={d} className="block space-y-1">
                 <span className="text-[0.75rem] text-[#86868b]">第 {i + 1} 次</span>
                 <input
@@ -160,7 +170,7 @@ export function Lose2kgHomePage() {
                   className="w-full rounded-xl border border-[#d2d2d7] px-2 py-2 text-[0.875rem]"
                   value={d}
                   onChange={(e) => {
-                    const next = [...dates] as [string, string, string, string];
+                    const next = [...derivedDates] as [string, string, string, string];
                     next[i] = e.target.value;
                     setDates(next);
                   }}
