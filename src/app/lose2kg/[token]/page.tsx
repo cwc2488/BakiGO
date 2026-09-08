@@ -1,10 +1,11 @@
-import { Lose2kgPublicTicketPageView } from "@/components/lose2kg/Lose2kgPublicTicketPage";
+import { redirect } from "next/navigation";
 
-export default async function Lose2kgPublicTicketRoute({
+/** V1 public ticket URL → V2 live dashboard (preserve old links). */
+export default async function Lose2kgLegacyPublicRedirect({
   params,
 }: {
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  return <Lose2kgPublicTicketPageView token={token} />;
+  redirect(`/lose2kg/live/${token}`);
 }

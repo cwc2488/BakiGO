@@ -65,6 +65,9 @@ function mapPeriod(row: Record<string, unknown>, publicToken?: string | null): L
     ],
     publicToken: publicToken ?? null,
     publicEnabled: Boolean(row.public_enabled),
+    hasStaffPassword: Boolean(row.staff_password_hash),
+    publicShowWeights: Boolean(row.public_show_weights),
+    liveDrawStatus: (row.live_draw_status as Lose2kgPeriod["liveDrawStatus"]) || "idle",
     createdByMemberId: row.created_by_member_id ? String(row.created_by_member_id) : null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
@@ -590,7 +593,7 @@ export async function upsertMeasurement(input: {
   slot: Lose2kgMeasurementSlot;
   weightKg: number | null;
   reason?: string;
-  editedByMemberId: string;
+  editedByMemberId: string | null;
 }): Promise<{ participant: Lose2kgParticipant; measurements: Lose2kgMeasurement[] }> {
   if (input.weightKg != null && (!(input.weightKg > 0) || !Number.isFinite(input.weightKg))) {
     throw new Lose2kgError("體重必須大於 0。", 400, "invalid_weight");
@@ -773,7 +776,7 @@ export async function adjustActivityTickets(input: {
   participantId: string;
   delta: number;
   reason: string;
-  createdByMemberId: string;
+  createdByMemberId: string | null;
   eventDate?: string;
 }): Promise<Lose2kgParticipant> {
   const reason = input.reason.trim();
@@ -947,7 +950,7 @@ async function periodWinnerIds(periodId: string): Promise<Set<string>> {
 export async function executeFormalDraw(input: {
   periodId: string;
   prizeId: string;
-  drawnByMemberId: string;
+  drawnByMemberId: string | null;
   idempotencyKey?: string;
 }): Promise<{ draw: Lose2kgDraw; duplicate: boolean; winners: { id: string; name: string; tickets: number }[] }> {
   const idempotencyKey = input.idempotencyKey?.trim() || randomUUID();
@@ -1073,7 +1076,7 @@ export async function voidFormalDraw(input: {
 
 export async function createTempDrawSession(input: {
   periodId: string;
-  createdByMemberId: string;
+  createdByMemberId: string | null;
   presentParticipantIds: string[];
 }): Promise<{ session: Lose2kgTempDrawSession; publicUrl: string }> {
   await getPeriodRow(input.periodId);
