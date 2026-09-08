@@ -21,8 +21,14 @@ export type Lose2kgPeriod = {
   status: Lose2kgPeriodStatus;
   startDate: string | null;
   measurementDates: [string, string, string, string];
+  /** Live/public dashboard token (plaintext only when freshly minted). */
   publicToken: string | null;
   publicEnabled: boolean;
+  /** Staff workstation token (plaintext only when freshly minted). */
+  staffToken?: string | null;
+  hasStaffPassword?: boolean;
+  publicShowWeights?: boolean;
+  liveDrawStatus?: "idle" | "drawing" | "revealed";
   createdByMemberId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -153,4 +159,28 @@ export type Lose2kgPublicTempDrawPage = {
   entryCount: number;
   presentNames: string[];
   winnerName: string | null;
+};
+
+export type Lose2kgLiveLeaderboardRow = {
+  rank: number;
+  publicDisplayName: string;
+  totalTickets: number;
+  weightChangePct?: number | null;
+  weightTickets?: number;
+  activityTickets?: number;
+};
+
+export type Lose2kgLiveDashboard = {
+  periodName: string;
+  status: Lose2kgPeriodStatus;
+  measurementDates: [string, string, string, string];
+  currentSlot: Lose2kgMeasurementSlot;
+  nextMeasurementDate: string | null;
+  participantCount: number;
+  totalTickets: number;
+  maxTickets: number;
+  liveDrawStatus: "idle" | "drawing" | "revealed";
+  publicShowWeights: boolean;
+  leaderboard: Lose2kgLiveLeaderboardRow[];
+  winners: { prizeName: string; winnerName: string; drawnAt: string | null }[];
 };
