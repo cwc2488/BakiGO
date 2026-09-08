@@ -134,6 +134,7 @@ declare
   v_item jsonb;
   v_member_id uuid;
   v_sort integer := 0;
+  v_worker_ids uuid[] := array[]::uuid[];
 begin
   if p_idempotency_key is null or char_length(p_idempotency_key) < 8 then
     raise exception 'invalid_idempotency_key' using errcode = 'P0001';
@@ -169,15 +170,21 @@ begin
       v_sort
     );
 
+    if not (v_member_id = any (v_worker_ids)) then
+      v_worker_ids := array_append(v_worker_ids, v_member_id);
+    end if;
+  end loop;
+
+  if cardinality(v_worker_ids) > 0 then
     update public.cleaning_roster_members
     set
       current_weight = 1.0,
       total_assignments = total_assignments + 1,
       consecutive_rest_rounds = 0,
       updated_at = now()
-    where id = v_member_id
+    where id = any (v_worker_ids)
       and status = 'active';
-  end loop;
+  end if;
 
   v_sort := 0;
   for v_item in

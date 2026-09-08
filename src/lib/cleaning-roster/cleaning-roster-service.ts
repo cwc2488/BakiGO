@@ -312,12 +312,17 @@ export async function confirmDraw(input: {
   }
 
   const assignedMemberIds = new Set<string>();
+  const assignedAreaIds = new Set<string>();
   const normalizedAssignments = input.assignments.map((assignment) => {
     const area = areaById.get(assignment.areaId);
     const member = memberById.get(assignment.memberId);
     if (!area || !member) {
       throw new CleaningRosterError("預覽資料已過期，請重新抽籤。", 400, "stale_preview");
     }
+    if (assignedAreaIds.has(area.id)) {
+      throw new CleaningRosterError("同一輪區域不可重複指派。", 400, "duplicate_area");
+    }
+    assignedAreaIds.add(area.id);
     assignedMemberIds.add(member.id);
     return {
       area_id: area.id,
@@ -327,10 +332,16 @@ export async function confirmDraw(input: {
     };
   });
 
+  if (assignedAreaIds.size !== areas.length) {
+    throw new CleaningRosterError("預覽與目前區域不一致，請重新抽籤。", 400, "stale_preview");
+  }
+
   if (members.length >= areas.length) {
     if (assignedMemberIds.size !== areas.length) {
       throw new CleaningRosterError("同一輪不可重複指派同一人（區域數 ≤ 人數時）。", 400, "duplicate_worker");
     }
+  } else if (assignedMemberIds.size !== members.length) {
+    throw new CleaningRosterError("人數少於區域時，每位人員都應被分配至少一區。", 400, "uneven_workers");
   }
 
   const expectedRestIds = new Set(
