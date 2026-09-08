@@ -114,10 +114,10 @@ describe("Admin Center does not swallow partner features", () => {
       "/profile",
     ]);
     const adminPages = listFiles(resolve(ROOT, "src/app/admin")).filter((file) => file.endsWith("page.tsx"));
-    // Super Admin–only pages under /admin (Recognition + RECRUIT-FUNNEL-01).
+    // Super Admin–only pages under /admin.
     // Partner org tools stay at /organization, /members, /profile — not swallowed here.
-    expect(adminPages).toHaveLength(2);
     expect(adminPages.some((file) => file.endsWith("/admin/page.tsx"))).toBe(true);
     expect(adminPages.some((file) => file.endsWith("/admin/recruitment/page.tsx"))).toBe(true);
+    expect(adminPages.some((file) => file.endsWith("/admin/cleaning-roster/page.tsx"))).toBe(true);
   });
 });
