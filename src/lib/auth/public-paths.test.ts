@@ -55,4 +55,10 @@ describe("public-paths", () => {
   it("treats Coach Console visual preview as open public", () => {
     expect(isOpenPublicPath("/internal/coach-console-preview")).toBe(true);
   });
+
+  it("treats lose2kg public ticket and temp draw routes as open public", () => {
+    expect(isOpenPublicPath("/lose2kg/abcdefghijklmnopqrstuvwx")).toBe(true);
+    expect(isOpenPublicPath("/lose2kg/draw/abcdefghijklmnopqrstuvwx")).toBe(true);
+    expect(isPublicPath("/admin/lose2kg")).toBe(false);
+  });
 });
