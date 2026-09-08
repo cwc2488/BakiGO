@@ -12,6 +12,7 @@ import {
   hashLose2kgPublicToken,
   normalizeLose2kgToken,
 } from "@/lib/lose2kg/tokens";
+import { decryptLose2kgToken, encryptLose2kgToken } from "@/lib/lose2kg/token-crypto";
 import { buildPublicShareUrl } from "@/lib/app/public-origin";
 import { createSupabaseServiceClient } from "@/lib/supabase/service-client";
 import type {
@@ -28,10 +29,8 @@ import {
   createTempDrawSession,
   executeFormalDraw,
   getParticipantDetail,
-  getPeriodBootstrap,
   listParticipants,
   listPrizes,
-  listTempDrawSessions,
   upsertMeasurement,
   adjustActivityTickets,
   voidFormalDraw,
@@ -135,9 +134,11 @@ export async function createPeriodDraft(input: {
       measurement_date_4: input.measurementDates[3],
       public_token_hash: hashLose2kgPublicToken(liveToken),
       public_token_hint: liveToken.slice(0, 6),
+      live_token_encrypted: encryptLose2kgToken(liveToken),
       public_enabled: false,
       staff_token_hash: hashLose2kgPublicToken(staffToken),
       staff_token_hint: staffToken.slice(0, 6),
+      staff_token_encrypted: encryptLose2kgToken(staffToken),
       staff_password_hash: hashStaffPassword(input.staffPassword),
       staff_password_updated_at: nowIso(),
       public_show_weights: false,
@@ -178,9 +179,15 @@ export async function startPeriod(periodId: string): Promise<{
     throw new Lose2kgError("請先設定工作人員密碼。", 400, "password_required");
   }
 
-  // Rotate tokens on start so admin sees full URLs once.
-  const liveToken = generateLose2kgPublicToken();
-  const staffToken = generateLose2kgPublicToken();
+  // Keep existing tokens when present (persistent URLs). Mint only if missing.
+  let liveToken = decryptLose2kgToken(
+    row.live_token_encrypted ? String(row.live_token_encrypted) : null,
+  );
+  let staffToken = decryptLose2kgToken(
+    row.staff_token_encrypted ? String(row.staff_token_encrypted) : null,
+  );
+  if (!liveToken) liveToken = generateLose2kgPublicToken();
+  if (!staffToken) staffToken = generateLose2kgPublicToken();
 
   const { data, error } = await db()
     .from("lose2kg_periods")
@@ -189,8 +196,10 @@ export async function startPeriod(periodId: string): Promise<{
       public_enabled: true,
       public_token_hash: hashLose2kgPublicToken(liveToken),
       public_token_hint: liveToken.slice(0, 6),
+      live_token_encrypted: encryptLose2kgToken(liveToken),
       staff_token_hash: hashLose2kgPublicToken(staffToken),
       staff_token_hint: staffToken.slice(0, 6),
+      staff_token_encrypted: encryptLose2kgToken(staffToken),
       live_draw_status: "idle",
       updated_at: nowIso(),
     })
@@ -213,16 +222,25 @@ export async function getAdminControlCenter(periodId: string): Promise<{
   period: Lose2kgPeriod;
   liveUrl: string | null;
   staffUrl: string | null;
+  liveToken: string | null;
+  staffToken: string | null;
   prizes: Lose2kgPrize[];
 }> {
   const row = await getPeriodRow(periodId);
-  const period = mapPeriodV2(row);
+  const liveToken = decryptLose2kgToken(
+    row.live_token_encrypted ? String(row.live_token_encrypted) : null,
+  );
+  const staffToken = decryptLose2kgToken(
+    row.staff_token_encrypted ? String(row.staff_token_encrypted) : null,
+  );
+  const period = mapPeriodV2(row, { liveToken, staffToken });
   const prizes = await listPrizes(periodId);
-  // Tokens are only returned in full when freshly regenerated; otherwise show hint-based placeholder URLs if we don't have plaintext.
   return {
     period,
-    liveUrl: null,
-    staffUrl: null,
+    liveToken,
+    staffToken,
+    liveUrl: liveToken ? buildLiveUrl(liveToken) : null,
+    staffUrl: staffToken ? buildStaffUrl(staffToken) : null,
     prizes,
   };
 }
@@ -239,6 +257,7 @@ export async function regenerateLiveToken(periodId: string): Promise<{
     .update({
       public_token_hash: hashLose2kgPublicToken(liveToken),
       public_token_hint: liveToken.slice(0, 6),
+      live_token_encrypted: encryptLose2kgToken(liveToken),
       public_enabled: true,
       updated_at: nowIso(),
     })
@@ -262,6 +281,7 @@ export async function regenerateStaffToken(periodId: string): Promise<{
     .update({
       staff_token_hash: hashLose2kgPublicToken(staffToken),
       staff_token_hint: staffToken.slice(0, 6),
+      staff_token_encrypted: encryptLose2kgToken(staffToken),
       staff_sessions_revoked_at: nowIso(),
       updated_at: nowIso(),
     })
@@ -496,23 +516,94 @@ export async function getStaffBootstrap(periodId: string): Promise<{
   nextMeasurementDate: string | null;
   participants: Lose2kgParticipant[];
   measurements: Lose2kgMeasurement[];
-  prizes: Lose2kgPrize[];
-  draws: Lose2kgDraw[];
-  tempSessions: Awaited<ReturnType<typeof listTempDrawSessions>>;
+  participantCount: number;
+  totalTickets: number;
 }> {
-  const data = await getPeriodBootstrap(periodId);
   const period = mapPeriodV2(await getPeriodRow(periodId));
+  const [participants, measurements] = await Promise.all([
+    listParticipants(periodId),
+    (async () => {
+      const { data, error } = await db()
+        .from("lose2kg_measurements")
+        .select("*")
+        .eq("period_id", periodId)
+        .order("slot", { ascending: true });
+      if (error) throw new Lose2kgError(error.message, 500, "db_error");
+      return (data ?? []).map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          id: String(r.id),
+          periodId: String(r.period_id),
+          participantId: String(r.participant_id),
+          slot: Number(r.slot) as 1 | 2 | 3 | 4,
+          weightKg: r.weight_kg == null ? null : Number(r.weight_kg),
+          measuredAt: r.measured_at ? String(r.measured_at) : null,
+          weightChangePct: r.weight_change_pct == null ? null : Number(r.weight_change_pct),
+          createdAt: String(r.created_at),
+          updatedAt: String(r.updated_at),
+        } satisfies Lose2kgMeasurement;
+      });
+    })(),
+  ]);
+  const active = participants.filter((p) => p.status === "active");
   const { slot, nextDate } = currentMeasurementSlot(period.measurementDates);
   return {
     period,
     currentSlot: slot,
     nextMeasurementDate: nextDate,
-    participants: data.participants,
-    measurements: data.measurements,
-    prizes: data.prizes,
-    draws: data.draws,
-    tempSessions: data.tempSessions,
+    participants,
+    measurements,
+    participantCount: active.length,
+    totalTickets: active.reduce((sum, p) => sum + p.totalTicketBalance, 0),
   };
+}
+
+export async function getStaffDrawBootstrap(periodId: string): Promise<{
+  prizes: Lose2kgPrize[];
+  draws: Lose2kgDraw[];
+}> {
+  const [prizes, { data: draws, error }] = await Promise.all([
+    listPrizes(periodId),
+    db()
+      .from("lose2kg_draws")
+      .select("*")
+      .eq("period_id", periodId)
+      .order("created_at", { ascending: false })
+      .limit(20),
+  ]);
+  if (error) throw new Lose2kgError(error.message, 500, "db_error");
+  return {
+    prizes,
+    draws: (draws ?? []).map((row) => {
+      const r = row as Record<string, unknown>;
+      return {
+        id: String(r.id),
+        periodId: String(r.period_id),
+        prizeId: String(r.prize_id),
+        status: r.status as Lose2kgDraw["status"],
+        winnerParticipantId: r.winner_participant_id ? String(r.winner_participant_id) : null,
+        winnerNameSnapshot: r.winner_name_snapshot ? String(r.winner_name_snapshot) : null,
+        winnerTicketCount: r.winner_ticket_count == null ? null : Number(r.winner_ticket_count),
+        totalPoolTicketCount:
+          r.total_pool_ticket_count == null ? null : Number(r.total_pool_ticket_count),
+        randomMetadata: (r.random_metadata as Record<string, unknown> | null) ?? null,
+        drawnByMemberId: r.drawn_by_member_id ? String(r.drawn_by_member_id) : null,
+        drawnAt: r.drawn_at ? String(r.drawn_at) : null,
+        voidedByMemberId: r.voided_by_member_id ? String(r.voided_by_member_id) : null,
+        voidedAt: r.voided_at ? String(r.voided_at) : null,
+        voidReason: r.void_reason ? String(r.void_reason) : null,
+        idempotencyKey: String(r.idempotency_key),
+        createdAt: String(r.created_at),
+      };
+    }),
+  };
+}
+
+/** Super Admin only: delete one period and all child rows via FK cascade. */
+export async function deletePeriod(periodId: string): Promise<void> {
+  await getPeriodRow(periodId);
+  const { error } = await db().from("lose2kg_periods").delete().eq("id", periodId);
+  if (error) throw new Lose2kgError(error.message, 500, "db_error");
 }
 
 export async function setLiveDrawStatus(
@@ -673,21 +764,21 @@ export async function staffQuickMeasure(input: {
   if (delta > 0) {
     feedback = {
       kind: "milestone",
-      message: `首次達成減重相關里程碑 · 體重票 +${delta}`,
+      message: `🎟 +${delta} · 首次達成減重里程碑`,
       deltaTickets: delta,
       weightChangePct: pct,
     };
   } else if (delta < 0) {
     feedback = {
       kind: "revoked",
-      message: `體重票 ${delta}`,
+      message: `🎟 ${delta} · 體重票調整`,
       deltaTickets: delta,
       weightChangePct: pct,
     };
   } else {
     feedback = {
       kind: "updated",
-      message: "已更新，本次沒有新增抽獎券",
+      message: "✓ 已儲存",
       deltaTickets: 0,
       weightChangePct: pct,
     };

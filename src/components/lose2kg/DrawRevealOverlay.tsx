@@ -30,19 +30,28 @@ export function DrawRevealOverlay({
 
     const pool = names.length > 0 ? names : [winnerName];
     let tick = 0;
-    let delay = 40;
+    let delay = 35;
+    let elapsed = 0;
+    const totalMs = 3500 + Math.floor(Math.random() * 1000);
     let timer: number | undefined;
 
     const step = () => {
       setDisplay(pool[tick % pool.length]!);
       tick += 1;
-      if (delay < 220) {
-        delay += tick % 4 === 0 ? 12 : 6;
+      elapsed += delay;
+      if (elapsed < totalMs * 0.45) {
+        delay = 35;
+      } else if (elapsed < totalMs * 0.75) {
+        delay = 70;
+      } else {
+        delay = Math.min(220, delay + 18);
+      }
+      if (elapsed < totalMs) {
         timer = window.setTimeout(step, delay);
       } else {
         setDisplay(winnerName);
         setPhase("reveal");
-        window.setTimeout(() => onDone?.(), 1800);
+        window.setTimeout(() => onDone?.(), 2000);
       }
     };
     timer = window.setTimeout(step, delay);

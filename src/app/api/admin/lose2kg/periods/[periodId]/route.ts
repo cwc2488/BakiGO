@@ -1,5 +1,6 @@
 import { lose2kgErrorResponse, requireLose2kgAdmin } from "@/lib/lose2kg/api";
 import { getPeriodBootstrap, updatePeriod } from "@/lib/lose2kg/service";
+import { deletePeriod } from "@/lib/lose2kg/v2-service";
 import type { Lose2kgPeriodStatus } from "@/types/lose2kg";
 import { NextResponse } from "next/server";
 
@@ -34,6 +35,21 @@ export async function PATCH(
     };
     const period = await updatePeriod(periodId, body);
     return NextResponse.json({ ok: true, period });
+  } catch (error) {
+    return lose2kgErrorResponse(error);
+  }
+}
+
+/** Super Admin / Owner only — staff sessions must never reach this route. */
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ periodId: string }> },
+) {
+  try {
+    await requireLose2kgAdmin(request);
+    const { periodId } = await context.params;
+    await deletePeriod(periodId);
+    return NextResponse.json({ ok: true });
   } catch (error) {
     return lose2kgErrorResponse(error);
   }

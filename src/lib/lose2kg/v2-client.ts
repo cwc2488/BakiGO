@@ -94,4 +94,22 @@ export async function patchLose2kgPeriodV2(
   );
 }
 
+export async function fetchLose2kgControlCenter(periodId: string) {
+  return lose2kgFetch<{
+    ok: true;
+    period: Lose2kgPeriod;
+    liveUrl: string | null;
+    staffUrl: string | null;
+    liveToken: string | null;
+    staffToken: string | null;
+    prizes: Lose2kgPrize[];
+  }>(`/api/admin/lose2kg/periods/${periodId}/control-center`, { cache: "no-store" });
+}
+
+export async function deleteLose2kgPeriod(periodId: string) {
+  return lose2kgFetch<{ ok: true }>(`/api/admin/lose2kg/periods/${periodId}`, {
+    method: "DELETE",
+  });
+}
+
 export type { Lose2kgPrize };
