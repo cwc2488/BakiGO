@@ -1,7 +1,7 @@
 "use client";
 
 import { CALENDAR_REMINDER_CHECK_INTERVAL_MS } from "@/lib/calendar/calendar-reminder-constants";
-import { registerCalendarServiceWorker } from "@/lib/calendar/calendar-reminder-runner";
+import { registerAppServiceWorker } from "@/lib/push/subscription-client";
 import { runDailyCustomerFollowUpReminder } from "@/lib/customers/customer-follow-up-reminder-runner";
 import { getNotificationPermissionState } from "@/lib/notifications/show-app-notification";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -20,7 +20,7 @@ export function CustomerFollowUpReminderScheduler() {
     let cancelled = false;
 
     async function bootstrap() {
-      await registerCalendarServiceWorker();
+      await registerAppServiceWorker();
       if (cancelled || getNotificationPermissionState() !== "granted") {
         return;
       }

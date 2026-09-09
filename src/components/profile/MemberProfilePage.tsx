@@ -29,6 +29,7 @@ import {
 import { ProfileAccountSection } from "./ProfileAccountSection";
 import { ProfileAvatarSection } from "./ProfileAvatarSection";
 import { ProfileHomeDisplaySection } from "./ProfileHomeDisplaySection";
+import { ProfileNotificationSection } from "./ProfileNotificationSection";
 import { ProfileSetupSection } from "./ProfileSetupSection";
 
 type LoadState = "loading" | "ready" | "error";
@@ -192,6 +193,7 @@ function ProfileView({
         <BasicInfoSection metrics={metrics} />
         <GrowthSection metrics={metrics} />
         <ProfileHomeDisplaySection />
+        <ProfileNotificationSection />
         <ProfileQuickLinks />
         <ProfileAccountSection onSponsorUpdated={onSponsorUpdated} />
     </TabRootShell>

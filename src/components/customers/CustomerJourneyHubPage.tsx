@@ -10,6 +10,7 @@ import {
   CUSTOMER_JOURNEY_HUB_ITEMS,
   type CustomerJourneyHubItem,
 } from "@/lib/customers/customer-journey-hub-items";
+import { LeadTrackingHubBadge } from "@/components/lead-tracking/LeadTrackingHubBadge";
 
 function HubLinkCard({ item }: { item: CustomerJourneyHubItem }) {
   const Icon = (item.iconHref ? ROUTE_ICON_COMPONENTS[item.iconHref] : null) ?? null;
@@ -30,6 +31,7 @@ function HubLinkCard({ item }: { item: CustomerJourneyHubItem }) {
             {item.title}
           </span>
           {item.waitingBadge ? <QuizPartnerNavBadge /> : null}
+          {item.href === "/lead-tracking" ? <LeadTrackingHubBadge /> : null}
           {badge ? (
             <span className="shrink-0 rounded-full bg-[#fff7e6] px-2 py-0.5 text-[0.6875rem] font-semibold text-[#b54708]">
               🔒 {badge}

@@ -4,9 +4,9 @@ import { CALENDAR_REMINDER_CHECK_INTERVAL_MS } from "@/lib/calendar/calendar-rem
 import {
   getNotificationPermissionState,
   refreshCalendarReminderSchedule,
-  registerCalendarServiceWorker,
   runDueCalendarReminders,
 } from "@/lib/calendar/calendar-reminder-runner";
+import { registerAppServiceWorker } from "@/lib/push/subscription-client";
 import { useAuth } from "@/lib/auth/auth-context";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { useEffect, useMemo } from "react";
@@ -23,7 +23,7 @@ export function CalendarReminderScheduler() {
     let cancelled = false;
 
     async function bootstrap() {
-      await registerCalendarServiceWorker();
+      await registerAppServiceWorker();
       if (cancelled) {
         return;
       }

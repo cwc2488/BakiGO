@@ -35,6 +35,12 @@ export const CUSTOMER_JOURNEY_HUB_ITEMS: CustomerJourneyHubItem[] = [
     iconHref: "/retail-pipeline",
   },
   {
+    href: "/lead-tracking",
+    title: "名單追蹤",
+    desc: "記下狀況，到時提醒我",
+    iconName: APP_ICON.section.growth,
+  },
+  {
     href: "/quiz/21d",
     title: "心理測驗",
     desc: "分享測驗，聯絡想了解 21 天的人",
