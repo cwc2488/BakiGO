@@ -45,6 +45,7 @@ function isActive(pathname: string, href: string): boolean {
       pathname.startsWith("/customers/") ||
       pathname.startsWith("/coaching") ||
       pathname.startsWith("/retail-pipeline") ||
+      pathname.startsWith("/lead-tracking") ||
       pathname.startsWith("/quiz") ||
       pathname.startsWith("/consultation") ||
       pathname.startsWith("/radar")

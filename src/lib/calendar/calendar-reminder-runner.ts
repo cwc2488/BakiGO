@@ -77,15 +77,8 @@ function showViaNotificationApi(reminder: {
 }
 
 export async function registerCalendarServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-  if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
-    return null;
-  }
-
-  try {
-    return await navigator.serviceWorker.register("/sw.js");
-  } catch {
-    return null;
-  }
+  const { registerAppServiceWorker } = await import("@/lib/push/subscription-client");
+  return registerAppServiceWorker();
 }
 
 export async function runDueCalendarReminders(storage: StorageAdapter): Promise<number> {

@@ -972,3 +972,18 @@ Owner-only private Life OS tables (service-role only; API enforces Super Admin):
 | `life_preferences` | seed flag + last used accounts |
 
 Amounts are `bigint` cents (TWD). See `docs/BAKI_LIFE.md`.
+
+### Web Push + 名單追蹤 (`081_web_push_lead_tracking_v1.sql`)
+
+Additive personal Web Push + free-form lead tracking (not CRM). Owner-only RLS via JWT email → `members.id`. Server workers use `service_role`.
+
+| Table | Purpose |
+|-------|---------|
+| `push_subscriptions` | Per-device Web Push endpoints (`endpoint` unique); stale 404/410 deactivated by sender |
+| `notification_deliveries` | Idempotent delivery audit/dedupe (`member_id + channel + source_type + source_key + scheduled_at`) |
+| `lead_tracking` | Personal follow-up list: name + free-text status + optional next follow-up + reminder flag |
+| `lead_tracking_history` | Append-only rows when `current_status` meaningfully changes |
+
+**Env (Web Push):** `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, optional `VAPID_SUBJECT`. Cron worker: `/api/push/process` (same Bearer secrets as coaching cron).
+
+**Do not confuse with:** `retail-pipeline` leads, `recruitment_leads`, `transformation_leads`, or GO21 `coaching_ai_reminders` (in-app turns).

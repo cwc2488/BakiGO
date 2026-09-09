@@ -1,36 +1,110 @@
-if (!(self as unknown as ServiceWorkerGlobalScope).skipWaiting) {
-  // noop for type guard in non-sw context
+/* Baki Go service worker — plain browser JS (no TypeScript). */
+
+function sanitizeUrl(raw) {
+  if (typeof raw !== "string") {
+    return "/";
+  }
+  var trimmed = raw.trim();
+  if (!trimmed || !trimmed.startsWith("/") || trimmed.startsWith("//")) {
+    return "/";
+  }
+  if (trimmed.includes("://") || trimmed.toLowerCase().startsWith("javascript:")) {
+    return "/";
+  }
+  if (trimmed.includes("\\") || trimmed.includes("@")) {
+    return "/";
+  }
+  return trimmed;
 }
 
-const SW = self as unknown as ServiceWorkerGlobalScope;
-
-SW.addEventListener("install", (event) => {
-  event.waitUntil(SW.skipWaiting());
+self.addEventListener("install", function (event) {
+  event.waitUntil(self.skipWaiting());
 });
 
-SW.addEventListener("activate", (event) => {
-  event.waitUntil(SW.clients.claim());
+self.addEventListener("activate", function (event) {
+  event.waitUntil(self.clients.claim());
 });
 
-SW.addEventListener("notificationclick", (event) => {
+self.addEventListener("push", function (event) {
+  event.waitUntil(
+    (async function () {
+      var title = "Baki Go";
+      var body = "你有一則新提醒";
+      var url = "/";
+      var tag = "baki-go-push";
+      var icon = "/icon-192.png";
+      var badge = "/icon-192.png";
+
+      try {
+        if (event.data) {
+          var parsed = event.data.json();
+          if (typeof parsed.title === "string" && parsed.title.trim()) {
+            title = parsed.title.trim();
+          }
+          if (typeof parsed.body === "string" && parsed.body.trim()) {
+            body = parsed.body.trim();
+          }
+          url = sanitizeUrl(parsed.url);
+          if (typeof parsed.tag === "string" && parsed.tag.trim()) {
+            tag = parsed.tag.trim();
+          }
+          if (typeof parsed.icon === "string" && parsed.icon.startsWith("/")) {
+            icon = parsed.icon;
+          }
+          if (typeof parsed.badge === "string" && parsed.badge.startsWith("/")) {
+            badge = parsed.badge;
+          }
+        }
+      } catch (err) {
+        try {
+          if (event.data) {
+            var text = event.data.text();
+            if (text && text.trim()) {
+              body = text.trim().slice(0, 180);
+            }
+          }
+        } catch (textErr) {
+          // keep defaults
+        }
+      }
+
+      await self.registration.showNotification(title, {
+        body: body,
+        icon: icon,
+        badge: badge,
+        tag: tag,
+        data: { url: url },
+      });
+    })(),
+  );
+});
+
+self.addEventListener("notificationclick", function (event) {
   event.notification.close();
-  const url = (event.notification.data?.url as string | undefined) ?? "/calendar";
+  var rawUrl =
+    event.notification.data && event.notification.data.url
+      ? event.notification.data.url
+      : "/calendar";
+  var url = sanitizeUrl(rawUrl);
 
   event.waitUntil(
-    SW.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (clients) {
+      for (var i = 0; i < clients.length; i += 1) {
+        var client = clients[i];
         if ("focus" in client) {
-          client.navigate(url);
+          if ("navigate" in client && typeof client.navigate === "function") {
+            client.navigate(url);
+          }
           return client.focus();
         }
       }
-      return SW.clients.openWindow(url);
+      return self.clients.openWindow(url);
     }),
   );
 });
 
-SW.addEventListener("message", (event) => {
-  if (event.data?.type === "SYNC_CALENDAR_REMINDERS") {
-    // 喚醒 service worker；實際檢查仍由前景頁面執行
+self.addEventListener("message", function (event) {
+  if (event.data && event.data.type === "SYNC_CALENDAR_REMINDERS") {
+    // Kept for backward compatibility; server-side Web Push is the primary delivery path.
   }
 });

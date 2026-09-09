@@ -40,6 +40,7 @@ export const SIDE_NAV_EXTRA_LINKS = [
   { href: "/radar", title: "今日推薦", icon: APP_ICON.hub.pipeline },
   { href: "/coaching", title: "陪跑中心", icon: APP_ICON.hub.pipeline },
   { href: "/retail-pipeline", title: "名單", icon: APP_ICON.hub.pipeline },
+  { href: "/lead-tracking", title: "名單追蹤", icon: APP_ICON.hub.pipeline },
   { href: "/goals", title: "目標", icon: APP_ICON.hub.goals },
   { href: "/organization", title: "組織", icon: APP_ICON.hub.organization },
   { href: "/learning", title: "學習", icon: APP_ICON.hub.learning },

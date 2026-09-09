@@ -17,7 +17,27 @@
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...   # server only
+CRON_SECRET=...                    # Vercel Cron Bearer (also accepts COACHING_CRON_SECRET)
 ```
+
+### Web Push（VAPID）
+
+Required for server-side push (calendar reminders + 名單追蹤 + test notification):
+
+```bash
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=...   # public — safe for client
+VAPID_PRIVATE_KEY=...              # secret — server only, never commit
+VAPID_SUBJECT=mailto:support@bakigo.tw   # optional contact
+```
+
+Generate a key pair locally (do not commit the private key):
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Apply migration `081_web_push_lead_tracking_v1.sql` before enabling push in Production.
 
 ## 重置所有帳號並建立虛擬上線 00000
 
