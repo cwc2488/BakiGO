@@ -44,4 +44,15 @@ describe("service worker push handler", () => {
     expect(sw).toContain("sanitizeUrl");
     expect(sw).toContain("javascript:");
   });
+
+  it("is plain browser JS without TypeScript syntax", () => {
+    expect(sw).not.toMatch(/\sas\s+unknown\s+as\b/);
+    expect(sw).not.toMatch(/\bas\s+ServiceWorkerGlobalScope\b/);
+    expect(sw).not.toMatch(/:\s*unknown\b/);
+    expect(sw).not.toMatch(/function\s+\w+\([^)]*:\s*\w+/);
+    expect(sw).not.toMatch(/\)\s*:\s*string\b/);
+    expect(sw).not.toMatch(/\bas\s*\{/);
+    // Must parse as classic script (Safari SW rejects TS).
+    expect(() => new Function(sw)).not.toThrow();
+  });
 });
