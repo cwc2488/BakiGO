@@ -155,7 +155,9 @@ function ControlCenterInner() {
               key={i}
               className="min-w-[4.5rem] shrink-0 rounded-lg border border-[#e8e4dc] bg-white px-3 py-2 text-center"
             >
-              <p className="text-[0.65rem] font-medium text-[#86868b]">第 {i + 1} 次</p>
+              <p className="text-[0.65rem] font-medium text-[#86868b]">
+                第 {i + 1} 週{i === 0 ? " · 基準" : ""}
+              </p>
               <p className="text-[0.9375rem] font-semibold tabular-nums">{shortDate(d)}</p>
             </div>
           ))}
@@ -256,7 +258,9 @@ function ControlCenterInner() {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {period.measurementDates.map((d, i) => (
               <label key={i} className="block space-y-1">
-                <span className="text-[0.7rem] text-[#86868b]">第 {i + 1} 次</span>
+                <span className="text-[0.7rem] text-[#86868b]">
+                  第 {i + 1} 週{i === 0 ? " · 基準" : ""}
+                </span>
                 <input
                   type="date"
                   className="w-full rounded-lg border border-[#ddd6c8] px-2 py-2 text-[0.875rem]"

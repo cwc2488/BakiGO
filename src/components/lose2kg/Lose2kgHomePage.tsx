@@ -205,7 +205,9 @@ export function Lose2kgHomePage() {
                       key={i}
                       className="flex items-center justify-between gap-3 rounded-xl border border-[#eee8dc] bg-white px-3 py-2.5"
                     >
-                      <span className="text-[0.875rem] text-[#86868b]">第 {i + 1} 次</span>
+                      <span className="text-[0.875rem] text-[#86868b]">
+                        第 {i + 1} 週量測{i === 0 ? " · 基準" : ""}
+                      </span>
                       <input
                         type="date"
                         className="rounded-lg border border-[#ddd6c8] px-2 py-1.5 text-[0.875rem]"

@@ -77,7 +77,7 @@ function describeSlotEvents(
   changePct: number | null,
 ): { description: string; ticketDelta: number } {
   if (slot === 1) {
-    return { description: "基準（第 1 次量測不發票）", ticketDelta: 0 };
+    return { description: "基準體重（第 1 週量測不發票）", ticketDelta: 0 };
   }
 
   const awards = events.filter((e) => e.eventType === "weight_milestone_awarded");
@@ -144,7 +144,7 @@ export function buildTicketBreakdown(input: {
         date,
         weightKg: input.showWeights ? weightKg : null,
         changePct: weightKg != null && baselineKg != null ? 0 : null,
-        description: weightKg != null ? "基準（第 1 次量測不發票）" : "尚未建立基準",
+        description: weightKg != null ? "基準體重（第 1 週量測不發票）" : "尚未建立基準",
         ticketDelta: 0,
       });
       continue;
@@ -156,7 +156,10 @@ export function buildTicketBreakdown(input: {
         date,
         weightKg: input.showWeights ? weightKg : null,
         changePct: null,
-        description: baselineKg == null ? "等待基準量測" : "尚未量測",
+        description:
+          weightKg != null && weightKg > 0 && baselineKg == null
+            ? "等待第1次基準體重"
+            : "尚未量測",
         ticketDelta: 0,
       });
       continue;
