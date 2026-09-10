@@ -29,6 +29,7 @@ import {
   createTempDrawSession,
   executeFormalDraw,
   getParticipantDetail,
+  getTicketBreakdownForParticipant,
   listParticipants,
   listPrizes,
   upsertMeasurement,
@@ -38,6 +39,7 @@ import {
   executePublicTempDraw,
   getPublicTempDrawPage,
 } from "@/lib/lose2kg/service";
+import type { Lose2kgTicketBreakdown } from "@/lib/lose2kg/ticket-breakdown";
 
 function db() {
   return createSupabaseServiceClient();
@@ -677,40 +679,17 @@ export async function getLiveDashboard(liveToken: string): Promise<Lose2kgLiveDa
     })
     .map((p, index) => ({
       rank: index + 1,
+      participantId: p.id,
       publicDisplayName: p.publicDisplayName,
       totalTickets: p.totalTicketBalance,
+      weightTickets: p.weightTicketBalance,
+      extraTickets: p.activityTicketBalance,
       ...(period.publicShowWeights
         ? {
             weightChangePct: p.currentWeightChangePct,
-            weightTickets: p.weightTicketBalance,
-            activityTickets: p.activityTicketBalance,
           }
         : {}),
     }));
-
-  const { data: draws } = await db()
-    .from("lose2kg_draws")
-    .select("*")
-    .eq("period_id", periodId)
-    .eq("status", "completed")
-    .order("drawn_at", { ascending: false });
-
-  const winners = (draws ?? []).map((d) => {
-    const r = d as Record<string, unknown>;
-    return {
-      prizeHint: String(r.prize_id),
-      winnerName: r.winner_name_snapshot ? String(r.winner_name_snapshot) : "—",
-      drawnAt: r.drawn_at ? String(r.drawn_at) : null,
-    };
-  });
-
-  // Attach prize names
-  const prizes = await listPrizes(periodId);
-  const prizeName = new Map(prizes.map((p) => [p.id, p.name]));
-  const winnersNamed = winners.map((w) => ({
-    ...w,
-    prizeName: prizeName.get(w.prizeHint) ?? "獎項",
-  }));
 
   return {
     periodName: period.name,
@@ -721,15 +700,27 @@ export async function getLiveDashboard(liveToken: string): Promise<Lose2kgLiveDa
     participantCount: participants.length,
     totalTickets,
     maxTickets,
-    liveDrawStatus: period.liveDrawStatus ?? "idle",
     publicShowWeights: Boolean(period.publicShowWeights),
     leaderboard,
-    winners: winnersNamed.map(({ prizeName: name, winnerName, drawnAt }) => ({
-      prizeName: name,
-      winnerName,
-      drawnAt,
-    })),
   };
+}
+
+/** Public read-only ticket breakdown (whitelist fields only). */
+export async function getPublicTicketBreakdown(
+  liveToken: string,
+  participantId: string,
+): Promise<Lose2kgTicketBreakdown> {
+  const row = await findPeriodByLiveToken(liveToken);
+  const periodId = String(row.id);
+  const period = mapPeriodV2(row);
+  const participants = await listParticipants(periodId);
+  const participant = participants.find((p) => p.id === participantId && p.status === "active");
+  if (!participant) throw new Lose2kgError("找不到參賽者。", 404, "not_found");
+  return getTicketBreakdownForParticipant({
+    participantId,
+    showWeights: Boolean(period.publicShowWeights),
+    displayName: participant.publicDisplayName,
+  });
 }
 
 export type StaffMeasureResult = {

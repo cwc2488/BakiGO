@@ -8,6 +8,11 @@ import {
   type MilestoneRecord,
 } from "@/lib/lose2kg/milestones";
 import {
+  buildTicketBreakdown,
+  validateExtraTicketReason,
+  type Lose2kgTicketBreakdown,
+} from "@/lib/lose2kg/ticket-breakdown";
+import {
   cryptoRandom,
   pickEqualWinner,
   pickWeightedWinnersWithoutReplacement,
@@ -779,8 +784,16 @@ export async function adjustActivityTickets(input: {
   createdByMemberId: string | null;
   eventDate?: string;
 }): Promise<Lose2kgParticipant> {
-  const reason = input.reason.trim();
-  if (!reason) throw new Lose2kgError("請填寫原因。", 400, "reason_required");
+  let reason: string;
+  try {
+    reason = validateExtraTicketReason(input.reason);
+  } catch (error) {
+    throw new Lose2kgError(
+      error instanceof Error ? error.message : "請填寫額外票說明（至少 2 個字）。",
+      400,
+      "reason_required",
+    );
+  }
 
   const { data: row, error } = await db()
     .from("lose2kg_participants")
@@ -866,6 +879,41 @@ export async function getParticipantDetail(participantId: string): Promise<{
     }),
     events: (events ?? []).map((r) => mapEvent(r as Record<string, unknown>)),
   };
+}
+
+export async function getTicketBreakdownForParticipant(input: {
+  participantId: string;
+  showWeights: boolean;
+  displayName?: string;
+}): Promise<Lose2kgTicketBreakdown> {
+  const detail = await getParticipantDetail(input.participantId);
+  const { data: periodRow, error } = await db()
+    .from("lose2kg_periods")
+    .select("measurement_date_1, measurement_date_2, measurement_date_3, measurement_date_4")
+    .eq("id", detail.participant.periodId)
+    .maybeSingle();
+  if (error) throw new Lose2kgError(error.message, 500, "db_error");
+  if (!periodRow) throw new Lose2kgError("找不到活動期數。", 404, "not_found");
+  const row = periodRow as Record<string, unknown>;
+  return buildTicketBreakdown({
+    participantId: detail.participant.id,
+    displayName:
+      input.displayName ??
+      detail.participant.publicDisplayName ??
+      detail.participant.name,
+    measurements: detail.measurements,
+    measurementDates: [
+      String(row.measurement_date_1),
+      String(row.measurement_date_2),
+      String(row.measurement_date_3),
+      String(row.measurement_date_4),
+    ],
+    milestones: detail.milestones,
+    events: detail.events,
+    showWeights: input.showWeights,
+    weightTicketBalance: detail.participant.weightTicketBalance,
+    activityTicketBalance: detail.participant.activityTicketBalance,
+  });
 }
 
 export async function listPrizes(periodId: string): Promise<Lose2kgPrize[]> {

@@ -96,15 +96,16 @@ describe("lose2kg V3 persistent URLs + delete permissions", () => {
     expect(page).toContain("patchParticipant");
     const measureSave = page.slice(
       page.indexOf("async function saveMeasure"),
-      page.indexOf("async function addTickets"),
+      page.indexOf("async function submitExtraTickets"),
     );
     expect(measureSave).not.toContain("loadBootstrap");
     const addTicketsFn = page.slice(
-      page.indexOf("async function addTickets"),
+      page.indexOf("async function submitExtraTickets"),
       page.indexOf("if (!gate)"),
     );
     expect(addTicketsFn).not.toContain("loadBootstrap");
-    expect(page).toContain("draw-bootstrap");
-    expect(page).toContain("dynamic(");
+    expect(page).not.toContain("draw-bootstrap");
+    expect(page).not.toContain("DrawRevealOverlay");
+    expect(page).toContain("ticket-breakdown");
   });
 });

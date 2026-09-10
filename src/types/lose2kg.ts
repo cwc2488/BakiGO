@@ -163,11 +163,12 @@ export type Lose2kgPublicTempDrawPage = {
 
 export type Lose2kgLiveLeaderboardRow = {
   rank: number;
+  participantId: string;
   publicDisplayName: string;
   totalTickets: number;
+  weightTickets: number;
+  extraTickets: number;
   weightChangePct?: number | null;
-  weightTickets?: number;
-  activityTickets?: number;
 };
 
 export type Lose2kgLiveDashboard = {
@@ -179,8 +180,6 @@ export type Lose2kgLiveDashboard = {
   participantCount: number;
   totalTickets: number;
   maxTickets: number;
-  liveDrawStatus: "idle" | "drawing" | "revealed";
   publicShowWeights: boolean;
   leaderboard: Lose2kgLiveLeaderboardRow[];
-  winners: { prizeName: string; winnerName: string; drawnAt: string | null }[];
 };

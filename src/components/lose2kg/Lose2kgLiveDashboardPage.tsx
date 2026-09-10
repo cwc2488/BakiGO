@@ -1,5 +1,7 @@
 "use client";
 
+import { TicketBreakdownPanel } from "@/components/lose2kg/TicketBreakdownPanel";
+import type { Lose2kgTicketBreakdown } from "@/lib/lose2kg/ticket-breakdown";
 import type { Lose2kgLiveDashboard } from "@/types/lose2kg";
 import { useEffect, useState } from "react";
 
@@ -12,6 +14,8 @@ function shortDate(iso: string) {
 export function Lose2kgLiveDashboardPage({ token }: { token: string }) {
   const [data, setData] = useState<Lose2kgLiveDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [breakdown, setBreakdown] = useState<Lose2kgTicketBreakdown | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,20 +46,42 @@ export function Lose2kgLiveDashboardPage({ token }: { token: string }) {
     };
   }, [token]);
 
+  async function openBreakdown(participantId: string) {
+    setLoadingDetail(true);
+    try {
+      const res = await fetch(
+        `/api/lose2kg/live/${encodeURIComponent(token)}/participants/${encodeURIComponent(participantId)}/ticket-breakdown`,
+        { cache: "no-store" },
+      );
+      const body = (await res.json()) as {
+        ok?: boolean;
+        breakdown?: Lose2kgTicketBreakdown;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(body.error || "明細載入失敗");
+      setBreakdown(body.breakdown ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "明細載入失敗");
+    } finally {
+      setLoadingDetail(false);
+    }
+  }
+
   return (
     <div className="min-h-dvh bg-[radial-gradient(circle_at_top,#efe6d4_0%,#f4f1ea_40%,#ffffff_100%)] text-[#1d1d1f]">
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10">
         <header className="space-y-2 text-center">
           <p className="text-[0.7rem] font-semibold tracking-[0.2em] text-[#8a7350]">再瘦2公斤</p>
           <h1 className="text-[1.75rem] font-semibold leading-tight">
-            {data?.periodName ?? "活動儀表板"}
+            {data?.periodName ?? "抽獎券追蹤"}
           </h1>
           {data ? (
             <div className="space-y-1 text-[0.9375rem] text-[#86868b]">
+              <p>本期進度：第 {data.currentSlot} / 4 次量測</p>
               <p>
-                本期進度：第 {data.currentSlot} / 4 次量測
+                下一次量測：
+                {data.nextMeasurementDate ? shortDate(data.nextMeasurementDate) : "—"}
               </p>
-              <p>下一次：{data.nextMeasurementDate ? shortDate(data.nextMeasurementDate) : "—"}</p>
             </div>
           ) : null}
         </header>
@@ -72,28 +98,6 @@ export function Lose2kgLiveDashboardPage({ token }: { token: string }) {
           </div>
         ) : null}
 
-        {data?.liveDrawStatus === "drawing" ? (
-          <div className="rounded-xl border border-[#8a7350]/35 bg-[#1d1d1f] px-4 py-5 text-center text-[#f5f0e8]">
-            <p className="text-[1.125rem] font-semibold">抽獎進行中</p>
-          </div>
-        ) : null}
-
-        {data && data.winners.length > 0 ? (
-          <section className="rounded-xl border border-[#e8e4dc] bg-white px-4 py-4 text-center">
-            <p className="text-[0.7rem] font-semibold tracking-[0.14em] text-[#8a7350]">
-              本期得獎者
-            </p>
-            <div className="mt-2 space-y-2">
-              {data.winners.map((w, i) => (
-                <div key={`${w.winnerName}-${i}`}>
-                  <p className="text-[0.75rem] text-[#86868b]">{w.prizeName}</p>
-                  <p className="text-[1.375rem] font-semibold">{w.winnerName}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
         {data ? (
           <section className="grid grid-cols-3 gap-2 text-center">
             <Stat label="參賽人數" value={String(data.participantCount)} />
@@ -105,42 +109,72 @@ export function Lose2kgLiveDashboardPage({ token }: { token: string }) {
         {data ? (
           <section className="space-y-2">
             <h2 className="px-1 text-[0.7rem] font-semibold tracking-[0.12em] text-[#86868b]">
-              票數排行
+              參賽者抽獎券
             </h2>
             <ol className="overflow-hidden rounded-xl border border-[#e8e4dc] bg-white">
               {data.leaderboard.map((row) => (
                 <li
-                  key={`${row.rank}-${row.publicDisplayName}`}
-                  className="flex items-center justify-between border-b border-[#f3efe6] px-3 py-2.5 last:border-b-0"
+                  key={row.participantId}
+                  className="border-b border-[#f3efe6] px-3 py-3 last:border-b-0"
                 >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span
-                      className={`w-6 text-[0.9375rem] font-semibold tabular-nums ${
-                        row.rank === 1
-                          ? "text-[#8a7350]"
-                          : row.rank <= 3
-                            ? "text-[#1d1d1f]"
-                            : "text-[#86868b]"
-                      }`}
-                    >
-                      {row.rank}
-                    </span>
-                    <span className="truncate text-[0.9375rem] font-medium">
-                      {row.publicDisplayName}
-                    </span>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span
+                        className={`w-6 text-[0.9375rem] font-semibold tabular-nums ${
+                          row.rank === 1
+                            ? "text-[#8a7350]"
+                            : row.rank <= 3
+                              ? "text-[#1d1d1f]"
+                              : "text-[#86868b]"
+                        }`}
+                      >
+                        {row.rank}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-[0.9375rem] font-medium">
+                          {row.publicDisplayName}
+                        </p>
+                        <p className="text-[0.75rem] text-[#86868b]">
+                          體重票 {row.weightTickets} · 額外票 {row.extraTickets}
+                          {row.weightChangePct != null
+                            ? ` · ${row.weightChangePct.toFixed(1)}%`
+                            : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span className="text-[0.9375rem] font-semibold text-[#8a7350]">
+                        🎟 {row.totalTickets}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={loadingDetail}
+                        onClick={() => void openBreakdown(row.participantId)}
+                        className="text-[0.75rem] font-medium text-[#1d1d1f] underline-offset-2 transition active:scale-[0.97] hover:underline disabled:opacity-50"
+                      >
+                        查看明細
+                      </button>
+                    </div>
                   </div>
-                  <span className="text-[0.9375rem] font-semibold text-[#8a7350]">
-                    🎟 {row.totalTickets}
-                  </span>
                 </li>
               ))}
               {data.leaderboard.length === 0 ? (
-                <li className="px-3 py-4 text-center text-[0.875rem] text-[#86868b]">尚無參賽者</li>
+                <li className="px-3 py-4 text-center text-[0.875rem] text-[#86868b]">
+                  尚無參賽者
+                </li>
               ) : null}
             </ol>
           </section>
         ) : null}
       </main>
+
+      {breakdown ? (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
+          <div className="flex h-full w-full max-w-md flex-col bg-white shadow-xl sm:max-w-lg">
+            <TicketBreakdownPanel breakdown={breakdown} onClose={() => setBreakdown(null)} />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
