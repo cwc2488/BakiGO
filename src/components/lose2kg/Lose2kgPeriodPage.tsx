@@ -3,7 +3,6 @@
 import { PersistentShareUrl } from "@/components/lose2kg/CopyLinkButton";
 import { Lose2kgButton, Lose2kgToast } from "@/components/lose2kg/Lose2kgUi";
 import { PageShell } from "@/components/ui/PageShell";
-import { createLose2kgPrize } from "@/lib/lose2kg/client";
 import {
   deleteLose2kgPeriod,
   fetchLose2kgControlCenter,
@@ -14,7 +13,7 @@ import {
   startLose2kgPeriod,
   updateLose2kgStaffPassword,
 } from "@/lib/lose2kg/v2-client";
-import type { Lose2kgPeriod, Lose2kgPrize } from "@/types/lose2kg";
+import type { Lose2kgPeriod } from "@/types/lose2kg";
 import { useParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState, useTransition } from "react";
 
@@ -35,7 +34,6 @@ function ControlCenterInner() {
   const router = useRouter();
   const periodId = params.periodId;
   const [period, setPeriod] = useState<Lose2kgPeriod | null>(null);
-  const [prizes, setPrizes] = useState<Lose2kgPrize[]>([]);
   const [staffUrl, setStaffUrl] = useState<string | null>(null);
   const [liveUrl, setLiveUrl] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -47,7 +45,6 @@ function ControlCenterInner() {
   async function reload() {
     const data = await fetchLose2kgControlCenter(periodId);
     setPeriod(data.period);
-    setPrizes(data.prizes);
     setStaffUrl(data.staffUrl);
     setLiveUrl(data.liveUrl);
   }
@@ -255,40 +252,6 @@ function ControlCenterInner() {
         </section>
 
         <section className="space-y-3 border-b border-[#e8e4dc] pb-6">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-[1rem] font-semibold">獎項</h2>
-            <Lose2kgButton
-              tone="secondary"
-              loading={pending}
-              onClick={() =>
-                run(async () => {
-                  const name = window.prompt("獎項名稱", "特別獎");
-                  if (!name?.trim()) return;
-                  await createLose2kgPrize(periodId, { name: name.trim() });
-                  await reload();
-                  showToast("✓ 已新增獎項");
-                })
-              }
-            >
-              新增獎項
-            </Lose2kgButton>
-          </div>
-          <ul className="divide-y divide-[#f0ebe1] rounded-lg border border-[#e8e4dc] bg-white">
-            {prizes.map((p) => (
-              <li
-                key={p.id}
-                className="flex items-center justify-between px-3 py-2.5 text-[0.875rem]"
-              >
-                <span>
-                  {p.name} · {p.winnerCount} 名
-                </span>
-                <span className="text-[#86868b]">{p.status}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="space-y-3 border-b border-[#e8e4dc] pb-6">
           <h2 className="text-[1rem] font-semibold">量測日期</h2>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {period.measurementDates.map((d, i) => (
@@ -421,7 +384,7 @@ function ControlCenterInner() {
         </section>
 
         <p className="text-center text-[0.8125rem] text-[#86868b]">
-          現場輸入、量測與抽獎請使用工作人員工作站。
+          現場量測與票數請使用工作人員工作站。抽獎功能已停用，改為抽獎券追蹤。
         </p>
       </div>
     </PageShell>

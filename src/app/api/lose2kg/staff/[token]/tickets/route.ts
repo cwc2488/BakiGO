@@ -22,10 +22,13 @@ export async function POST(
     if (!body.participantId || !Number.isInteger(body.delta) || !body.delta) {
       return NextResponse.json({ error: "參數無效。" }, { status: 400 });
     }
+    if (typeof body.reason !== "string") {
+      return NextResponse.json({ error: "請填寫額外票說明（至少 2 個字）。" }, { status: 400 });
+    }
     const participant = await adjustActivityTickets({
       participantId: body.participantId,
       delta: body.delta!,
-      reason: body.reason ?? "活動票",
+      reason: body.reason,
       eventDate: body.eventDate,
       createdByMemberId: null,
     });
