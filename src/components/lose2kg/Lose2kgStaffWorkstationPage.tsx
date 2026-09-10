@@ -244,17 +244,9 @@ export function Lose2kgStaffWorkstationPage() {
       patchMeasurements(participantId, body.measurements);
       setCellStatus((s) => ({ ...s, [cellKey]: "ok" }));
       const fb = body.feedback;
-      const pct =
-        fb.weightChangePct != null ? ` ${fb.weightChangePct.toFixed(2)}%` : "";
-      const ticketHint =
-        fb.deltaTickets > 0
-          ? ` 🎟 +${fb.deltaTickets}`
-          : fb.deltaTickets < 0
-            ? ` 🎟 ${fb.deltaTickets}`
-            : "";
       setMeasureFeedback((prev) => ({
         ...prev,
-        [participantId]: `✓ 已儲存${pct}${ticketHint}`,
+        [participantId]: fb.message,
       }));
       showToast(fb.message);
       if (detailId === participantId) {
@@ -374,8 +366,11 @@ export function Lose2kgStaffWorkstationPage() {
             <div>
               <h1 className="text-[1.25rem] font-semibold">{data.period.name}</h1>
               <p className="text-[0.875rem] text-[#86868b]">
-                量測與票數 · 第 {slot} / 4 次 · 參賽 {data.participantCount} · 總抽獎券{" "}
+                正式進度：第 {slot} 週 · 參賽 {data.participantCount} · 總抽獎券{" "}
                 {data.totalTickets}
+              </p>
+              <p className="text-[0.75rem] text-[#8a7350]">
+                四週量測欄位皆可隨時補登或修正
               </p>
             </div>
             <Lose2kgButton onClick={() => setAddOpen(true)}>＋ 新增參賽者</Lose2kgButton>
@@ -388,7 +383,8 @@ export function Lose2kgStaffWorkstationPage() {
                   i + 1 === slot ? "bg-[#1d1d1f] text-white" : "bg-[#f4f1ea] text-[#86868b]"
                 }`}
               >
-                第{i + 1}次 {shortDate(d)}
+                第{i + 1}週 {shortDate(d)}
+                {i === 0 ? " · 基準" : ""}
               </span>
             ))}
           </div>
@@ -402,6 +398,7 @@ export function Lose2kgStaffWorkstationPage() {
           ) : null}
 
           <MeasureGrid
+            measurementDates={data.period.measurementDates}
             participants={activeParticipants}
             measurements={data.measurements}
             feedback={measureFeedback}
@@ -746,6 +743,7 @@ function ExtraTicketModal({
 }
 
 function MeasureGrid({
+  measurementDates,
   participants,
   measurements,
   feedback,
@@ -756,6 +754,7 @@ function MeasureGrid({
   onExtraTicket,
   onWithdraw,
 }: {
+  measurementDates: [string, string, string, string];
   participants: Lose2kgParticipant[];
   measurements: Lose2kgMeasurement[];
   feedback: Record<string, string>;
@@ -781,6 +780,19 @@ function MeasureGrid({
     return "border-[#ddd6c8]";
   }
 
+  function trySave(
+    participantId: string,
+    slot: 1 | 2 | 3 | 4,
+    raw: string,
+    nextKey?: string,
+  ) {
+    const value = Number(raw);
+    if (!(value > 0) || !Number.isFinite(value)) return;
+    const existing = weightOf(measurements, participantId, slot);
+    if (existing != null && Math.abs(existing - value) < 1e-9) return;
+    onSave(participantId, slot, value, nextKey);
+  }
+
   return (
     <div className="space-y-3">
       <div className="hidden overflow-x-auto rounded-xl border border-[#e8e4dc] bg-white md:block">
@@ -790,13 +802,17 @@ function MeasureGrid({
               <th className="sticky left-0 bg-[#f4f1ea] px-3 py-2.5">姓名</th>
               {slots.map((s) => (
                 <th key={s} className="px-2 py-2.5">
-                  第{s}次
+                  <div className="leading-tight">
+                    <p>第{s}次</p>
+                    <p className="font-normal tabular-nums">{shortDate(measurementDates[s - 1]!)}</p>
+                    {s === 1 ? <p className="font-medium text-[#8a7350]">基準</p> : null}
+                  </div>
                 </th>
               ))}
               <th className="px-2 py-2.5">目前變化%</th>
               <th className="px-2 py-2.5">體重票</th>
               <th className="px-2 py-2.5">額外票</th>
-              <th className="px-2 py-2.5">總票</th>
+              <th className="px-2 py-2.5">總抽獎券</th>
               <th className="px-2 py-2.5">操作</th>
             </tr>
           </thead>
@@ -838,9 +854,11 @@ function MeasureGrid({
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
                             e.preventDefault();
-                            const value = Number((e.target as HTMLInputElement).value);
-                            if (value > 0) onSave(p.id, s, value, nextKey);
+                            trySave(p.id, s, (e.target as HTMLInputElement).value, nextKey);
                           }
+                        }}
+                        onBlur={(e) => {
+                          trySave(p.id, s, e.target.value);
                         }}
                       />
                     </td>
@@ -910,7 +928,10 @@ function MeasureGrid({
                 const key = `${p.id}:${s}`;
                 return (
                   <label key={s} className="space-y-0.5">
-                    <span className="text-[0.65rem] text-[#86868b]">第{s}次</span>
+                    <span className="text-[0.65rem] text-[#86868b]">
+                      第{s}次｜{shortDate(measurementDates[s - 1]!)}
+                      {s === 1 ? " · 基準" : ""}
+                    </span>
                     <input
                       ref={(el) => {
                         inputRefs.current[`m-${key}`] = el;
@@ -924,9 +945,11 @@ function MeasureGrid({
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
-                          const value = Number((e.target as HTMLInputElement).value);
-                          if (value > 0) onSave(p.id, s, value);
+                          trySave(p.id, s, (e.target as HTMLInputElement).value);
                         }
+                      }}
+                      onBlur={(e) => {
+                        trySave(p.id, s, e.target.value);
                       }}
                     />
                   </label>

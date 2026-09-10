@@ -76,12 +76,23 @@ export function Lose2kgLiveDashboardPage({ token }: { token: string }) {
             {data?.periodName ?? "抽獎券追蹤"}
           </h1>
           {data ? (
-            <div className="space-y-1 text-[0.9375rem] text-[#86868b]">
-              <p>本期進度：第 {data.currentSlot} / 4 次量測</p>
-              <p>
-                下一次量測：
-                {data.nextMeasurementDate ? shortDate(data.nextMeasurementDate) : "—"}
-              </p>
+            <div className="space-y-2 text-[0.9375rem] text-[#86868b]">
+              <p>正式進度：第 {data.currentSlot} 週</p>
+              <div className="flex flex-wrap justify-center gap-1.5">
+                {data.measurementDates.map((d, i) => (
+                  <span
+                    key={d}
+                    className={`rounded px-2 py-1 text-[0.7rem] tabular-nums ${
+                      i + 1 === data.currentSlot
+                        ? "bg-[#1d1d1f] text-white"
+                        : "bg-white text-[#86868b]"
+                    }`}
+                  >
+                    第{i + 1}次｜{shortDate(d)}
+                    {i === 0 ? " · 基準" : ""}
+                  </span>
+                ))}
+              </div>
             </div>
           ) : null}
         </header>

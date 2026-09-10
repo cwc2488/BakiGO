@@ -680,13 +680,13 @@ async function recalculateParticipantTickets(
     (slot) => measurements.find((m) => m.slot === slot)?.weightKg ?? null,
   );
 
-  // Update per-slot percentage display
+  // Update per-slot percentage display (always vs slot-1 baseline)
   for (const m of measurements) {
     let pct: number | null = null;
-    if (baseline != null && m.weightKg != null && m.slot >= 2) {
+    if (m.slot === 1 && m.weightKg != null) {
+      pct = 0;
+    } else if (baseline != null && m.weightKg != null && m.slot >= 2) {
       pct = computeWeightChangePct(baseline, m.weightKg);
-    } else if (m.slot === 1) {
-      pct = null;
     }
     await db()
       .from("lose2kg_measurements")
@@ -697,7 +697,7 @@ async function recalculateParticipantTickets(
   const prior = await loadMilestones(participantId);
   const priorPercents = prior.map((m) => m.milestonePercent);
 
-  // Rebuild from corrected measurement series. activatedOnce prevents CASE-4 restore.
+  // Rebuild in slot order 1→2→3→4. Without baseline, tickets stay 0.
   const rebuilt = rebuildMilestonesForCorrectedWeights(priorPercents, baseline, after);
   const diffEvents = diffMilestoneEvents(prior, rebuilt.milestones);
 
@@ -711,12 +711,15 @@ async function recalculateParticipantTickets(
     })),
   );
 
-  // Slot 1 alone never awards tickets
+  // Slot 1 alone never awards tickets; missing baseline → 0 weight tickets
   const weightBalance = baseline == null ? 0 : rebuilt.weightTicketBalance;
+  // Baseline only → 0%; with later readings → latest vs baseline; no baseline → null
   const latestPct =
-    baseline != null && after.some((w) => w != null)
-      ? rebuilt.weightChangePct
-      : null;
+    baseline == null
+      ? null
+      : after.some((w) => w != null)
+        ? rebuilt.weightChangePct
+        : 0;
 
   const participant = await syncParticipantTicketCaches(participantId, weightBalance, latestPct);
 

@@ -741,6 +741,8 @@ export async function staffQuickMeasure(input: {
 }): Promise<StaffMeasureResult> {
   const before = await getParticipantDetail(input.participantId);
   const beforeWeight = before.participant.weightTicketBalance;
+  const hadBaseline =
+    (before.measurements.find((m) => m.slot === 1)?.weightKg ?? null) != null;
   const result = await upsertMeasurement({
     participantId: input.participantId,
     slot: input.slot,
@@ -751,25 +753,64 @@ export async function staffQuickMeasure(input: {
   const afterWeight = result.participant.weightTicketBalance;
   const delta = afterWeight - beforeWeight;
   const pct = result.participant.currentWeightChangePct;
+  const baselineNow =
+    (result.measurements.find((m) => m.slot === 1)?.weightKg ?? null) != null;
+
   let feedback: StaffMeasureResult["feedback"];
-  if (delta > 0) {
+  if (input.slot === 1) {
+    feedback = {
+      kind: "updated",
+      message:
+        delta !== 0
+          ? `✓ 基準已更新 · 體重票調整 ${delta > 0 ? `+${delta}` : delta}`
+          : "✓ 已儲存 · 基準體重 · 體重票 0",
+      deltaTickets: delta,
+      weightChangePct: pct ?? 0,
+    };
+  } else if (!baselineNow) {
+    feedback = {
+      kind: "updated",
+      message: "✓ 已儲存 · 等待第1次基準體重",
+      deltaTickets: 0,
+      weightChangePct: null,
+    };
+  } else if (!hadBaseline && baselineNow) {
+    // Baseline appeared earlier in same session path; treat as full recompute feedback
+    feedback =
+      delta > 0
+        ? {
+            kind: "milestone",
+            message: `✓ 基準就緒 · 🎟 +${delta}`,
+            deltaTickets: delta,
+            weightChangePct: pct,
+          }
+        : {
+            kind: "updated",
+            message: "✓ 已儲存 · 已相對基準重算",
+            deltaTickets: delta,
+            weightChangePct: pct,
+          };
+  } else if (delta > 0) {
     feedback = {
       kind: "milestone",
-      message: `🎟 +${delta} · 首次達成減重里程碑`,
+      message: `✓ 已儲存 · 目前 ${pct != null ? `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%` : "—"} · 首次達成減重里程碑 · 🎟 +${delta}`,
       deltaTickets: delta,
       weightChangePct: pct,
     };
   } else if (delta < 0) {
     feedback = {
       kind: "revoked",
-      message: `🎟 ${delta} · 體重票調整`,
+      message: `✓ 已儲存 · 目前 ${pct != null ? `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%` : "—"} · 🎟 ${delta}`,
       deltaTickets: delta,
       weightChangePct: pct,
     };
   } else {
     feedback = {
       kind: "updated",
-      message: "✓ 已儲存",
+      message:
+        pct != null
+          ? `✓ 已儲存 · 目前 ${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`
+          : "✓ 已儲存",
       deltaTickets: 0,
       weightChangePct: pct,
     };

@@ -106,10 +106,20 @@ export function TicketBreakdownPanel({
                 />
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold text-[#1d1d1f]">第 {m.slot} 次量測</p>
+                    <p className="font-semibold text-[#1d1d1f]">
+                      第 {m.slot} 次量測
+                      {m.date
+                        ? `｜${(() => {
+                            const parts = m.date.split("-");
+                            return parts.length >= 3
+                              ? `${Number(parts[1])}/${Number(parts[2])}`
+                              : m.date;
+                          })()}`
+                        : ""}
+                      {m.slot === 1 ? " · 基準" : ""}
+                    </p>
                     <Delta value={m.ticketDelta} />
                   </div>
-                  {m.date ? <p className="text-[0.75rem] text-[#86868b]">{m.date}</p> : null}
                   {m.weightKg != null ? (
                     <p className="text-[0.875rem] tabular-nums text-[#424245]">
                       {m.weightKg.toFixed(1)} kg
