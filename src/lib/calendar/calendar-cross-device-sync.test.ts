@@ -21,7 +21,8 @@ function event(partial: Partial<CalendarEvent> & Pick<CalendarEvent, "id" | "tit
     startAt: partial.startAt ?? "2026-09-12T15:00:00.000Z",
     endAt: partial.endAt ?? "2026-09-12T16:00:00.000Z",
     allDay: false,
-    recurrence: { frequency: "none" },
+    color: partial.color ?? "teal",
+    recurrence: { frequency: "none", interval: 1 },
   };
 }
 
