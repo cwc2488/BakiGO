@@ -90,6 +90,7 @@ import {
   syncSharedAttendanceToBakiEvent,
 } from "@/lib/calendar/calendar-baki-event-sync";
 import {
+  hydrateSharedCalendarCache,
   isPersonalCalendarEvent,
   isSharedCalendarCacheFresh,
   loadSharedCalendarEvents,
@@ -202,7 +203,8 @@ export default function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [sharedEvents, setSharedEvents] = useState<CalendarEvent[]>(() => {
     migrateSharedCalendarStorageIfNeeded(storage);
-    return loadSharedCalendarEvents(storage);
+    // Memory first — survives SPA navigations without waiting on IndexedDB/API.
+    return loadSharedCalendarEvents(storage, memberId);
   });
   const [attendedSharedEvents, setAttendedSharedEvents] = useState<SharedCalendarAttendance[]>([]);
   const [showSharedCalendar, setShowSharedCalendar] = useState(() =>
@@ -308,22 +310,28 @@ export default function CalendarPage() {
 
   useEffect(() => {
     let cancelled = false;
-
-    if (isSharedCalendarCacheFresh(storage, memberId)) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
     const { rangeStart, rangeEnd } = getSharedCalendarSyncRange();
 
-    queueMicrotask(() => {
-      if (loadSharedCalendarEvents(storage).length === 0) {
+    void (async () => {
+      // L1 memory / L2 IndexedDB first — never blank the page when cache exists.
+      const hydrated = await hydrateSharedCalendarCache(storage, memberId);
+      if (cancelled) {
+        return;
+      }
+
+      if (hydrated && hydrated.events.length > 0) {
+        setSharedEvents(hydrated.events);
+        setSharedSyncState("done");
+      } else if (!isSharedCalendarCacheFresh(storage, memberId)) {
+        // Only show blocking shared loading when there is truly no cache.
         setSharedSyncState("loading");
       }
-    });
 
-    void (async () => {
+      // Fresh cache within session freshness window → no API.
+      if (isSharedCalendarCacheFresh(storage, memberId)) {
+        return;
+      }
+
       try {
         const result = await syncSharedGoogleCalendars(storage, memberId, rangeStart, rangeEnd);
         if (!cancelled) {
@@ -336,7 +344,7 @@ export default function CalendarPage() {
         }
       } catch (caught) {
         if (!cancelled) {
-          const hasCachedEvents = loadSharedCalendarEvents(storage).length > 0;
+          const hasCachedEvents = loadSharedCalendarEvents(storage, memberId).length > 0;
           setSharedSyncState(hasCachedEvents ? "done" : "error");
           if (!hasCachedEvents) {
             const message =

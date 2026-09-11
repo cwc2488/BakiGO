@@ -8,7 +8,7 @@ import {
   toStorageUserError,
 } from "@/lib/repositories/storage-quota-error";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
-import { saveSharedCalendarCache } from "@/lib/calendar/shared-calendar-storage";
+import { loadSharedCalendarEvents, saveSharedCalendarCache } from "@/lib/calendar/shared-calendar-storage";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { CalendarEvent } from "@/types/calendar-event";
 
@@ -103,12 +103,25 @@ describe("setLocalStorageItemWithQuotaRecovery", () => {
   });
 });
 
-describe("saveSharedCalendarCache non-blocking", () => {
-  it("returns false on quota and does not throw — caller keeps events", () => {
+describe("saveSharedCalendarCache non-blocking / no localStorage event blob", () => {
+  it("keeps events in memory even when localStorage would quota on events key", () => {
     const storage = new MemoryStorage();
     storage.failKeys.add(STORAGE_KEYS.sharedCalendarEvents);
 
-    const events: CalendarEvent[] = [];
+    const events: CalendarEvent[] = [
+      {
+        id: "shared:cal:1",
+        createdAt: "2026-09-11T00:00:00.000Z",
+        updatedAt: "2026-09-11T00:00:00.000Z",
+        memberId: "m1",
+        title: "教練課",
+        startAt: "2026-09-12T15:00:00.000Z",
+        endAt: "2026-09-12T16:00:00.000Z",
+        allDay: false,
+        color: "teal",
+        recurrence: { frequency: "none", interval: 1 },
+      },
+    ];
     const ok = saveSharedCalendarCache(storage, events, {
       syncedDate: "2026-09-11",
       rangeStart: "2026-01-01",
@@ -117,7 +130,8 @@ describe("saveSharedCalendarCache non-blocking", () => {
       syncedAt: "2026-09-11T00:00:00.000Z",
     });
 
-    expect(ok).toBe(false);
-    expect(events).toEqual([]);
+    expect(ok).toBe(true);
+    expect(storage.getItem(STORAGE_KEYS.sharedCalendarEvents)).toBeNull();
+    expect(loadSharedCalendarEvents(storage, "m1")).toHaveLength(1);
   });
 });
