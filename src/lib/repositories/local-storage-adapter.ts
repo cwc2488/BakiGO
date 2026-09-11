@@ -1,4 +1,7 @@
-import { rethrowStorageUserError } from "./storage-quota-error";
+import {
+  rethrowStorageUserError,
+  setLocalStorageItemWithQuotaRecovery,
+} from "./storage-quota-error";
 import type { StorageAdapter } from "./storage-adapter";
 
 export class LocalStorageAdapter implements StorageAdapter {
@@ -14,8 +17,9 @@ export class LocalStorageAdapter implements StorageAdapter {
       return;
     }
     try {
-      window.localStorage.setItem(key, value);
+      setLocalStorageItemWithQuotaRecovery(key, value);
     } catch (error) {
+      // setLocalStorageItemWithQuotaRecovery already mapped quota → soft user error.
       rethrowStorageUserError(error);
     }
   }
