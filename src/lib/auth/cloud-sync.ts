@@ -58,6 +58,9 @@ export function startCloudAuthBackgroundSync(
       console.error("[cloud-sync] background sync failed", error);
     })
     .finally(() => {
+      // Bump again on completion so UI (Calendar / Retail / Daily Action)
+      // can soft-refresh after localStorage hydration — not only when sync starts.
+      backgroundSyncVersion += 1;
       backgroundSyncPromise = null;
     });
   return backgroundSyncPromise;
