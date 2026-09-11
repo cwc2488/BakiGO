@@ -63,10 +63,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const pollBackgroundSync = async () => {
       const { getCloudBackgroundSyncPromise } = await import("@/lib/auth/cloud-sync");
       const pending = getCloudBackgroundSyncPromise();
-      if (!pending) {
-        return;
+      if (pending) {
+        await pending;
       }
-      await pending;
       if (!cancelled) {
         const storage = createLocalStorageAdapter();
         setMember(getCurrentMember(storage));

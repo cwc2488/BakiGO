@@ -22,6 +22,8 @@ import { MonthDayAgenda } from "@/components/calendar/MonthDayAgenda";
 import { WeekDayStrip } from "@/components/calendar/WeekDayStrip";
 import { WeekView } from "@/components/calendar/WeekView";
 import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
+import { useAuth } from "@/lib/auth/auth-context";
+import { awaitCloudAuthBackgroundSync } from "@/lib/auth/cloud-sync";
 import { assertCustomerOwnedByMember } from "@/lib/calendar/calendar-event-participants";
 import {
   addAllianceEventParticipant,
@@ -111,7 +113,7 @@ import { APP_ICON, QUADRANT_ICONS } from "@/lib/ui/app-icons";
 import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
 import type { CalendarEvent, CalendarSlotInterval, ExpandedCalendarEvent, RecurrenceEditScope } from "@/types/calendar-event";
 import type { Customer } from "@/types/customer";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
 import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal";
 import {
@@ -188,8 +190,10 @@ const INTERVAL_OPTIONS: Array<{ value: CalendarSlotInterval; label: string }> = 
 ];
 
 export default function CalendarPage() {
+  const { cloudSyncVersion, isLoading: authLoading } = useAuth();
   const storage = useMemo(() => createLocalStorageAdapter(), []);
   const memberId = useMemo(() => resolveAuthenticatedMemberId(storage), [storage]);
+  const lastCloudSyncRef = useRef(0);
 
   const [viewMode, setViewMode] = useState<CalendarViewMode>("day");
   const [selectedDate, setSelectedDate] = useState(getTodayDateString());
@@ -275,6 +279,32 @@ export default function CalendarPage() {
       reloadEvents();
     });
   }, [reloadEvents, storage]);
+
+  // Soft-refresh personal events after cloud hydration finishes.
+  // First paint stays on localStorage; do not block CalendarPage on sync.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      await awaitCloudAuthBackgroundSync();
+      if (!cancelled) {
+        reloadEvents();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [memberId, reloadEvents]);
+
+  useEffect(() => {
+    if (authLoading || cloudSyncVersion === 0) {
+      return;
+    }
+    if (cloudSyncVersion === lastCloudSyncRef.current) {
+      return;
+    }
+    lastCloudSyncRef.current = cloudSyncVersion;
+    reloadEvents();
+  }, [authLoading, cloudSyncVersion, reloadEvents]);
 
   useEffect(() => {
     let cancelled = false;

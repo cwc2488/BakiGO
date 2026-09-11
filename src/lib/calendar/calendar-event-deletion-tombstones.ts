@@ -68,6 +68,36 @@ export function clearCalendarEventDeletionTombstones(storage: StorageAdapter, ev
   storage.setItem(STORAGE_KEYS.calendarEventDeletionTombstones, JSON.stringify(next));
 }
 
+/**
+ * Union local + cloud deletion tombstones (by eventId).
+ * Prefer the later deletedAt when both sides recorded the same id.
+ */
+export function mergeCalendarEventDeletionTombstonesOnLogin(
+  localRaw: string | null,
+  cloudRaw: string | null,
+): CalendarEventDeletionTombstone[] {
+  const byId = new Map<string, CalendarEventDeletionTombstone>();
+
+  for (const tombstone of parseTombstones(cloudRaw)) {
+    byId.set(tombstone.eventId, tombstone);
+  }
+
+  for (const tombstone of parseTombstones(localRaw)) {
+    const existing = byId.get(tombstone.eventId);
+    if (!existing) {
+      byId.set(tombstone.eventId, tombstone);
+      continue;
+    }
+    const localDeleted = new Date(tombstone.deletedAt).getTime();
+    const cloudDeleted = new Date(existing.deletedAt).getTime();
+    if (localDeleted >= cloudDeleted) {
+      byId.set(tombstone.eventId, tombstone);
+    }
+  }
+
+  return [...byId.values()];
+}
+
 export function mergeCalendarEventsOnLogin(
   localRaw: string | null,
   cloudRaw: string | null,
