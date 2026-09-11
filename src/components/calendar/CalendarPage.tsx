@@ -309,9 +309,11 @@ export default function CalendarPage() {
           const hasCachedEvents = loadSharedCalendarEvents(storage).length > 0;
           setSharedSyncState(hasCachedEvents ? "done" : "error");
           if (!hasCachedEvents) {
-            setStatusMessage(
-              caught instanceof Error ? caught.message : "共用行事曆載入失敗，請稍後再試",
-            );
+            const message =
+              caught instanceof Error ? caught.message : "共用行事曆載入失敗，請稍後再試";
+            // Quota soft-message is non-blocking; avoid looking like a page-breaking banner.
+            // Personal calendar remains usable from local/server personal events.
+            setStatusMessage(message);
           }
         }
       }

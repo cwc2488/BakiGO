@@ -96,10 +96,26 @@ describe("consultation completion semantics", () => {
 });
 
 describe("storage quota UX", () => {
-  it("maps QuotaExceededError to safe Traditional Chinese message", async () => {
-    const { toStorageUserError } = await import("@/lib/repositories/storage-quota-error");
+  it("maps QuotaExceededError to soft Traditional Chinese message (no wipe-site copy)", async () => {
+    const { toStorageUserError, isStorageQuotaError, STORAGE_QUOTA_SOFT_USER_MESSAGE } =
+      await import("@/lib/repositories/storage-quota-error");
     const error = new DOMException("quota", "QuotaExceededError");
-    expect(toStorageUserError(error).message).toContain("本機儲存空間不足");
+    expect(isStorageQuotaError(error)).toBe(true);
+    expect(toStorageUserError(error).message).toBe(STORAGE_QUOTA_SOFT_USER_MESSAGE);
+    expect(toStorageUserError(error).message).toContain("暫存資料空間不足");
     expect(toStorageUserError(error).message).not.toContain("QuotaExceededError");
+    expect(toStorageUserError(error).message).not.toContain("清除瀏覽器網站資料");
+  });
+
+  it("does not treat InvalidStateError / AbortError as storage full", async () => {
+    const { isStorageQuotaError, toStorageUserError } = await import(
+      "@/lib/repositories/storage-quota-error"
+    );
+    const invalidState = new DOMException("database closed", "InvalidStateError");
+    const aborted = new DOMException("aborted", "AbortError");
+    expect(isStorageQuotaError(invalidState)).toBe(false);
+    expect(isStorageQuotaError(aborted)).toBe(false);
+    expect(toStorageUserError(invalidState).message).toBe("database closed");
+    expect(toStorageUserError(aborted).message).toBe("aborted");
   });
 });
