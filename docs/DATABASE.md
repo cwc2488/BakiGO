@@ -987,3 +987,13 @@ Additive personal Web Push + free-form lead tracking (not CRM). Owner-only RLS v
 **Env (Web Push):** `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, optional `VAPID_SUBJECT`. Cron worker: `/api/push/process` (same Bearer secrets as coaching cron).
 
 **Do not confuse with:** `retail-pipeline` leads, `recruitment_leads`, `transformation_leads`, or GO21 `coaching_ai_reminders` (in-app turns).
+
+### 備忘錄 (`082_memos_v1.sql`)
+
+Additive personal memos with optional reminders. Cloud-backed per member; owner-only RLS (JWT email ↔ `members`).
+
+| Table | Purpose |
+|-------|---------|
+| `memos` | Title/content/completed + reminder settings (`NONE` / `DAILY` / `WEEKLY` / `SPECIFIC_DATE`) |
+
+Reminder wall clock is Asia/Taipei; `next_reminder_at` / `last_notified_at` stored as UTC `timestamptz`. Home loads at most 3 incomplete rows; due push reuses `/api/push/process` + `notification_deliveries` with `source_type = memo_reminder`.
