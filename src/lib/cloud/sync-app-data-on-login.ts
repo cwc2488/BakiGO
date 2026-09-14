@@ -12,8 +12,8 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import { awaitPendingCloudSync, setCloudSyncPaused } from "@/lib/repositories/syncing-storage-adapter";
 import {
+  mergeCalendarEventDeletionTombstonesOnLogin,
   mergeCalendarEventsOnLogin,
-  readCalendarEventDeletionTombstoneIds,
 } from "@/lib/calendar/calendar-event-deletion-tombstones";
 import type { EntityId } from "@/types";
 
@@ -46,6 +46,50 @@ function mergeRetailTombstonePayloads(
   ingest(cloudRaw);
   ingest(localRaw);
   return JSON.stringify([...byId.values()]);
+}
+
+type CloudAppDataRow = Awaited<ReturnType<typeof fetchCloudAppData>>[number];
+
+/**
+ * Merge calendar tombstones first, then events — prevents a stale device from
+ * resurrecting events deleted (and tombstoned) on another device.
+ */
+async function hydrateCalendarEventsFromCloud(options: {
+  storage: StorageAdapter;
+  memberId: EntityId;
+  cloudByKey: Map<string, CloudAppDataRow>;
+}): Promise<void> {
+  const { storage, memberId, cloudByKey } = options;
+  const cloudEventsRow = cloudByKey.get(STORAGE_KEYS.calendarEvents);
+  const cloudTombstoneRow = cloudByKey.get(STORAGE_KEYS.calendarEventDeletionTombstones);
+
+  const mergedTombstones = mergeCalendarEventDeletionTombstonesOnLogin(
+    storage.getItem(STORAGE_KEYS.calendarEventDeletionTombstones),
+    cloudTombstoneRow ? serializeCloudPayload(cloudTombstoneRow.payload) : null,
+  );
+  const mergedTombstonesRaw = JSON.stringify(mergedTombstones);
+  storage.setItem(STORAGE_KEYS.calendarEventDeletionTombstones, mergedTombstonesRaw);
+
+  const tombstoneIds = new Set(mergedTombstones.map((tombstone) => tombstone.eventId));
+  const cloudEventsRaw = cloudEventsRow
+    ? serializeCloudPayload(cloudEventsRow.payload)
+    : null;
+  const mergedEvents = mergeCalendarEventsOnLogin(
+    storage.getItem(STORAGE_KEYS.calendarEvents),
+    cloudEventsRaw,
+    tombstoneIds,
+  );
+  const mergedEventsRaw = JSON.stringify(mergedEvents);
+  storage.setItem(STORAGE_KEYS.calendarEvents, mergedEventsRaw);
+
+  const entries: { dataKey: string; rawValue: string }[] = [
+    { dataKey: STORAGE_KEYS.calendarEventDeletionTombstones, rawValue: mergedTombstonesRaw },
+  ];
+  if (cloudEventsRow || mergedEvents.length > 0 || storage.getItem(STORAGE_KEYS.calendarEvents)) {
+    entries.push({ dataKey: STORAGE_KEYS.calendarEvents, rawValue: mergedEventsRaw });
+  }
+
+  await pushCloudAppDataKeys({ memberId, entries });
 }
 
 /**
@@ -92,6 +136,8 @@ export async function syncAppDataOnLogin(
       return;
     }
 
+    let calendarHydrated = false;
+
     for (const key of SYNCABLE_STORAGE_KEYS) {
       // bakiEvents is reconciled together with retailTransactions — never
       // blind-hydrate cloud events over local (would resurrect deletes).
@@ -113,22 +159,28 @@ export async function syncAppDataOnLogin(
         continue;
       }
 
+      // Handled together with calendarEvents (tombstones must apply first).
+      if (key === STORAGE_KEYS.calendarEventDeletionTombstones) {
+        continue;
+      }
+
+      if (key === STORAGE_KEYS.calendarEvents) {
+        const hasCloudCalendar =
+          cloudByKey.has(STORAGE_KEYS.calendarEvents) ||
+          cloudByKey.has(STORAGE_KEYS.calendarEventDeletionTombstones);
+        const hasLocalCalendar =
+          Boolean(storage.getItem(STORAGE_KEYS.calendarEvents)) ||
+          Boolean(storage.getItem(STORAGE_KEYS.calendarEventDeletionTombstones));
+        if (hasCloudCalendar || hasLocalCalendar) {
+          await hydrateCalendarEventsFromCloud({ storage, memberId, cloudByKey });
+          calendarHydrated = true;
+        }
+        continue;
+      }
+
       const cloudRow = cloudByKey.get(key);
       if (cloudRow) {
-        if (key === STORAGE_KEYS.calendarEvents) {
-          const tombstoneIds = readCalendarEventDeletionTombstoneIds(storage);
-          const merged = mergeCalendarEventsOnLogin(
-            storage.getItem(key),
-            serializeCloudPayload(cloudRow.payload),
-            tombstoneIds,
-          );
-          const mergedRaw = JSON.stringify(merged);
-          storage.setItem(key, mergedRaw);
-          await pushCloudAppDataKeys({
-            memberId,
-            entries: [{ dataKey: key, rawValue: mergedRaw }],
-          });
-        } else if (key === STORAGE_KEYS.retailTransactionDeletionTombstones) {
+        if (key === STORAGE_KEYS.retailTransactionDeletionTombstones) {
           const mergedRaw = mergeRetailTombstonePayloads(
             storage.getItem(key),
             serializeCloudPayload(cloudRow.payload),
@@ -151,6 +203,14 @@ export async function syncAppDataOnLogin(
           entries: [{ dataKey: key, rawValue: localValue }],
         });
       }
+    }
+
+    // Cloud may only have tombstones (no events row); still merge once.
+    if (
+      !calendarHydrated &&
+      cloudByKey.has(STORAGE_KEYS.calendarEventDeletionTombstones)
+    ) {
+      await hydrateCalendarEventsFromCloud({ storage, memberId, cloudByKey });
     }
 
     storage.removeItem(STORAGE_KEYS.computedMetrics);

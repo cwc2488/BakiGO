@@ -14,6 +14,7 @@ import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-me
 import { HomeErrorState, HomeLoadingSkeleton } from "@/components/home/states";
 import { ProgressBar } from "@/components/home/ui";
 import { GreetingHeader } from "@/components/ui/GreetingHeader";
+import { HomeMemosCard } from "@/components/memos/HomeMemosCard";
 import { ROUTE_ICON_COMPONENTS, type QuickLinkHref } from "@/components/ui/BrandIcons";
 import { TabRootShell } from "@/components/ui/TabRootShell";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
@@ -72,6 +73,8 @@ function BusinessHomeView({ metrics }: { metrics: MemberComputedMetrics }) {
         displayName={`${formatPlainTimeGreeting()}，${displayName}`}
         subtitle={formatDisplayDate(referenceDate)}
       />
+
+      <HomeMemosCard />
 
       {/* 我的進度 — monthly metrics only (promotion target hidden) */}
       <section className="rounded-[1.25rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] p-5 shadow-[0_1px_2px_rgba(29,29,31,0.04)]">

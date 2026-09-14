@@ -14,7 +14,7 @@ import {
 } from "@/lib/calendar/alliance-event-participants";
 import { listLinkableNextActivityItems, listLinkedNextActivityItems } from "@/lib/calendar/next-activity-picker";
 import { defaultRecurrence } from "@/lib/calendar/recurrence";
-import { loadSharedCalendarEvents } from "@/lib/calendar/shared-calendar-storage";
+import { hydrateSharedCalendarCache, loadSharedCalendarEvents } from "@/lib/calendar/shared-calendar-storage";
 import { todayISODate } from "@/lib/config/app-config";
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { awaitPendingCloudSync } from "@/lib/repositories/syncing-storage-adapter";
@@ -53,13 +53,22 @@ export function CustomerNextActivitySection({
 
   const reload = useCallback(() => {
     setPersonalEvents(calendarRepo.getByMemberId(memberId));
-    setSharedEvents(loadSharedCalendarEvents(storage));
+    setSharedEvents(loadSharedCalendarEvents(storage, memberId));
     setTick((value) => value + 1);
   }, [calendarRepo, memberId, storage]);
 
   useEffect(() => {
-    reload();
-  }, [reload]);
+    let cancelled = false;
+    void (async () => {
+      await hydrateSharedCalendarCache(storage, memberId);
+      if (!cancelled) {
+        reload();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [memberId, reload, storage]);
 
   const nowIso = useMemo(() => new Date().toISOString().slice(0, 16), [personalEvents, sharedEvents, tick]);
 
