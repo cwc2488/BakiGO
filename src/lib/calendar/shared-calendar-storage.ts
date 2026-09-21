@@ -49,16 +49,39 @@ export function loadSharedCalendarCacheMeta(storage: StorageAdapter): SharedCale
   return parseCacheMeta(storage.getItem(STORAGE_KEYS.sharedCalendarCacheMeta));
 }
 
+/**
+ * Persist shared-calendar cache for offline/fast reopen.
+ * Cache is optional — localStorage write failure must not block using
+ * freshly fetched server events (memory + IndexedDB still apply upstream).
+ * @returns true when cache write succeeded
+ */
 export function saveSharedCalendarCache(
   storage: StorageAdapter,
   events: CalendarEvent[],
   meta: SharedCalendarCacheMeta,
-): void {
-  saveSharedCalendarCacheBounded(storage, events, (bounded) => {
-    storage.setItem(STORAGE_KEYS.sharedCalendarEvents, JSON.stringify(bounded));
-    storage.setItem(STORAGE_KEYS.sharedCalendarCacheMeta, JSON.stringify(meta));
-    markSharedCalendarStorageFresh(storage);
-  });
+): boolean {
+  try {
+    saveSharedCalendarCacheBounded(storage, events, (bounded) => {
+      storage.setItem(STORAGE_KEYS.sharedCalendarEvents, JSON.stringify(bounded));
+      storage.setItem(STORAGE_KEYS.sharedCalendarCacheMeta, JSON.stringify(meta));
+      markSharedCalendarStorageFresh(storage);
+    });
+    return true;
+  } catch (error) {
+    // Shared calendar data already lives on the server; localStorage cache is best-effort.
+    console.warn(
+      "[calendar] shared calendar cache write failed — continuing without localStorage cache",
+      error,
+    );
+    try {
+      // Avoid leaving a half-written / stale oversized blob.
+      storage.removeItem(STORAGE_KEYS.sharedCalendarEvents);
+      storage.removeItem(STORAGE_KEYS.sharedCalendarCacheMeta);
+    } catch (cleanupError) {
+      console.warn("[calendar] shared calendar cache cleanup failed", cleanupError);
+    }
+    return false;
+  }
 }
 
 export function isSharedCalendarCacheFresh(storage: StorageAdapter, memberId: string): boolean {

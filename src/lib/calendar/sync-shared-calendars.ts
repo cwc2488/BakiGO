@@ -116,6 +116,7 @@ export async function syncSharedGoogleCalendars(
   );
 
   const events = sharedApiEventsToCalendarEvents(memberId, apiEvents);
+  // localStorage cache is optional — never fail the sync when it cannot write.
   saveSharedCalendarCache(storage, events, {
     syncedDate: getTodayDateString(),
     rangeStart,
