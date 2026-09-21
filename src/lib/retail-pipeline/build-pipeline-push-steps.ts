@@ -3,7 +3,8 @@ import type { RetailPipelineSnapshot } from "@/types/retail-pipeline";
 
 /** 我的名單 retired. */
 export function buildPipelinePushSteps(
-  _pipeline: RetailPipelineSnapshot | null,
+  pipeline: RetailPipelineSnapshot | null,
 ): MemberGoalActionStep[] {
+  void pipeline;
   return [];
 }

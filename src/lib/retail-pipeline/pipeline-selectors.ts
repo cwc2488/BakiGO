@@ -6,8 +6,9 @@ import type { RetailPipelineSnapshot } from "@/types/retail-pipeline";
 /** 我的名單 retired — empty snapshot keeps metrics/learning callers compiling. */
 export function buildRetailPipelineSnapshot(
   ownerMemberId: EntityId,
-  _storage: StorageAdapter,
+  storage: StorageAdapter,
 ): RetailPipelineSnapshot {
+  void storage;
   return {
     ownerMemberId,
     referenceDate: todayISODate(),

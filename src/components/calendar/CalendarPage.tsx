@@ -30,8 +30,6 @@ import {
 } from "@/lib/calendar/alliance-event-participants";
 import {
   inferCalendarActivityTypeFromTitle,
-  CALENDAR_CATEGORY_KEYS,
-  resolveCalendarCategoryKey,
 } from "@/lib/calendar/calendar-activity-types";
 import {
   attendanceFromExpandedSharedEvent,

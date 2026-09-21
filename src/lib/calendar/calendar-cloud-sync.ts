@@ -71,7 +71,7 @@ export function applyCloudCalendarPayload(input: {
 }
 
 /** Immediate write-through after local optimistic mutation. */
-export async function flushCalendarWriteThrough(storage: StorageAdapter): Promise<void> {
+export async function flushCalendarWriteThrough(_storage?: StorageAdapter): Promise<void> {
   if (!isSupabaseConfigured()) {
     return;
   }
