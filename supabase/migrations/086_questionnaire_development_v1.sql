@@ -176,69 +176,54 @@ begin
     raise exception 'invalid_manual_counts';
   end if;
 
+  -- Concurrent-safe ensure row (auto-credit may insert first)
+  insert into public.five_plus_five_reports (
+    member_id,
+    report_date,
+    fish_pool_count,
+    invitation_five_steps_count,
+    manual_fish_pool_count,
+    questionnaire_fish_pool_count,
+    manual_invitation_five_steps_count,
+    questionnaire_invitation_five_steps_count,
+    first_submitted_at,
+    updated_at,
+    submitted_on_time,
+    created_at,
+    has_user_submitted,
+    user_submitted_at
+  ) values (
+    p_member_id,
+    p_report_date,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    p_now,
+    p_now,
+    false,
+    p_now,
+    false,
+    null
+  )
+  on conflict (member_id, report_date) do nothing;
+
   select * into v_row
   from public.five_plus_five_reports
   where member_id = p_member_id and report_date = p_report_date
   for update;
 
   if not found then
-    begin
-      insert into public.five_plus_five_reports (
-        member_id,
-        report_date,
-        manual_fish_pool_count,
-        questionnaire_fish_pool_count,
-        manual_invitation_five_steps_count,
-        questionnaire_invitation_five_steps_count,
-        fish_pool_count,
-        invitation_five_steps_count,
-        first_submitted_at,
-        user_submitted_at,
-        has_user_submitted,
-        updated_at,
-        submitted_on_time,
-        created_at
-      ) values (
-        p_member_id,
-        p_report_date,
-        p_manual_fish_pool_count,
-        0,
-        p_manual_invitation_five_steps_count,
-        0,
-        p_manual_fish_pool_count,
-        p_manual_invitation_five_steps_count,
-        p_now,
-        p_now,
-        true,
-        p_now,
-        coalesce(p_submitted_on_time, false),
-        p_now
-      )
-      returning * into v_row;
-      return v_row;
-    exception
-      when unique_violation then
-        select * into v_row
-        from public.five_plus_five_reports
-        where member_id = p_member_id and report_date = p_report_date
-        for update;
-        if not found then
-          raise;
-        end if;
-    end;
+    raise exception 'manual_upsert_row_missing';
   end if;
 
   update public.five_plus_five_reports
   set
     manual_fish_pool_count = p_manual_fish_pool_count,
     manual_invitation_five_steps_count = p_manual_invitation_five_steps_count,
-    fish_pool_count = p_manual_fish_pool_count + questionnaire_fish_pool_count,
-    invitation_five_steps_count =
-      p_manual_invitation_five_steps_count + questionnaire_invitation_five_steps_count,
-    has_user_submitted = case
-      when has_user_submitted then true
-      else true
-    end,
+    has_user_submitted = true,
     user_submitted_at = case
       when has_user_submitted then user_submitted_at
       else p_now
@@ -364,8 +349,9 @@ create index if not exists questionnaire_leads_owner_updated_idx
 create index if not exists questionnaire_leads_owner_status_updated_idx
   on public.questionnaire_leads (owner_member_id, status, updated_at desc);
 
-create index if not exists questionnaire_leads_owner_status_priority_idx
-  on public.questionnaire_leads (owner_member_id, status_priority, last_response_at desc);
+drop index if exists public.questionnaire_leads_owner_status_priority_idx;
+create index questionnaire_leads_owner_status_priority_idx
+  on public.questionnaire_leads (owner_member_id, status_priority, last_response_at desc, id);
 
 create index if not exists questionnaire_leads_fish_credited_idx
   on public.questionnaire_leads (owner_member_id, fish_credited_at)
@@ -484,51 +470,53 @@ as $$
 declare
   v_row public.five_plus_five_reports%rowtype;
 begin
+  -- Concurrent-safe ensure row (manual upsert / invitation credit may insert first)
+  insert into public.five_plus_five_reports (
+    member_id,
+    report_date,
+    fish_pool_count,
+    invitation_five_steps_count,
+    manual_fish_pool_count,
+    questionnaire_fish_pool_count,
+    manual_invitation_five_steps_count,
+    questionnaire_invitation_five_steps_count,
+    first_submitted_at,
+    updated_at,
+    submitted_on_time,
+    created_at,
+    has_user_submitted,
+    user_submitted_at
+  ) values (
+    p_member_id,
+    p_report_date,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    p_now,
+    p_now,
+    false,
+    p_now,
+    false,
+    null
+  )
+  on conflict (member_id, report_date) do nothing;
+
   select * into v_row
   from public.five_plus_five_reports
   where member_id = p_member_id and report_date = p_report_date
   for update;
 
   if not found then
-    insert into public.five_plus_five_reports (
-      member_id,
-      report_date,
-      fish_pool_count,
-      invitation_five_steps_count,
-      manual_fish_pool_count,
-      questionnaire_fish_pool_count,
-      manual_invitation_five_steps_count,
-      questionnaire_invitation_five_steps_count,
-      first_submitted_at,
-      updated_at,
-      submitted_on_time,
-      created_at,
-      has_user_submitted,
-      user_submitted_at
-    ) values (
-      p_member_id,
-      p_report_date,
-      1,
-      0,
-      0,
-      1,
-      0,
-      0,
-      p_now,
-      p_now,
-      false,
-      p_now,
-      false,
-      null
-    );
-    return;
+    raise exception 'questionnaire_fish_credit_row_missing';
   end if;
 
+  -- Increment component only; five_plus_five_component_sync_guard recomputes totals
   update public.five_plus_five_reports
   set
     questionnaire_fish_pool_count = questionnaire_fish_pool_count + 1,
-    fish_pool_count = manual_fish_pool_count + (questionnaire_fish_pool_count + 1),
-    invitation_five_steps_count = manual_invitation_five_steps_count + questionnaire_invitation_five_steps_count,
     updated_at = p_now
   where id = v_row.id;
 end;
@@ -767,36 +755,55 @@ begin
   returning * into v_lead;
 
   if v_lead.invitation_credited_at is null then
+    -- Concurrent-safe ensure row (manual upsert / fish credit may insert first)
+    insert into public.five_plus_five_reports (
+      member_id,
+      report_date,
+      fish_pool_count,
+      invitation_five_steps_count,
+      manual_fish_pool_count,
+      questionnaire_fish_pool_count,
+      manual_invitation_five_steps_count,
+      questionnaire_invitation_five_steps_count,
+      first_submitted_at,
+      updated_at,
+      submitted_on_time,
+      created_at,
+      has_user_submitted,
+      user_submitted_at
+    ) values (
+      p_owner_member_id,
+      p_report_date,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      p_now,
+      p_now,
+      false,
+      p_now,
+      false,
+      null
+    )
+    on conflict (member_id, report_date) do nothing;
+
     select * into v_row
     from public.five_plus_five_reports
     where member_id = p_owner_member_id and report_date = p_report_date
     for update;
 
     if not found then
-      insert into public.five_plus_five_reports (
-        member_id, report_date,
-        fish_pool_count, invitation_five_steps_count,
-        manual_fish_pool_count, questionnaire_fish_pool_count,
-        manual_invitation_five_steps_count, questionnaire_invitation_five_steps_count,
-        first_submitted_at, updated_at, submitted_on_time, created_at,
-        has_user_submitted, user_submitted_at
-      ) values (
-        p_owner_member_id, p_report_date,
-        0, 1,
-        0, 0,
-        0, 1,
-        p_now, p_now, false, p_now,
-        false, null
-      );
-    else
-      update public.five_plus_five_reports
-      set
-        questionnaire_invitation_five_steps_count = questionnaire_invitation_five_steps_count + 1,
-        invitation_five_steps_count = manual_invitation_five_steps_count + (questionnaire_invitation_five_steps_count + 1),
-        fish_pool_count = manual_fish_pool_count + questionnaire_fish_pool_count,
-        updated_at = p_now
-      where id = v_row.id;
+      raise exception 'questionnaire_invitation_credit_row_missing';
     end if;
+
+    -- Increment component only; five_plus_five_component_sync_guard recomputes totals
+    update public.five_plus_five_reports
+    set
+      questionnaire_invitation_five_steps_count = questionnaire_invitation_five_steps_count + 1,
+      updated_at = p_now
+    where id = v_row.id;
 
     update public.questionnaire_leads
     set invitation_credited_at = p_now, updated_at = p_now

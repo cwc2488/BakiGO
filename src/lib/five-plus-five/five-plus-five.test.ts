@@ -656,6 +656,26 @@ describe("5＋5 migration 086 questionnaire components + has_user_submitted", ()
     expect(serviceSrc).not.toContain("const qFish = existingMapped?.questionnaireFishPoolCount");
   });
 
+  it("first-row race — fish/invite/manual all use ON CONFLICT DO NOTHING + FOR UPDATE", () => {
+    const fishFn = sql.slice(
+      sql.indexOf("create or replace function public._five_plus_five_credit_questionnaire_fish"),
+      sql.indexOf("revoke all on function public._five_plus_five_credit_questionnaire_fish"),
+    );
+    const inviteFn = sql.slice(
+      sql.indexOf("create or replace function public.start_questionnaire_lead_invitation_v1"),
+      sql.indexOf("revoke all on function public.start_questionnaire_lead_invitation_v1"),
+    );
+    const manualFn = sql.slice(
+      sql.indexOf("create or replace function public.upsert_five_plus_five_manual_report_v2"),
+      sql.indexOf("revoke all on function public.upsert_five_plus_five_manual_report_v2"),
+    );
+    for (const fn of [fishFn, inviteFn, manualFn]) {
+      expect(fn).toMatch(/on conflict \(member_id, report_date\) do nothing/i);
+      expect(fn).toMatch(/for update/i);
+      expect(fn).not.toMatch(/if not found then\s+insert into public\.five_plus_five_reports/i);
+    }
+  });
+
   it("C/D/G — #74 compat trigger + total = components CHECKs", () => {
     expect(sql).toContain("five_plus_five_component_sync_guard");
     expect(sql).toContain("five_plus_five_reports_fish_total_eq");
@@ -872,5 +892,53 @@ describe("5＋5 org fishMet vs reported", () => {
     const hasTodayReport = Boolean(autoAchieved.hasUserSubmitted);
     expect(todayFishMet).toBe(true);
     expect(hasTodayReport).toBe(false);
+  });
+});
+
+describe("5＋5 concurrent first-row model (pure; not live Postgres)", () => {
+  it("A — manual + fish concurrent → manual 4 / qFish 1 / total 5 / no unique abort", async () => {
+    const { simulateConcurrentReportWriters } = await import(
+      "@/lib/five-plus-five/concurrency-model"
+    );
+    const a = simulateConcurrentReportWriters(["manual", "fish"], {
+      manualFish: 4,
+      manualInvite: 0,
+    });
+    const b = simulateConcurrentReportWriters(["fish", "manual"], {
+      manualFish: 4,
+      manualInvite: 0,
+    });
+    for (const result of [a, b]) {
+      expect(result.manualFish).toBe(4);
+      expect(result.questionnaireFish).toBe(1);
+      expect(result.fishTotal).toBe(5);
+      expect(result.uniqueErrors).toBe(0);
+    }
+  });
+
+  it("B — manual + invitation concurrent → manual 2 / qInvite 1 / total 3", async () => {
+    const { simulateConcurrentReportWriters } = await import(
+      "@/lib/five-plus-five/concurrency-model"
+    );
+    const result = simulateConcurrentReportWriters(["invite", "manual"], {
+      manualFish: 0,
+      manualInvite: 2,
+    });
+    expect(result.manualInvite).toBe(2);
+    expect(result.questionnaireInvite).toBe(1);
+    expect(result.inviteTotal).toBe(3);
+    expect(result.uniqueErrors).toBe(0);
+  });
+
+  it("C — fish + invitation concurrent → qFish 1 / qInvite 1 / totals 1+1", async () => {
+    const { simulateConcurrentReportWriters } = await import(
+      "@/lib/five-plus-five/concurrency-model"
+    );
+    const result = simulateConcurrentReportWriters(["fish", "invite"]);
+    expect(result.questionnaireFish).toBe(1);
+    expect(result.questionnaireInvite).toBe(1);
+    expect(result.fishTotal).toBe(1);
+    expect(result.inviteTotal).toBe(1);
+    expect(result.uniqueErrors).toBe(0);
   });
 });

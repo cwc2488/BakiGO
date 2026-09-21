@@ -96,19 +96,23 @@ export async function getOrCreateQuestionnaireShareLink(
   ownerMemberId: string,
 ): Promise<QuestionnaireShareLinkView> {
   const supabase = requireService();
-  const { data: existing, error: existingError } = await supabase
-    .from("questionnaire_share_links")
-    .select("share_code")
-    .eq("owner_member_id", ownerMemberId)
-    .eq("is_active", true)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (existingError) {
-    throw new QuestionnaireError(existingError.message, 500, "share_lookup_failed");
+
+  async function loadActiveShareCode(): Promise<string | null> {
+    const { data, error } = await supabase
+      .from("questionnaire_share_links")
+      .select("share_code")
+      .eq("owner_member_id", ownerMemberId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      throw new QuestionnaireError(error.message, 500, "share_lookup_failed");
+    }
+    return data?.share_code ? String(data.share_code) : null;
   }
 
-  let shareCode = existing?.share_code ? String(existing.share_code) : null;
+  let shareCode = await loadActiveShareCode();
   if (!shareCode) {
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const candidate = generateShareCode();
@@ -125,7 +129,17 @@ export async function getOrCreateQuestionnaireShareLink(
         shareCode = String(inserted.share_code);
         break;
       }
-      if (insertError && !/duplicate|unique/i.test(insertError.message)) {
+      if (insertError && /duplicate|unique/i.test(insertError.message)) {
+        // Concurrent first-create or share_code collision — prefer existing active link
+        const raced = await loadActiveShareCode();
+        if (raced) {
+          shareCode = raced;
+          break;
+        }
+        // No active link yet → share_code collision with another owner; retry new code
+        continue;
+      }
+      if (insertError) {
         throw new QuestionnaireError(insertError.message, 500, "share_create_failed");
       }
     }
@@ -529,6 +543,7 @@ export async function listQuestionnaireLeads(input: {
   const { data, error } = await query
     .order("status_priority", { ascending: true })
     .order("last_response_at", { ascending: false })
+    .order("id", { ascending: true })
     .range(from, to);
 
   if (error) {

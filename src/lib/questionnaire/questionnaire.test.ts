@@ -223,12 +223,43 @@ describe("問卷開發 — privacy / routes / migration", () => {
     expect(sql).toContain("questionnaire_leads_owner_status_priority_idx");
   });
 
-  it("H — list uses DB range pagination on status_priority", () => {
+  it("H — list uses DB range pagination on status_priority + id tiebreaker", () => {
     const service = src("src/lib/questionnaire/service.ts");
     expect(service).toContain('.order("status_priority"');
+    expect(service).toContain('.order("last_response_at"');
+    expect(service).toContain('.order("id", { ascending: true })');
     expect(service).toContain(".range(from, to)");
     expect(service).not.toContain("Math.min(500");
     expect(service).not.toContain("sortLeadsForList");
+    const sql = src("supabase/migrations/086_questionnaire_development_v1.sql");
+    expect(sql).toContain(
+      "(owner_member_id, status_priority, last_response_at desc, id)",
+    );
+  });
+
+  it("share-link concurrent first-create reloads existing active link", () => {
+    const service = src("src/lib/questionnaire/service.ts");
+    expect(service).toContain("loadActiveShareCode");
+    expect(service).toContain("Concurrent first-create");
+    expect(service).toMatch(/duplicate\|unique/);
+  });
+
+  it("share-link unique conflict model prefers existing owner link", async () => {
+    const { resolveShareLinkAfterUniqueConflict } = await import(
+      "@/lib/five-plus-five/concurrency-model"
+    );
+    expect(
+      resolveShareLinkAfterUniqueConflict({
+        ownerHadActiveAfterConflict: "AB12CD34",
+        attemptedCode: "ZZZZZZZZ",
+      }),
+    ).toEqual({ shareCode: "AB12CD34", action: "use_existing" });
+    expect(
+      resolveShareLinkAfterUniqueConflict({
+        ownerHadActiveAfterConflict: null,
+        attemptedCode: "ZZZZZZZZ",
+      }).action,
+    ).toBe("retry_generate");
   });
 
   it("M/N — public submit: no raw PG errors; byte-size payload gate", () => {
