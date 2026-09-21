@@ -110,6 +110,61 @@ describe("legacy merge decision", () => {
     expect(sql).toContain("reconcile_calendar_events_from_legacy_blobs");
     expect(sql).toContain("ce.updated_at < n.updated_at");
     expect(sql).toContain("ce.deleted_at is null");
+    expect(sql).toContain("Apply migration 082");
+    expect(sql).toContain("Apply migration 083");
+  });
+
+  it("084 optimistic write guard + RPC exist", () => {
+    const sql = readFileSync(
+      resolve(process.cwd(), "supabase/migrations/084_calendar_events_optimistic_upsert.sql"),
+      "utf8",
+    );
+    expect(sql).toContain("calendar_events_optimistic_write_guard");
+    expect(sql).toContain("upsert_calendar_event_optimistic");
+    expect(sql).toContain("ignored_stale");
+    expect(sql).toContain("ignored_deleted");
+    expect(sql).toContain("new.updated_at <= old.updated_at");
+  });
+});
+
+describe("optimistic write conflict decision", () => {
+  it("ignores stale incoming vs newer cloud", async () => {
+    const { decideOptimisticCalendarUpsert } = await import(
+      "@/lib/cloud/calendar-events-cloud-service"
+    );
+    expect(
+      decideOptimisticCalendarUpsert({
+        incomingUpdatedAt: "2026-09-21T10:00:00.000Z",
+        existing: { updated_at: "2026-09-21T11:00:00.000Z", deleted_at: null },
+      }),
+    ).toBe("ignored_stale");
+  });
+
+  it("updates when incoming is newer", async () => {
+    const { decideOptimisticCalendarUpsert } = await import(
+      "@/lib/cloud/calendar-events-cloud-service"
+    );
+    expect(
+      decideOptimisticCalendarUpsert({
+        incomingUpdatedAt: "2026-09-21T11:00:00.000Z",
+        existing: { updated_at: "2026-09-21T10:00:00.000Z", deleted_at: null },
+      }),
+    ).toBe("update");
+  });
+
+  it("never resurrects soft-deleted cloud via upsert", async () => {
+    const { decideOptimisticCalendarUpsert } = await import(
+      "@/lib/cloud/calendar-events-cloud-service"
+    );
+    expect(
+      decideOptimisticCalendarUpsert({
+        incomingUpdatedAt: "2026-09-21T12:00:00.000Z",
+        existing: {
+          updated_at: "2026-09-21T10:00:00.000Z",
+          deleted_at: "2026-09-21T10:30:00.000Z",
+        },
+      }),
+    ).toBe("ignored_deleted");
   });
 });
 
@@ -452,5 +507,218 @@ describe("visible range cloud query", () => {
       Date.now = realNow;
     }
     expect(fetchRange).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("offline stale update write conflict", () => {
+  beforeEach(() => {
+    resetCalendarStore();
+    clearCalendarPendingMutations();
+    resetCalendarEventCloudWriteTracker();
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.doUnmock("@/lib/cloud/calendar-events-cloud-service");
+    vi.doUnmock("@/lib/supabase/client");
+    vi.resetModules();
+  });
+
+  it("stale offline update cannot overwrite newer cloud; store gets canonical", async () => {
+    const memberId = "55555555-5555-4555-8555-555555555555";
+    const canonical = makeEvent({
+      id: "X",
+      memberId,
+      title: "B newer",
+      updatedAt: "2026-09-21T11:00:00.000Z",
+      startAt: "2026-09-21T15:00:00",
+      endAt: "2026-09-21T16:00:00",
+    });
+    const stale = makeEvent({
+      id: "X",
+      memberId,
+      title: "A stale",
+      updatedAt: "2026-09-21T10:00:00.000Z",
+      startAt: "2026-09-21T14:00:00",
+      endAt: "2026-09-21T15:00:00",
+    });
+
+    const upsert = vi.fn(async () => ({
+      status: "ignored_stale" as const,
+      event: canonical,
+      deleted: false,
+    }));
+
+    vi.doMock("@/lib/supabase/client", () => ({
+      isSupabaseConfigured: () => true,
+      createSupabaseBrowserClient: () => ({}),
+    }));
+    vi.doMock("@/lib/cloud/calendar-events-cloud-service", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/cloud/calendar-events-cloud-service")>(
+        "@/lib/cloud/calendar-events-cloud-service",
+      );
+      return {
+        ...actual,
+        upsertCloudCalendarEvent: upsert,
+      };
+    });
+
+    const {
+      flushCalendarPendingMutationQueue: flush,
+      applyCalendarUpsertOutcomeToStore: applyOutcome,
+    } = await import("@/lib/calendar/calendar-cloud-sync");
+    const { enqueueCalendarPendingMutation: enqueue, listCalendarPendingMutations: list } =
+      await import("@/lib/calendar/calendar-pending-mutations");
+    const {
+      hydratePersonalCalendarRange: hydrate,
+      getCalendarStoreSnapshot: snap,
+    } = await import("@/lib/calendar/calendar-event-store");
+
+    hydrate({
+      memberId,
+      rangeStart: "2026-09-01",
+      rangeEnd: "2026-09-30",
+      events: [stale],
+    });
+
+    enqueue({
+      memberId,
+      eventId: "X",
+      operation: "update",
+      payload: stale,
+    });
+
+    await flush(new MemoryStorage());
+
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "A stale", updatedAt: stale.updatedAt }),
+    );
+    expect(list()).toHaveLength(0);
+    const stored = snap().events.find((e) => e.id === "X");
+    expect(stored?.title).toBe("B newer");
+    expect(stored?.updatedAt).toBe("2026-09-21T11:00:00.000Z");
+    expect(stored?.startAt).toBe("2026-09-21T15:00:00");
+
+    // Explicit reconcile helper also replaces stale optimistic local
+    hydrate({
+      memberId,
+      rangeStart: "2026-09-01",
+      rangeEnd: "2026-09-30",
+      events: [stale],
+    });
+    applyOutcome({ status: "ignored_stale", event: canonical, deleted: false }, "X");
+    expect(snap().events.find((e) => e.id === "X")?.title).toBe("B newer");
+  });
+
+  it("newer offline update can update older cloud", async () => {
+    const memberId = "66666666-6666-4666-8666-666666666666";
+    const newer = makeEvent({
+      id: "X",
+      memberId,
+      title: "A newer",
+      updatedAt: "2026-09-21T11:00:00.000Z",
+    });
+
+    const upsert = vi.fn(async () => ({
+      status: "updated" as const,
+      event: newer,
+      deleted: false,
+    }));
+
+    vi.doMock("@/lib/supabase/client", () => ({
+      isSupabaseConfigured: () => true,
+      createSupabaseBrowserClient: () => ({}),
+    }));
+    vi.doMock("@/lib/cloud/calendar-events-cloud-service", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/cloud/calendar-events-cloud-service")>(
+        "@/lib/cloud/calendar-events-cloud-service",
+      );
+      return { ...actual, upsertCloudCalendarEvent: upsert };
+    });
+
+    const { flushCalendarPendingMutationQueue: flush } = await import(
+      "@/lib/calendar/calendar-cloud-sync"
+    );
+    const { enqueueCalendarPendingMutation: enqueue, listCalendarPendingMutations: list } =
+      await import("@/lib/calendar/calendar-pending-mutations");
+    const { hydratePersonalCalendarRange: hydrate, getCalendarStoreSnapshot: snap } = await import(
+      "@/lib/calendar/calendar-event-store"
+    );
+
+    hydrate({
+      memberId,
+      rangeStart: "2026-09-01",
+      rangeEnd: "2026-09-30",
+      events: [
+        makeEvent({
+          id: "X",
+          memberId,
+          title: "cloud old",
+          updatedAt: "2026-09-21T10:00:00.000Z",
+        }),
+      ],
+    });
+
+    enqueue({ memberId, eventId: "X", operation: "update", payload: newer });
+    await flush(new MemoryStorage());
+
+    expect(upsert).toHaveBeenCalled();
+    expect(list()).toHaveLength(0);
+    expect(snap().events.find((e) => e.id === "X")?.title).toBe("A newer");
+    expect(snap().events.find((e) => e.id === "X")?.updatedAt).toBe("2026-09-21T11:00:00.000Z");
+  });
+
+  it("deleted cloud event cannot resurrect from pending update", async () => {
+    const memberId = "77777777-7777-4777-8777-777777777777";
+    const pending = makeEvent({
+      id: "X",
+      memberId,
+      title: "resurrect attempt",
+      updatedAt: "2026-09-21T12:00:00.000Z",
+    });
+
+    const upsert = vi.fn(async () => ({
+      status: "ignored_deleted" as const,
+      event: null,
+      deleted: true,
+    }));
+
+    vi.doMock("@/lib/supabase/client", () => ({
+      isSupabaseConfigured: () => true,
+      createSupabaseBrowserClient: () => ({}),
+    }));
+    vi.doMock("@/lib/cloud/calendar-events-cloud-service", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/cloud/calendar-events-cloud-service")>(
+        "@/lib/cloud/calendar-events-cloud-service",
+      );
+      return { ...actual, upsertCloudCalendarEvent: upsert };
+    });
+
+    const { flushCalendarPendingMutationQueue: flush } = await import(
+      "@/lib/calendar/calendar-cloud-sync"
+    );
+    const { enqueueCalendarPendingMutation: enqueue, listCalendarPendingMutations: list } =
+      await import("@/lib/calendar/calendar-pending-mutations");
+    const {
+      hydratePersonalCalendarRange: hydrate,
+      getCalendarStoreSnapshot: snap,
+      getPersonalCalendarEventCount: count,
+    } = await import("@/lib/calendar/calendar-event-store");
+
+    hydrate({
+      memberId,
+      rangeStart: "2026-09-01",
+      rangeEnd: "2026-09-30",
+      events: [pending],
+    });
+    expect(count()).toBe(1);
+
+    enqueue({ memberId, eventId: "X", operation: "update", payload: pending });
+    await flush(new MemoryStorage());
+
+    expect(upsert).toHaveBeenCalled();
+    expect(list()).toHaveLength(0);
+    expect(snap().events.find((e) => e.id === "X")).toBeUndefined();
+    expect(count()).toBe(0);
   });
 });

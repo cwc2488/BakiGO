@@ -145,7 +145,13 @@ async function persistEventToCloud(event: CalendarEvent, operation: "create" | "
   }
   await trackCalendarEventCloudWrite(event.memberId, event.id, "upsert", async () => {
     try {
-      await upsertCloudCalendarEvent(event);
+      const outcome = await upsertCloudCalendarEvent(event);
+      // Reconcile optimistic local value with DB-canonical result (no circular import).
+      if (outcome.deleted || outcome.status === "ignored_deleted") {
+        removeCalendarEventIds([event.id]);
+      } else if (outcome.event) {
+        upsertCalendarEvents([outcome.event]);
+      }
     } catch (error) {
       // Online request failed — durable retry queue (not silent success).
       queueOfflineMutation({

@@ -2,11 +2,15 @@
 -- member_app_data calendar blobs into calendar_events without overwriting
 -- newer rows or resurrecting soft-deletes.
 --
--- Cutover steps (human-operated):
--- 1. Apply migration 082 (table + initial backfill)
--- 2. Deploy new app (event-level writes)
--- 3. SELECT * FROM public.reconcile_calendar_events_from_legacy_blobs();
--- 4. After old PWAs are retired, legacy blob writes are already removed from SYNCABLE
+-- Production rollout (human-operated — do NOT apply from agent):
+--   STEP 1  Apply migration 082
+--   STEP 2  Apply migration 083
+--   STEP 3  Apply migration 084 (optimistic write guard + RPC)
+--   STEP 4  Verify calendar_events exists, realtime publication, backfill counts
+--   STEP 5  Deploy new app
+--   STEP 6  SELECT * FROM public.reconcile_calendar_events_from_legacy_blobs();
+--   STEP 7  Verify inserted / updated / skipped counts + cross-device smoke
+--   STEP 8  After transition window: retire legacy blob writers
 
 create or replace function public.reconcile_calendar_events_from_legacy_blobs()
 returns table (

@@ -78,19 +78,187 @@ export function mapCalendarEventDbRow(row: CalendarEventDbRow): CalendarEvent | 
   };
 }
 
-/** Upsert a single personal calendar event (idempotent by member_id+id). */
-export async function upsertCloudCalendarEvent(event: CalendarEvent): Promise<void> {
+/** Outcome of an optimistic calendar upsert (DB-enforced LWW). */
+export type CalendarEventUpsertStatus =
+  | "inserted"
+  | "updated"
+  | "ignored_stale"
+  | "ignored_deleted"
+  | "skipped";
+
+export type CalendarEventUpsertOutcome = {
+  status: CalendarEventUpsertStatus;
+  /** Canonical active cloud event; null when soft-deleted or skipped. */
+  event: CalendarEvent | null;
+  /** True when the canonical cloud row is soft-deleted. */
+  deleted: boolean;
+};
+
+/** Shared concurrency decision (client mirror of DB optimistic rules). */
+export function decideOptimisticCalendarUpsert(input: {
+  incomingUpdatedAt: string;
+  existing: { updated_at: string; deleted_at: string | null } | null;
+}): "insert" | "update" | "ignored_stale" | "ignored_deleted" {
+  if (!input.existing) {
+    return "insert";
+  }
+  if (input.existing.deleted_at) {
+    return "ignored_deleted";
+  }
+  if (input.incomingUpdatedAt > input.existing.updated_at) {
+    return "update";
+  }
+  return "ignored_stale";
+}
+
+function mapOptimisticRpcResult(data: unknown): CalendarEventUpsertOutcome {
+  const payload = data as {
+    status?: string;
+    row?: CalendarEventDbRow | null;
+  } | null;
+  const status = (payload?.status ?? "skipped") as CalendarEventUpsertStatus;
+  const row = payload?.row ?? null;
+  if (!row) {
+    return { status, event: null, deleted: status === "ignored_deleted" };
+  }
+  const deleted = Boolean(row.deleted_at);
+  return {
+    status,
+    event: deleted ? null : mapCalendarEventDbRow(row),
+    deleted,
+  };
+}
+
+/**
+ * Optimistic upsert via DB RPC (preferred) — never overwrites newer / deleted rows.
+ * Falls back to conditional table write if RPC is unavailable.
+ */
+export async function upsertCloudCalendarEvent(
+  event: CalendarEvent,
+): Promise<CalendarEventUpsertOutcome> {
   if (!isSupabaseConfigured() || !isCloudDatabaseMemberId(event.memberId)) {
-    return;
+    return { status: "skipped", event: null, deleted: false };
   }
   const supabase = createSupabaseBrowserClient();
   const row = calendarEventToDbRow(event);
-  const { error } = await supabase.from("calendar_events").upsert(row, {
-    onConflict: "member_id,id",
+
+  const { data, error } = await supabase.rpc("upsert_calendar_event_optimistic", {
+    p_id: row.id,
+    p_member_id: row.member_id,
+    p_created_at: row.created_at,
+    p_updated_at: row.updated_at,
+    p_start_at: row.start_at,
+    p_end_at: row.end_at,
+    p_is_recurring: row.is_recurring,
+    p_payload: row.payload,
   });
-  if (error) {
-    throw new Error(error.message);
+
+  if (!error) {
+    return mapOptimisticRpcResult(data);
   }
+
+  // Fallback when 084 not yet applied: conditional write (trigger will also guard once present).
+  const message = error.message ?? "";
+  const rpcMissing =
+    message.includes("upsert_calendar_event_optimistic") ||
+    message.includes("Could not find the function") ||
+    error.code === "PGRST202";
+  if (!rpcMissing) {
+    throw new Error(message);
+  }
+
+  return upsertCloudCalendarEventConditionalFallback(event);
+}
+
+/** Client-side conditional upsert used only when optimistic RPC is not deployed yet. */
+async function upsertCloudCalendarEventConditionalFallback(
+  event: CalendarEvent,
+): Promise<CalendarEventUpsertOutcome> {
+  const supabase = createSupabaseBrowserClient();
+  const row = calendarEventToDbRow(event);
+  const { data: existingRows, error: readError } = await supabase
+    .from("calendar_events")
+    .select("*")
+    .eq("member_id", event.memberId)
+    .eq("id", event.id)
+    .maybeSingle();
+
+  if (readError) {
+    throw new Error(readError.message);
+  }
+
+  const existing = (existingRows as CalendarEventDbRow | null) ?? null;
+  const decision = decideOptimisticCalendarUpsert({
+    incomingUpdatedAt: row.updated_at,
+    existing: existing
+      ? { updated_at: existing.updated_at, deleted_at: existing.deleted_at }
+      : null,
+  });
+
+  if (decision === "insert") {
+    const { data, error } = await supabase.from("calendar_events").insert(row).select("*").single();
+    if (error) throw new Error(error.message);
+    return {
+      status: "inserted",
+      event: mapCalendarEventDbRow(data as CalendarEventDbRow),
+      deleted: false,
+    };
+  }
+
+  if (decision === "ignored_deleted") {
+    return { status: "ignored_deleted", event: null, deleted: true };
+  }
+
+  if (decision === "ignored_stale") {
+    return {
+      status: "ignored_stale",
+      event: existing ? mapCalendarEventDbRow(existing) : null,
+      deleted: false,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .update({
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      start_at: row.start_at,
+      end_at: row.end_at,
+      is_recurring: row.is_recurring,
+      payload: row.payload,
+    })
+    .eq("member_id", event.memberId)
+    .eq("id", event.id)
+    .is("deleted_at", null)
+    .lt("updated_at", row.updated_at)
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  if (!data) {
+    const { data: canonical } = await supabase
+      .from("calendar_events")
+      .select("*")
+      .eq("member_id", event.memberId)
+      .eq("id", event.id)
+      .maybeSingle();
+    const canonicalRow = canonical as CalendarEventDbRow | null;
+    if (canonicalRow?.deleted_at) {
+      return { status: "ignored_deleted", event: null, deleted: true };
+    }
+    return {
+      status: "ignored_stale",
+      event: canonicalRow ? mapCalendarEventDbRow(canonicalRow) : null,
+      deleted: false,
+    };
+  }
+
+  return {
+    status: "updated",
+    event: mapCalendarEventDbRow(data as CalendarEventDbRow),
+    deleted: false,
+  };
 }
 
 /** Soft-delete one event. */
@@ -206,20 +374,17 @@ export function decideLegacyCalendarMerge(input: {
   localUpdatedAt: string;
   cloud: { updated_at: string; deleted_at: string | null } | null;
 }): LegacyCalendarMergeDecision {
-  if (!input.cloud) {
-    return "insert";
-  }
-  if (input.cloud.deleted_at) {
-    return "skip";
-  }
-  if (input.localUpdatedAt > input.cloud.updated_at) {
-    return "update";
-  }
+  const decision = decideOptimisticCalendarUpsert({
+    incomingUpdatedAt: input.localUpdatedAt,
+    existing: input.cloud,
+  });
+  if (decision === "insert") return "insert";
+  if (decision === "update") return "update";
   return "skip";
 }
 
 /**
- * Conditionally merge local/legacy events into calendar_events.
+ * Conditionally merge local/legacy events into calendar_events via optimistic RPC.
  * - INSERT when missing
  * - UPDATE only when local.updatedAt > cloud.updated_at and not soft-deleted
  * - SKIP when cloud is newer/equal or soft-deleted (no resurrection)
@@ -228,87 +393,14 @@ export async function upsertCloudCalendarEventsBatch(events: CalendarEvent[]): P
   if (!isSupabaseConfigured() || events.length === 0) {
     return 0;
   }
-  const supabase = createSupabaseBrowserClient();
   const eligible = events.filter((event) => isCloudDatabaseMemberId(event.memberId));
   if (eligible.length === 0) return 0;
 
-  const byMember = new Map<string, CalendarEvent[]>();
-  for (const event of eligible) {
-    const list = byMember.get(event.memberId) ?? [];
-    list.push(event);
-    byMember.set(event.memberId, list);
-  }
-
   let written = 0;
-  for (const [memberId, memberEvents] of byMember) {
-    const chunkSize = 100;
-    for (let i = 0; i < memberEvents.length; i += chunkSize) {
-      const chunk = memberEvents.slice(i, i + chunkSize);
-      const ids = chunk.map((event) => event.id);
-      const { data: existingRows, error: readError } = await supabase
-        .from("calendar_events")
-        .select("id, updated_at, deleted_at")
-        .eq("member_id", memberId)
-        .in("id", ids);
-
-      if (readError) {
-        throw new Error(readError.message);
-      }
-
-      const existingById = new Map(
-        (existingRows ?? []).map((row) => [
-          String(row.id),
-          {
-            updated_at: String(row.updated_at),
-            deleted_at: (row.deleted_at as string | null) ?? null,
-          },
-        ]),
-      );
-
-      const toInsert: ReturnType<typeof calendarEventToDbRow>[] = [];
-      const toUpdate: CalendarEvent[] = [];
-      for (const event of chunk) {
-        const decision = decideLegacyCalendarMerge({
-          localUpdatedAt:
-            typeof event.updatedAt === "string" ? event.updatedAt : event.updatedAt.toISOString(),
-          cloud: existingById.get(event.id) ?? null,
-        });
-        if (decision === "insert") {
-          toInsert.push(calendarEventToDbRow(event));
-        } else if (decision === "update") {
-          toUpdate.push(event);
-        }
-      }
-
-      if (toInsert.length > 0) {
-        const { error } = await supabase.from("calendar_events").insert(toInsert);
-        if (error) {
-          throw new Error(error.message);
-        }
-        written += toInsert.length;
-      }
-
-      for (const event of toUpdate) {
-        const row = calendarEventToDbRow(event);
-        const { error } = await supabase
-          .from("calendar_events")
-          .update({
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            start_at: row.start_at,
-            end_at: row.end_at,
-            is_recurring: row.is_recurring,
-            payload: row.payload,
-          })
-          .eq("member_id", memberId)
-          .eq("id", event.id)
-          .is("deleted_at", null)
-          .lt("updated_at", row.updated_at);
-        if (error) {
-          throw new Error(error.message);
-        }
-        written += 1;
-      }
+  for (const event of eligible) {
+    const outcome = await upsertCloudCalendarEvent(event);
+    if (outcome.status === "inserted" || outcome.status === "updated") {
+      written += 1;
     }
   }
   return written;

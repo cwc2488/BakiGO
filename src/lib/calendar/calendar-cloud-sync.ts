@@ -30,6 +30,7 @@ import {
   softDeleteCloudCalendarEvent,
   upsertCloudCalendarEvent,
   upsertCloudCalendarEventsBatch,
+  type CalendarEventUpsertOutcome,
 } from "@/lib/cloud/calendar-events-cloud-service";
 import { fetchCloudAppData, serializeCloudPayload } from "@/lib/cloud/cloud-app-data-service";
 import { isCloudDatabaseMemberId } from "@/lib/cloud/cloud-member-ids";
@@ -96,6 +97,23 @@ export function applyRemoteCalendarEventToStore(event: CalendarEvent): void {
   }
   if (storeHasEventId(event.id)) {
     removeCalendarEventIds([event.id]);
+  }
+}
+
+/** Apply optimistic upsert result so local store never keeps a rejected stale value. */
+export function applyCalendarUpsertOutcomeToStore(
+  outcome: CalendarEventUpsertOutcome | null | undefined,
+  eventId: EntityId,
+): void {
+  if (!outcome) {
+    return;
+  }
+  if (outcome.deleted || outcome.status === "ignored_deleted") {
+    removeCalendarEventIds([eventId]);
+    return;
+  }
+  if (outcome.event) {
+    applyRemoteCalendarEventToStore(outcome.event);
   }
 }
 
@@ -401,11 +419,12 @@ export async function flushCalendarPendingMutationQueue(storage: StorageAdapter)
           memberId: item.memberId,
           eventId: item.eventId,
         });
+        removeCalendarEventIds([item.eventId]);
       } else {
         const event = eventFromPending(item);
         if (event) {
-          await upsertCloudCalendarEvent(event);
-          upsertCalendarEvents([event]);
+          const outcome = await upsertCloudCalendarEvent(event);
+          applyCalendarUpsertOutcomeToStore(outcome, event.id);
         }
       }
     }

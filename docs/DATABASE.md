@@ -46,11 +46,22 @@ Migration `061_customers_soft_delete.sql` adds nullable `deleted_at`. Active CRM
 
 **Columns:** `id` (text, client UUID), `member_id`, `created_at`, `updated_at`, `start_at`, `end_at`, `is_recurring`, `payload` (full `CalendarEvent` JSON), `deleted_at` (soft delete).
 
-**Write path:** create / update upserts one row; delete soft-deletes one row. Never push the full calendar as a `member_app_data` JSON blob (last-write-wins removed).
+**Write path:** create / update go through `upsert_calendar_event_optimistic` (084) — INSERT if missing; UPDATE only when `incoming.updated_at > existing.updated_at` and `deleted_at IS NULL`; IGNORE stale; never resurrect soft-deletes. A BEFORE UPDATE trigger (`calendar_events_optimistic_write_guard`) enforces the same rules for any direct table write. Delete soft-deletes one row. Never push the full calendar as a `member_app_data` JSON blob (last-write-wins removed).
 
 **Server backfill (082):** idempotent `INSERT … SELECT jsonb_array_elements(payload)` from `member_app_data` where `data_key = 'baki-go:calendar-events'`. Owner is always `member_app_data.member_id` (payload `memberId` normalized). Legacy blob is **not** deleted (rollback source). Migration verifies source count == migrated count. Conflict update only when `calendar_events.updated_at < excluded.updated_at` (never overwrite newer; never resurrect soft-deletes).
 
-**Cutover (083):** `reconcile_calendar_events_from_legacy_blobs()` — insert missing; update only when legacy is newer; skip soft-deleted. Steps: (1) apply 082 → (2) deploy new app → (3) run reconcile → (4) retire legacy blob writers. Client also runs conditional local migrate + `reconcileCloudLegacyCalendarBlob` on bootstrap.
+**Cutover / Production rollout (human-operated — do not apply from agent):**
+
+1. Apply migration **082** (table + initial backfill)
+2. Apply migration **083** (`reconcile_calendar_events_from_legacy_blobs`)
+3. Apply migration **084** (optimistic write guard + RPC)
+4. Verify: `calendar_events` exists; Realtime publication includes `calendar_events`; legacy source count == migrated count
+5. Deploy new app
+6. Run `SELECT * FROM public.reconcile_calendar_events_from_legacy_blobs();`
+7. Verify inserted / updated / skipped counts; cross-device smoke (create/update/delete live; concurrent create; offline older vs newer → newer wins)
+8. After transition window: retire legacy blob writers
+
+Client also runs conditional local migrate + `reconcileCloudLegacyCalendarBlob` on bootstrap. Rejected stale mutations replace the local store with the DB-canonical row.
 
 **Read path:** range query for visible window (± buffer) plus active recurring series; delta via `updated_at` cursor. App store retains bounded ranges (LRU + TTL). CalendarPage navigation (day/week/month) calls `ensureVisiblePersonalCalendarRange`.
 
