@@ -2,6 +2,7 @@ import { defaultRecurrence } from "@/lib/calendar/recurrence";
 import { inferCalendarActivityTypeFromTitle } from "@/lib/calendar/calendar-activity-types";
 import { isSharedGoogleCalendarId, getSharedCalendarEventColor } from "@/lib/calendar/shared-calendars";
 import { getTodayDateString } from "@/lib/calendar/time-grid";
+import { saveSharedCalendarCacheBounded } from "@/lib/calendar/calendar-storage-bounds";
 import type { CalendarEvent, CalendarEventColor } from "@/types/calendar-event";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
@@ -53,9 +54,11 @@ export function saveSharedCalendarCache(
   events: CalendarEvent[],
   meta: SharedCalendarCacheMeta,
 ): void {
-  storage.setItem(STORAGE_KEYS.sharedCalendarEvents, JSON.stringify(events));
-  storage.setItem(STORAGE_KEYS.sharedCalendarCacheMeta, JSON.stringify(meta));
-  markSharedCalendarStorageFresh(storage);
+  saveSharedCalendarCacheBounded(storage, events, (bounded) => {
+    storage.setItem(STORAGE_KEYS.sharedCalendarEvents, JSON.stringify(bounded));
+    storage.setItem(STORAGE_KEYS.sharedCalendarCacheMeta, JSON.stringify(meta));
+    markSharedCalendarStorageFresh(storage);
+  });
 }
 
 export function isSharedCalendarCacheFresh(storage: StorageAdapter, memberId: string): boolean {

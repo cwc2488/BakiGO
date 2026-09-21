@@ -14,6 +14,8 @@ import {
   subscribeMemberCalendarAppData,
 } from "@/lib/calendar/calendar-subscription-registry";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
+import { idbClearExpiredCalendarRanges } from "@/lib/calendar/calendar-idb-cache";
+import { pruneCalendarLocalRetention } from "@/lib/calendar/calendar-storage-bounds";
 import { useEffect, useMemo, useRef } from "react";
 
 /**
@@ -38,6 +40,8 @@ export function CalendarSyncBootstrap() {
     }
 
     bootstrapCalendarStoreFromLocal({ storage, memberId });
+    pruneCalendarLocalRetention(storage);
+    void idbClearExpiredCalendarRanges();
 
     let cancelled = false;
     const unsubscribeRealtime = subscribeMemberCalendarAppData({

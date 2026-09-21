@@ -17,6 +17,7 @@ import {
   writeCalendarLastSyncAt,
   readCalendarLastSyncAt,
 } from "@/lib/calendar/calendar-pending-mutations";
+import { pruneCalendarLocalRetention } from "@/lib/calendar/calendar-storage-bounds";
 import { isPersonalCalendarEvent } from "@/lib/calendar/shared-calendar-storage";
 import {
   fetchCloudAppData,
@@ -67,6 +68,7 @@ export function applyCloudCalendarPayload(input: {
   });
   writeCalendarLastSyncAt(input.updatedAt);
   setCalendarLastCloudUpdatedAt(input.updatedAt);
+  pruneCalendarLocalRetention(input.storage);
   return personal;
 }
 
@@ -169,6 +171,7 @@ export async function flushCalendarPendingMutationQueue(storage: StorageAdapter)
           removeCalendarPendingMutation(item.operationId);
         }
         writeCalendarLastSyncAt(new Date().toISOString());
+        pruneCalendarLocalRetention(storage);
       }
     } else {
       for (const item of pending) {

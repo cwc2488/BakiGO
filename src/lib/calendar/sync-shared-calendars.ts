@@ -12,6 +12,7 @@ import {
   makeRangeCacheKey,
   setRangeCachedEvents,
 } from "@/lib/calendar/calendar-range-cache";
+import { idbGetCalendarRange, idbSetCalendarRange } from "@/lib/calendar/calendar-idb-cache";
 import { getTodayDateString } from "@/lib/calendar/time-grid";
 import type { CalendarEvent, CalendarEventColor } from "@/types/calendar-event";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
@@ -69,6 +70,18 @@ export async function syncSharedGoogleCalendars(
     if (memoryCached) {
       return { count: memoryCached.length, events: memoryCached, fromCache: true };
     }
+    const idbRaw = await idbGetCalendarRange(rangeKey);
+    if (idbRaw) {
+      try {
+        const parsed = JSON.parse(idbRaw) as CalendarEvent[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setRangeCachedEvents(rangeKey, parsed);
+          return { count: parsed.length, events: parsed, fromCache: true };
+        }
+      } catch {
+        /* ignore corrupt idb row */
+      }
+    }
   }
 
   const response = await fetch(
@@ -111,6 +124,7 @@ export async function syncSharedGoogleCalendars(
     syncedAt: new Date().toISOString(),
   });
   setRangeCachedEvents(rangeKey, events);
+  void idbSetCalendarRange(rangeKey, JSON.stringify(events));
 
   return { count: events.length, events, fromCache: false };
 }
