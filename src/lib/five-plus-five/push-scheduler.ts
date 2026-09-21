@@ -1,4 +1,5 @@
 import { fivePlusFiveToday, getBusinessWeekRange } from "@/lib/five-plus-five/dates";
+import { processDueMembersWithQuota } from "@/lib/five-plus-five/push-batch";
 import { resolveFivePlusFiveTargets } from "@/lib/five-plus-five/rules";
 import { claimNotificationDelivery } from "@/lib/push/notification-deliveries";
 import { sendPushToUser } from "@/lib/push/send-push";
@@ -9,6 +10,9 @@ import {
 } from "@/lib/supabase/service-client";
 
 const LOOKBACK_MS = 45 * 60 * 1000; // catch missed cron ticks within 45m
+const DEFAULT_CLAIM_LIMIT = 200;
+const MAX_CLAIM_LIMIT = 500;
+const SEND_CONCURRENCY = 15;
 
 export type FivePlusFivePushSlot = "20" | "23";
 
@@ -44,24 +48,32 @@ type TodayReportLite = {
   invitation_five_steps_count: number;
 };
 
-async function loadTodayReports(memberIds: string[], today: string): Promise<Map<string, TodayReportLite>> {
+async function loadTodayReports(
+  memberIds: string[],
+  today: string,
+): Promise<Map<string, TodayReportLite>> {
   const map = new Map<string, TodayReportLite>();
   if (memberIds.length === 0) return map;
   const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
-    .from("five_plus_five_reports")
-    .select("member_id, fish_pool_count, invitation_five_steps_count")
-    .eq("report_date", today)
-    .in("member_id", memberIds);
-  if (error) {
-    // Table may not exist yet pre-migration
-    console.error(
-      JSON.stringify({ event: "five_plus_five_push_reports_failed", error: error.message }),
-    );
-    return map;
-  }
-  for (const row of data ?? []) {
-    map.set(String(row.member_id), row as TodayReportLite);
+
+  // Chunk IN queries for large orgs (1000+)
+  const chunkSize = 200;
+  for (let i = 0; i < memberIds.length; i += chunkSize) {
+    const chunk = memberIds.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from("five_plus_five_reports")
+      .select("member_id, fish_pool_count, invitation_five_steps_count")
+      .eq("report_date", today)
+      .in("member_id", chunk);
+    if (error) {
+      console.error(
+        JSON.stringify({ event: "five_plus_five_push_reports_failed", error: error.message }),
+      );
+      return map;
+    }
+    for (const row of data ?? []) {
+      map.set(String(row.member_id), row as TodayReportLite);
+    }
   }
   return map;
 }
@@ -74,21 +86,25 @@ async function loadWeekInvitationTotals(
   const map = new Map<string, number>();
   if (memberIds.length === 0) return map;
   const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
-    .from("five_plus_five_reports")
-    .select("member_id, invitation_five_steps_count")
-    .gte("report_date", weekStart)
-    .lte("report_date", weekEnd)
-    .in("member_id", memberIds);
-  if (error) {
-    console.error(
-      JSON.stringify({ event: "five_plus_five_push_week_failed", error: error.message }),
-    );
-    return map;
-  }
-  for (const row of data ?? []) {
-    const id = String(row.member_id);
-    map.set(id, (map.get(id) ?? 0) + Number(row.invitation_five_steps_count ?? 0));
+  const chunkSize = 200;
+  for (let i = 0; i < memberIds.length; i += chunkSize) {
+    const chunk = memberIds.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from("five_plus_five_reports")
+      .select("member_id, invitation_five_steps_count")
+      .gte("report_date", weekStart)
+      .lte("report_date", weekEnd)
+      .in("member_id", chunk);
+    if (error) {
+      console.error(
+        JSON.stringify({ event: "five_plus_five_push_week_failed", error: error.message }),
+      );
+      return map;
+    }
+    for (const row of data ?? []) {
+      const id = String(row.member_id);
+      map.set(id, (map.get(id) ?? 0) + Number(row.invitation_five_steps_count ?? 0));
+    }
   }
   return map;
 }
@@ -102,7 +118,6 @@ export function shouldNotifyFivePlusFive(input: {
   if (input.slot === "23") {
     return !input.hasTodayReport;
   }
-  // 20:00 — skip only if reported AND fish met
   if (input.hasTodayReport && input.fishPoolCount >= input.fishDailyTarget) {
     return false;
   }
@@ -128,22 +143,56 @@ export function buildFivePlusFivePushCopy(input: {
   };
 }
 
+export function collectDueFivePlusFiveMemberIds(input: {
+  memberIds: readonly string[];
+  slot: FivePlusFivePushSlot;
+  todayReports: Map<string, TodayReportLite>;
+  fishDailyTarget: number;
+}): string[] {
+  const due: string[] = [];
+  for (const memberId of input.memberIds) {
+    const report = input.todayReports.get(memberId);
+    if (
+      shouldNotifyFivePlusFive({
+        slot: input.slot,
+        hasTodayReport: Boolean(report),
+        fishPoolCount: report?.fish_pool_count ?? 0,
+        fishDailyTarget: input.fishDailyTarget,
+      })
+    ) {
+      due.push(memberId);
+    }
+  }
+  return due;
+}
+
 /**
  * Process 20:00 / 23:00 Asia/Taipei reminders.
- * Reuses claimNotificationDelivery dedupe — never double-send same slot+date.
+ * Already-claimed members do not consume claim quota — second cron advances.
  */
 export async function processFivePlusFivePushReminders(input?: {
   nowMs?: number;
   limit?: number;
+  concurrency?: number;
 }): Promise<{
   slot: FivePlusFivePushSlot | null;
   scannedMembers: number;
   due: number;
   sent: number;
   skipped: number;
+  newlyClaimed: number;
+  alreadyClaimed: number;
 }> {
   if (!isSupabaseServiceConfigured()) {
-    return { slot: null, scannedMembers: 0, due: 0, sent: 0, skipped: 0 };
+    return {
+      slot: null,
+      scannedMembers: 0,
+      due: 0,
+      sent: 0,
+      skipped: 0,
+      newlyClaimed: 0,
+      alreadyClaimed: 0,
+    };
   }
 
   const nowMs = input?.nowMs ?? Date.now();
@@ -155,7 +204,15 @@ export async function processFivePlusFivePushReminders(input?: {
   else if (isSlotDue(nowMs, today, "23")) slot = "23";
 
   if (!slot) {
-    return { slot: null, scannedMembers: 0, due: 0, sent: 0, skipped: 0 };
+    return {
+      slot: null,
+      scannedMembers: 0,
+      due: 0,
+      sent: 0,
+      skipped: 0,
+      newlyClaimed: 0,
+      alreadyClaimed: 0,
+    };
   }
 
   const targets = resolveFivePlusFiveTargets();
@@ -167,71 +224,69 @@ export async function processFivePlusFivePushReminders(input?: {
       ? await loadWeekInvitationTotals(memberIds, week.start, week.end)
       : new Map<string, number>();
 
-  const limit = Math.max(1, Math.min(500, input?.limit ?? 200));
-  let due = 0;
-  let sent = 0;
-  let skipped = 0;
-  let processed = 0;
+  const dueMemberIds = collectDueFivePlusFiveMemberIds({
+    memberIds,
+    slot,
+    todayReports,
+    fishDailyTarget: targets.fishPoolDaily,
+  });
 
-  for (const memberId of memberIds) {
-    if (processed >= limit) break;
+  const limit = Math.max(
+    1,
+    Math.min(MAX_CLAIM_LIMIT, Math.floor(input?.limit ?? DEFAULT_CLAIM_LIMIT)),
+  );
+  const sourceKey = `five_plus_five:${slot}:${today}`;
+  const scheduledAt = scheduledAtForSlot(today, slot);
 
-    const report = todayReports.get(memberId);
-    const hasTodayReport = Boolean(report);
-    const fish = report?.fish_pool_count ?? 0;
-    const weekInvitation = weekInvites.get(memberId) ?? 0;
-
-    if (
-      !shouldNotifyFivePlusFive({
-        slot,
-        hasTodayReport,
+  const batch = await processDueMembersWithQuota({
+    dueMemberIds,
+    limit,
+    concurrency: input?.concurrency ?? SEND_CONCURRENCY,
+    tryClaimAndSend: async (memberId) => {
+      const report = todayReports.get(memberId);
+      const fish = report?.fish_pool_count ?? 0;
+      const weekInvitation = weekInvites.get(memberId) ?? 0;
+      const copy = buildFivePlusFivePushCopy({
+        slot: slot!,
         fishPoolCount: fish,
         fishDailyTarget: targets.fishPoolDaily,
-      })
-    ) {
-      continue;
-    }
+        weekInvitation,
+        invitationWeeklyTarget: targets.invitationFiveStepsWeekly,
+      });
 
-    due += 1;
-    processed += 1;
+      const claimed = await claimNotificationDelivery({
+        memberId,
+        sourceType: PUSH_SOURCE.fivePlusFiveReminder,
+        sourceKey,
+        scheduledAt,
+        title: copy.title,
+        body: copy.body,
+        targetUrl: "/5plus5",
+      });
 
-    const copy = buildFivePlusFivePushCopy({
-      slot,
-      fishPoolCount: fish,
-      fishDailyTarget: targets.fishPoolDaily,
-      weekInvitation,
-      invitationWeeklyTarget: targets.invitationFiveStepsWeekly,
-    });
+      if (!claimed) {
+        return "already_claimed";
+      }
 
-    const sourceKey = `five_plus_five:${slot}:${today}`;
-    const scheduledAt = scheduledAtForSlot(today, slot);
+      const result = await sendPushToUser({
+        memberId,
+        title: copy.title,
+        body: copy.body,
+        url: "/5plus5",
+        tag: sourceKey,
+      });
 
-    const claimed = await claimNotificationDelivery({
-      memberId,
-      sourceType: PUSH_SOURCE.fivePlusFiveReminder,
-      sourceKey,
-      scheduledAt,
-      title: copy.title,
-      body: copy.body,
-      targetUrl: "/5plus5",
-    });
+      return result.succeeded > 0 ? "sent" : "send_failed";
+    },
+  });
 
-    if (!claimed) {
-      skipped += 1;
-      continue;
-    }
-
-    const result = await sendPushToUser({
-      memberId,
-      title: copy.title,
-      body: copy.body,
-      url: "/5plus5",
-      tag: sourceKey,
-    });
-
-    if (result.succeeded > 0) sent += 1;
-    else skipped += 1;
-  }
-
-  return { slot, scannedMembers: memberIds.length, due, sent, skipped };
+  return {
+    slot,
+    scannedMembers: memberIds.length,
+    due: dueMemberIds.length,
+    sent: batch.sent,
+    skipped: batch.alreadyClaimed + batch.sendFailed,
+    newlyClaimed: batch.newlyClaimed,
+    alreadyClaimed: batch.alreadyClaimed,
+  };
 }

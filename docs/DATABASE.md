@@ -1036,3 +1036,13 @@ Pure numeric daily action reports. **Not CRM** — no names, phones, or step tra
 **Push:** `source_type = five_plus_five_reminder`, `source_key = five_plus_five:{20\|23}:{YYYY-MM-DD}` via existing `notification_deliveries` dedupe.
 
 **Rollout:** Migration must be applied by human ops to Production — agents must not apply it.
+
+**Privilege matrix:**
+
+| Role | SELECT | INSERT/UPDATE/DELETE |
+|------|--------|------------------------|
+| `anon` | ✗ | ✗ |
+| `authenticated` | own + descendant rows (RLS) | ✗ (revoked) |
+| `service_role` | ✓ | ✓ (server `/api/5plus5/*` only) |
+
+**Stats RPC:** `get_five_plus_five_member_stats(...)` — SECURITY DEFINER, `EXECUTE` granted **only** to `service_role` (revoked from `PUBLIC` / `anon` / `authenticated`). Returns today row + week/month/history aggregates + streak + recent ≤30 days — no full-history dump into Node.

@@ -5,6 +5,7 @@ import {
   fivePlusFiveToday,
   getBusinessWeekRange,
   getMonthRange,
+  isValidISOCalendarDate,
   isWithinTaipeiCalendarDay,
   listISODatesInclusive,
   daysElapsedInMonthThrough,
@@ -26,7 +27,12 @@ import {
   buildFivePlusFivePushCopy,
   shouldNotifyFivePlusFive,
 } from "@/lib/five-plus-five/push-scheduler";
-import { normalizeCount } from "@/lib/five-plus-five/service";
+import { processDueMembersWithQuota } from "@/lib/five-plus-five/push-batch";
+import {
+  buildMyStatsFromAggregates,
+  normalizeCount,
+  STATS_FETCH_STRATEGY,
+} from "@/lib/five-plus-five/service";
 import type { FivePlusFiveReportRow } from "@/types/five-plus-five";
 import type { CloudMember, CloudOrganizationRelationship } from "@/types/cloud";
 import { readFileSync } from "node:fs";
@@ -77,12 +83,25 @@ describe("5＋5 targets (Priority 0)", () => {
 });
 
 describe("5＋5 counts validation", () => {
-  it("C — rejects negatives and non-integers", () => {
+  it("rejects decimals / negatives — no silent floor", () => {
+    expect(normalizeCount(1.5)).toBeNull();
+    expect(normalizeCount(1.01)).toBeNull();
     expect(normalizeCount(-1)).toBeNull();
-    expect(normalizeCount(1.5)).toBe(1);
-    expect(normalizeCount(0)).toBe(0);
     expect(normalizeCount(5)).toBe(5);
+    expect(normalizeCount(0)).toBe(0);
+    expect(normalizeCount(Number.NaN)).toBeNull();
     expect(normalizeCount("x")).toBeNull();
+  });
+});
+
+describe("5＋5 ISO calendar date validation", () => {
+  it("rejects invalid calendar dates", () => {
+    expect(isValidISOCalendarDate("2026-00-00")).toBe(false);
+    expect(isValidISOCalendarDate("2026-02-31")).toBe(false);
+    expect(isValidISOCalendarDate("2026-99-99")).toBe(false);
+    expect(isValidISOCalendarDate("2026-09-21")).toBe(true);
+    expect(isValidISOCalendarDate("2024-02-29")).toBe(true);
+    expect(isValidISOCalendarDate("2025-02-29")).toBe(false);
   });
 });
 
@@ -405,21 +424,150 @@ describe("5＋5 push reminders", () => {
     expect(copy.body).toContain("2/5");
     expect(copy.body).toContain("3/5");
   });
+
+  it("1000 due members — second cron progresses past already-claimed batch", async () => {
+    const due = Array.from({ length: 1000 }, (_, i) => `m-${i}`);
+    const claimed = new Set<string>();
+    let claimCalls = 0;
+
+    const run = () =>
+      processDueMembersWithQuota({
+        dueMemberIds: due,
+        limit: 200,
+        concurrency: 20,
+        tryClaimAndSend: async (memberId) => {
+          claimCalls += 1;
+          if (claimed.has(memberId)) return "already_claimed";
+          claimed.add(memberId);
+          return "sent";
+        },
+      });
+
+    const first = await run();
+    expect(first.newlyClaimed).toBe(200);
+    expect(first.sent).toBe(200);
+    expect(first.alreadyClaimed).toBe(0);
+    expect(claimed.size).toBe(200);
+
+    const second = await run();
+    expect(second.alreadyClaimed).toBe(200);
+    expect(second.newlyClaimed).toBe(200);
+    expect(second.sent).toBe(200);
+    expect(claimed.size).toBe(400);
+
+    // Continue until all claimed
+    while (claimed.size < 1000) {
+      const batch = await run();
+      expect(batch.newlyClaimed).toBeGreaterThan(0);
+      expect(batch.newlyClaimed).toBeLessThanOrEqual(200);
+    }
+    expect(claimed.size).toBe(1000);
+
+    // Extra run: all already claimed → newlyClaimed 0, does not stall forever
+    const final = await run();
+    expect(final.newlyClaimed).toBe(0);
+    expect(final.alreadyClaimed).toBe(1000);
+    expect(claimCalls).toBeGreaterThan(1000);
+  });
+
+  it("already_claimed does not consume claim quota within one run", async () => {
+    const due = Array.from({ length: 50 }, (_, i) => `m-${i}`);
+    const preClaimed = new Set(due.slice(0, 30));
+    const newly = new Set<string>();
+
+    const result = await processDueMembersWithQuota({
+      dueMemberIds: due,
+      limit: 10,
+      concurrency: 5,
+      tryClaimAndSend: async (memberId) => {
+        if (preClaimed.has(memberId)) return "already_claimed";
+        newly.add(memberId);
+        return "sent";
+      },
+    });
+
+    expect(result.alreadyClaimed).toBe(30);
+    expect(result.newlyClaimed).toBe(10);
+    expect(result.sent).toBe(10);
+    expect(newly.size).toBe(10);
+  });
 });
 
-describe("5＋5 migration 085", () => {
+describe("5＋5 migration 085 privileges + RPC", () => {
+  const sql = readFileSync(
+    resolve(process.cwd(), "supabase/migrations/085_five_plus_five_v1.sql"),
+    "utf8",
+  );
+
   it("D — unique member+date, nonneg checks, RLS downline select", () => {
-    const sql = readFileSync(
-      resolve(process.cwd(), "supabase/migrations/085_five_plus_five_v1.sql"),
-      "utf8",
-    );
     expect(sql).toContain("five_plus_five_reports_member_date_unique");
     expect(sql).toContain("fish_pool_count >= 0");
     expect(sql).toContain("invitation_five_steps_count >= 0");
     expect(sql).toContain("five_plus_five_reports_select_downline");
     expect(sql).toContain("organization_relationships");
-    expect(sql).toContain("five_plus_five_reports_update_own");
     expect(sql).not.toContain("five_plus_five_reports_update_downline");
+  });
+
+  it("authenticated cannot mutate; anon revoked; service_role mutates", () => {
+    expect(sql).toMatch(/grant select on table public\.five_plus_five_reports to authenticated/i);
+    expect(sql).toMatch(/revoke all on table public\.five_plus_five_reports from authenticated/i);
+    expect(sql).toMatch(/revoke all on table public\.five_plus_five_reports from anon/i);
+    expect(sql).toMatch(/grant all on table public\.five_plus_five_reports to service_role/i);
+    expect(sql).not.toMatch(/grant insert.*authenticated/i);
+    expect(sql).not.toMatch(/grant update.*authenticated/i);
+    expect(sql).not.toMatch(/grant delete.*authenticated/i);
+    // Mutation policies dropped / not present for authenticated writes
+    expect(sql).toContain('drop policy if exists "five_plus_five_reports_insert_own"');
+    expect(sql).toContain('drop policy if exists "five_plus_five_reports_update_own"');
+  });
+
+  it("aggregate RPC is service_role only (no PUBLIC/anon/authenticated execute)", () => {
+    expect(sql).toContain("get_five_plus_five_member_stats");
+    expect(sql).toContain("security definer");
+    expect(sql).toMatch(
+      /revoke all on function public\.get_five_plus_five_member_stats[\s\S]*from public/i,
+    );
+    expect(sql).toMatch(
+      /revoke all on function public\.get_five_plus_five_member_stats[\s\S]*from anon/i,
+    );
+    expect(sql).toMatch(
+      /revoke all on function public\.get_five_plus_five_member_stats[\s\S]*from authenticated/i,
+    );
+    expect(sql).toMatch(
+      /grant execute on function public\.get_five_plus_five_member_stats[\s\S]*to service_role/i,
+    );
+  });
+});
+
+describe("5＋5 stats aggregation (no full-history fetch)", () => {
+  it("uses RPC aggregate strategy constant", () => {
+    expect(STATS_FETCH_STRATEGY).toBe("rpc_aggregate_get_five_plus_five_member_stats");
+  });
+
+  it("buildMyStatsFromAggregates preserves history/streak/month on-time", () => {
+    const stats = buildMyStatsFromAggregates({
+      todayReport: report({
+        memberId: "m1",
+        reportDate: "2026-09-21",
+        fishPoolCount: 5,
+        invitationFiveStepsCount: 1,
+        submittedOnTime: true,
+      }),
+      week: { fishPool: 24, invitationFiveSteps: 4 },
+      month: { fishPool: 87, invitationFiveSteps: 16 },
+      history: { fishPool: 1284, invitationFiveSteps: 186 },
+      streakOnTimeDays: 12,
+      monthOnTimeDays: 18,
+      today: "2026-09-21",
+      memberName: "嘎嘎",
+      now: new Date("2026-09-21T10:00:00.000Z"),
+    });
+    expect(stats.history.fishPool).toBe(1284);
+    expect(stats.streakOnTimeDays).toBe(12);
+    expect(stats.monthElapsedDays).toBe(21);
+    expect(stats.monthOnTimeRatePercent).toBe(Math.round((18 / 21) * 100));
+    expect(stats.week.fishTarget).toBe(35);
+    expect(stats.week.invitationTarget).toBe(5);
   });
 });
 

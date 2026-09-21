@@ -39,7 +39,7 @@ async function handle(request: Request) {
       if (request.headers.get("content-type")?.includes("application/json")) {
         const body = (await request.json()) as { limit?: number };
         if (typeof body.limit === "number" && Number.isFinite(body.limit)) {
-          limit = Math.max(1, Math.min(200, Math.floor(body.limit)));
+          limit = Math.max(1, Math.min(500, Math.floor(body.limit)));
         }
       }
     } catch {
@@ -48,7 +48,9 @@ async function handle(request: Request) {
   }
 
   try {
-    const calendar = await processCalendarPushReminders({ limit });
+    const calendar = await processCalendarPushReminders({
+      limit: Math.min(200, limit),
+    });
     const fivePlusFive = await processFivePlusFivePushReminders({ limit });
 
     console.info(

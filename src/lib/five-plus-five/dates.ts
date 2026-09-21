@@ -25,13 +25,33 @@ export function computeSubmittedOnTime(reportDate: string, now: Date = new Date(
   return isReportDateStillOpen(reportDate, now);
 }
 
-/** Parse YYYY-MM-DD as a calendar date (no TZ shift). */
+/** Parse YYYY-MM-DD as a calendar date (no TZ shift). Rejects invalid calendars. */
+export function isValidISOCalendarDate(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  // Reconstruct via UTC and require round-trip (rejects 2026-02-31, 2026-00-00, etc.)
+  const utc = new Date(Date.UTC(y, m - 1, d));
+  return (
+    utc.getUTCFullYear() === y &&
+    utc.getUTCMonth() + 1 === m &&
+    utc.getUTCDate() === d
+  );
+}
+
 export function parseISODateParts(isoDate: string): { y: number; m: number; d: number } {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
-  if (!match) {
+  if (!isValidISOCalendarDate(isoDate)) {
     throw new Error(`Invalid ISO date: ${isoDate}`);
   }
-  return { y: Number(match[1]), m: Number(match[2]), d: Number(match[3]) };
+  return {
+    y: Number(isoDate.slice(0, 4)),
+    m: Number(isoDate.slice(5, 7)),
+    d: Number(isoDate.slice(8, 10)),
+  };
 }
 
 export function formatISODate(y: number, m: number, d: number): string {
