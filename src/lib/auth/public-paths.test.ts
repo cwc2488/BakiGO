@@ -30,6 +30,13 @@ describe("public-paths", () => {
     expect(isOpenPublicPath("/meta-review/data-deletion-status")).toBe(true);
   });
 
+  it("treats questionnaire survey routes as open public paths", () => {
+    expect(isOpenPublicPath("/survey/AB12CD34")).toBe(true);
+    expect(isOpenPublicPath("/survey/AB12CD34/")).toBe(true);
+    expect(isPublicPath("/questionnaire")).toBe(false);
+    expect(isPublicPath("/questionnaire/leads")).toBe(false);
+  });
+
   it("treats recruitment join routes as open public paths", () => {
     expect(isOpenPublicPath("/join/ABC123")).toBe(true);
     expect(isOpenPublicPath("/join/ABC123/")).toBe(true);

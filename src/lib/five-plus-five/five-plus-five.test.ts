@@ -40,6 +40,7 @@ import {
 } from "@/lib/push/push-worker-limits";
 import {
   buildMyStatsFromAggregates,
+  mapReportRow,
   normalizeCount,
   STATS_FETCH_STRATEGY,
 } from "@/lib/five-plus-five/service";
@@ -51,12 +52,20 @@ import { resolve } from "node:path";
 function report(
   partial: Partial<FivePlusFiveReportRow> & Pick<FivePlusFiveReportRow, "reportDate" | "memberId">,
 ): FivePlusFiveReportRow {
+  const fish = partial.fishPoolCount ?? 0;
+  const invite = partial.invitationFiveStepsCount ?? 0;
   return {
     id: partial.id ?? `id-${partial.reportDate}`,
     memberId: partial.memberId,
     reportDate: partial.reportDate,
-    fishPoolCount: partial.fishPoolCount ?? 0,
-    invitationFiveStepsCount: partial.invitationFiveStepsCount ?? 0,
+    fishPoolCount: fish,
+    invitationFiveStepsCount: invite,
+    manualFishPoolCount: partial.manualFishPoolCount ?? fish,
+    questionnaireFishPoolCount: partial.questionnaireFishPoolCount ?? 0,
+    manualInvitationFiveStepsCount: partial.manualInvitationFiveStepsCount ?? invite,
+    questionnaireInvitationFiveStepsCount: partial.questionnaireInvitationFiveStepsCount ?? 0,
+    hasUserSubmitted: partial.hasUserSubmitted ?? true,
+    userSubmittedAt: partial.userSubmittedAt ?? partial.firstSubmittedAt ?? "2026-09-21T10:00:00.000Z",
     firstSubmittedAt: partial.firstSubmittedAt ?? "2026-09-21T10:00:00.000Z",
     updatedAt: partial.updatedAt ?? "2026-09-21T10:00:00.000Z",
     submittedOnTime: partial.submittedOnTime ?? true,
@@ -606,6 +615,124 @@ describe("5＋5 migration 085 privileges + RPC", () => {
     expect(sql).toMatch(
       /grant execute on function public\.get_five_plus_five_member_stats[\s\S]*to service_role/i,
     );
+  });
+});
+
+describe("5＋5 migration 086 questionnaire components + has_user_submitted", () => {
+  const sql = readFileSync(
+    resolve(process.cwd(), "supabase/migrations/086_questionnaire_development_v1.sql"),
+    "utf8",
+  );
+
+  it("splits manual vs questionnaire counts; backfills existing as manual", () => {
+    expect(sql).toContain("manual_fish_pool_count");
+    expect(sql).toContain("questionnaire_fish_pool_count");
+    expect(sql).toContain("manual_invitation_five_steps_count");
+    expect(sql).toContain("questionnaire_invitation_five_steps_count");
+    expect(sql).toContain("has_user_submitted");
+    expect(sql).toContain("user_submitted_at");
+    expect(sql).toContain("manual_fish_pool_count = coalesce(manual_fish_pool_count, fish_pool_count)");
+    expect(sql).toContain(
+      "manual_invitation_five_steps_count = coalesce(manual_invitation_five_steps_count, invitation_five_steps_count)",
+    );
+  });
+
+  it("RPC credits preserve has_user_submitted=false for auto-only rows", () => {
+    expect(sql).toContain("_five_plus_five_credit_questionnaire_fish");
+    expect(sql).toContain("has_user_submitted");
+    expect(sql).toMatch(/has_user_submitted,\s*[\s\S]*false/i);
+    expect(sql).toContain("revoke all on function public._five_plus_five_credit_questionnaire_fish");
+    expect(sql).toContain("start_questionnaire_lead_invitation_v1");
+  });
+
+  it("stats RPC on-time/streak require has_user_submitted", () => {
+    expect(sql).toContain("case when has_user_submitted and submitted_on_time then 1 else 0 end");
+    expect(sql).toContain("v_has_user_today");
+  });
+});
+
+describe("5＋5 questionnaire auto-credit does not fake 已回報", () => {
+  it("questionnaire-only row → not_yet_reported; totals still visible", () => {
+    const autoOnly = report({
+      memberId: "m1",
+      reportDate: "2026-09-21",
+      fishPoolCount: 1,
+      manualFishPoolCount: 0,
+      questionnaireFishPoolCount: 1,
+      invitationFiveStepsCount: 0,
+      hasUserSubmitted: false,
+      userSubmittedAt: null,
+      submittedOnTime: false,
+    });
+    expect(
+      resolveDayStatus({
+        reportDate: "2026-09-21",
+        report: autoOnly,
+        today: "2026-09-21",
+        fishDailyTarget: 5,
+        now: new Date("2026-09-21T10:00:00.000Z"),
+      }),
+    ).toBe("not_yet_reported");
+
+    const stats = buildMyStatsFromAggregates({
+      todayReport: autoOnly,
+      week: { fishPool: 1, invitationFiveSteps: 0 },
+      month: { fishPool: 1, invitationFiveSteps: 0 },
+      history: { fishPool: 1, invitationFiveSteps: 0 },
+      streakOnTimeDays: 0,
+      monthOnTimeDays: 0,
+      today: "2026-09-21",
+      memberName: "測試",
+      now: new Date("2026-09-21T10:00:00.000Z"),
+    });
+    expect(stats.today.hasReport).toBe(false);
+    expect(stats.today.fishPool).toBe(1);
+    expect(stats.today.questionnaireFishPool).toBe(1);
+    expect(stats.today.manualFishPool).toBe(0);
+    expect(stats.today.status).toBe("not_yet_reported");
+  });
+
+  it("streak ignores questionnaire-only auto row for today", () => {
+    const streak = calculateOnTimeStreak(
+      [
+        report({
+          memberId: "m1",
+          reportDate: "2026-09-20",
+          submittedOnTime: true,
+          hasUserSubmitted: true,
+        }),
+        report({
+          memberId: "m1",
+          reportDate: "2026-09-21",
+          fishPoolCount: 1,
+          questionnaireFishPoolCount: 1,
+          hasUserSubmitted: false,
+          submittedOnTime: false,
+        }),
+      ],
+      "2026-09-21",
+      new Date("2026-09-21T10:00:00.000Z"),
+    );
+    expect(streak).toBe(1);
+  });
+
+  it("mapReportRow defaults pre-086 rows as fully manual + user submitted", () => {
+    const mapped = mapReportRow({
+      id: "r1",
+      member_id: "m1",
+      report_date: "2026-09-20",
+      fish_pool_count: 5,
+      invitation_five_steps_count: 2,
+      first_submitted_at: "2026-09-20T01:00:00.000Z",
+      updated_at: "2026-09-20T01:00:00.000Z",
+      submitted_on_time: true,
+      created_at: "2026-09-20T01:00:00.000Z",
+    });
+    expect(mapped.manualFishPoolCount).toBe(5);
+    expect(mapped.questionnaireFishPoolCount).toBe(0);
+    expect(mapped.manualInvitationFiveStepsCount).toBe(2);
+    expect(mapped.questionnaireInvitationFiveStepsCount).toBe(0);
+    expect(mapped.hasUserSubmitted).toBe(true);
   });
 });
 

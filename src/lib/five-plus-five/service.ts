@@ -38,6 +38,12 @@ type DbReportRow = {
   report_date: string;
   fish_pool_count: number;
   invitation_five_steps_count: number;
+  manual_fish_pool_count?: number | null;
+  questionnaire_fish_pool_count?: number | null;
+  manual_invitation_five_steps_count?: number | null;
+  questionnaire_invitation_five_steps_count?: number | null;
+  has_user_submitted?: boolean | null;
+  user_submitted_at?: string | null;
   first_submitted_at: string;
   updated_at: string;
   submitted_on_time: boolean;
@@ -58,12 +64,33 @@ type RpcStatsPayload = {
 };
 
 export function mapReportRow(row: DbReportRow): FivePlusFiveReportRow {
+  const manualFish =
+    row.manual_fish_pool_count != null ? Number(row.manual_fish_pool_count) : Number(row.fish_pool_count);
+  const qFish =
+    row.questionnaire_fish_pool_count != null ? Number(row.questionnaire_fish_pool_count) : 0;
+  const manualInvite =
+    row.manual_invitation_five_steps_count != null
+      ? Number(row.manual_invitation_five_steps_count)
+      : Number(row.invitation_five_steps_count);
+  const qInvite =
+    row.questionnaire_invitation_five_steps_count != null
+      ? Number(row.questionnaire_invitation_five_steps_count)
+      : 0;
+  const hasUserSubmitted =
+    row.has_user_submitted == null ? true : Boolean(row.has_user_submitted);
+
   return {
     id: row.id,
     memberId: row.member_id,
     reportDate: row.report_date,
-    fishPoolCount: row.fish_pool_count,
-    invitationFiveStepsCount: row.invitation_five_steps_count,
+    fishPoolCount: Number(row.fish_pool_count),
+    invitationFiveStepsCount: Number(row.invitation_five_steps_count),
+    manualFishPoolCount: manualFish,
+    questionnaireFishPoolCount: qFish,
+    manualInvitationFiveStepsCount: manualInvite,
+    questionnaireInvitationFiveStepsCount: qInvite,
+    hasUserSubmitted,
+    userSubmittedAt: row.user_submitted_at ? String(row.user_submitted_at) : null,
     firstSubmittedAt: row.first_submitted_at,
     updatedAt: row.updated_at,
     submittedOnTime: row.submitted_on_time,
@@ -208,7 +235,7 @@ export function buildMyStatsFromAggregates(input: {
   const weekRange = getBusinessWeekRange(input.today);
   const todayFish = input.todayReport?.fishPoolCount ?? 0;
   const todayInvite = input.todayReport?.invitationFiveStepsCount ?? 0;
-  const hasReport = Boolean(input.todayReport);
+  const hasReport = Boolean(input.todayReport?.hasUserSubmitted);
   const elapsedDays = daysElapsedInMonthThrough(input.today);
   const monthOnTimeRatePercent =
     elapsedDays <= 0 ? 0 : Math.round((input.monthOnTimeDays / elapsedDays) * 100);
@@ -227,8 +254,15 @@ export function buildMyStatsFromAggregates(input: {
         fishDailyTarget: targets.fishPoolDaily,
         now,
       }),
-      submittedOnTime: input.todayReport?.submittedOnTime ?? null,
-      firstSubmittedAt: input.todayReport?.firstSubmittedAt ?? null,
+      submittedOnTime: hasReport ? (input.todayReport?.submittedOnTime ?? null) : null,
+      firstSubmittedAt: hasReport
+        ? (input.todayReport?.userSubmittedAt ?? input.todayReport?.firstSubmittedAt ?? null)
+        : null,
+      manualFishPool: input.todayReport?.manualFishPoolCount ?? 0,
+      questionnaireFishPool: input.todayReport?.questionnaireFishPoolCount ?? 0,
+      manualInvitationFiveSteps: input.todayReport?.manualInvitationFiveStepsCount ?? 0,
+      questionnaireInvitationFiveSteps:
+        input.todayReport?.questionnaireInvitationFiveStepsCount ?? 0,
     },
     week: {
       ...input.week,
@@ -340,8 +374,12 @@ export async function getMyStats(
 export async function upsertMyReport(input: {
   memberId: string;
   reportDate: string;
-  fishPoolCount: number;
-  invitationFiveStepsCount: number;
+  /** Manual component only — preferred. */
+  manualFishPoolCount?: number;
+  manualInvitationFiveStepsCount?: number;
+  /** Legacy keys accepted as manual counts. */
+  fishPoolCount?: number;
+  invitationFiveStepsCount?: number;
   now?: Date;
 }): Promise<FivePlusFiveReportRow> {
   const now = input.now ?? new Date();
@@ -355,9 +393,16 @@ export async function upsertMyReport(input: {
     throw new FivePlusFiveServiceError("Cannot report future dates", 400);
   }
 
-  const fish = normalizeCount(input.fishPoolCount);
-  const invite = normalizeCount(input.invitationFiveStepsCount);
-  if (fish === null || invite === null) {
+  const manualFishRaw =
+    input.manualFishPoolCount !== undefined ? input.manualFishPoolCount : input.fishPoolCount;
+  const manualInviteRaw =
+    input.manualInvitationFiveStepsCount !== undefined
+      ? input.manualInvitationFiveStepsCount
+      : input.invitationFiveStepsCount;
+
+  const manualFish = normalizeCount(manualFishRaw);
+  const manualInvite = normalizeCount(manualInviteRaw);
+  if (manualFish === null || manualInvite === null) {
     throw new FivePlusFiveServiceError("Counts must be integers >= 0", 400);
   }
 
@@ -377,17 +422,37 @@ export async function upsertMyReport(input: {
   }
 
   const nowIso = now.toISOString();
+  const existingMapped = existing ? mapReportRow(existing as DbReportRow) : null;
+  const qFish = existingMapped?.questionnaireFishPoolCount ?? 0;
+  const qInvite = existingMapped?.questionnaireInvitationFiveStepsCount ?? 0;
+  const totalFish = manualFish + qFish;
+  const totalInvite = manualInvite + qInvite;
 
-  if (existing) {
-    // Preserve first_submitted_at and submitted_on_time (first submit wins)
+  if (existingMapped) {
+    const alreadyUserSubmitted = existingMapped.hasUserSubmitted;
+    const updatePayload: Record<string, unknown> = {
+      manual_fish_pool_count: manualFish,
+      manual_invitation_five_steps_count: manualInvite,
+      fish_pool_count: totalFish,
+      invitation_five_steps_count: totalInvite,
+      // Preserve questionnaire components explicitly
+      questionnaire_fish_pool_count: qFish,
+      questionnaire_invitation_five_steps_count: qInvite,
+      updated_at: nowIso,
+    };
+
+    if (!alreadyUserSubmitted) {
+      // First formal user submit — do not treat questionnaire auto row as prior submit
+      updatePayload.has_user_submitted = true;
+      updatePayload.user_submitted_at = nowIso;
+      updatePayload.submitted_on_time = isToday && computeSubmittedOnTime(input.reportDate, now);
+      // Keep first_submitted_at as technical row time; user_submitted_at is authoritative
+    }
+
     const { data, error } = await supabase
       .from("five_plus_five_reports")
-      .update({
-        fish_pool_count: fish,
-        invitation_five_steps_count: invite,
-        updated_at: nowIso,
-      })
-      .eq("id", existing.id)
+      .update(updatePayload)
+      .eq("id", existingMapped.id)
       .eq("member_id", input.memberId)
       .select("*")
       .single();
@@ -402,9 +467,15 @@ export async function upsertMyReport(input: {
     .insert({
       member_id: input.memberId,
       report_date: input.reportDate,
-      fish_pool_count: fish,
-      invitation_five_steps_count: invite,
+      manual_fish_pool_count: manualFish,
+      questionnaire_fish_pool_count: 0,
+      manual_invitation_five_steps_count: manualInvite,
+      questionnaire_invitation_five_steps_count: 0,
+      fish_pool_count: manualFish,
+      invitation_five_steps_count: manualInvite,
       first_submitted_at: nowIso,
+      user_submitted_at: nowIso,
+      has_user_submitted: true,
       updated_at: nowIso,
       submitted_on_time: submittedOnTime,
       created_at: nowIso,
@@ -414,15 +485,41 @@ export async function upsertMyReport(input: {
 
   if (error) {
     if (error.code === "23505") {
-      const { data: raced, error: raceErr } = await supabase
+      const { data: racedExisting, error: raceLookupErr } = await supabase
         .from("five_plus_five_reports")
-        .update({
-          fish_pool_count: fish,
-          invitation_five_steps_count: invite,
-          updated_at: nowIso,
-        })
+        .select("*")
         .eq("member_id", input.memberId)
         .eq("report_date", input.reportDate)
+        .maybeSingle();
+      if (raceLookupErr || !racedExisting) {
+        throw new FivePlusFiveServiceError(
+          raceLookupErr?.message ?? "Race update failed",
+          500,
+        );
+      }
+      const racedMapped = mapReportRow(racedExisting as DbReportRow);
+      const racedQFish = racedMapped.questionnaireFishPoolCount;
+      const racedQInvite = racedMapped.questionnaireInvitationFiveStepsCount;
+      const racedUpdate: Record<string, unknown> = {
+        manual_fish_pool_count: manualFish,
+        manual_invitation_five_steps_count: manualInvite,
+        fish_pool_count: manualFish + racedQFish,
+        invitation_five_steps_count: manualInvite + racedQInvite,
+        questionnaire_fish_pool_count: racedQFish,
+        questionnaire_invitation_five_steps_count: racedQInvite,
+        updated_at: nowIso,
+      };
+      if (!racedMapped.hasUserSubmitted) {
+        racedUpdate.has_user_submitted = true;
+        racedUpdate.user_submitted_at = nowIso;
+        racedUpdate.submitted_on_time =
+          isToday && computeSubmittedOnTime(input.reportDate, now);
+      }
+      const { data: raced, error: raceErr } = await supabase
+        .from("five_plus_five_reports")
+        .update(racedUpdate)
+        .eq("id", racedMapped.id)
+        .eq("member_id", input.memberId)
         .select("*")
         .single();
       if (raceErr) throw new FivePlusFiveServiceError(raceErr.message, 500);
@@ -477,11 +574,15 @@ export async function getOrganizationSummary(
       todayInvitation: todayReport?.invitationFiveStepsCount ?? null,
       weekInvitation: weekTotals.invitationFiveSteps,
       weekFish: weekTotals.fishPool,
-      hasTodayReport: Boolean(todayReport),
-      todayFishMet: Boolean(todayReport && todayReport.fishPoolCount >= targets.fishPoolDaily),
+      hasTodayReport: Boolean(todayReport?.hasUserSubmitted),
+      todayFishMet: Boolean(
+        todayReport?.hasUserSubmitted && todayReport.fishPoolCount >= targets.fishPoolDaily,
+      ),
       weekInvitationMet: weekTotals.invitationFiveSteps >= targets.invitationFiveStepsWeekly,
       todayStatus: status,
-      submittedOnTime: todayReport?.submittedOnTime ?? null,
+      submittedOnTime: todayReport?.hasUserSubmitted
+        ? (todayReport.submittedOnTime ?? null)
+        : null,
     };
   });
 

@@ -28,24 +28,37 @@ export async function fetchMyFivePlusFive(): Promise<{
 
 export async function upsertMyFivePlusFive(input: {
   reportDate?: string;
-  fishPoolCount: number;
-  invitationFiveStepsCount: number;
+  manualFishPoolCount: number;
+  manualInvitationFiveStepsCount: number;
 }): Promise<{ report: FivePlusFiveReportRow; stats: FivePlusFiveMyStats }> {
   const res = await fetchWithMemberAuth("/api/5plus5/me", {
     method: "PUT",
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      reportDate: input.reportDate,
+      manualFishPoolCount: input.manualFishPoolCount,
+      manualInvitationFiveStepsCount: input.manualInvitationFiveStepsCount,
+      // Legacy keys for older clients / temporary compat
+      fishPoolCount: input.manualFishPoolCount,
+      invitationFiveStepsCount: input.manualInvitationFiveStepsCount,
+    }),
   });
   return parseJson(res);
 }
 
 export async function backfillFivePlusFive(input: {
   reportDate: string;
-  fishPoolCount: number;
-  invitationFiveStepsCount: number;
+  manualFishPoolCount: number;
+  manualInvitationFiveStepsCount: number;
 }): Promise<{ report: FivePlusFiveReportRow; stats: FivePlusFiveMyStats }> {
   const res = await fetchWithMemberAuth("/api/5plus5/backfill", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      reportDate: input.reportDate,
+      manualFishPoolCount: input.manualFishPoolCount,
+      manualInvitationFiveStepsCount: input.manualInvitationFiveStepsCount,
+      fishPoolCount: input.manualFishPoolCount,
+      invitationFiveStepsCount: input.manualInvitationFiveStepsCount,
+    }),
   });
   return parseJson(res);
 }

@@ -73,6 +73,7 @@ type TodayReportLite = {
   member_id: string;
   fish_pool_count: number;
   invitation_five_steps_count: number;
+  has_user_submitted?: boolean | null;
 };
 
 async function loadTodayReports(
@@ -89,7 +90,7 @@ async function loadTodayReports(
     const chunk = memberIds.slice(i, i + chunkSize);
     const { data, error } = await supabase
       .from("five_plus_five_reports")
-      .select("member_id, fish_pool_count, invitation_five_steps_count")
+      .select("member_id, fish_pool_count, invitation_five_steps_count, has_user_submitted")
       .eq("report_date", today)
       .in("member_id", chunk);
     if (error) {
@@ -179,10 +180,12 @@ export function collectDueFivePlusFiveMemberIds(input: {
   const due: string[] = [];
   for (const memberId of input.memberIds) {
     const report = input.todayReports.get(memberId);
+    const hasUserSubmitted =
+      report == null ? false : report.has_user_submitted == null ? true : Boolean(report.has_user_submitted);
     if (
       shouldNotifyFivePlusFive({
         slot: input.slot,
-        hasTodayReport: Boolean(report),
+        hasTodayReport: hasUserSubmitted,
         fishPoolCount: report?.fish_pool_count ?? 0,
         fishDailyTarget: input.fishDailyTarget,
       })

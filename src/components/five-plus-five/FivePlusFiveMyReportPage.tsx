@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { FivePlusFiveShell } from "@/components/five-plus-five/FivePlusFiveShell";
 import { NumberStepper } from "@/components/five-plus-five/NumberStepper";
@@ -16,8 +17,8 @@ import type { FivePlusFiveMyStats } from "@/types/five-plus-five";
 
 export default function FivePlusFiveMyReportPage() {
   const [stats, setStats] = useState<FivePlusFiveMyStats | null>(null);
-  const [fish, setFish] = useState(0);
-  const [invite, setInvite] = useState(0);
+  const [manualFish, setManualFish] = useState(0);
+  const [manualInvite, setManualInvite] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,8 +33,8 @@ export default function FivePlusFiveMyReportPage() {
     try {
       const result = await fetchMyFivePlusFive();
       setStats(result.stats);
-      setFish(result.todayReport?.fishPoolCount ?? 0);
-      setInvite(result.todayReport?.invitationFiveStepsCount ?? 0);
+      setManualFish(result.todayReport?.manualFishPoolCount ?? 0);
+      setManualInvite(result.todayReport?.manualInvitationFiveStepsCount ?? 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "載入失敗");
     } finally {
@@ -56,10 +57,12 @@ export default function FivePlusFiveMyReportPage() {
     setError(null);
     try {
       const result = await upsertMyFivePlusFive({
-        fishPoolCount: fish,
-        invitationFiveStepsCount: invite,
+        manualFishPoolCount: manualFish,
+        manualInvitationFiveStepsCount: manualInvite,
       });
       setStats(result.stats);
+      setManualFish(result.report.manualFishPoolCount);
+      setManualInvite(result.report.manualInvitationFiveStepsCount);
       setToast("已完成今日回報");
     } catch (err) {
       setError(err instanceof Error ? err.message : "儲存失敗");
@@ -78,8 +81,8 @@ export default function FivePlusFiveMyReportPage() {
     try {
       const result = await backfillFivePlusFive({
         reportDate: backfillDate,
-        fishPoolCount: backfillFish,
-        invitationFiveStepsCount: backfillInvite,
+        manualFishPoolCount: backfillFish,
+        manualInvitationFiveStepsCount: backfillInvite,
       });
       setStats(result.stats);
       setBackfillOpen(false);
@@ -100,6 +103,12 @@ export default function FivePlusFiveMyReportPage() {
 
   const hasReport = Boolean(stats?.today.hasReport);
   const subtitle = stats ? formatShortDisplayDate(stats.todayDate) : undefined;
+  const qFish = stats?.today.questionnaireFishPool ?? 0;
+  const qInvite = stats?.today.questionnaireInvitationFiveSteps ?? 0;
+  const totalFish = (stats?.today.fishPool ?? manualFish + qFish);
+  const fishTarget = stats?.today.fishTarget ?? 5;
+  const weekInvite = stats?.week.invitationFiveSteps ?? 0;
+  const weekInviteTarget = stats?.week.invitationTarget ?? 5;
 
   return (
     <FivePlusFiveShell subtitle={subtitle}>
@@ -113,9 +122,33 @@ export default function FivePlusFiveMyReportPage() {
 
       {!loading && stats ? (
         <>
-          <section className="space-y-3">
-            <NumberStepper label="🐟 今日魚池新增" value={fish} onChange={setFish} />
-            <NumberStepper label="🎯 今日進入邀約5步驟" value={invite} onChange={setInvite} />
+          <section className="space-y-4">
+            <div className="space-y-3 rounded-[1.25rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] p-4">
+              <h2 className="text-[0.9375rem] font-semibold text-[var(--brand-text)]">🐟 今日魚池</h2>
+              <p className="text-[0.875rem] text-[var(--brand-text-secondary)]">
+                問卷自動帶入：+{qFish}
+              </p>
+              <NumberStepper label="其他新增" value={manualFish} onChange={setManualFish} />
+              <p className="text-[0.9375rem] font-medium text-[var(--brand-text)]">
+                今日合計：{totalFish} / {fishTarget}
+              </p>
+            </div>
+
+            <div className="space-y-3 rounded-[1.25rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] p-4">
+              <h2 className="text-[0.9375rem] font-semibold text-[var(--brand-text)]">🎯 邀約5步驟</h2>
+              <p className="text-[0.875rem] text-[var(--brand-text-secondary)]">
+                問卷名單自動帶入：+{qInvite}
+              </p>
+              <NumberStepper
+                label="其他進入邀約5步驟"
+                value={manualInvite}
+                onChange={setManualInvite}
+              />
+              <p className="text-[0.9375rem] font-medium text-[var(--brand-text)]">
+                本週：{weekInvite} / {weekInviteTarget}
+              </p>
+            </div>
+
             <button
               type="button"
               disabled={saving}
@@ -124,6 +157,12 @@ export default function FivePlusFiveMyReportPage() {
             >
               {saving ? "儲存中…" : hasReport ? "更新今日回報" : "完成今日回報"}
             </button>
+            <Link
+              href="/questionnaire"
+              className="flex min-h-11 w-full items-center justify-center rounded-[0.875rem] border border-[var(--brand-border)] text-[0.9375rem] font-semibold text-[var(--brand-text-secondary)]"
+            >
+              去做問卷
+            </Link>
             <button
               type="button"
               onClick={() => setBackfillOpen((v) => !v)}
@@ -137,7 +176,7 @@ export default function FivePlusFiveMyReportPage() {
             <section className="space-y-3 rounded-[1.25rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] p-4">
               <p className="text-[0.875rem] font-semibold text-[var(--brand-text)]">補登過去日期</p>
               <p className="text-[0.75rem] text-[var(--brand-text-muted)]">
-                補登會計入週／月／歷史，但不會修復連續準時回報。
+                補登會計入週／月／歷史，但不會修復連續準時回報。問卷自動帶入不會被覆蓋。
               </p>
               <input
                 type="date"
@@ -146,9 +185,9 @@ export default function FivePlusFiveMyReportPage() {
                 onChange={(e) => setBackfillDate(e.target.value)}
                 className="w-full rounded-xl border border-[var(--brand-border)] px-3 py-2.5 text-[0.9375rem]"
               />
-              <NumberStepper label="🐟 魚池" value={backfillFish} onChange={setBackfillFish} />
+              <NumberStepper label="🐟 其他魚池" value={backfillFish} onChange={setBackfillFish} />
               <NumberStepper
-                label="🎯 邀約5步驟"
+                label="🎯 其他邀約5步驟"
                 value={backfillInvite}
                 onChange={setBackfillInvite}
               />
@@ -200,28 +239,16 @@ export default function FivePlusFiveMyReportPage() {
               <p className="text-[0.9375rem] text-[var(--brand-text)]">
                 🎯 邀約5步驟 +{stats.month.invitationFiveSteps.toLocaleString("en-US")}
               </p>
-            </div>
-            <div>
-              <h2 className="text-[0.8125rem] font-semibold tracking-[0.04em] text-[var(--brand-text-muted)]">
-                歷史
-              </h2>
-              <p className="mt-2 text-[0.9375rem] text-[var(--brand-text)]">
-                🐟 魚池 +{stats.history.fishPool.toLocaleString("en-US")}
+              <p className="mt-2 text-[0.8125rem] text-[var(--brand-text-muted)]">
+                準時率 {stats.monthOnTimeRatePercent}% · 連續準時 {stats.streakOnTimeDays} 天
               </p>
-              <p className="text-[0.9375rem] text-[var(--brand-text)]">
-                🎯 邀約5步驟 +{stats.history.invitationFiveSteps.toLocaleString("en-US")}
-              </p>
-            </div>
-            <div className="border-t border-[var(--brand-border)]/70 pt-4 text-[0.9375rem] text-[var(--brand-text)]">
-              <p>🔥 連續準時回報：{stats.streakOnTimeDays} 天</p>
-              <p className="mt-1">📈 本月準時回報率：{stats.monthOnTimeRatePercent}%</p>
             </div>
           </section>
 
           <button
             type="button"
             onClick={() => void copyReport()}
-            className="flex min-h-12 w-full items-center justify-center rounded-[1rem] border border-[var(--brand-border)] bg-[var(--brand-surface)] text-[0.9375rem] font-semibold text-[var(--brand-text)]"
+            className="flex min-h-11 w-full items-center justify-center rounded-[0.875rem] border border-[var(--brand-border)] text-[0.9375rem] font-semibold"
           >
             📋 複製今日戰報
           </button>
@@ -229,9 +256,9 @@ export default function FivePlusFiveMyReportPage() {
       ) : null}
 
       {toast ? (
-        <div className="fixed inset-x-4 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] z-[120] mx-auto max-w-md rounded-2xl bg-[#1d1d1f] px-4 py-3 text-center text-[0.875rem] font-medium text-white shadow-lg md:bottom-8">
+        <p className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-full bg-[var(--brand-text)] px-4 py-2 text-[0.8125rem] text-white shadow-lg">
           {toast}
-        </div>
+        </p>
       ) : null}
     </FivePlusFiveShell>
   );

@@ -23,6 +23,26 @@ function errorResponse(error: unknown) {
   return NextResponse.json({ error: "Internal error" }, { status: 500 });
 }
 
+function resolveManualCounts(payload: {
+  manualFishPoolCount?: number;
+  manualInvitationFiveStepsCount?: number;
+  fishPoolCount?: number;
+  invitationFiveStepsCount?: number;
+}): { manualFishPoolCount: number; manualInvitationFiveStepsCount: number } {
+  const manualFish =
+    payload.manualFishPoolCount !== undefined
+      ? Number(payload.manualFishPoolCount)
+      : Number(payload.fishPoolCount);
+  const manualInvite =
+    payload.manualInvitationFiveStepsCount !== undefined
+      ? Number(payload.manualInvitationFiveStepsCount)
+      : Number(payload.invitationFiveStepsCount);
+  return {
+    manualFishPoolCount: manualFish,
+    manualInvitationFiveStepsCount: manualInvite,
+  };
+}
+
 export async function GET(request: Request) {
   const memberId = await getMemberIdFromRequest(request);
   if (!memberId) {
@@ -51,16 +71,19 @@ export async function PUT(request: Request) {
 
   const payload = body as {
     reportDate?: string;
+    manualFishPoolCount?: number;
+    manualInvitationFiveStepsCount?: number;
     fishPoolCount?: number;
     invitationFiveStepsCount?: number;
   };
 
   try {
+    const counts = resolveManualCounts(payload);
     const report = await upsertMyReport({
       memberId,
       reportDate: payload.reportDate ?? fivePlusFiveToday(),
-      fishPoolCount: Number(payload.fishPoolCount),
-      invitationFiveStepsCount: Number(payload.invitationFiveStepsCount),
+      manualFishPoolCount: counts.manualFishPoolCount,
+      manualInvitationFiveStepsCount: counts.manualInvitationFiveStepsCount,
     });
     const { stats } = await getMyStats(memberId);
     return NextResponse.json({ report, stats });

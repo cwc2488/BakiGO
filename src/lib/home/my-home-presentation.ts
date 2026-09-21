@@ -7,6 +7,7 @@ import type { Priority } from "@/types/president-ai";
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import type { DailyActionSnapshot } from "@/types/daily-action";
 import { formatDailyActionProgress } from "@/lib/daily-action/daily-action-selectors";
+import { resolveQuestionnaireTargets } from "@/lib/questionnaire/rules";
 
 const INTERNAL_COPY_PATTERNS = [
   /\bVP Sprint\b/i,
@@ -225,11 +226,18 @@ export function buildHomeProgressView(
 export type HomeBusinessEntry = {
   href: string;
   title: string;
-  iconKey: "goals" | "organization" | "retail" | "leaderboard" | "learning";
+  subtitle?: string;
+  iconKey: "goals" | "organization" | "retail" | "leaderboard" | "learning" | "questionnaire";
 };
 
 /** Max 5 primary business navigation entries. */
 export const MY_HOME_BUSINESS_ENTRIES: HomeBusinessEntry[] = [
+  {
+    href: "/questionnaire",
+    title: "問卷開發",
+    subtitle: `每天完成 ${resolveQuestionnaireTargets().dailyValidNewLeads} 份問卷`,
+    iconKey: "questionnaire",
+  },
   { href: "/organization", title: "我的組織", iconKey: "organization" },
   { href: "/retail-house", title: "零售屋", iconKey: "retail" },
   { href: "/learning", title: "學習", iconKey: "learning" },

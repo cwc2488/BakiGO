@@ -930,6 +930,55 @@ UI 必須渲染 Rule Engine / service 輸出的 targets，禁止在元件內硬�
 - 20:00 Asia/Taipei：尚未回報 **或** 已回報但魚池 < 5
 - 23:00 Asia/Taipei：僅尚未回報
 
+### Component counts（migration 086+）
+
+`five_plus_five_reports` totals are authoritative sums:
+
+- `fish_pool_count = manual_fish_pool_count + questionnaire_fish_pool_count`
+- `invitation_five_steps_count = manual_invitation_five_steps_count + questionnaire_invitation_five_steps_count`
+
+Client / UI steppers may only edit **manual_*** fields. Questionnaire auto credits must never be overwritten by daily report edits.
+
+### User-submitted vs auto-credit rows
+
+- `has_user_submitted` / `user_submitted_at` mark that the member pressed「完成今日回報」
+- Questionnaire-only auto credit rows: `has_user_submitted = false` — **不得**視為今日已回報；不得計入準時率 / streak
+- Streak / 準時 / 今日已回報：一律依 `has_user_submitted`，不是 row exists
+
+## 問卷開發（V1）
+
+正式名稱：**問卷開發**。陌生開發破冰工具 + 個人問卷名單 + 與 5＋5 自動連動。
+
+**不是共用 CRM。** 每位夥伴只管理自己的問卷名單。V1 上線不可查看下線問卷名單的姓名／LINE／IG／電話／完整答案。
+
+### Targets（Priority 0）
+
+| Rule key | Target |
+|----------|--------|
+| `questionnaire.daily_valid_new_leads` | **3** 份 / day（Asia/Taipei） |
+
+「今日有效問卷」= 今天第一次成為 unique valid lead 且 `fish_credited_at` 落在今天（不是 response 次數）。
+
+### Valid questionnaire
+
+Q1–Q6 完整、display name、contact type + value、consent accepted、server validation pass。
+
+### Dedup / fish credit
+
+- Fingerprint = SHA-256(`owner_member_id` + `contact_type` + normalized contact)
+- UNIQUE `(owner_member_id, contact_fingerprint)`
+- 第一次 unique lead：🐟 魚池 questionnaire component +1（atomic）
+- 同一人再填：新增 response、更新 lead；不再 + 魚池、不計入今日有效新問卷
+
+### Invitation five-steps credit
+
+「開始邀約5步驟」確認後：status → `invitation_started`；若 `invitation_credited_at` 為 null 才 +1 questionnaire invitation component（一生一次）。
+
+### Public routes
+
+- `/survey/[code]` — 不顯示 Bottom Nav / 後台資料
+- ownership 由 `share_code → owner_member_id` server resolve；不信任 client owner id
+
 ## Change Log
 
 | Date | Change | Author |
@@ -950,3 +999,5 @@ UI 必須渲染 Rule Engine / service 輸出的 targets，禁止在元件內硬�
 | 2026-08-24 | RADAR-SEMANTIC-01 — candidate understanding, language eligibility, next-day region preference | — |
 | 2026-08-24 | RADAR-FEEDBACK-01 — member 👍/👎 evaluation evidence; no auto-learning | — |
 | 2026-09-21 | 5＋5 行動 V1 — fish pool daily 5 + invitation five-steps weekly 5 | — |
+| 2026-09-21 | 問卷開發 V1 — daily valid new leads 3；5＋5 manual/questionnaire components + has_user_submitted | — |
+| 2026-09-21 | 問卷開發 V1 — daily valid new leads 3；5＋5 manual/questionnaire components + has_user_submitted | — |
