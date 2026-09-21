@@ -9,7 +9,6 @@ import {
   QUESTIONNAIRE_LEAD_STATUSES,
   QUESTIONNAIRE_LIMITS,
   QUESTIONNAIRE_PUBLIC_COPY,
-  QUESTIONNAIRE_STATUS_SORT_ORDER,
   allowedQuestionnaireStatusActions,
   type QuestionnaireLeadStatusPatch,
   type QuestionnairePublicSubmitInput,
@@ -390,13 +389,6 @@ function mapResponse(row: Record<string, unknown>): QuestionnaireResponseView {
   };
 }
 
-function sortLeadsForList(a: QuestionnaireLeadSummary, b: QuestionnaireLeadSummary): number {
-  const orderA = QUESTIONNAIRE_STATUS_SORT_ORDER[a.status] ?? 99;
-  const orderB = QUESTIONNAIRE_STATUS_SORT_ORDER[b.status] ?? 99;
-  if (orderA !== orderB) return orderA - orderB;
-  return b.lastResponseAt.localeCompare(a.lastResponseAt);
-}
-
 function taipeiDayBounds(isoDate: string): { startIso: string; endIso: string } {
   // Asia/Taipei = UTC+8; day [00:00, next 00:00)
   const startIso = new Date(`${isoDate}T00:00:00+08:00`).toISOString();
@@ -516,7 +508,7 @@ export async function listQuestionnaireLeads(input: {
   const page = Math.max(1, input.page ?? 1);
   const pageSize = QUESTIONNAIRE_RULES.leadsPageSize;
   const from = (page - 1) * pageSize;
-  const to = from + pageSize; // fetch one extra to detect hasMore
+  const to = from + pageSize; // inclusive range end for pageSize+1 rows
 
   let query = supabase
     .from("questionnaire_leads")
@@ -534,26 +526,21 @@ export async function listQuestionnaireLeads(input: {
     query = query.ilike("display_name", `%${search}%`);
   }
 
-  // Fetch a reasonable window then sort in app for status priority + last_response_at
-  // When filtering by status, DB order by last_response_at is enough.
-  const fetchLimit = input.status ? to + 1 : Math.min(500, page * pageSize + pageSize + 1);
   const { data, error } = await query
+    .order("status_priority", { ascending: true })
     .order("last_response_at", { ascending: false })
-    .limit(fetchLimit);
+    .range(from, to);
 
   if (error) {
     throw new QuestionnaireError(error.message, 500, "list_failed");
   }
 
-  let leads = (data ?? []).map((row) => mapLeadSummary(row as Record<string, unknown>));
-  if (!input.status) {
-    leads = [...leads].sort(sortLeadsForList);
-  }
-  const slice = leads.slice(from, to);
-  const hasMore = leads.length > to;
+  const rows = data ?? [];
+  const hasMore = rows.length > pageSize;
+  const leads = rows.slice(0, pageSize).map((row) => mapLeadSummary(row as Record<string, unknown>));
 
   return {
-    leads: slice.slice(0, pageSize),
+    leads,
     page,
     pageSize,
     hasMore,

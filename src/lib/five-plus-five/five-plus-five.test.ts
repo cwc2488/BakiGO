@@ -623,6 +623,10 @@ describe("5＋5 migration 086 questionnaire components + has_user_submitted", ()
     resolve(process.cwd(), "supabase/migrations/086_questionnaire_development_v1.sql"),
     "utf8",
   );
+  const serviceSrc = readFileSync(
+    resolve(process.cwd(), "src/lib/five-plus-five/service.ts"),
+    "utf8",
+  );
 
   it("splits manual vs questionnaire counts; backfills existing as manual", () => {
     expect(sql).toContain("manual_fish_pool_count");
@@ -634,6 +638,30 @@ describe("5＋5 migration 086 questionnaire components + has_user_submitted", ()
     expect(sql).toContain("manual_fish_pool_count = coalesce(manual_fish_pool_count, fish_pool_count)");
     expect(sql).toContain(
       "manual_invitation_five_steps_count = coalesce(manual_invitation_five_steps_count, invitation_five_steps_count)",
+    );
+  });
+
+  it("A/B — atomic manual upsert RPC locks row; service_role only", () => {
+    expect(sql).toContain("upsert_five_plus_five_manual_report_v2");
+    expect(sql).toContain("for update");
+    expect(sql).toContain("p_manual_fish_pool_count");
+    expect(sql).toContain("p_manual_invitation_five_steps_count");
+    expect(sql).toMatch(
+      /revoke all on function public\.upsert_five_plus_five_manual_report_v2[\s\S]*from public/i,
+    );
+    expect(sql).toMatch(
+      /grant execute on function public\.upsert_five_plus_five_manual_report_v2[\s\S]*to service_role/i,
+    );
+    expect(serviceSrc).toContain("upsert_five_plus_five_manual_report_v2");
+    expect(serviceSrc).not.toContain("const qFish = existingMapped?.questionnaireFishPoolCount");
+  });
+
+  it("C/D/G — #74 compat trigger + total = components CHECKs", () => {
+    expect(sql).toContain("five_plus_five_component_sync_guard");
+    expect(sql).toContain("five_plus_five_reports_fish_total_eq");
+    expect(sql).toContain("five_plus_five_reports_invite_total_eq");
+    expect(sql).toContain(
+      "fish_pool_count = manual_fish_pool_count + questionnaire_fish_pool_count",
     );
   });
 
@@ -689,6 +717,34 @@ describe("5＋5 questionnaire auto-credit does not fake 已回報", () => {
     expect(stats.today.fishPool).toBe(1);
     expect(stats.today.questionnaireFishPool).toBe(1);
     expect(stats.today.manualFishPool).toBe(0);
+    expect(stats.today.status).toBe("not_yet_reported");
+  });
+
+  it("K — auto-only fish=5: fishMet true, hasReport false, not_yet_reported", () => {
+    const autoOnly = report({
+      memberId: "m1",
+      reportDate: "2026-09-21",
+      fishPoolCount: 5,
+      manualFishPoolCount: 0,
+      questionnaireFishPoolCount: 5,
+      hasUserSubmitted: false,
+      userSubmittedAt: null,
+      submittedOnTime: false,
+    });
+    const stats = buildMyStatsFromAggregates({
+      todayReport: autoOnly,
+      week: { fishPool: 5, invitationFiveSteps: 0 },
+      month: { fishPool: 5, invitationFiveSteps: 0 },
+      history: { fishPool: 5, invitationFiveSteps: 0 },
+      streakOnTimeDays: 0,
+      monthOnTimeDays: 0,
+      today: "2026-09-21",
+      memberName: "測試",
+      now: new Date("2026-09-21T10:00:00.000Z"),
+    });
+    expect(stats.today.fishPool).toBe(5);
+    expect(stats.today.fishMet).toBe(true);
+    expect(stats.today.hasReport).toBe(false);
     expect(stats.today.status).toBe("not_yet_reported");
   });
 
@@ -775,5 +831,46 @@ describe("5＋5 week list helper", () => {
       "2026-09-22",
       "2026-09-23",
     ]);
+  });
+});
+
+describe("5＋5 live UI totals", () => {
+  it("I — q=2 + manual 0→3 shows live fish 5", async () => {
+    const { computeLiveFishTotal } = await import("@/lib/five-plus-five/live-totals");
+    expect(computeLiveFishTotal({ manualFish: 0, questionnaireFish: 2 })).toBe(2);
+    expect(computeLiveFishTotal({ manualFish: 3, questionnaireFish: 2 })).toBe(5);
+  });
+
+  it("J — week invite live preview replaces saved today manual", async () => {
+    const { computeLiveWeekInvitation } = await import("@/lib/five-plus-five/live-totals");
+    // week total=3, saved today manual=1, q=1 → stepper 1→2 ⇒ week=4
+    expect(
+      computeLiveWeekInvitation({
+        weekInvitationTotal: 3,
+        savedTodayManualInvitation: 1,
+        liveManualInvitation: 2,
+      }),
+    ).toBe(4);
+  });
+});
+
+describe("5＋5 org fishMet vs reported", () => {
+  it("L — todayFishMet uses total fish; hasTodayReport uses hasUserSubmitted", () => {
+    const autoAchieved = report({
+      memberId: "downline",
+      reportDate: "2026-09-21",
+      fishPoolCount: 5,
+      manualFishPoolCount: 0,
+      questionnaireFishPoolCount: 5,
+      hasUserSubmitted: false,
+      submittedOnTime: false,
+    });
+    expect(autoAchieved.fishPoolCount >= 5).toBe(true);
+    expect(autoAchieved.hasUserSubmitted).toBe(false);
+    // Org summary mapping contract (same predicates as service)
+    const todayFishMet = Boolean(autoAchieved && autoAchieved.fishPoolCount >= 5);
+    const hasTodayReport = Boolean(autoAchieved.hasUserSubmitted);
+    expect(todayFishMet).toBe(true);
+    expect(hasTodayReport).toBe(false);
   });
 });

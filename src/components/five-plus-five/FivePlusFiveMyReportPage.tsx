@@ -12,6 +12,10 @@ import {
   upsertMyFivePlusFive,
 } from "@/lib/five-plus-five/client";
 import { formatShortDisplayDate, addCalendarDays } from "@/lib/five-plus-five/dates";
+import {
+  computeLiveFishTotal,
+  computeLiveWeekInvitation,
+} from "@/lib/five-plus-five/live-totals";
 import { dayStatusLabel } from "@/lib/five-plus-five/stats";
 import type { FivePlusFiveMyStats } from "@/types/five-plus-five";
 
@@ -105,9 +109,21 @@ export default function FivePlusFiveMyReportPage() {
   const subtitle = stats ? formatShortDisplayDate(stats.todayDate) : undefined;
   const qFish = stats?.today.questionnaireFishPool ?? 0;
   const qInvite = stats?.today.questionnaireInvitationFiveSteps ?? 0;
-  const totalFish = (stats?.today.fishPool ?? manualFish + qFish);
+  const savedManualInvite = stats?.today.manualInvitationFiveSteps ?? 0;
+  const liveFishTotal = computeLiveFishTotal({
+    manualFish,
+    questionnaireFish: qFish,
+  });
+  const liveTodayInvite = computeLiveFishTotal({
+    manualFish: manualInvite,
+    questionnaireFish: qInvite,
+  });
+  const liveWeekInvite = computeLiveWeekInvitation({
+    weekInvitationTotal: stats?.week.invitationFiveSteps ?? 0,
+    savedTodayManualInvitation: savedManualInvite,
+    liveManualInvitation: manualInvite,
+  });
   const fishTarget = stats?.today.fishTarget ?? 5;
-  const weekInvite = stats?.week.invitationFiveSteps ?? 0;
   const weekInviteTarget = stats?.week.invitationTarget ?? 5;
 
   return (
@@ -130,7 +146,7 @@ export default function FivePlusFiveMyReportPage() {
               </p>
               <NumberStepper label="其他新增" value={manualFish} onChange={setManualFish} />
               <p className="text-[0.9375rem] font-medium text-[var(--brand-text)]">
-                今日合計：{totalFish} / {fishTarget}
+                今日合計：{liveFishTotal} / {fishTarget}
               </p>
             </div>
 
@@ -144,8 +160,11 @@ export default function FivePlusFiveMyReportPage() {
                 value={manualInvite}
                 onChange={setManualInvite}
               />
+              <p className="text-[0.8125rem] text-[var(--brand-text-muted)]">
+                今日合計：+{liveTodayInvite}
+              </p>
               <p className="text-[0.9375rem] font-medium text-[var(--brand-text)]">
-                本週：{weekInvite} / {weekInviteTarget}
+                本週：{liveWeekInvite} / {weekInviteTarget}
               </p>
             </div>
 

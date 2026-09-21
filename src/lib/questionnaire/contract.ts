@@ -137,7 +137,7 @@ const STATUS_TRANSITIONS: Record<
   new: ["contacted", "invitation_started", "paused"],
   contacted: ["invitation_started", "paused"],
   invitation_started: ["completed", "paused"],
-  paused: ["contacted", "invitation_started", "new"],
+  paused: ["contacted", "invitation_started"],
   completed: [],
 };
 

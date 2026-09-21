@@ -68,6 +68,201 @@ comment on column public.five_plus_five_reports.has_user_submitted is
   'True only after member presses 完成今日回報. Questionnaire-only rows stay false.';
 
 -- ---------------------------------------------------------------------------
+-- 1b) #74 migration-first compatibility + total invariants
+-- ---------------------------------------------------------------------------
+-- Production may run 086 before deploying #75. Old #74 writers still set totals only.
+create or replace function public.five_plus_five_component_sync_guard()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  -- Legacy INSERT: components default 0 but total > 0 → treat total as manual
+  if tg_op = 'INSERT' then
+    if coalesce(new.manual_fish_pool_count, 0) = 0
+       and coalesce(new.questionnaire_fish_pool_count, 0) = 0
+       and coalesce(new.fish_pool_count, 0) > 0 then
+      new.manual_fish_pool_count := new.fish_pool_count;
+    end if;
+    if coalesce(new.manual_invitation_five_steps_count, 0) = 0
+       and coalesce(new.questionnaire_invitation_five_steps_count, 0) = 0
+       and coalesce(new.invitation_five_steps_count, 0) > 0 then
+      new.manual_invitation_five_steps_count := new.invitation_five_steps_count;
+    end if;
+  end if;
+
+  -- Legacy UPDATE (#74): total changed, both components unchanged → derive manual
+  if tg_op = 'UPDATE' then
+    if new.fish_pool_count is distinct from old.fish_pool_count
+       and new.manual_fish_pool_count is not distinct from old.manual_fish_pool_count
+       and new.questionnaire_fish_pool_count is not distinct from old.questionnaire_fish_pool_count then
+      new.manual_fish_pool_count := greatest(0, new.fish_pool_count - coalesce(new.questionnaire_fish_pool_count, 0));
+    end if;
+    if new.invitation_five_steps_count is distinct from old.invitation_five_steps_count
+       and new.manual_invitation_five_steps_count is not distinct from old.manual_invitation_five_steps_count
+       and new.questionnaire_invitation_five_steps_count is not distinct from old.questionnaire_invitation_five_steps_count then
+      new.manual_invitation_five_steps_count := greatest(
+        0,
+        new.invitation_five_steps_count - coalesce(new.questionnaire_invitation_five_steps_count, 0)
+      );
+    end if;
+  end if;
+
+  -- Authoritative recompute (new #75 / questionnaire RPCs also pass through safely)
+  new.fish_pool_count :=
+    coalesce(new.manual_fish_pool_count, 0) + coalesce(new.questionnaire_fish_pool_count, 0);
+  new.invitation_five_steps_count :=
+    coalesce(new.manual_invitation_five_steps_count, 0)
+    + coalesce(new.questionnaire_invitation_five_steps_count, 0);
+
+  return new;
+end;
+$$;
+
+drop trigger if exists five_plus_five_component_sync_guard_trg on public.five_plus_five_reports;
+create trigger five_plus_five_component_sync_guard_trg
+  before insert or update on public.five_plus_five_reports
+  for each row
+  execute function public.five_plus_five_component_sync_guard();
+
+-- Ensure backfilled rows satisfy invariants before adding CHECKs
+update public.five_plus_five_reports
+set
+  fish_pool_count = manual_fish_pool_count + questionnaire_fish_pool_count,
+  invitation_five_steps_count =
+    manual_invitation_five_steps_count + questionnaire_invitation_five_steps_count
+where fish_pool_count is distinct from (manual_fish_pool_count + questionnaire_fish_pool_count)
+   or invitation_five_steps_count is distinct from (
+        manual_invitation_five_steps_count + questionnaire_invitation_five_steps_count
+      );
+
+alter table public.five_plus_five_reports
+  drop constraint if exists five_plus_five_reports_fish_total_eq,
+  drop constraint if exists five_plus_five_reports_invite_total_eq;
+
+alter table public.five_plus_five_reports
+  add constraint five_plus_five_reports_fish_total_eq check (
+    fish_pool_count = manual_fish_pool_count + questionnaire_fish_pool_count
+  ),
+  add constraint five_plus_five_reports_invite_total_eq check (
+    invitation_five_steps_count =
+      manual_invitation_five_steps_count + questionnaire_invitation_five_steps_count
+  );
+
+-- ---------------------------------------------------------------------------
+-- 1c) Atomic manual upsert RPC (service_role only)
+-- ---------------------------------------------------------------------------
+create or replace function public.upsert_five_plus_five_manual_report_v2(
+  p_member_id uuid,
+  p_report_date date,
+  p_manual_fish_pool_count integer,
+  p_manual_invitation_five_steps_count integer,
+  p_now timestamptz,
+  p_submitted_on_time boolean
+)
+returns public.five_plus_five_reports
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_row public.five_plus_five_reports%rowtype;
+begin
+  if p_member_id is null or p_report_date is null then
+    raise exception 'invalid_manual_upsert_payload';
+  end if;
+  if p_manual_fish_pool_count is null or p_manual_fish_pool_count < 0
+     or p_manual_invitation_five_steps_count is null or p_manual_invitation_five_steps_count < 0 then
+    raise exception 'invalid_manual_counts';
+  end if;
+
+  select * into v_row
+  from public.five_plus_five_reports
+  where member_id = p_member_id and report_date = p_report_date
+  for update;
+
+  if not found then
+    begin
+      insert into public.five_plus_five_reports (
+        member_id,
+        report_date,
+        manual_fish_pool_count,
+        questionnaire_fish_pool_count,
+        manual_invitation_five_steps_count,
+        questionnaire_invitation_five_steps_count,
+        fish_pool_count,
+        invitation_five_steps_count,
+        first_submitted_at,
+        user_submitted_at,
+        has_user_submitted,
+        updated_at,
+        submitted_on_time,
+        created_at
+      ) values (
+        p_member_id,
+        p_report_date,
+        p_manual_fish_pool_count,
+        0,
+        p_manual_invitation_five_steps_count,
+        0,
+        p_manual_fish_pool_count,
+        p_manual_invitation_five_steps_count,
+        p_now,
+        p_now,
+        true,
+        p_now,
+        coalesce(p_submitted_on_time, false),
+        p_now
+      )
+      returning * into v_row;
+      return v_row;
+    exception
+      when unique_violation then
+        select * into v_row
+        from public.five_plus_five_reports
+        where member_id = p_member_id and report_date = p_report_date
+        for update;
+        if not found then
+          raise;
+        end if;
+    end;
+  end if;
+
+  update public.five_plus_five_reports
+  set
+    manual_fish_pool_count = p_manual_fish_pool_count,
+    manual_invitation_five_steps_count = p_manual_invitation_five_steps_count,
+    fish_pool_count = p_manual_fish_pool_count + questionnaire_fish_pool_count,
+    invitation_five_steps_count =
+      p_manual_invitation_five_steps_count + questionnaire_invitation_five_steps_count,
+    has_user_submitted = case
+      when has_user_submitted then true
+      else true
+    end,
+    user_submitted_at = case
+      when has_user_submitted then user_submitted_at
+      else p_now
+    end,
+    submitted_on_time = case
+      when has_user_submitted then submitted_on_time
+      else coalesce(p_submitted_on_time, false)
+    end,
+    updated_at = p_now
+  where id = v_row.id
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+revoke all on function public.upsert_five_plus_five_manual_report_v2(
+  uuid, date, integer, integer, timestamptz, boolean
+) from public, anon, authenticated;
+grant execute on function public.upsert_five_plus_five_manual_report_v2(
+  uuid, date, integer, integer, timestamptz, boolean
+) to service_role;
+
+-- ---------------------------------------------------------------------------
 -- 2) questionnaire_share_links
 -- ---------------------------------------------------------------------------
 create table if not exists public.questionnaire_share_links (
@@ -149,11 +344,28 @@ create table if not exists public.questionnaire_leads (
   constraint questionnaire_leads_response_count_nonneg check (response_count >= 1)
 );
 
+-- Deterministic list sort for DB-side pagination (Priority 0 UI order)
+alter table public.questionnaire_leads
+  add column if not exists status_priority integer
+  generated always as (
+    case status
+      when 'new' then 0
+      when 'contacted' then 1
+      when 'invitation_started' then 2
+      when 'paused' then 3
+      when 'completed' then 4
+      else 99
+    end
+  ) stored;
+
 create index if not exists questionnaire_leads_owner_updated_idx
   on public.questionnaire_leads (owner_member_id, updated_at desc);
 
 create index if not exists questionnaire_leads_owner_status_updated_idx
   on public.questionnaire_leads (owner_member_id, status, updated_at desc);
+
+create index if not exists questionnaire_leads_owner_status_priority_idx
+  on public.questionnaire_leads (owner_member_id, status_priority, last_response_at desc);
 
 create index if not exists questionnaire_leads_fish_credited_idx
   on public.questionnaire_leads (owner_member_id, fish_credited_at)
@@ -326,7 +538,7 @@ revoke all on function public._five_plus_five_credit_questionnaire_fish(uuid, da
 grant execute on function public._five_plus_five_credit_questionnaire_fish(uuid, date, timestamptz) to service_role;
 
 -- ---------------------------------------------------------------------------
--- 6) RPC: submit_questionnaire_response_v1
+-- 6) RPC: submit_questionnaire_response_v1 (concurrency-safe lead upsert)
 -- ---------------------------------------------------------------------------
 create or replace function public.submit_questionnaire_response_v1(
   p_owner_member_id uuid,
@@ -358,6 +570,7 @@ declare
   v_response_id uuid;
   v_is_new_lead boolean := false;
   v_source text;
+  v_credit_id uuid;
 begin
   if p_owner_member_id is null or p_contact_fingerprint is null or p_contact_fingerprint = '' then
     raise exception 'invalid_submit_payload';
@@ -365,55 +578,63 @@ begin
 
   v_source := case when p_source = 'onsite' then 'onsite' else 'online' end;
 
-  select * into v_lead
-  from public.questionnaire_leads
-  where owner_member_id = p_owner_member_id
-    and contact_fingerprint = p_contact_fingerprint
-  for update;
+  -- Concurrent-safe lead create: only one INSERT wins the unique constraint
+  insert into public.questionnaire_leads (
+    owner_member_id,
+    contact_fingerprint,
+    display_name,
+    contact_type,
+    contact_value,
+    primary_need,
+    need_tags,
+    interest_level,
+    uses_supplements,
+    supplement_details,
+    status,
+    first_source,
+    last_source,
+    first_response_at,
+    last_response_at,
+    response_count,
+    created_at,
+    updated_at
+  ) values (
+    p_owner_member_id,
+    p_contact_fingerprint,
+    p_display_name,
+    p_contact_type,
+    p_contact_value,
+    p_priority_improvement,
+    coalesce(p_improvement_areas, '{}'),
+    p_further_understanding_interest,
+    p_uses_supplements,
+    case when p_uses_supplements then p_supplement_details else null end,
+    'new',
+    v_source,
+    v_source,
+    p_now,
+    p_now,
+    1,
+    p_now,
+    p_now
+  )
+  on conflict (owner_member_id, contact_fingerprint) do nothing
+  returning * into v_lead;
 
-  if not found then
+  if found then
     v_is_new_lead := true;
-    insert into public.questionnaire_leads (
-      owner_member_id,
-      contact_fingerprint,
-      display_name,
-      contact_type,
-      contact_value,
-      primary_need,
-      need_tags,
-      interest_level,
-      uses_supplements,
-      supplement_details,
-      status,
-      first_source,
-      last_source,
-      first_response_at,
-      last_response_at,
-      response_count,
-      created_at,
-      updated_at
-    ) values (
-      p_owner_member_id,
-      p_contact_fingerprint,
-      p_display_name,
-      p_contact_type,
-      p_contact_value,
-      p_priority_improvement,
-      coalesce(p_improvement_areas, '{}'),
-      p_further_understanding_interest,
-      p_uses_supplements,
-      case when p_uses_supplements then p_supplement_details else null end,
-      'new',
-      v_source,
-      v_source,
-      p_now,
-      p_now,
-      1,
-      p_now,
-      p_now
-    )
-    returning * into v_lead;
   else
+    select * into v_lead
+    from public.questionnaire_leads
+    where owner_member_id = p_owner_member_id
+      and contact_fingerprint = p_contact_fingerprint
+    for update;
+
+    if not found then
+      raise exception 'lead_upsert_race_failed';
+    end if;
+
+    v_is_new_lead := false;
     update public.questionnaire_leads
     set
       display_name = p_display_name,
@@ -477,15 +698,19 @@ begin
   set latest_response_id = v_response_id, updated_at = p_now
   where id = v_lead.id;
 
-  if v_is_new_lead and v_lead.fish_credited_at is null then
+  -- Exactly-once fish credit (even under concurrent first submits)
+  update public.questionnaire_leads
+  set fish_credited_at = p_now, updated_at = p_now
+  where id = v_lead.id
+    and fish_credited_at is null
+  returning id into v_credit_id;
+
+  if v_credit_id is not null then
     perform public._five_plus_five_credit_questionnaire_fish(
       p_owner_member_id,
       p_report_date,
       p_now
     );
-    update public.questionnaire_leads
-    set fish_credited_at = p_now, updated_at = p_now
-    where id = v_lead.id;
   end if;
 
   return jsonb_build_object(

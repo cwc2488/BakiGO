@@ -127,6 +127,7 @@ function migrationPending(error: { message: string; code?: string }): boolean {
   return (
     error.message.includes("five_plus_five_reports") ||
     error.message.includes("get_five_plus_five_member_stats") ||
+    error.message.includes("upsert_five_plus_five_manual_report_v2") ||
     error.code === "42P01" ||
     error.code === "42883"
   );
@@ -245,7 +246,8 @@ export function buildMyStatsFromAggregates(input: {
       fishPool: todayFish,
       invitationFiveSteps: todayInvite,
       fishTarget: targets.fishPoolDaily,
-      fishMet: hasReport && todayFish >= targets.fishPoolDaily,
+      // Fish met is about pool total — independent of formal「完成今日回報」
+      fishMet: todayFish >= targets.fishPoolDaily,
       hasReport,
       status: resolveDayStatus({
         reportDate: input.today,
@@ -407,128 +409,31 @@ export async function upsertMyReport(input: {
   }
 
   const supabase = requireService();
-  const { data: existing, error: existingError } = await supabase
-    .from("five_plus_five_reports")
-    .select("*")
-    .eq("member_id", input.memberId)
-    .eq("report_date", input.reportDate)
-    .maybeSingle();
-
-  if (existingError) {
-    if (migrationPending(existingError)) {
-      throw new FivePlusFiveServiceError("Migration pending: five_plus_five_reports", 503);
-    }
-    throw new FivePlusFiveServiceError(existingError.message, 500);
-  }
-
   const nowIso = now.toISOString();
-  const existingMapped = existing ? mapReportRow(existing as DbReportRow) : null;
-  const qFish = existingMapped?.questionnaireFishPoolCount ?? 0;
-  const qInvite = existingMapped?.questionnaireInvitationFiveStepsCount ?? 0;
-  const totalFish = manualFish + qFish;
-  const totalInvite = manualInvite + qInvite;
-
-  if (existingMapped) {
-    const alreadyUserSubmitted = existingMapped.hasUserSubmitted;
-    const updatePayload: Record<string, unknown> = {
-      manual_fish_pool_count: manualFish,
-      manual_invitation_five_steps_count: manualInvite,
-      fish_pool_count: totalFish,
-      invitation_five_steps_count: totalInvite,
-      // Preserve questionnaire components explicitly
-      questionnaire_fish_pool_count: qFish,
-      questionnaire_invitation_five_steps_count: qInvite,
-      updated_at: nowIso,
-    };
-
-    if (!alreadyUserSubmitted) {
-      // First formal user submit — do not treat questionnaire auto row as prior submit
-      updatePayload.has_user_submitted = true;
-      updatePayload.user_submitted_at = nowIso;
-      updatePayload.submitted_on_time = isToday && computeSubmittedOnTime(input.reportDate, now);
-      // Keep first_submitted_at as technical row time; user_submitted_at is authoritative
-    }
-
-    const { data, error } = await supabase
-      .from("five_plus_five_reports")
-      .update(updatePayload)
-      .eq("id", existingMapped.id)
-      .eq("member_id", input.memberId)
-      .select("*")
-      .single();
-    if (error) throw new FivePlusFiveServiceError(error.message, 500);
-    return mapReportRow(data as DbReportRow);
-  }
-
   const submittedOnTime = isToday && computeSubmittedOnTime(input.reportDate, now);
 
-  const { data, error } = await supabase
-    .from("five_plus_five_reports")
-    .insert({
-      member_id: input.memberId,
-      report_date: input.reportDate,
-      manual_fish_pool_count: manualFish,
-      questionnaire_fish_pool_count: 0,
-      manual_invitation_five_steps_count: manualInvite,
-      questionnaire_invitation_five_steps_count: 0,
-      fish_pool_count: manualFish,
-      invitation_five_steps_count: manualInvite,
-      first_submitted_at: nowIso,
-      user_submitted_at: nowIso,
-      has_user_submitted: true,
-      updated_at: nowIso,
-      submitted_on_time: submittedOnTime,
-      created_at: nowIso,
-    })
-    .select("*")
-    .single();
+  // Atomic DB upsert — SELECT FOR UPDATE + locked questionnaire components inside RPC
+  const { data, error } = await supabase.rpc("upsert_five_plus_five_manual_report_v2", {
+    p_member_id: input.memberId,
+    p_report_date: input.reportDate,
+    p_manual_fish_pool_count: manualFish,
+    p_manual_invitation_five_steps_count: manualInvite,
+    p_now: nowIso,
+    p_submitted_on_time: submittedOnTime,
+  });
 
   if (error) {
-    if (error.code === "23505") {
-      const { data: racedExisting, error: raceLookupErr } = await supabase
-        .from("five_plus_five_reports")
-        .select("*")
-        .eq("member_id", input.memberId)
-        .eq("report_date", input.reportDate)
-        .maybeSingle();
-      if (raceLookupErr || !racedExisting) {
-        throw new FivePlusFiveServiceError(
-          raceLookupErr?.message ?? "Race update failed",
-          500,
-        );
-      }
-      const racedMapped = mapReportRow(racedExisting as DbReportRow);
-      const racedQFish = racedMapped.questionnaireFishPoolCount;
-      const racedQInvite = racedMapped.questionnaireInvitationFiveStepsCount;
-      const racedUpdate: Record<string, unknown> = {
-        manual_fish_pool_count: manualFish,
-        manual_invitation_five_steps_count: manualInvite,
-        fish_pool_count: manualFish + racedQFish,
-        invitation_five_steps_count: manualInvite + racedQInvite,
-        questionnaire_fish_pool_count: racedQFish,
-        questionnaire_invitation_five_steps_count: racedQInvite,
-        updated_at: nowIso,
-      };
-      if (!racedMapped.hasUserSubmitted) {
-        racedUpdate.has_user_submitted = true;
-        racedUpdate.user_submitted_at = nowIso;
-        racedUpdate.submitted_on_time =
-          isToday && computeSubmittedOnTime(input.reportDate, now);
-      }
-      const { data: raced, error: raceErr } = await supabase
-        .from("five_plus_five_reports")
-        .update(racedUpdate)
-        .eq("id", racedMapped.id)
-        .eq("member_id", input.memberId)
-        .select("*")
-        .single();
-      if (raceErr) throw new FivePlusFiveServiceError(raceErr.message, 500);
-      return mapReportRow(raced as DbReportRow);
+    if (migrationPending(error)) {
+      throw new FivePlusFiveServiceError("Migration pending: five_plus_five_reports", 503);
     }
     throw new FivePlusFiveServiceError(error.message, 500);
   }
 
-  return mapReportRow(data as DbReportRow);
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) {
+    throw new FivePlusFiveServiceError("Manual upsert returned empty", 500);
+  }
+  return mapReportRow(row as DbReportRow);
 }
 
 export async function getOrganizationSummary(
@@ -575,9 +480,7 @@ export async function getOrganizationSummary(
       weekInvitation: weekTotals.invitationFiveSteps,
       weekFish: weekTotals.fishPool,
       hasTodayReport: Boolean(todayReport?.hasUserSubmitted),
-      todayFishMet: Boolean(
-        todayReport?.hasUserSubmitted && todayReport.fishPoolCount >= targets.fishPoolDaily,
-      ),
+      todayFishMet: Boolean(todayReport && todayReport.fishPoolCount >= targets.fishPoolDaily),
       weekInvitationMet: weekTotals.invitationFiveSteps >= targets.invitationFiveStepsWeekly,
       todayStatus: status,
       submittedOnTime: todayReport?.hasUserSubmitted

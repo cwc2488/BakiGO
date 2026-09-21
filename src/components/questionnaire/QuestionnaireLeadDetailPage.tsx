@@ -22,7 +22,6 @@ const ACTION_LABEL: Record<string, string> = {
   invitation_started: "開始邀約5步驟",
   paused: "暫不追蹤",
   completed: "標記完成",
-  new: "標回未聯絡",
 };
 
 function formatTime(iso: string): string {

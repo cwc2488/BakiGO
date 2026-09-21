@@ -12,13 +12,23 @@ type Ctx = { params: Promise<{ code: string }> };
 
 export async function POST(request: Request, context: Ctx) {
   try {
-    const contentLength = Number(request.headers.get("content-length") ?? "0");
-    if (contentLength > QUESTIONNAIRE_LIMITS.payloadMaxBytes) {
-      return NextResponse.json({ error: "Payload too large.", code: "payload_too_large" }, { status: 413 });
+    const rawText = await request.text();
+    const byteLength = new TextEncoder().encode(rawText).byteLength;
+    if (byteLength > QUESTIONNAIRE_LIMITS.payloadMaxBytes) {
+      return NextResponse.json(
+        { error: "Payload too large.", code: "payload_too_large" },
+        { status: 413 },
+      );
+    }
+
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(rawText) as Record<string, unknown>;
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON", code: "invalid_json" }, { status: 400 });
     }
 
     const { code } = await context.params;
-    const body = (await request.json()) as Record<string, unknown>;
 
     if (
       body.ownerMemberId != null ||
@@ -57,17 +67,39 @@ export async function POST(request: Request, context: Ctx) {
       companyWebsite: body.companyWebsite == null ? null : String(body.companyWebsite),
     });
 
-    // Public response: no lead id / owner id / 5＋5 stats
     return NextResponse.json({
       ok: true,
       isNewLead: result.isNewLead,
     });
   } catch (error) {
     if (error instanceof QuestionnaireError) {
-      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      // Validation / expected client errors — keep friendly message
+      if (error.status >= 400 && error.status < 500 && error.code !== "submit_failed") {
+        return NextResponse.json(
+          { error: error.message, code: error.code },
+          { status: error.status },
+        );
+      }
+      console.error(
+        JSON.stringify({
+          event: "questionnaire_public_submit_failed",
+          code: error.code,
+          error: error.message,
+        }),
+      );
+      return NextResponse.json(
+        { error: "送出失敗，請稍後再試。", code: "submit_failed" },
+        { status: 500 },
+      );
     }
+    console.error(
+      JSON.stringify({
+        event: "questionnaire_public_submit_failed",
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to submit." },
+      { error: "送出失敗，請稍後再試。", code: "submit_failed" },
       { status: 500 },
     );
   }

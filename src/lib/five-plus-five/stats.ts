@@ -184,7 +184,7 @@ export function buildMyStats(input: {
       fishPool: todayFish,
       invitationFiveSteps: todayInvite,
       fishTarget: targets.fishPoolDaily,
-      fishMet: hasReport && todayFish >= targets.fishPoolDaily,
+      fishMet: todayFish >= targets.fishPoolDaily,
       hasReport,
       status: resolveDayStatus({
         reportDate: today,
