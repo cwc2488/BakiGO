@@ -259,13 +259,42 @@ describe("offline delete flush integration", () => {
     expect(remaining[0].retryCount).toBeGreaterThanOrEqual(1);
   });
 
-  it("repository offline delete enqueues memberId", () => {
+  it("repository offline delete enqueues memberId then flush soft-deletes", async () => {
+    const softDelete = vi.fn(async () => undefined);
+    vi.doMock("@/lib/supabase/client", () => ({
+      isSupabaseConfigured: () => true,
+      createSupabaseBrowserClient: () => ({}),
+    }));
+    vi.doMock("@/lib/cloud/cloud-member-ids", () => ({
+      isCloudDatabaseMemberId: () => true,
+    }));
+    vi.doMock("@/lib/cloud/calendar-events-cloud-service", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/cloud/calendar-events-cloud-service")>(
+        "@/lib/cloud/calendar-events-cloud-service",
+      );
+      return {
+        ...actual,
+        softDeleteCloudCalendarEvent: softDelete,
+        upsertCloudCalendarEvent: vi.fn(async () => undefined),
+      };
+    });
+
     vi.stubGlobal("navigator", { onLine: false });
-    // Without supabase configured, cloud path is skipped — enqueue via explicit pending contract
-    // mirrors repository offline branch when cloud is configured.
+    const { createCalendarEventRepository: createRepo } = await import(
+      "@/lib/repositories/calendar-event-repository"
+    );
+    const {
+      flushCalendarPendingMutationQueue: flush,
+    } = await import("@/lib/calendar/calendar-cloud-sync");
+    const {
+      listCalendarPendingMutations: list,
+      clearCalendarPendingMutations: clear,
+    } = await import("@/lib/calendar/calendar-pending-mutations");
+    clear();
+
     const memberId = "55555555-5555-4555-8555-555555555555";
     const storage = new MemoryStorage();
-    const repo = createCalendarEventRepository(storage);
+    const repo = createRepo(storage);
     const created = repo.create({
       memberId,
       title: "temp",
@@ -273,15 +302,18 @@ describe("offline delete flush integration", () => {
       endAt: "2026-09-21T11:00:00",
       color: "green",
     });
-    clearCalendarPendingMutations();
-    enqueueCalendarPendingMutation({
-      memberId,
-      eventId: created.id,
-      operation: "delete",
-      payload: null,
-    });
+    // create while offline also queues; clear to isolate delete
+    clear();
     repo.delete(created.id);
-    expect(listCalendarPendingMutations()[0]?.memberId).toBe(memberId);
+    const queued = list();
+    expect(queued.some((item) => item.operation === "delete" && item.memberId === memberId && item.eventId === created.id)).toBe(
+      true,
+    );
+
+    vi.stubGlobal("navigator", { onLine: true });
+    await flush(storage);
+    expect(softDelete).toHaveBeenCalledWith({ memberId, eventId: created.id });
+    expect(list()).toHaveLength(0);
     vi.unstubAllGlobals();
   });
 });
@@ -361,5 +393,64 @@ describe("visible range cloud query", () => {
     });
     expect(second.fromCache).toBe(true);
     expect(fetchRange).toHaveBeenCalledTimes(1);
+  });
+
+  it("expired range TTL triggers a new cloud query", async () => {
+    const memberId = "77777777-7777-4777-8777-777777777777";
+    const fetchRange = vi.fn(async () => [
+      makeEvent({
+        id: "ttl",
+        memberId,
+        startAt: "2027-04-10T10:00:00",
+        endAt: "2027-04-10T11:00:00",
+      }),
+    ]);
+
+    vi.doMock("@/lib/supabase/client", () => ({
+      isSupabaseConfigured: () => true,
+      createSupabaseBrowserClient: () => ({}),
+    }));
+    vi.doMock("@/lib/cloud/cloud-member-ids", () => ({
+      isCloudDatabaseMemberId: () => true,
+    }));
+    vi.doMock("@/lib/cloud/calendar-events-cloud-service", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/cloud/calendar-events-cloud-service")>(
+        "@/lib/cloud/calendar-events-cloud-service",
+      );
+      return { ...actual, fetchCloudCalendarEventsInRange: fetchRange };
+    });
+
+    const sync = await import("@/lib/calendar/calendar-cloud-sync");
+    const store = await import("@/lib/calendar/calendar-event-store");
+    sync.resetPersonalCalendarRangePullState();
+
+    const range = sync.expandVisibleRangeWithBuffer({
+      rangeStart: "2027-04-01",
+      rangeEnd: "2027-04-30",
+    });
+    const storage = new MemoryStorage();
+    await sync.ensureVisiblePersonalCalendarRange({
+      storage,
+      memberId,
+      rangeStart: range.rangeStart,
+      rangeEnd: range.rangeEnd,
+    });
+    expect(fetchRange).toHaveBeenCalledTimes(1);
+
+    // Force TTL expiry by re-hydrating with past expiresAt via direct range replace after time warp.
+    // isPersonalCalendarRangeFresh uses Date.now(); stub clock beyond TTL.
+    const realNow = Date.now;
+    Date.now = () => realNow() + store.CALENDAR_STORE_RANGE_TTL_MS + 1_000;
+    try {
+      await sync.ensureVisiblePersonalCalendarRange({
+        storage,
+        memberId,
+        rangeStart: range.rangeStart,
+        rangeEnd: range.rangeEnd,
+      });
+    } finally {
+      Date.now = realNow;
+    }
+    expect(fetchRange).toHaveBeenCalledTimes(2);
   });
 });

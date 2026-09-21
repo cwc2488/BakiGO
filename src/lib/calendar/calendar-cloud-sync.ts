@@ -49,7 +49,7 @@ export const PERSONAL_CALENDAR_SYNC_RANGE_DAYS = 45;
 /** Extra days around day/week/month visible window when navigating. */
 export const PERSONAL_CALENDAR_VIEW_BUFFER_DAYS = 7;
 
-export type CalendarPersistStatus = "saved" | "queued" | "skipped";
+export type CalendarPersistStatus = "saved" | "queued" | "failed" | "skipped";
 
 const rangePullInFlight = new Map<
   string,
@@ -121,6 +121,9 @@ export function calendarPersistStatusMessage(
     if (action === "delete") return "行程已刪除，等待網路同步";
     return "行程已儲存，等待網路同步";
   }
+  if (status === "failed") {
+    return "同步失敗，請稍後重試";
+  }
   if (action === "delete") {
     return googleWarning ? `行程已刪除（${googleWarning}）` : "行程已刪除";
   }
@@ -137,8 +140,15 @@ export async function flushCalendarWriteThrough(
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     return "queued";
   }
-  await awaitCalendarEventCloudWrites();
-  await awaitPendingCloudSync();
+  try {
+    await awaitCalendarEventCloudWrites();
+    await awaitPendingCloudSync();
+  } catch {
+    if (listCalendarPendingMutations().length > 0) {
+      return "queued";
+    }
+    return "failed";
+  }
   if (listCalendarPendingMutations().length > 0) {
     return "queued";
   }
