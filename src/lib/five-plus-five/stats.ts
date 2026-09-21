@@ -40,6 +40,13 @@ export function sumAll(reports: FivePlusFiveReportRow[]): FivePlusFivePeriodTota
   );
 }
 
+/** User-submitted report only — questionnaire auto-credit rows do not count as「已回報」. */
+export function isUserSubmittedReport(
+  report: FivePlusFiveReportRow | null | undefined,
+): boolean {
+  return Boolean(report?.hasUserSubmitted);
+}
+
 export function resolveDayStatus(input: {
   reportDate: string;
   report: FivePlusFiveReportRow | null | undefined;
@@ -49,8 +56,9 @@ export function resolveDayStatus(input: {
 }): FivePlusFiveDayStatus {
   const { reportDate, report, today, fishDailyTarget } = input;
   const now = input.now ?? new Date();
+  const userSubmitted = isUserSubmittedReport(report);
 
-  if (!report) {
+  if (!userSubmitted) {
     if (reportDate === today && isReportDateStillOpen(reportDate, now)) {
       return "not_yet_reported";
     }
@@ -58,12 +66,12 @@ export function resolveDayStatus(input: {
   }
 
   if (reportDate === today) {
-    return report.fishPoolCount >= fishDailyTarget
+    return (report?.fishPoolCount ?? 0) >= fishDailyTarget
       ? "reported_fish_met"
       : "reported_fish_unmet";
   }
 
-  if (!report.submittedOnTime) {
+  if (!report?.submittedOnTime) {
     return "backfill";
   }
   return "on_time_past";
@@ -102,19 +110,18 @@ export function calculateOnTimeStreak(
   const byDate = new Map(reports.map((r) => [r.reportDate, r]));
   const todayReport = byDate.get(today);
   const todayOpen = isReportDateStillOpen(today, now);
+  const todayUserSubmitted = isUserSubmittedReport(todayReport);
 
   let cursor: string;
-  if (todayReport?.submittedOnTime) {
+  if (todayUserSubmitted && todayReport?.submittedOnTime) {
     cursor = today;
-  } else if (todayOpen && !todayReport) {
+  } else if (todayOpen && !todayUserSubmitted) {
     cursor = addCalendarDays(today, -1);
-  } else if (!todayReport) {
-    // Today closed without report → streak broken
+  } else if (!todayUserSubmitted) {
+    // Today closed without user submit → streak broken
     return 0;
   } else {
-    // Today has late/backfill-style report (shouldn't happen for today, but safe)
-    // or today report exists but not on time
-    if (!todayReport.submittedOnTime) {
+    if (!todayReport?.submittedOnTime) {
       return 0;
     }
     cursor = today;
@@ -123,7 +130,7 @@ export function calculateOnTimeStreak(
   let streak = 0;
   while (true) {
     const report = byDate.get(cursor);
-    if (!report?.submittedOnTime) break;
+    if (!isUserSubmittedReport(report) || !report?.submittedOnTime) break;
     streak += 1;
     cursor = addCalendarDays(cursor, -1);
   }
@@ -138,7 +145,11 @@ export function calculateMonthOnTimeRate(
   const { start } = getMonthRange(today);
   const elapsedDays = daysElapsedInMonthThrough(today);
   const onTimeDays = reports.filter(
-    (r) => r.reportDate >= start && r.reportDate <= today && r.submittedOnTime,
+    (r) =>
+      r.reportDate >= start &&
+      r.reportDate <= today &&
+      r.hasUserSubmitted &&
+      r.submittedOnTime,
   ).length;
   const percent =
     elapsedDays <= 0 ? 0 : Math.round((onTimeDays / elapsedDays) * 100);
@@ -166,14 +177,14 @@ export function buildMyStats(input: {
 
   const todayFish = input.todayReport?.fishPoolCount ?? 0;
   const todayInvite = input.todayReport?.invitationFiveStepsCount ?? 0;
-  const hasReport = Boolean(input.todayReport);
+  const hasReport = isUserSubmittedReport(input.todayReport);
 
   return {
     today: {
       fishPool: todayFish,
       invitationFiveSteps: todayInvite,
       fishTarget: targets.fishPoolDaily,
-      fishMet: hasReport && todayFish >= targets.fishPoolDaily,
+      fishMet: todayFish >= targets.fishPoolDaily,
       hasReport,
       status: resolveDayStatus({
         reportDate: today,
@@ -182,8 +193,15 @@ export function buildMyStats(input: {
         fishDailyTarget: targets.fishPoolDaily,
         now,
       }),
-      submittedOnTime: input.todayReport?.submittedOnTime ?? null,
-      firstSubmittedAt: input.todayReport?.firstSubmittedAt ?? null,
+      submittedOnTime: hasReport ? (input.todayReport?.submittedOnTime ?? null) : null,
+      firstSubmittedAt: hasReport
+        ? (input.todayReport?.userSubmittedAt ?? input.todayReport?.firstSubmittedAt ?? null)
+        : null,
+      manualFishPool: input.todayReport?.manualFishPoolCount ?? 0,
+      questionnaireFishPool: input.todayReport?.questionnaireFishPoolCount ?? 0,
+      manualInvitationFiveSteps: input.todayReport?.manualInvitationFiveStepsCount ?? 0,
+      questionnaireInvitationFiveSteps:
+        input.todayReport?.questionnaireInvitationFiveStepsCount ?? 0,
     },
     week: {
       ...weekTotals,

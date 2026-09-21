@@ -110,8 +110,15 @@ function BusinessHomeView({ metrics }: { metrics: MemberComputedMetrics }) {
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.75rem] bg-[var(--brand-primary-muted)] text-[var(--brand-primary-dark)]">
                   <Icon size={20} />
                 </span>
-                <span className="flex-1 text-[0.9375rem] font-semibold text-[var(--brand-text)]">
-                  {entry.title}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-[0.9375rem] font-semibold text-[var(--brand-text)]">
+                    {entry.title}
+                  </span>
+                  {entry.subtitle ? (
+                    <span className="text-[0.75rem] text-[var(--brand-text-muted)]">
+                      {entry.subtitle}
+                    </span>
+                  ) : null}
                 </span>
                 <span aria-hidden className="text-[0.875rem] text-[var(--brand-hint)]">
                   ›

@@ -25,6 +25,8 @@ export async function POST(request: Request) {
 
   const payload = body as {
     reportDate?: string;
+    manualFishPoolCount?: number;
+    manualInvitationFiveStepsCount?: number;
     fishPoolCount?: number;
     invitationFiveStepsCount?: number;
   };
@@ -40,12 +42,21 @@ export async function POST(request: Request) {
     );
   }
 
+  const manualFish =
+    payload.manualFishPoolCount !== undefined
+      ? Number(payload.manualFishPoolCount)
+      : Number(payload.fishPoolCount);
+  const manualInvite =
+    payload.manualInvitationFiveStepsCount !== undefined
+      ? Number(payload.manualInvitationFiveStepsCount)
+      : Number(payload.invitationFiveStepsCount);
+
   try {
     const report = await upsertMyReport({
       memberId,
       reportDate,
-      fishPoolCount: Number(payload.fishPoolCount),
-      invitationFiveStepsCount: Number(payload.invitationFiveStepsCount),
+      manualFishPoolCount: manualFish,
+      manualInvitationFiveStepsCount: manualInvite,
     });
     const { stats } = await getMyStats(memberId);
     return NextResponse.json({ report, stats });
