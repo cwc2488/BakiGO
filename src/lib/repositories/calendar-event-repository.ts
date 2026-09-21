@@ -95,6 +95,7 @@ export class LocalStorageCalendarEventRepository implements CalendarEventReposit
       eventSource: "personal",
       participantCustomerIds: event.participantCustomerIds,
     });
+    flushPendingCloudSync();
     return event;
   }
 
@@ -128,6 +129,7 @@ export class LocalStorageCalendarEventRepository implements CalendarEventReposit
         participantCustomerIds: updated.participantCustomerIds,
       });
     }
+    flushPendingCloudSync();
     return updated;
   }
 

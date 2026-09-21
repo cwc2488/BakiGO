@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { AppBottomNav, AppSideNav } from "./AppNav";
 import { CalendarReminderScheduler } from "@/components/calendar/CalendarReminderScheduler";
+import { CalendarSyncBootstrap } from "@/components/calendar/CalendarSyncBootstrap";
 import { CustomerFollowUpReminderScheduler } from "@/components/customers/CustomerFollowUpReminderScheduler";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -21,6 +22,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      <CalendarSyncBootstrap />
       <CalendarReminderScheduler />
       <CustomerFollowUpReminderScheduler />
       <div className="min-h-full max-w-[100vw]">

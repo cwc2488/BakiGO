@@ -22,7 +22,20 @@ self.addEventListener("install", function (event) {
 });
 
 self.addEventListener("activate", function (event) {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async function () {
+      // Bounded: clear previous Cache Storage entries so dynamic API JSON cannot grow forever.
+      if (self.caches && self.caches.keys) {
+        var keys = await self.caches.keys();
+        await Promise.all(
+          keys.map(function (key) {
+            return self.caches.delete(key);
+          }),
+        );
+      }
+      await self.clients.claim();
+    })(),
+  );
 });
 
 self.addEventListener("push", function (event) {

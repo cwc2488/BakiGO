@@ -21,6 +21,7 @@ export function CalendarReminderScheduler() {
     }
 
     let cancelled = false;
+    let scheduleSynced = false;
 
     async function bootstrap() {
       await registerAppServiceWorker();
@@ -29,7 +30,11 @@ export function CalendarReminderScheduler() {
       }
 
       if (getNotificationPermissionState() === "granted") {
-        await refreshCalendarReminderSchedule(storage);
+        // Full reminder rebuild once per session bootstrap — not on every focus.
+        if (!scheduleSynced) {
+          await refreshCalendarReminderSchedule(storage);
+          scheduleSynced = true;
+        }
         await runDueCalendarReminders(storage);
       }
     }
@@ -44,7 +49,7 @@ export function CalendarReminderScheduler() {
 
     function handleVisibilityChange() {
       if (document.visibilityState === "visible" && getNotificationPermissionState() === "granted") {
-        void refreshCalendarReminderSchedule(storage);
+        // Due-only on resume — event create/update paths refresh the schedule themselves.
         void runDueCalendarReminders(storage);
       }
     }

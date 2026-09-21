@@ -104,6 +104,12 @@ import { createCalendarEventRepository } from "@/lib/repositories/calendar-event
 import { createCustomerRepository } from "@/lib/repositories/customer-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { awaitPendingCloudSync } from "@/lib/repositories/syncing-storage-adapter";
+import {
+  getCalendarStoreSnapshot,
+  subscribeCalendarStore,
+  replaceSharedCalendarEvents,
+} from "@/lib/calendar/calendar-event-store";
+import { syncStoreFromLocalStorage } from "@/lib/calendar/calendar-cloud-sync";
 import { useSwipeNavigation } from "@/lib/hooks/use-swipe-navigation";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { AppIcon } from "@/components/ui/AppIcon";
@@ -111,7 +117,7 @@ import { APP_ICON, QUADRANT_ICONS } from "@/lib/ui/app-icons";
 import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
 import type { CalendarEvent, CalendarSlotInterval, ExpandedCalendarEvent, RecurrenceEditScope } from "@/types/calendar-event";
 import type { Customer } from "@/types/customer";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
 import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal";
 import {
@@ -195,11 +201,16 @@ export default function CalendarPage() {
   const [selectedDate, setSelectedDate] = useState(getTodayDateString());
   const [monthAnchor, setMonthAnchor] = useState(getMonthStart(getTodayDateString()));
   const [slotInterval, setSlotInterval] = useState<CalendarSlotInterval>(60);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [sharedEvents, setSharedEvents] = useState<CalendarEvent[]>(() => {
-    migrateSharedCalendarStorageIfNeeded(storage);
-    return loadSharedCalendarEvents(storage);
-  });
+  const storeSnapshot = useSyncExternalStore(
+    subscribeCalendarStore,
+    getCalendarStoreSnapshot,
+    getCalendarStoreSnapshot,
+  );
+  const events = useMemo(
+    () => storeSnapshot.events.filter((event) => event.memberId === memberId && isPersonalCalendarEvent(event)),
+    [memberId, storeSnapshot.events],
+  );
+  const sharedEvents = storeSnapshot.sharedEvents;
   const [attendedSharedEvents, setAttendedSharedEvents] = useState<SharedCalendarAttendance[]>([]);
   const [showSharedCalendar, setShowSharedCalendar] = useState(() =>
     loadShowSharedCalendar(storage),
@@ -260,7 +271,9 @@ export default function CalendarPage() {
   const reloadEvents = useCallback(() => {
     migrateSharedCalendarStorageIfNeeded(storage);
     purgeSharedEventsFromPersonalStorage(storage, getSharedCalendarIds());
-    setEvents(createCalendarEventRepository(storage).getByMemberId(memberId).filter(isPersonalCalendarEvent));
+    syncStoreFromLocalStorage(storage, memberId);
+    const shared = loadSharedCalendarEvents(storage);
+    replaceSharedCalendarEvents(shared);
     reloadAttendance();
     setOwnedCustomers(
       createCustomerRepository(storage)
@@ -271,6 +284,11 @@ export default function CalendarPage() {
 
   useEffect(() => {
     queueMicrotask(() => {
+      migrateSharedCalendarStorageIfNeeded(storage);
+      const cachedShared = loadSharedCalendarEvents(storage);
+      if (cachedShared.length > 0) {
+        replaceSharedCalendarEvents(cachedShared);
+      }
       purgeSharedEventsFromPersonalStorage(storage, getSharedCalendarIds());
       reloadEvents();
     });
@@ -280,6 +298,8 @@ export default function CalendarPage() {
     let cancelled = false;
 
     if (isSharedCalendarCacheFresh(storage, memberId)) {
+      const cached = loadSharedCalendarEvents(storage);
+      replaceSharedCalendarEvents(cached);
       return () => {
         cancelled = true;
       };
@@ -297,7 +317,7 @@ export default function CalendarPage() {
       try {
         const result = await syncSharedGoogleCalendars(storage, memberId, rangeStart, rangeEnd);
         if (!cancelled) {
-          setSharedEvents(result.events);
+          replaceSharedCalendarEvents(result.events);
           reloadEvents();
           setSharedSyncState("done");
           if (!result.fromCache && result.count > 0) {
@@ -1356,7 +1376,7 @@ export default function CalendarPage() {
         {viewMode !== "stats" ? (
           <GoogleCalendarPanel
             memberId={memberId}
-            onSharedEventsSynced={setSharedEvents}
+            onSharedEventsSynced={replaceSharedCalendarEvents}
             onSynced={reloadEvents}
             onShowSharedCalendarChange={toggleShowSharedCalendar}
             selectedDate={selectedDate}
