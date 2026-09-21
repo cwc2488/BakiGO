@@ -117,11 +117,13 @@ function persistMirrorFromStore(storage: StorageAdapter, memberId?: EntityId): v
 }
 
 function queueOfflineMutation(input: {
+  memberId: EntityId;
   eventId: EntityId;
   operation: "create" | "update" | "delete";
   payload: CalendarEventCreateInput | CalendarEventUpdateInput | CalendarEvent | null;
 }): void {
   enqueueCalendarPendingMutation({
+    memberId: input.memberId,
     eventId: input.eventId,
     operation: input.operation,
     payload: input.payload as CalendarEventCreateInput | CalendarEventUpdateInput | null,
@@ -134,6 +136,7 @@ async function persistEventToCloud(event: CalendarEvent, operation: "create" | "
   }
   if (!isOnline()) {
     queueOfflineMutation({
+      memberId: event.memberId,
       eventId: event.id,
       operation,
       payload: event,
@@ -141,7 +144,18 @@ async function persistEventToCloud(event: CalendarEvent, operation: "create" | "
     return;
   }
   await trackCalendarEventCloudWrite(event.memberId, event.id, "upsert", async () => {
-    await upsertCloudCalendarEvent(event);
+    try {
+      await upsertCloudCalendarEvent(event);
+    } catch (error) {
+      // Online request failed — durable retry queue (not silent success).
+      queueOfflineMutation({
+        memberId: event.memberId,
+        eventId: event.id,
+        operation,
+        payload: event,
+      });
+      console.error("Calendar cloud upsert failed; queued for retry:", error);
+    }
   });
 }
 
@@ -151,6 +165,7 @@ async function persistDeleteToCloud(memberId: EntityId, eventId: EntityId): Prom
   }
   if (!isOnline()) {
     queueOfflineMutation({
+      memberId,
       eventId,
       operation: "delete",
       payload: null,
@@ -158,7 +173,17 @@ async function persistDeleteToCloud(memberId: EntityId, eventId: EntityId): Prom
     return;
   }
   await trackCalendarEventCloudWrite(memberId, eventId, "delete", async () => {
-    await softDeleteCloudCalendarEvent({ memberId, eventId });
+    try {
+      await softDeleteCloudCalendarEvent({ memberId, eventId });
+    } catch (error) {
+      queueOfflineMutation({
+        memberId,
+        eventId,
+        operation: "delete",
+        payload: null,
+      });
+      console.error("Calendar cloud delete failed; queued for retry:", error);
+    }
   });
 }
 

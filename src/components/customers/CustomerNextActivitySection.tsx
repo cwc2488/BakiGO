@@ -103,7 +103,7 @@ export function CustomerNextActivitySection({
     } else {
       calendarRepo.addParticipant(item.eventId, customer.id);
     }
-    await awaitPendingCloudSync();
+    await flushCalendarWriteThrough();
     reload();
     onChanged?.();
     setPickerOpen(false);
@@ -120,7 +120,7 @@ export function CustomerNextActivitySection({
     } else {
       calendarRepo.removeParticipant(item.eventId, customer.id);
     }
-    await awaitPendingCloudSync();
+    await flushCalendarWriteThrough();
     reload();
     onChanged?.();
     setStatusMessage("已移除活動連結");
@@ -143,7 +143,7 @@ export function CustomerNextActivitySection({
       recurrence: payload.recurrence ?? defaultRecurrence(),
       participantCustomerIds: [customer.id],
     });
-    await awaitPendingCloudSync();
+    await flushCalendarWriteThrough();
     reload();
     onChanged?.();
     setCreateOpen(false);

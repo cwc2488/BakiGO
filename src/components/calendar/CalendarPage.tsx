@@ -101,7 +101,7 @@ import {
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createCustomerRepository } from "@/lib/repositories/customer-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
-import { flushCalendarWriteThrough, syncStoreFromLocalStorage } from "@/lib/calendar/calendar-cloud-sync";
+import { flushCalendarWriteThrough, syncStoreFromLocalStorage, ensureVisiblePersonalCalendarRange, expandVisibleRangeWithBuffer } from "@/lib/calendar/calendar-cloud-sync";
 import {
   getCalendarStoreSnapshot,
   subscribeCalendarStore,
@@ -349,6 +349,50 @@ export default function CalendarPage() {
     const dates = getMonthGridDates(monthAnchor, weekStartsOn);
     return { start: dates[0], end: dates[dates.length - 1] };
   }, [monthAnchor, weekStartsOn]);
+
+  const visiblePersonalRange = useMemo(() => {
+    if (viewMode === "month") {
+      return expandVisibleRangeWithBuffer({
+        rangeStart: monthGridDates.start,
+        rangeEnd: monthGridDates.end,
+      });
+    }
+    if (viewMode === "week") {
+      return expandVisibleRangeWithBuffer({
+        rangeStart: weekRangeStart,
+        rangeEnd: weekRangeEnd,
+      });
+    }
+    // day / stats: selected day with buffer (covers tablet dual-day)
+    return expandVisibleRangeWithBuffer({
+      rangeStart: selectedDate,
+      rangeEnd: addDays(selectedDate, 1),
+    });
+  }, [
+    viewMode,
+    monthGridDates.start,
+    monthGridDates.end,
+    weekRangeStart,
+    weekRangeEnd,
+    selectedDate,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void ensureVisiblePersonalCalendarRange({
+      storage,
+      memberId,
+      rangeStart: visiblePersonalRange.rangeStart,
+      rangeEnd: visiblePersonalRange.rangeEnd,
+    }).catch((error) => {
+      if (!cancelled) {
+        console.error("Calendar visible range sync failed:", error);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [memberId, storage, visiblePersonalRange.rangeStart, visiblePersonalRange.rangeEnd]);
 
   const withSharedCalendarColor = useCallback((event: CalendarEvent): CalendarEvent => {
     if (!isSharedGoogleCalendarId(event.googleCalendarId)) {

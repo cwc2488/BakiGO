@@ -1,10 +1,13 @@
 import {
   hydratePersonalCalendarRange,
   upsertCalendarEvents,
+  upsertCalendarEventsIfInActiveRanges,
   removeCalendarEventIds,
   setCalendarLastCloudUpdatedAt,
   listPersonalCalendarEventsForMember,
   getCalendarStoreSnapshot,
+  isPersonalCalendarRangeFresh,
+  makePersonalRangeKey,
 } from "@/lib/calendar/calendar-event-store";
 import {
   enqueueCalendarPendingMutation,
@@ -42,6 +45,14 @@ import type { EntityId } from "@/types";
 
 /** Default personal sync window: visible month ± ~1 month buffer. */
 export const PERSONAL_CALENDAR_SYNC_RANGE_DAYS = 45;
+/** Extra days around day/week/month visible window when navigating. */
+export const PERSONAL_CALENDAR_VIEW_BUFFER_DAYS = 7;
+
+const rangePullInFlight = new Map<
+  string,
+  Promise<{ changed: boolean; count: number; fromCache: boolean }>
+>();
+let rangePullGeneration = 0;
 
 export function getPersonalCalendarSyncRange(referenceDate = getTodayDateString()): {
   rangeStart: string;
@@ -53,6 +64,18 @@ export function getPersonalCalendarSyncRange(referenceDate = getTodayDateString(
   };
 }
 
+export function expandVisibleRangeWithBuffer(input: {
+  rangeStart: string;
+  rangeEnd: string;
+  bufferDays?: number;
+}): { rangeStart: string; rangeEnd: string } {
+  const buffer = input.bufferDays ?? PERSONAL_CALENDAR_VIEW_BUFFER_DAYS;
+  return {
+    rangeStart: addDays(input.rangeStart, -buffer),
+    rangeEnd: addDays(input.rangeEnd, buffer),
+  };
+}
+
 /** Apply a single realtime row change — never re-hydrate the full calendar. */
 export function applyCalendarEventRealtimeChange(change: CalendarEventRealtimeChange): void {
   if (change.type === "DELETE" || change.event == null) {
@@ -61,7 +84,8 @@ export function applyCalendarEventRealtimeChange(change: CalendarEventRealtimeCh
     setCalendarLastCloudUpdatedAt(change.updatedAt);
     return;
   }
-  upsertCalendarEvents([change.event]);
+  // Bound memory: only keep events that overlap an active loaded range.
+  upsertCalendarEventsIfInActiveRanges([change.event]);
   writeCalendarLastSyncAt(change.updatedAt);
   setCalendarLastCloudUpdatedAt(change.updatedAt);
 }
@@ -108,6 +132,63 @@ export async function pullCalendarRangeFromCloud(input: {
   return { changed: true, count: events.length };
 }
 
+/**
+ * Ensure the visible calendar window is loaded.
+ * Uses fresh range cache when available; otherwise range-pulls with request dedupe
+ * and stale-response protection.
+ */
+export async function ensureVisiblePersonalCalendarRange(input: {
+  storage: StorageAdapter;
+  memberId: EntityId;
+  rangeStart: string;
+  rangeEnd: string;
+}): Promise<{ changed: boolean; count: number; fromCache: boolean }> {
+  if (!isSupabaseConfigured() || !isCloudDatabaseMemberId(input.memberId)) {
+    return { changed: false, count: 0, fromCache: true };
+  }
+
+  if (isPersonalCalendarRangeFresh(input.memberId, input.rangeStart, input.rangeEnd)) {
+    return { changed: false, count: 0, fromCache: true };
+  }
+
+  const key = makePersonalRangeKey({
+    memberId: input.memberId,
+    rangeStart: input.rangeStart,
+    rangeEnd: input.rangeEnd,
+  });
+  const existing = rangePullInFlight.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  const generation = ++rangePullGeneration;
+  const work = (async () => {
+    const result = await pullCalendarRangeFromCloud({
+      storage: input.storage,
+      memberId: input.memberId,
+      rangeStart: input.rangeStart,
+      rangeEnd: input.rangeEnd,
+    });
+    void generation;
+    return { ...result, fromCache: false };
+  })();
+
+  rangePullInFlight.set(key, work);
+  try {
+    return await work;
+  } finally {
+    if (rangePullInFlight.get(key) === work) {
+      rangePullInFlight.delete(key);
+    }
+  }
+}
+
+/** Test helper */
+export function resetPersonalCalendarRangePullState(): void {
+  rangePullInFlight.clear();
+  rangePullGeneration = 0;
+}
+
 /** Delta refresh using updated_at cursor — used on resume / online. */
 export async function pullCalendarDeltaFromCloud(input: {
   storage: StorageAdapter;
@@ -132,7 +213,7 @@ export async function pullCalendarDeltaFromCloud(input: {
     removeCalendarEventIds(delta.deletedIds);
   }
   if (delta.events.length > 0) {
-    upsertCalendarEvents(delta.events.filter(isPersonalCalendarEvent));
+    upsertCalendarEventsIfInActiveRanges(delta.events.filter(isPersonalCalendarEvent));
   }
   if (delta.latestUpdatedAt) {
     writeCalendarLastSyncAt(delta.latestUpdatedAt);
@@ -148,6 +229,7 @@ export async function pullCalendarDeltaFromCloud(input: {
 /**
  * One-time: migrate legacy localStorage blob → calendar_events rows,
  * then clear the unbounded local blob.
+ * Prefer server-side migration 082 backfill for Production cloud blobs.
  */
 export async function migrateLegacyCalendarBlobToRows(input: {
   storage: StorageAdapter;
@@ -161,9 +243,11 @@ export async function migrateLegacyCalendarBlobToRows(input: {
     return 0;
   }
 
-  const local = readLegacyCalendarEventsBlob(input.storage).filter(
-    (event) => event.memberId === input.memberId && isPersonalCalendarEvent(event),
-  );
+  const local = readLegacyCalendarEventsBlob(input.storage)
+    .filter(isPersonalCalendarEvent)
+    .map((event) =>
+      event.memberId === input.memberId ? event : { ...event, memberId: input.memberId },
+    );
   let written = 0;
   if (local.length > 0) {
     written = await upsertCloudCalendarEventsBatch(local);
@@ -176,31 +260,23 @@ export async function migrateLegacyCalendarBlobToRows(input: {
 }
 
 export function markCalendarMutationPending(input: {
+  memberId: EntityId;
   eventId: EntityId;
   operation: "create" | "update" | "delete";
   payload?: CalendarEvent | null;
 }): void {
   enqueueCalendarPendingMutation({
+    memberId: input.memberId,
     eventId: input.eventId,
     operation: input.operation,
     payload: (input.payload as never) ?? null,
   });
 }
 
-function memberIdFromPending(item: CalendarPendingMutation): EntityId | null {
-  if (item.payload && typeof item.payload === "object" && "memberId" in item.payload) {
-    const memberId = (item.payload as { memberId?: string }).memberId;
-    if (typeof memberId === "string" && memberId.length > 0) {
-      return memberId;
-    }
-  }
-  const found = getCalendarStoreSnapshot().events.find((event) => event.id === item.eventId);
-  return found?.memberId ?? null;
-}
-
 function eventFromPending(item: CalendarPendingMutation): CalendarEvent | null {
   if (item.payload && typeof item.payload === "object" && "id" in item.payload) {
-    return item.payload as CalendarEvent;
+    const event = item.payload as CalendarEvent;
+    return { ...event, memberId: item.memberId };
   }
   return getCalendarStoreSnapshot().events.find((event) => event.id === item.eventId) ?? null;
 }
@@ -221,7 +297,6 @@ export async function flushCalendarPendingMutationQueue(storage: StorageAdapter)
     return;
   }
 
-  // Keep latest op per eventId.
   const byEvent = new Map<string, CalendarPendingMutation>();
   for (const item of pending) {
     byEvent.set(item.eventId, item);
@@ -230,13 +305,10 @@ export async function flushCalendarPendingMutationQueue(storage: StorageAdapter)
   try {
     for (const item of byEvent.values()) {
       if (item.operation === "delete") {
-        const memberId = memberIdFromPending(item);
-        if (memberId) {
-          await softDeleteCloudCalendarEvent({
-            memberId,
-            eventId: item.eventId,
-          });
-        }
+        await softDeleteCloudCalendarEvent({
+          memberId: item.memberId,
+          eventId: item.eventId,
+        });
       } else {
         const event = eventFromPending(item);
         if (event) {

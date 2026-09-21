@@ -23,7 +23,7 @@ import { useEffect, useMemo, useRef } from "react";
 /**
  * App-level calendar sync lifecycle:
  * - hydrate bounded local range immediately
- * - migrate legacy blob → event rows once
+ * - migrate local legacy blob → event rows BEFORE realtime subscribe
  * - write-through flush on online / foreground
  * - single event-level realtime subscription per member
  * - delta / range pull (never full historical reload)
@@ -47,24 +47,36 @@ export function CalendarSyncBootstrap() {
     void idbClearExpiredCalendarRanges();
 
     let cancelled = false;
-    const unsubscribeRealtime = subscribeMemberCalendarEvents({
-      memberId,
-      onChange: (change) => {
-        if (cancelled) return;
-        applyCalendarEventRealtimeChange(change);
-      },
-    });
+    let unsubscribeRealtime: (() => void) | null = null;
 
     async function initialSync() {
       try {
+        // Migrate first so bulk upserts do not flood a live realtime listener.
         await migrateLegacyCalendarBlobToRows({ storage, memberId: memberId! });
         await flushCalendarPendingMutationQueue(storage);
         await flushCalendarWriteThrough(storage);
-        if (!cancelled) {
-          await pullCalendarRangeFromCloud({ storage, memberId: memberId! });
-        }
+        if (cancelled) return;
+
+        unsubscribeRealtime = subscribeMemberCalendarEvents({
+          memberId: memberId!,
+          onChange: (change) => {
+            if (cancelled) return;
+            applyCalendarEventRealtimeChange(change);
+          },
+        });
+
+        await pullCalendarRangeFromCloud({ storage, memberId: memberId! });
       } catch (error) {
         console.error("Calendar range sync failed:", error);
+        if (!cancelled && !unsubscribeRealtime) {
+          unsubscribeRealtime = subscribeMemberCalendarEvents({
+            memberId: memberId!,
+            onChange: (change) => {
+              if (cancelled) return;
+              applyCalendarEventRealtimeChange(change);
+            },
+          });
+        }
       }
     }
 
@@ -91,7 +103,7 @@ export function CalendarSyncBootstrap() {
 
     return () => {
       cancelled = true;
-      unsubscribeRealtime();
+      unsubscribeRealtime?.();
       window.removeEventListener("online", handleOnline);
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("focus", handleVisibility);

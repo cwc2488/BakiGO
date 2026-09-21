@@ -169,13 +169,15 @@ async function runCloudPush(): Promise<void> {
     }
   })();
 
-  inFlightPushPromise = pushWork.finally(() => {
+  // Assign the request promise itself (not .finally()) so cleanup can match.
+  inFlightPushPromise = pushWork;
+  try {
+    await pushWork;
+  } finally {
     if (inFlightPushPromise === pushWork) {
       inFlightPushPromise = null;
     }
-  });
-
-  await inFlightPushPromise;
+  }
 }
 
 export class SyncingStorageAdapter implements StorageAdapter {

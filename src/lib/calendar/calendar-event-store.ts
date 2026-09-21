@@ -353,5 +353,49 @@ export function getPersonalCalendarEventCount(): number {
   return state.eventsById.size;
 }
 
+export function isPersonalCalendarRangeFresh(
+  memberId: EntityId,
+  rangeStart: string,
+  rangeEnd: string,
+  nowMs = Date.now(),
+): boolean {
+  const key = makePersonalRangeKey({ memberId, rangeStart, rangeEnd });
+  const meta = state.ranges.get(key);
+  if (!meta) return false;
+  if (nowMs > meta.expiresAt) return false;
+  meta.lastAccessAt = nowMs;
+  return true;
+}
+
+function eventOverlapsRange(event: CalendarEvent, rangeStart: string, rangeEnd: string): boolean {
+  if (event.recurrence && event.recurrence.frequency !== "none") {
+    return event.startAt.slice(0, 10) <= rangeEnd;
+  }
+  const start = event.startAt.slice(0, 10);
+  const end = event.endAt.slice(0, 10);
+  return end >= rangeStart && start <= rangeEnd;
+}
+
+/** True when event overlaps any currently loaded (non-expired) personal range. */
+export function eventBelongsToActivePersonalRanges(event: CalendarEvent, nowMs = Date.now()): boolean {
+  for (const meta of state.ranges.values()) {
+    if (nowMs > meta.expiresAt) continue;
+    if (eventOverlapsRange(event, meta.rangeStart, meta.rangeEnd)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Upsert only events that belong to an active loaded range.
+ * Fresh local writes (create/update) should call upsertCalendarEvents directly.
+ */
+export function upsertCalendarEventsIfInActiveRanges(events: CalendarEvent[]): void {
+  const accepted = events.filter((event) => eventBelongsToActivePersonalRanges(event));
+  if (accepted.length === 0) return;
+  upsertCalendarEvents(accepted);
+}
+
 export const CALENDAR_STORE_MAX_PERSONAL_RANGES = MAX_PERSONAL_RANGES;
 export const CALENDAR_STORE_RANGE_TTL_MS = RANGE_TTL_MS;

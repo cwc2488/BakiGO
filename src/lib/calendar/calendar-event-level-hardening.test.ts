@@ -314,6 +314,7 @@ describe("calendar event-level storage hardening", () => {
     // Explicit offline queue contract
     const { enqueueCalendarPendingMutation } = await import("@/lib/calendar/calendar-pending-mutations");
     enqueueCalendarPendingMutation({
+      memberId,
       eventId: event.id,
       operation: "create",
       payload: event,

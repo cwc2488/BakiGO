@@ -115,6 +115,7 @@ describe("calendar pending mutations", () => {
 
   it("stores and clears pending ops", () => {
     const entry = enqueueCalendarPendingMutation({
+      memberId: "m1",
       eventId: "e1",
       operation: "create",
       payload: null,
