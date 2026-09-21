@@ -1,5 +1,4 @@
 import { APP_TIMEZONE, currentAppHour, todayISODate } from "@/lib/config/app-config";
-import { FIVE_PLUS_FIVE_RULES } from "@/lib/five-plus-five/rules";
 
 export const FIVE_PLUS_FIVE_TIMEZONE = APP_TIMEZONE;
 
@@ -11,16 +10,6 @@ export function fivePlusFiveToday(now: Date = new Date()): string {
 /** Hour 0–23 in Asia/Taipei. */
 export function fivePlusFiveHour(now: Date = new Date()): number {
   return currentAppHour(now);
-}
-
-/**
- * True if `now` is still within report_date's editable same-day window
- * (before next Taipei midnight). report_date must be today for on-time create.
- */
-export function isBeforeDailyDeadline(now: Date = new Date()): boolean {
-  // Deadline is end of calendar day; once date rolls, previous day is closed.
-  void FIVE_PLUS_FIVE_RULES.dailyDeadlineHour;
-  return true; // same-day edits allowed until midnight; use isReportDateStillOpen
 }
 
 /**

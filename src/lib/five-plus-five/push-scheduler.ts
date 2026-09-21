@@ -1,5 +1,5 @@
-import { fivePlusFiveHour, fivePlusFiveToday, getBusinessWeekRange } from "@/lib/five-plus-five/dates";
-import { FIVE_PLUS_FIVE_RULES, resolveFivePlusFiveTargets } from "@/lib/five-plus-five/rules";
+import { fivePlusFiveToday, getBusinessWeekRange } from "@/lib/five-plus-five/dates";
+import { resolveFivePlusFiveTargets } from "@/lib/five-plus-five/rules";
 import { claimNotificationDelivery } from "@/lib/push/notification-deliveries";
 import { sendPushToUser } from "@/lib/push/send-push";
 import { PUSH_SOURCE } from "@/lib/push/types";
@@ -149,9 +149,6 @@ export async function processFivePlusFivePushReminders(input?: {
   const nowMs = input?.nowMs ?? Date.now();
   const now = new Date(nowMs);
   const today = fivePlusFiveToday(now);
-  const hour = fivePlusFiveHour(now);
-  void hour;
-  void FIVE_PLUS_FIVE_RULES;
 
   let slot: FivePlusFivePushSlot | null = null;
   if (isSlotDue(nowMs, today, "20")) slot = "20";

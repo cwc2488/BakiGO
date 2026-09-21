@@ -10,7 +10,7 @@ import {
   fetchMyFivePlusFive,
   upsertMyFivePlusFive,
 } from "@/lib/five-plus-five/client";
-import { formatShortDisplayDate } from "@/lib/five-plus-five/dates";
+import { formatShortDisplayDate, addCalendarDays } from "@/lib/five-plus-five/dates";
 import { dayStatusLabel } from "@/lib/five-plus-five/stats";
 import type { FivePlusFiveMyStats } from "@/types/five-plus-five";
 
@@ -142,7 +142,7 @@ export default function FivePlusFiveMyReportPage() {
               <input
                 type="date"
                 value={backfillDate}
-                max={stats.todayDate}
+                max={addCalendarDays(stats.todayDate, -1)}
                 onChange={(e) => setBackfillDate(e.target.value)}
                 className="w-full rounded-xl border border-[var(--brand-border)] px-3 py-2.5 text-[0.9375rem]"
               />

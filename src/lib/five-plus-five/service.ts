@@ -9,7 +9,6 @@ import {
   getBusinessWeekRange,
   computeSubmittedOnTime,
   addCalendarDays,
-  isReportDateStillOpen,
 } from "@/lib/five-plus-five/dates";
 import { FIVE_PLUS_FIVE_RULES, resolveFivePlusFiveTargets } from "@/lib/five-plus-five/rules";
 import {
@@ -205,7 +204,6 @@ export async function upsertMyReport(input: {
   const now = input.now ?? new Date();
   const today = fivePlusFiveToday(now);
   const isToday = input.reportDate === today;
-  const isPast = input.reportDate < today;
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.reportDate)) {
     throw new FivePlusFiveServiceError("Invalid report date", 400);
@@ -258,9 +256,6 @@ export async function upsertMyReport(input: {
   }
 
   const submittedOnTime = isToday && computeSubmittedOnTime(input.reportDate, now);
-  // Past dates are always 補登 (false). Today open → true.
-  void isPast;
-  void isReportDateStillOpen;
 
   const { data, error } = await supabase
     .from("five_plus_five_reports")
