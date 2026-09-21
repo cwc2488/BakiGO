@@ -5,6 +5,7 @@ import {
   isSupabaseServiceConfigured,
 } from "@/lib/supabase/service-client";
 import { processCalendarPushReminders } from "@/lib/push/calendar-push-scheduler";
+import { processFivePlusFivePushReminders } from "@/lib/five-plus-five/push-scheduler";
 import { isVapidConfigured } from "@/lib/push/vapid";
 
 export const runtime = "nodejs";
@@ -12,7 +13,7 @@ export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 /**
- * Server-side Web Push worker for calendar reminders.
+ * Server-side Web Push worker for calendar + 5＋5 reminders.
  * Auth: COACHING_CRON_SECRET / CRON_SECRET (same as coaching jobs).
  */
 async function handle(request: Request) {
@@ -48,15 +49,17 @@ async function handle(request: Request) {
 
   try {
     const calendar = await processCalendarPushReminders({ limit });
+    const fivePlusFive = await processFivePlusFivePushReminders({ limit });
 
     console.info(
       JSON.stringify({
         event: "web_push_worker_complete",
         calendar,
+        fivePlusFive,
       }),
     );
 
-    return NextResponse.json({ ok: true, calendar });
+    return NextResponse.json({ ok: true, calendar, fivePlusFive });
   } catch (error) {
     console.error(
       JSON.stringify({

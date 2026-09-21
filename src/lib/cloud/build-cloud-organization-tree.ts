@@ -27,7 +27,7 @@ function buildMemberView(
   };
 }
 
-function getDirectChildMemberNumbers(
+export function getDirectChildMemberNumbers(
   parentMemberNumber: string,
   members: CloudMember[],
   relationships: CloudOrganizationRelationship[],

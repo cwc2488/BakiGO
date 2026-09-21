@@ -888,6 +888,48 @@ Each Partner sets their own preferred development region. Nearer *qualified* can
 
 `minimum_qualified_score` stays 40. Daily cap 20 is a ceiling, not a quota to fill.
 
+## 5＋5 行動（V1）
+
+新人每日純數字行動系統。正式名稱：**5＋5 行動**。原本流程正式名稱：**邀約5步驟**（勿再使用 54321 / 554321）。
+
+**不是 CRM。** V1 只記純數字，不記對方姓名、電話、customerId、leadId、或每個人在哪一步。
+
+### Timezone & week
+
+- 所有日期、截止、週／月統計：`Asia/Taipei`
+- 每日回報窗：當天 00:00～23:59；23:59 後前一天正式截止
+- 業務週固定 **Monday 00:00 → Sunday 23:59**（不跟 Calendar 個人週起始綁定）
+
+### Targets（Priority 0 — Rule Engine）
+
+| Rule key | Target |
+|----------|--------|
+| `five_plus_five.fish_pool_daily` | **5** 人 / day（含六、日） |
+| `five_plus_five.fish_pool_weekly` | **35** 人 / week（衍生顯示） |
+| `five_plus_five.invitation_five_steps_weekly` | **5** 人 / week（第一次進入第 1 步「尋找需求」計 1 人） |
+
+UI 必須渲染 Rule Engine / service 輸出的 targets，禁止在元件內硬編碼 KPI。
+
+### On-time / 補登 / streak
+
+- 第一次提交時間決定 `submitted_on_time`；之後改數字不改變準時狀態
+- 補登過去日期：`submitted_on_time = false`，標示「補登」；仍計入週／月／歷史；**不修復**連續準時 streak
+- 連續準時：從今天往回連續 calendar days 皆 `submitted_on_time = true`；若今天尚未截止且尚未回報，從昨天起算（不提前歸零）
+- 本月準時率：準時天數 / 本月 1 號到今天的 calendar days（不含未來）
+
+### Authorization
+
+- 本人：CRUD 自己的 reports
+- 上線：可讀所有 descendants（含多代），不可改下線
+- Server 必須驗證 viewer = 本人 OR ancestor（重用 organization_relationships ∪ sponsor）
+
+### Reminders（Web Push）
+
+重用既有 `/api/push/process` + `notification_deliveries` dedupe：
+
+- 20:00 Asia/Taipei：尚未回報 **或** 已回報但魚池 < 5
+- 23:00 Asia/Taipei：僅尚未回報
+
 ## Change Log
 
 | Date | Change | Author |
@@ -907,3 +949,4 @@ Each Partner sets their own preferred development region. Nearer *qualified* can
 | 2026-08 | Recognition Center — self-service validation, AUTO PASS, Exception-only Admin, submitter crop | — |
 | 2026-08-24 | RADAR-SEMANTIC-01 — candidate understanding, language eligibility, next-day region preference | — |
 | 2026-08-24 | RADAR-FEEDBACK-01 — member 👍/👎 evaluation evidence; no auto-learning | — |
+| 2026-09-21 | 5＋5 行動 V1 — fish pool daily 5 + invitation five-steps weekly 5 | — |

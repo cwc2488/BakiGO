@@ -27,6 +27,7 @@ import { homeMoreEntriesForViewer } from "@/lib/auth/admin-access";
 import { useSuperAdmin } from "@/lib/auth/use-super-admin";
 import { useSoftRefresh } from "@/lib/hooks/use-soft-refresh";
 import { millisecondsUntilNextAppMidnight } from "@/lib/config/app-config";
+import { FivePlusFiveHomeCard } from "@/components/five-plus-five/FivePlusFiveHomeCard";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -84,6 +85,9 @@ function BusinessHomeView({ metrics }: { metrics: MemberComputedMetrics }) {
           ))}
         </dl>
       </section>
+
+      {/* 5＋5 行動 — prominent daily entry (not bottom nav) */}
+      <FivePlusFiveHomeCard />
 
       {/* 我的事業 */}
       <section className="space-y-3">
