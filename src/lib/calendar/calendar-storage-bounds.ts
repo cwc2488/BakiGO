@@ -119,9 +119,18 @@ export function saveSharedCalendarCacheBounded(
     const smaller = boundSharedCalendarEventsForLocalCache(bounded, {
       maxChars: Math.floor(SHARED_CALENDAR_LOCAL_MAX_CHARS / 4),
     });
-    storage.removeItem(STORAGE_KEYS.sharedCalendarEvents);
-    write(smaller);
-    return smaller;
+    try {
+      storage.removeItem(STORAGE_KEYS.sharedCalendarEvents);
+    } catch {
+      /* ignore cleanup failure */
+    }
+    try {
+      write(smaller);
+      return smaller;
+    } catch (retryError) {
+      // Let caller decide — shared sync must stay non-blocking.
+      throw retryError;
+    }
   }
 }
 

@@ -326,9 +326,13 @@ export default function CalendarPage() {
           const hasCachedEvents = loadSharedCalendarEvents(storage).length > 0;
           setSharedSyncState(hasCachedEvents ? "done" : "error");
           if (!hasCachedEvents) {
-            setStatusMessage(
-              caught instanceof Error ? caught.message : "共用行事曆載入失敗，請稍後再試",
-            );
+            const message =
+              caught instanceof Error ? caught.message : "共用行事曆載入失敗，請稍後再試";
+            // Never surface the old wipe-site quota copy as a page-breaking error.
+            // Soft quota copy (if any) is non-blocking; personal calendar stays usable.
+            if (!message.includes("清除瀏覽器網站資料")) {
+              setStatusMessage(message);
+            }
           }
         }
       }
