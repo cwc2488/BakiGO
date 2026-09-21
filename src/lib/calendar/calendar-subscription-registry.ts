@@ -1,7 +1,12 @@
 /**
  * Subscription registry — one active realtime listener per scope key.
  */
+import {
+  mapCalendarEventDbRow,
+  type CalendarEventDbRow,
+} from "@/lib/cloud/calendar-events-cloud-service";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import type { CalendarEvent } from "@/types/calendar-event";
 import type { EntityId } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -69,9 +74,88 @@ export function clearAllSubscriptions(): void {
   }
 }
 
+export type CalendarEventRealtimeChange = {
+  type: "INSERT" | "UPDATE" | "DELETE";
+  event: CalendarEvent | null;
+  eventId: EntityId;
+  updatedAt: string;
+};
+
 /**
- * Cloud is source of truth for personal calendar blob in member_app_data.
- * Filter client-side to calendarEvents key.
+ * Event-level realtime on public.calendar_events.
+ * One active subscription per member — never re-hydrate the full calendar blob.
+ */
+export function subscribeMemberCalendarEvents(input: {
+  memberId: EntityId;
+  onChange: (change: CalendarEventRealtimeChange) => void;
+}): Unsubscribe {
+  if (!isSupabaseConfigured() || typeof window === "undefined") {
+    return () => undefined;
+  }
+
+  const key = `calendar:events:${input.memberId}`;
+  return acquireSubscription(key, () => {
+    const supabase = createSupabaseBrowserClient();
+    const channel = supabase
+      .channel(key)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "calendar_events",
+          filter: `member_id=eq.${input.memberId}`,
+        },
+        (message) => {
+          const eventType = String(message.eventType ?? "UPDATE").toUpperCase() as
+            | "INSERT"
+            | "UPDATE"
+            | "DELETE";
+          if (eventType === "DELETE") {
+            const oldRow = message.old as { id?: string; updated_at?: string } | null;
+            if (!oldRow?.id) return;
+            input.onChange({
+              type: "DELETE",
+              event: null,
+              eventId: oldRow.id,
+              updatedAt: oldRow.updated_at ?? new Date().toISOString(),
+            });
+            return;
+          }
+
+          const row = message.new as CalendarEventDbRow | null;
+          if (!row?.id) return;
+          if (row.deleted_at) {
+            input.onChange({
+              type: "UPDATE",
+              event: null,
+              eventId: row.id,
+              updatedAt: row.updated_at ?? new Date().toISOString(),
+            });
+            return;
+          }
+          const event = mapCalendarEventDbRow(row);
+          input.onChange({
+            type: eventType === "INSERT" ? "INSERT" : "UPDATE",
+            event,
+            eventId: row.id,
+            updatedAt: row.updated_at ?? new Date().toISOString(),
+          });
+        },
+      )
+      .subscribe();
+
+    return {
+      channel,
+      cleanup: () => {
+        void supabase.removeChannel(channel);
+      },
+    };
+  });
+}
+
+/**
+ * @deprecated Blob-level member_app_data listener. Prefer subscribeMemberCalendarEvents.
  */
 export function subscribeMemberCalendarAppData(input: {
   memberId: EntityId;

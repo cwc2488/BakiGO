@@ -38,13 +38,29 @@ Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `oc
 
 Migration `061_customers_soft_delete.sql` adds nullable `deleted_at`. Active CRM rows have `deleted_at IS NULL`. Coach delete is a soft delete (`deleted_at = now()`); a BEFORE UPDATE trigger preserves `deleted_at` once set so stale client upserts cannot resurrect. Child tables (measurements, photos, coaching FKs) are not cascade-deleted.
 
+### Personal calendar events (`082_calendar_events_v1.sql`)
+
+| Table | Purpose |
+|-------|---------|
+| `calendar_events` | Normalized personal calendar: **1 row per event** (cloud source of truth) |
+
+**Columns:** `id` (text, client UUID), `member_id`, `created_at`, `updated_at`, `start_at`, `end_at`, `is_recurring`, `payload` (full `CalendarEvent` JSON), `deleted_at` (soft delete).
+
+**Write path:** create / update upserts one row; delete soft-deletes one row. Never push the full calendar as a `member_app_data` JSON blob (last-write-wins removed).
+
+**Read path:** range query for visible window (± buffer) plus active recurring series; delta via `updated_at` cursor. App store retains bounded ranges (LRU + TTL).
+
+**Realtime:** `postgres_changes` on `calendar_events` applies INSERT/UPDATE/DELETE by event id only.
+
+**Legacy:** `member_app_data` key `baki-go:calendar-events` may still exist for migration; clients migrate once to rows then stop syncing that blob. Local mirror key `baki-go:calendar-events-local-mirror` is bounded and not cloud-synced.
+
 ### Calendar ↔ Customer participants (`074_calendar_event_participants.sql`)
 
 | Table | Purpose |
 |-------|---------|
 | `calendar_event_participants` | Coach-owned join: personal calendar `event_id` (JSON `CalendarEvent.id`) ↔ `customers.id` |
 
-**Operational source of truth (app):** `CalendarEvent.participantCustomerIds` inside `member_app_data` key `baki-go:calendar-events` (stable customer IDs, not names).
+**Operational source of truth (app):** `CalendarEvent.participantCustomerIds` on the personal event row in `calendar_events.payload` (and still mirrored in the participants join table). Stable customer IDs, not names.
 
 **Cloud mirror:** `calendar_event_participants` enforces uniqueness on
 `(owner_member_id, event_source, event_id, customer_id)` and owner-only RLS that also requires the customer row to belong to the same coach (`deleted_at is null`). Removing a participant or deleting an event does **not** delete the customer or the calendar event series counterpart beyond the join row.

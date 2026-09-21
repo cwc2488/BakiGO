@@ -66,6 +66,7 @@ export function clearTestAppData(storage: StorageAdapter): void {
     STORAGE_KEYS.retailTransactions,
     STORAGE_KEYS.retailPipelineLeads,
     STORAGE_KEYS.calendarEvents,
+    STORAGE_KEYS.calendarEventsLocalMirror,
     STORAGE_KEYS.calendarSharedAttendance,
     STORAGE_KEYS.sharedCalendarEvents,
     STORAGE_KEYS.promotionCampaigns,

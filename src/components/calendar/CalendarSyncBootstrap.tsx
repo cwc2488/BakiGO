@@ -2,28 +2,31 @@
 
 import { useAuth } from "@/lib/auth/auth-context";
 import {
-  applyCloudCalendarPayload,
+  applyCalendarEventRealtimeChange,
   bootstrapCalendarStoreFromLocal,
   flushCalendarPendingMutationQueue,
   flushCalendarWriteThrough,
+  migrateLegacyCalendarBlobToRows,
   pullCalendarDeltaFromCloud,
+  pullCalendarRangeFromCloud,
 } from "@/lib/calendar/calendar-cloud-sync";
 import { resetCalendarStore } from "@/lib/calendar/calendar-event-store";
 import {
   clearAllSubscriptions,
-  subscribeMemberCalendarAppData,
+  subscribeMemberCalendarEvents,
 } from "@/lib/calendar/calendar-subscription-registry";
-import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { idbClearExpiredCalendarRanges } from "@/lib/calendar/calendar-idb-cache";
 import { pruneCalendarLocalRetention } from "@/lib/calendar/calendar-storage-bounds";
+import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { useEffect, useMemo, useRef } from "react";
 
 /**
  * App-level calendar sync lifecycle:
- * - hydrate from local cache immediately
+ * - hydrate bounded local range immediately
+ * - migrate legacy blob → event rows once
  * - write-through flush on online / foreground
- * - single realtime subscription per member
- * - delta pull when realtime is unavailable
+ * - single event-level realtime subscription per member
+ * - delta / range pull (never full historical reload)
  */
 export function CalendarSyncBootstrap() {
   const { session } = useAuth();
@@ -44,29 +47,30 @@ export function CalendarSyncBootstrap() {
     void idbClearExpiredCalendarRanges();
 
     let cancelled = false;
-    const unsubscribeRealtime = subscribeMemberCalendarAppData({
+    const unsubscribeRealtime = subscribeMemberCalendarEvents({
       memberId,
-      onCalendarPayload: (payload, updatedAt) => {
+      onChange: (change) => {
         if (cancelled) return;
-        applyCloudCalendarPayload({ storage, memberId, payload, updatedAt });
+        applyCalendarEventRealtimeChange(change);
       },
     });
 
-    async function initialDelta() {
+    async function initialSync() {
       try {
+        await migrateLegacyCalendarBlobToRows({ storage, memberId: memberId! });
         await flushCalendarPendingMutationQueue(storage);
         await flushCalendarWriteThrough(storage);
         if (!cancelled) {
-          await pullCalendarDeltaFromCloud({ storage, memberId: memberId! });
+          await pullCalendarRangeFromCloud({ storage, memberId: memberId! });
         }
       } catch (error) {
-        console.error("Calendar delta sync failed:", error);
+        console.error("Calendar range sync failed:", error);
       }
     }
 
     if (startedFor.current !== memberId) {
       startedFor.current = memberId;
-      void initialDelta();
+      void initialSync();
     }
 
     function handleOnline() {
@@ -78,7 +82,6 @@ export function CalendarSyncBootstrap() {
     function handleVisibility() {
       if (document.visibilityState !== "visible") return;
       void flushCalendarPendingMutationQueue(storage);
-      // Delta only — never full historical reload.
       void pullCalendarDeltaFromCloud({ storage, memberId: memberId! });
     }
 

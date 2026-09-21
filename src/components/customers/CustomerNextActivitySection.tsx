@@ -17,7 +17,7 @@ import { defaultRecurrence } from "@/lib/calendar/recurrence";
 import { loadSharedCalendarEvents } from "@/lib/calendar/shared-calendar-storage";
 import { todayISODate } from "@/lib/config/app-config";
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
-import { awaitPendingCloudSync } from "@/lib/repositories/syncing-storage-adapter";
+import { flushCalendarWriteThrough } from "@/lib/calendar/calendar-cloud-sync";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import type { CalendarEvent } from "@/types/calendar-event";
 import type { Customer } from "@/types/customer";

@@ -101,13 +101,12 @@ import {
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createCustomerRepository } from "@/lib/repositories/customer-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
-import { awaitPendingCloudSync } from "@/lib/repositories/syncing-storage-adapter";
+import { flushCalendarWriteThrough, syncStoreFromLocalStorage } from "@/lib/calendar/calendar-cloud-sync";
 import {
   getCalendarStoreSnapshot,
   subscribeCalendarStore,
   replaceSharedCalendarEvents,
 } from "@/lib/calendar/calendar-event-store";
-import { syncStoreFromLocalStorage } from "@/lib/calendar/calendar-cloud-sync";
 import { useSwipeNavigation } from "@/lib/hooks/use-swipe-navigation";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { AppIcon } from "@/components/ui/AppIcon";
@@ -498,12 +497,12 @@ export default function CalendarPage() {
         eventId: viewingExpandedEvent.sourceEventId,
         customerId,
       });
-      void awaitPendingCloudSync();
+      void flushCalendarWriteThrough();
       return;
     }
     if (formMode === "edit" && editingEventId) {
       createCalendarEventRepository(storage).addParticipant(editingEventId, customerId);
-      void awaitPendingCloudSync();
+      void flushCalendarWriteThrough();
       reloadEvents();
     }
   }
@@ -516,12 +515,12 @@ export default function CalendarPage() {
         eventId: viewingExpandedEvent.sourceEventId,
         customerId,
       });
-      void awaitPendingCloudSync();
+      void flushCalendarWriteThrough();
       return;
     }
     if (formMode === "edit" && editingEventId) {
       createCalendarEventRepository(storage).removeParticipant(editingEventId, customerId);
-      void awaitPendingCloudSync();
+      void flushCalendarWriteThrough();
       reloadEvents();
     }
   }
@@ -923,13 +922,13 @@ export default function CalendarPage() {
       }
 
       repository.delete(plan.eventId);
-      await awaitPendingCloudSync();
+      await flushCalendarWriteThrough();
       return syncGoogleDelete(existing);
     }
 
     if (plan.action === "update") {
       const updated = repository.update(plan.eventId, plan.input);
-      await awaitPendingCloudSync();
+      await flushCalendarWriteThrough();
       return syncToGoogleWithWarning(updated, "update");
     }
 
@@ -937,7 +936,7 @@ export default function CalendarPage() {
       repository.update(plan.updateParent.eventId, plan.updateParent.input);
     }
     const created = repository.create(plan.input);
-    await awaitPendingCloudSync();
+    await flushCalendarWriteThrough();
     return syncToGoogleWithWarning(created, "create");
   }
 
@@ -963,7 +962,7 @@ export default function CalendarPage() {
         if (!isRecurringSeries(created) && isConsultationActivity(created.activityTypeKey)) {
           ensureScheduledConsultationCalendarEvent(storage, memberId, created);
         }
-        await awaitPendingCloudSync();
+        await flushCalendarWriteThrough();
         googleWarning = await syncToGoogleWithWarning(created, "create");
         setFormOpen(false);
         setDraftParticipantIds([]);
@@ -993,13 +992,13 @@ export default function CalendarPage() {
         googleWarning = await applyRecurrenceMutation(plan);
         // Participants belong to the series (source event), not a single occurrence.
         repository.update(editingEventId, { participantCustomerIds: draftParticipantIds });
-        await awaitPendingCloudSync();
+        await flushCalendarWriteThrough();
       } else {
         const updated = repository.update(editingEventId, {
           ...payload,
           participantCustomerIds: draftParticipantIds,
         });
-        await awaitPendingCloudSync();
+        await flushCalendarWriteThrough();
         googleWarning = await syncToGoogleWithWarning(updated, "update");
       }
 
@@ -1051,7 +1050,7 @@ export default function CalendarPage() {
             existing.startAt.slice(0, 10),
           );
           repository.delete(editingEventId);
-          await awaitPendingCloudSync();
+          await flushCalendarWriteThrough();
           googleWarning = await syncGoogleDelete(existing);
         }
       } else {
@@ -1062,7 +1061,7 @@ export default function CalendarPage() {
           existing.startAt.slice(0, 10),
         );
         repository.delete(editingEventId);
-        await awaitPendingCloudSync();
+        await flushCalendarWriteThrough();
         googleWarning = await syncGoogleDelete(existing);
       }
 
@@ -1127,7 +1126,7 @@ export default function CalendarPage() {
           googleWarning = warning;
         }
       }
-      await awaitPendingCloudSync();
+      await flushCalendarWriteThrough();
       setCopyOpen(false);
       setFormOpen(false);
       resetCalendarInteraction();
@@ -1184,7 +1183,7 @@ export default function CalendarPage() {
           startAt: newStartAt,
           endAt: newEndAt,
         });
-        await awaitPendingCloudSync();
+        await flushCalendarWriteThrough();
         googleWarning = await syncToGoogleWithWarning(updated, "update");
       }
 

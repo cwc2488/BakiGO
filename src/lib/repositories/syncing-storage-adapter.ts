@@ -11,10 +11,15 @@ let cloudSyncPaused = false;
 const pendingKeys = new Set<string>();
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 let pushSourceStorage: StorageAdapter | null = null;
+/** Tracks the active network push so awaitPendingCloudSync waits for real completion. */
+let inFlightPushPromise: Promise<void> | null = null;
 
 const PUSH_DEBOUNCE_MS = 1500;
+/**
+ * Keys that flush immediately (non-calendar blobs).
+ * Personal calendar events are event-level via calendar_events table — not listed here.
+ */
 const IMMEDIATE_FLUSH_KEYS = new Set<string>([
-  STORAGE_KEYS.calendarEvents,
   STORAGE_KEYS.calendarEventDeletionTombstones,
   STORAGE_KEYS.calendarGoogleDeletionTombstones,
   STORAGE_KEYS.calendarSharedAttendance,
@@ -68,6 +73,14 @@ export async function awaitPendingCloudSync(): Promise<void> {
     pushTimer = null;
   }
   await runCloudPush();
+  if (inFlightPushPromise) {
+    await inFlightPushPromise;
+  }
+}
+
+/** Test/helper: whether a network push is currently in flight. */
+export function hasInFlightCloudPush(): boolean {
+  return inFlightPushPromise != null;
 }
 
 function readSyncMemberId(): EntityId | null {
@@ -110,6 +123,14 @@ function scheduleCloudPush(key: string): void {
 }
 
 async function runCloudPush(): Promise<void> {
+  // Coalesce concurrent callers onto the same in-flight request.
+  if (inFlightPushPromise) {
+    await inFlightPushPromise;
+    if (pendingKeys.size === 0) {
+      return;
+    }
+  }
+
   restoreOfflinePendingKeys();
   const memberId = readSyncMemberId();
   const inner = pushSourceStorage;
@@ -138,13 +159,23 @@ async function runCloudPush(): Promise<void> {
     return;
   }
 
-  try {
-    await pushCloudAppDataKeys({ memberId, entries });
-  } catch (error) {
-    console.error("Cloud sync push failed:", error);
-    keys.forEach((key) => pendingKeys.add(key));
-    persistOfflinePendingKeys();
-  }
+  const pushWork = (async () => {
+    try {
+      await pushCloudAppDataKeys({ memberId, entries });
+    } catch (error) {
+      console.error("Cloud sync push failed:", error);
+      keys.forEach((key) => pendingKeys.add(key));
+      persistOfflinePendingKeys();
+    }
+  })();
+
+  inFlightPushPromise = pushWork.finally(() => {
+    if (inFlightPushPromise === pushWork) {
+      inFlightPushPromise = null;
+    }
+  });
+
+  await inFlightPushPromise;
 }
 
 export class SyncingStorageAdapter implements StorageAdapter {

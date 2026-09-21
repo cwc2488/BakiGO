@@ -129,7 +129,9 @@ export function sharedApiEventsToCalendarEvents(
 
 /** 從個人行程庫移除誤存的共用行程（一次性清理） */
 export function purgeSharedEventsFromPersonalStorage(storage: StorageAdapter, sharedCalendarIds: Set<string>): void {
-  const raw = storage.getItem(STORAGE_KEYS.calendarEvents);
+  const raw =
+    storage.getItem(STORAGE_KEYS.calendarEventsLocalMirror) ??
+    storage.getItem(STORAGE_KEYS.calendarEvents);
   const events = parseEvents(raw);
   const filtered = events.filter((event) => {
     if (event.id.startsWith("shared:")) {
@@ -144,7 +146,8 @@ export function purgeSharedEventsFromPersonalStorage(storage: StorageAdapter, sh
     return true;
   });
   if (filtered.length !== events.length) {
-    storage.setItem(STORAGE_KEYS.calendarEvents, JSON.stringify(filtered));
+    storage.setItem(STORAGE_KEYS.calendarEventsLocalMirror, JSON.stringify(filtered));
+    storage.removeItem(STORAGE_KEYS.calendarEvents);
   }
 }
 
