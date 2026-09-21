@@ -48,7 +48,9 @@ Migration `061_customers_soft_delete.sql` adds nullable `deleted_at`. Active CRM
 
 **Write path:** create / update upserts one row; delete soft-deletes one row. Never push the full calendar as a `member_app_data` JSON blob (last-write-wins removed).
 
-**Read path:** range query for visible window (± buffer) plus active recurring series; delta via `updated_at` cursor. App store retains bounded ranges (LRU + TTL).
+**Server backfill (082):** idempotent `INSERT … SELECT jsonb_array_elements(payload)` from `member_app_data` where `data_key = 'baki-go:calendar-events'`. Owner is always `member_app_data.member_id` (payload `memberId` normalized). Legacy blob is **not** deleted (rollback source). Migration verifies source count == migrated count.
+
+**Read path:** range query for visible window (± buffer) plus active recurring series; delta via `updated_at` cursor. App store retains bounded ranges (LRU + TTL). CalendarPage navigation (day/week/month) calls `ensureVisiblePersonalCalendarRange`.
 
 **Realtime:** `postgres_changes` on `calendar_events` applies INSERT/UPDATE/DELETE by event id only.
 
