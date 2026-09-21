@@ -47,6 +47,7 @@ export type NotificationPermissionUiState =
 
 export const PUSH_SOURCE = {
   calendarReminder: "calendar_reminder",
+  fivePlusFiveReminder: "five_plus_five_reminder",
   test: "test",
 } as const;
 

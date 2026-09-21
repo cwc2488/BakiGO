@@ -1018,3 +1018,31 @@ Additive personal Web Push + free-form lead tracking (not CRM). Owner-only RLS v
 **Env (Web Push):** `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, optional `VAPID_SUBJECT`. Cron worker: `/api/push/process` (same Bearer secrets as coaching cron).
 
 **Do not confuse with:** `retail-pipeline` leads, `recruitment_leads`, `transformation_leads`, or GO21 `coaching_ai_reminders` (in-app turns).
+
+### 5＋5 行動 (`085_five_plus_five_v1.sql`)
+
+Pure numeric daily action reports. **Not CRM** — no names, phones, or step tracking.
+
+| Table | Purpose |
+|-------|---------|
+| `five_plus_five_reports` | One row per `(member_id, report_date)`: fish_pool_count, invitation_five_steps_count, first_submitted_at, submitted_on_time |
+
+**Constraints:** `UNIQUE(member_id, report_date)`; counts `>= 0`.
+
+**RLS:** own SELECT/INSERT/UPDATE; ancestor SELECT all descendants via recursive `organization_relationships` ∪ `sponsor_member_number` (same shape as 072). No authenticated DELETE. Upline cannot UPDATE downline.
+
+**Indexes:** `(member_id, report_date desc)`, `(report_date)`, `(member_id, submitted_on_time, report_date desc)`.
+
+**Push:** `source_type = five_plus_five_reminder`, `source_key = five_plus_five:{20\|23}:{YYYY-MM-DD}` via existing `notification_deliveries` dedupe.
+
+**Rollout:** Migration must be applied by human ops to Production — agents must not apply it.
+
+**Privilege matrix:**
+
+| Role | SELECT | INSERT/UPDATE/DELETE |
+|------|--------|------------------------|
+| `anon` | ✗ | ✗ |
+| `authenticated` | own + descendant rows (RLS) | ✗ (revoked) |
+| `service_role` | ✓ | ✓ (server `/api/5plus5/*` only) |
+
+**Stats RPC:** `get_five_plus_five_member_stats(...)` — SECURITY DEFINER, `EXECUTE` granted **only** to `service_role` (revoked from `PUBLIC` / `anon` / `authenticated`). Returns today row + week/month/history aggregates + streak + recent ≤30 days — no full-history dump into Node.

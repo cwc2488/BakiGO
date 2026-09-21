@@ -24,6 +24,7 @@ function isActive(pathname: string, href: string): boolean {
       pathname === "/" ||
       pathname === "/profile" ||
       pathname === "/daily-action" ||
+      pathname.startsWith("/5plus5") ||
       pathname.startsWith("/president-road") ||
       pathname.startsWith("/organization") ||
       pathname.startsWith("/retail-house") ||
