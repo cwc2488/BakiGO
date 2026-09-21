@@ -48,7 +48,9 @@ Migration `061_customers_soft_delete.sql` adds nullable `deleted_at`. Active CRM
 
 **Write path:** create / update upserts one row; delete soft-deletes one row. Never push the full calendar as a `member_app_data` JSON blob (last-write-wins removed).
 
-**Server backfill (082):** idempotent `INSERT … SELECT jsonb_array_elements(payload)` from `member_app_data` where `data_key = 'baki-go:calendar-events'`. Owner is always `member_app_data.member_id` (payload `memberId` normalized). Legacy blob is **not** deleted (rollback source). Migration verifies source count == migrated count.
+**Server backfill (082):** idempotent `INSERT … SELECT jsonb_array_elements(payload)` from `member_app_data` where `data_key = 'baki-go:calendar-events'`. Owner is always `member_app_data.member_id` (payload `memberId` normalized). Legacy blob is **not** deleted (rollback source). Migration verifies source count == migrated count. Conflict update only when `calendar_events.updated_at < excluded.updated_at` (never overwrite newer; never resurrect soft-deletes).
+
+**Cutover (083):** `reconcile_calendar_events_from_legacy_blobs()` — insert missing; update only when legacy is newer; skip soft-deleted. Steps: (1) apply 082 → (2) deploy new app → (3) run reconcile → (4) retire legacy blob writers. Client also runs conditional local migrate + `reconcileCloudLegacyCalendarBlob` on bootstrap.
 
 **Read path:** range query for visible window (± buffer) plus active recurring series; delta via `updated_at` cursor. App store retains bounded ranges (LRU + TTL). CalendarPage navigation (day/week/month) calls `ensureVisiblePersonalCalendarRange`.
 

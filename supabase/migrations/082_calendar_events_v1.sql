@@ -186,19 +186,14 @@ from normalized
 on conflict (member_id, id) do update
 set
   created_at = least(public.calendar_events.created_at, excluded.created_at),
-  updated_at = greatest(public.calendar_events.updated_at, excluded.updated_at),
+  updated_at = excluded.updated_at,
   start_at = excluded.start_at,
   end_at = excluded.end_at,
   is_recurring = excluded.is_recurring,
   payload = excluded.payload
 where public.calendar_events.deleted_at is null
-  and (
-    public.calendar_events.updated_at < excluded.updated_at
-    or public.calendar_events.payload is distinct from excluded.payload
-    or public.calendar_events.start_at is distinct from excluded.start_at
-    or public.calendar_events.end_at is distinct from excluded.end_at
-    or public.calendar_events.is_recurring is distinct from excluded.is_recurring
-  );
+  -- Never overwrite a newer cloud row with older legacy payload.
+  and public.calendar_events.updated_at < excluded.updated_at;
 
 -- Verify source event count == migrated (member_id, id) row count.
 do $$

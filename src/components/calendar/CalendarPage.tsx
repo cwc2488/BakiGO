@@ -101,7 +101,7 @@ import {
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createCustomerRepository } from "@/lib/repositories/customer-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
-import { flushCalendarWriteThrough, syncStoreFromLocalStorage, ensureVisiblePersonalCalendarRange, expandVisibleRangeWithBuffer } from "@/lib/calendar/calendar-cloud-sync";
+import { flushCalendarWriteThrough, syncStoreFromLocalStorage, ensureVisiblePersonalCalendarRange, expandVisibleRangeWithBuffer, calendarPersistStatusMessage } from "@/lib/calendar/calendar-cloud-sync";
 import {
   getCalendarStoreSnapshot,
   subscribeCalendarStore,
@@ -1006,13 +1006,13 @@ export default function CalendarPage() {
         if (!isRecurringSeries(created) && isConsultationActivity(created.activityTypeKey)) {
           ensureScheduledConsultationCalendarEvent(storage, memberId, created);
         }
-        await flushCalendarWriteThrough();
+        const persistStatus = await flushCalendarWriteThrough();
         googleWarning = await syncToGoogleWithWarning(created, "create");
         setFormOpen(false);
         setDraftParticipantIds([]);
         resetCalendarInteraction();
         reloadEvents();
-        setStatusMessage(googleWarning ? `行程已新增（${googleWarning}）` : "行程已新增");
+        setStatusMessage(calendarPersistStatusMessage("create", persistStatus, googleWarning));
         return;
       }
 
@@ -1036,21 +1036,25 @@ export default function CalendarPage() {
         googleWarning = await applyRecurrenceMutation(plan);
         // Participants belong to the series (source event), not a single occurrence.
         repository.update(editingEventId, { participantCustomerIds: draftParticipantIds });
-        await flushCalendarWriteThrough();
+        const persistStatus = await flushCalendarWriteThrough();
+        setFormOpen(false);
+        setEditingOccurrence(null);
+        setRecurrenceScopeMode(null);
+        resetCalendarInteraction();
+        setStatusMessage(calendarPersistStatusMessage("update", persistStatus, googleWarning));
       } else {
         const updated = repository.update(editingEventId, {
           ...payload,
           participantCustomerIds: draftParticipantIds,
         });
-        await flushCalendarWriteThrough();
+        const persistStatus = await flushCalendarWriteThrough();
         googleWarning = await syncToGoogleWithWarning(updated, "update");
+        setFormOpen(false);
+        setEditingOccurrence(null);
+        setRecurrenceScopeMode(null);
+        resetCalendarInteraction();
+        setStatusMessage(calendarPersistStatusMessage("update", persistStatus, googleWarning));
       }
-
-      setFormOpen(false);
-      setEditingOccurrence(null);
-      setRecurrenceScopeMode(null);
-      resetCalendarInteraction();
-      setStatusMessage(googleWarning ? `行程已更新（${googleWarning}）` : "行程已更新");
     } catch (caught) {
       setStatusMessage(caught instanceof Error ? caught.message : "儲存失敗");
       closeEventForm();
@@ -1072,6 +1076,7 @@ export default function CalendarPage() {
     }
 
     let googleWarning: string | null = null;
+    let persistStatus: Awaited<ReturnType<typeof flushCalendarWriteThrough>> = "saved";
 
     try {
       if (needsRecurrenceScopePrompt(existing)) {
@@ -1086,6 +1091,7 @@ export default function CalendarPage() {
             planRecurringDelete(existing, occurrenceDate, scope),
           );
           removeBakiEventForPersonalCalendarEvent(storage, memberId, editingEventId, occurrenceDate);
+          persistStatus = await flushCalendarWriteThrough();
         } else {
           removeBakiEventForPersonalCalendarEvent(
             storage,
@@ -1094,7 +1100,7 @@ export default function CalendarPage() {
             existing.startAt.slice(0, 10),
           );
           repository.delete(editingEventId);
-          await flushCalendarWriteThrough();
+          persistStatus = await flushCalendarWriteThrough();
           googleWarning = await syncGoogleDelete(existing);
         }
       } else {
@@ -1105,7 +1111,7 @@ export default function CalendarPage() {
           existing.startAt.slice(0, 10),
         );
         repository.delete(editingEventId);
-        await flushCalendarWriteThrough();
+        persistStatus = await flushCalendarWriteThrough();
         googleWarning = await syncGoogleDelete(existing);
       }
 
@@ -1113,7 +1119,7 @@ export default function CalendarPage() {
       setEditingOccurrence(null);
       setRecurrenceScopeMode(null);
       resetCalendarInteraction();
-      setStatusMessage(googleWarning ? `行程已刪除（${googleWarning}）` : "行程已刪除");
+      setStatusMessage(calendarPersistStatusMessage("delete", persistStatus, googleWarning));
     } catch (caught) {
       setStatusMessage(caught instanceof Error ? caught.message : "刪除失敗");
       closeEventForm();

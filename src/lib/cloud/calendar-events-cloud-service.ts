@@ -199,31 +199,123 @@ export async function fetchCloudCalendarEventsUpdatedSince(input: {
   return { events, deletedIds, latestUpdatedAt };
 }
 
-/** One-time migration helper: upsert many events without wiping others. */
+/** Decision for legacy → calendar_events merge (never resurrect / never overwrite newer). */
+export type LegacyCalendarMergeDecision = "insert" | "update" | "skip";
+
+export function decideLegacyCalendarMerge(input: {
+  localUpdatedAt: string;
+  cloud: { updated_at: string; deleted_at: string | null } | null;
+}): LegacyCalendarMergeDecision {
+  if (!input.cloud) {
+    return "insert";
+  }
+  if (input.cloud.deleted_at) {
+    return "skip";
+  }
+  if (input.localUpdatedAt > input.cloud.updated_at) {
+    return "update";
+  }
+  return "skip";
+}
+
+/**
+ * Conditionally merge local/legacy events into calendar_events.
+ * - INSERT when missing
+ * - UPDATE only when local.updatedAt > cloud.updated_at and not soft-deleted
+ * - SKIP when cloud is newer/equal or soft-deleted (no resurrection)
+ */
 export async function upsertCloudCalendarEventsBatch(events: CalendarEvent[]): Promise<number> {
   if (!isSupabaseConfigured() || events.length === 0) {
     return 0;
   }
   const supabase = createSupabaseBrowserClient();
-  const rows = events
-    .filter((event) => isCloudDatabaseMemberId(event.memberId))
-    .map((event) => calendarEventToDbRow(event));
-  if (rows.length === 0) return 0;
+  const eligible = events.filter((event) => isCloudDatabaseMemberId(event.memberId));
+  if (eligible.length === 0) return 0;
 
-  const chunkSize = 100;
+  const byMember = new Map<string, CalendarEvent[]>();
+  for (const event of eligible) {
+    const list = byMember.get(event.memberId) ?? [];
+    list.push(event);
+    byMember.set(event.memberId, list);
+  }
+
   let written = 0;
-  for (let i = 0; i < rows.length; i += chunkSize) {
-    const chunk = rows.slice(i, i + chunkSize);
-    const { error } = await supabase.from("calendar_events").upsert(chunk, {
-      onConflict: "member_id,id",
-    });
-    if (error) {
-      throw new Error(error.message);
+  for (const [memberId, memberEvents] of byMember) {
+    const chunkSize = 100;
+    for (let i = 0; i < memberEvents.length; i += chunkSize) {
+      const chunk = memberEvents.slice(i, i + chunkSize);
+      const ids = chunk.map((event) => event.id);
+      const { data: existingRows, error: readError } = await supabase
+        .from("calendar_events")
+        .select("id, updated_at, deleted_at")
+        .eq("member_id", memberId)
+        .in("id", ids);
+
+      if (readError) {
+        throw new Error(readError.message);
+      }
+
+      const existingById = new Map(
+        (existingRows ?? []).map((row) => [
+          String(row.id),
+          {
+            updated_at: String(row.updated_at),
+            deleted_at: (row.deleted_at as string | null) ?? null,
+          },
+        ]),
+      );
+
+      const toInsert: ReturnType<typeof calendarEventToDbRow>[] = [];
+      const toUpdate: CalendarEvent[] = [];
+      for (const event of chunk) {
+        const decision = decideLegacyCalendarMerge({
+          localUpdatedAt:
+            typeof event.updatedAt === "string" ? event.updatedAt : event.updatedAt.toISOString(),
+          cloud: existingById.get(event.id) ?? null,
+        });
+        if (decision === "insert") {
+          toInsert.push(calendarEventToDbRow(event));
+        } else if (decision === "update") {
+          toUpdate.push(event);
+        }
+      }
+
+      if (toInsert.length > 0) {
+        const { error } = await supabase.from("calendar_events").insert(toInsert);
+        if (error) {
+          throw new Error(error.message);
+        }
+        written += toInsert.length;
+      }
+
+      for (const event of toUpdate) {
+        const row = calendarEventToDbRow(event);
+        const { error } = await supabase
+          .from("calendar_events")
+          .update({
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            start_at: row.start_at,
+            end_at: row.end_at,
+            is_recurring: row.is_recurring,
+            payload: row.payload,
+          })
+          .eq("member_id", memberId)
+          .eq("id", event.id)
+          .is("deleted_at", null)
+          .lt("updated_at", row.updated_at);
+        if (error) {
+          throw new Error(error.message);
+        }
+        written += 1;
+      }
     }
-    written += chunk.length;
   }
   return written;
 }
+
+/** @deprecated Use upsertCloudCalendarEventsBatch (now conditional). */
+export const upsertCloudCalendarEventsBatchUnconditional = upsertCloudCalendarEventsBatch;
 
 /** Service-role / cron helper shape — map rows from select *. */
 export function mapCalendarEventRows(rows: CalendarEventDbRow[]): CalendarEvent[] {

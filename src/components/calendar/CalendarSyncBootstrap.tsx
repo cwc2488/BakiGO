@@ -9,6 +9,7 @@ import {
   migrateLegacyCalendarBlobToRows,
   pullCalendarDeltaFromCloud,
   pullCalendarRangeFromCloud,
+  reconcileCloudLegacyCalendarBlob,
 } from "@/lib/calendar/calendar-cloud-sync";
 import { resetCalendarStore } from "@/lib/calendar/calendar-event-store";
 import {
@@ -53,6 +54,7 @@ export function CalendarSyncBootstrap() {
       try {
         // Migrate first so bulk upserts do not flood a live realtime listener.
         await migrateLegacyCalendarBlobToRows({ storage, memberId: memberId! });
+        await reconcileCloudLegacyCalendarBlob(memberId!);
         await flushCalendarPendingMutationQueue(storage);
         await flushCalendarWriteThrough(storage);
         if (cancelled) return;
