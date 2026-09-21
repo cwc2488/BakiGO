@@ -1,7 +1,15 @@
 import { fivePlusFiveToday, getBusinessWeekRange } from "@/lib/five-plus-five/dates";
 import { processDueMembersWithQuota } from "@/lib/five-plus-five/push-batch";
 import { resolveFivePlusFiveTargets } from "@/lib/five-plus-five/rules";
+import {
+  collectActivePushMemberIds,
+  PUSH_SUBSCRIPTION_PAGE_SIZE,
+} from "@/lib/push/active-push-members";
 import { claimNotificationDelivery } from "@/lib/push/notification-deliveries";
+import {
+  DEFAULT_FIVE_PLUS_FIVE_PUSH_LIMIT,
+  MAX_FIVE_PLUS_FIVE_PUSH_LIMIT,
+} from "@/lib/push/push-worker-limits";
 import { sendPushToUser } from "@/lib/push/send-push";
 import { PUSH_SOURCE } from "@/lib/push/types";
 import {
@@ -10,9 +18,11 @@ import {
 } from "@/lib/supabase/service-client";
 
 const LOOKBACK_MS = 45 * 60 * 1000; // catch missed cron ticks within 45m
-const DEFAULT_CLAIM_LIMIT = 200;
-const MAX_CLAIM_LIMIT = 500;
-const SEND_CONCURRENCY = 15;
+/** Cron GET default — must cover 1000 active members in one slot window. */
+export const FIVE_PLUS_FIVE_DEFAULT_CLAIM_LIMIT = DEFAULT_FIVE_PLUS_FIVE_PUSH_LIMIT;
+export const FIVE_PLUS_FIVE_MAX_CLAIM_LIMIT = MAX_FIVE_PLUS_FIVE_PUSH_LIMIT;
+/** Bounded concurrency — never unlimited Promise.all. */
+export const FIVE_PLUS_FIVE_SEND_CONCURRENCY = 25;
 
 export type FivePlusFivePushSlot = "20" | "23";
 
@@ -27,19 +37,36 @@ function isSlotDue(nowMs: number, today: string, slot: FivePlusFivePushSlot): bo
   return nowMs >= fireMs && nowMs <= fireMs + LOOKBACK_MS;
 }
 
-async function loadActivePushMemberIds(): Promise<string[]> {
-  const supabase = createSupabaseServiceClient();
-  const { data, error } = await supabase
-    .from("push_subscriptions")
-    .select("member_id")
-    .eq("is_active", true);
-  if (error) {
-    console.error(
-      JSON.stringify({ event: "five_plus_five_push_members_failed", error: error.message }),
-    );
+/** Paginated active push member discovery (deduped). Exported for tests. */
+export async function loadActivePushMemberIds(): Promise<string[]> {
+  if (!isSupabaseServiceConfigured()) {
     return [];
   }
-  return Array.from(new Set((data ?? []).map((row) => String(row.member_id))));
+  const supabase = createSupabaseServiceClient();
+
+  return collectActivePushMemberIds({
+    pageSize: PUSH_SUBSCRIPTION_PAGE_SIZE,
+    fetchPage: async (from, to) => {
+      const { data, error } = await supabase
+        .from("push_subscriptions")
+        .select("member_id")
+        .eq("is_active", true)
+        .order("id", { ascending: true })
+        .range(from, to);
+      if (error) {
+        console.error(
+          JSON.stringify({
+            event: "five_plus_five_push_members_failed",
+            error: error.message,
+            from,
+            to,
+          }),
+        );
+        return [];
+      }
+      return (data ?? []) as Array<{ member_id: string }>;
+    },
+  });
 }
 
 type TodayReportLite = {
@@ -233,7 +260,10 @@ export async function processFivePlusFivePushReminders(input?: {
 
   const limit = Math.max(
     1,
-    Math.min(MAX_CLAIM_LIMIT, Math.floor(input?.limit ?? DEFAULT_CLAIM_LIMIT)),
+    Math.min(
+      FIVE_PLUS_FIVE_MAX_CLAIM_LIMIT,
+      Math.floor(input?.limit ?? FIVE_PLUS_FIVE_DEFAULT_CLAIM_LIMIT),
+    ),
   );
   const sourceKey = `five_plus_five:${slot}:${today}`;
   const scheduledAt = scheduledAtForSlot(today, slot);
@@ -241,7 +271,7 @@ export async function processFivePlusFivePushReminders(input?: {
   const batch = await processDueMembersWithQuota({
     dueMemberIds,
     limit,
-    concurrency: input?.concurrency ?? SEND_CONCURRENCY,
+    concurrency: input?.concurrency ?? FIVE_PLUS_FIVE_SEND_CONCURRENCY,
     tryClaimAndSend: async (memberId) => {
       const report = todayReports.get(memberId);
       const fish = report?.fish_pool_count ?? 0;

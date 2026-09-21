@@ -23,11 +23,21 @@ import {
   canViewerAccessMember,
   collectDescendantsWithGeneration,
 } from "@/lib/five-plus-five/org-access";
+import { processDueMembersWithQuota } from "@/lib/five-plus-five/push-batch";
 import {
   buildFivePlusFivePushCopy,
+  FIVE_PLUS_FIVE_DEFAULT_CLAIM_LIMIT,
+  FIVE_PLUS_FIVE_MAX_CLAIM_LIMIT,
+  FIVE_PLUS_FIVE_SEND_CONCURRENCY,
   shouldNotifyFivePlusFive,
 } from "@/lib/five-plus-five/push-scheduler";
-import { processDueMembersWithQuota } from "@/lib/five-plus-five/push-batch";
+import { collectActivePushMemberIds } from "@/lib/push/active-push-members";
+import {
+  DEFAULT_CALENDAR_PUSH_LIMIT,
+  DEFAULT_FIVE_PLUS_FIVE_PUSH_LIMIT,
+  MAX_CALENDAR_PUSH_LIMIT,
+  resolvePushWorkerLimits,
+} from "@/lib/push/push-worker-limits";
 import {
   buildMyStatsFromAggregates,
   normalizeCount,
@@ -425,18 +435,55 @@ describe("5＋5 push reminders", () => {
     expect(copy.body).toContain("3/5");
   });
 
-  it("1000 due members — second cron progresses past already-claimed batch", async () => {
+  it("GET cron defaults: 5＋5=1000, calendar=80; concurrency bounded", () => {
+    expect(FIVE_PLUS_FIVE_DEFAULT_CLAIM_LIMIT).toBe(1000);
+    expect(FIVE_PLUS_FIVE_MAX_CLAIM_LIMIT).toBe(1000);
+    expect(FIVE_PLUS_FIVE_SEND_CONCURRENCY).toBeGreaterThanOrEqual(20);
+    expect(FIVE_PLUS_FIVE_SEND_CONCURRENCY).toBeLessThanOrEqual(25);
+    expect(DEFAULT_FIVE_PLUS_FIVE_PUSH_LIMIT).toBe(1000);
+    expect(DEFAULT_CALENDAR_PUSH_LIMIT).toBe(80);
+    expect(MAX_CALENDAR_PUSH_LIMIT).toBe(200);
+
+    const getLimits = resolvePushWorkerLimits({ method: "GET" });
+    expect(getLimits.calendarLimit).toBe(80);
+    expect(getLimits.fivePlusFiveLimit).toBe(1000);
+
+    const postLimits = resolvePushWorkerLimits({ method: "POST", bodyLimit: 1000 });
+    expect(postLimits.calendarLimit).toBe(200); // capped — calendar unchanged
+    expect(postLimits.fivePlusFiveLimit).toBe(1000);
+  });
+
+  it("Scenario A — 1000 due members with GET default config in one invocation", async () => {
     const due = Array.from({ length: 1000 }, (_, i) => `m-${i}`);
     const claimed = new Set<string>();
-    let claimCalls = 0;
+
+    const result = await processDueMembersWithQuota({
+      dueMemberIds: due,
+      limit: FIVE_PLUS_FIVE_DEFAULT_CLAIM_LIMIT,
+      concurrency: FIVE_PLUS_FIVE_SEND_CONCURRENCY,
+      tryClaimAndSend: async (memberId) => {
+        if (claimed.has(memberId)) return "already_claimed";
+        claimed.add(memberId);
+        return "sent";
+      },
+    });
+
+    expect(result.newlyClaimed).toBe(1000);
+    expect(result.sent).toBe(1000);
+    expect(result.newlyClaimed).not.toBe(80);
+    expect(claimed.size).toBe(1000);
+  });
+
+  it("Scenario B — 1200 due: first 1000, second run processes remaining 200", async () => {
+    const due = Array.from({ length: 1200 }, (_, i) => `m-${i}`);
+    const claimed = new Set<string>();
 
     const run = () =>
       processDueMembersWithQuota({
         dueMemberIds: due,
-        limit: 200,
-        concurrency: 20,
+        limit: FIVE_PLUS_FIVE_DEFAULT_CLAIM_LIMIT,
+        concurrency: FIVE_PLUS_FIVE_SEND_CONCURRENCY,
         tryClaimAndSend: async (memberId) => {
-          claimCalls += 1;
           if (claimed.has(memberId)) return "already_claimed";
           claimed.add(memberId);
           return "sent";
@@ -444,30 +491,53 @@ describe("5＋5 push reminders", () => {
       });
 
     const first = await run();
-    expect(first.newlyClaimed).toBe(200);
-    expect(first.sent).toBe(200);
-    expect(first.alreadyClaimed).toBe(0);
-    expect(claimed.size).toBe(200);
-
-    const second = await run();
-    expect(second.alreadyClaimed).toBe(200);
-    expect(second.newlyClaimed).toBe(200);
-    expect(second.sent).toBe(200);
-    expect(claimed.size).toBe(400);
-
-    // Continue until all claimed
-    while (claimed.size < 1000) {
-      const batch = await run();
-      expect(batch.newlyClaimed).toBeGreaterThan(0);
-      expect(batch.newlyClaimed).toBeLessThanOrEqual(200);
-    }
+    expect(first.newlyClaimed).toBe(1000);
     expect(claimed.size).toBe(1000);
 
-    // Extra run: all already claimed → newlyClaimed 0, does not stall forever
-    const final = await run();
-    expect(final.newlyClaimed).toBe(0);
-    expect(final.alreadyClaimed).toBe(1000);
-    expect(claimCalls).toBeGreaterThan(1000);
+    const second = await run();
+    expect(second.alreadyClaimed).toBe(1000);
+    expect(second.newlyClaimed).toBe(200);
+    expect(second.sent).toBe(200);
+    expect(claimed.size).toBe(1200);
+  });
+
+  it("Scenario C — calendar limit stays safe and independent of 5＋5 1000", () => {
+    const getLimits = resolvePushWorkerLimits({ method: "GET" });
+    expect(getLimits.calendarLimit).toBe(80);
+    expect(getLimits.fivePlusFiveLimit).toBe(1000);
+
+    const postHigh = resolvePushWorkerLimits({ method: "POST", bodyLimit: 5000 });
+    expect(postHigh.calendarLimit).toBe(200);
+    expect(postHigh.fivePlusFiveLimit).toBe(1000);
+
+    const postLow = resolvePushWorkerLimits({ method: "POST", bodyLimit: 50 });
+    expect(postLow.calendarLimit).toBe(50);
+    expect(postLow.fivePlusFiveLimit).toBe(50);
+  });
+
+  it("Scenario D — pagination over 1300 subscription rows with duplicate member IDs", async () => {
+    // 1300 rows, page size 1000 → 2 pages. Many duplicate member_ids.
+    const rows: Array<{ member_id: string }> = [];
+    for (let i = 0; i < 1300; i += 1) {
+      // 650 unique members, each appears twice across the stream
+      rows.push({ member_id: `member-${i % 650}` });
+    }
+
+    const pageCalls: Array<{ from: number; to: number }> = [];
+    const ids = await collectActivePushMemberIds({
+      pageSize: 1000,
+      fetchPage: async (from, to) => {
+        pageCalls.push({ from, to });
+        return rows.slice(from, to + 1);
+      },
+    });
+
+    expect(pageCalls.length).toBe(2);
+    expect(pageCalls[0]).toEqual({ from: 0, to: 999 });
+    expect(pageCalls[1]).toEqual({ from: 1000, to: 1999 });
+    expect(ids.length).toBe(650);
+    expect(ids).toContain("member-0");
+    expect(ids).toContain("member-649");
   });
 
   it("already_claimed does not consume claim quota within one run", async () => {
