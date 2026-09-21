@@ -40,7 +40,21 @@ const state: CalendarStoreState = {
 
 const listeners = new Set<Listener>();
 
+export type CalendarStoreSnapshot = {
+  memberId: EntityId | null;
+  events: CalendarEvent[];
+  sharedEvents: CalendarEvent[];
+  lastCloudUpdatedAt: string | null;
+  hydrated: boolean;
+  personalEventCount: number;
+  personalRangeCount: number;
+};
+
+/** Cached for useSyncExternalStore — must be referentially stable between emits. */
+let cachedSnapshot: CalendarStoreSnapshot | null = null;
+
 function emit(): void {
+  cachedSnapshot = null;
   listeners.forEach((listener) => listener());
 }
 
@@ -59,16 +73,15 @@ export function subscribeCalendarStore(listener: Listener): () => void {
   };
 }
 
-export function getCalendarStoreSnapshot(): {
-  memberId: EntityId | null;
-  events: CalendarEvent[];
-  sharedEvents: CalendarEvent[];
-  lastCloudUpdatedAt: string | null;
-  hydrated: boolean;
-  personalEventCount: number;
-  personalRangeCount: number;
-} {
-  return {
+/**
+ * Stable snapshot for useSyncExternalStore.
+ * Returns the same object reference until the next store mutation + emit.
+ */
+export function getCalendarStoreSnapshot(): CalendarStoreSnapshot {
+  if (cachedSnapshot) {
+    return cachedSnapshot;
+  }
+  cachedSnapshot = {
     memberId: state.memberId,
     events: [...state.eventsById.values()],
     sharedEvents: [...state.sharedEventsById.values()],
@@ -77,6 +90,7 @@ export function getCalendarStoreSnapshot(): {
     personalEventCount: state.eventsById.size,
     personalRangeCount: state.ranges.size,
   };
+  return cachedSnapshot;
 }
 
 export function resetCalendarStore(): void {
