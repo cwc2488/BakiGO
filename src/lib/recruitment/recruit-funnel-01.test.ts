@@ -117,18 +117,15 @@ describe("RECRUIT-FUNNEL-01", () => {
     expect(src("src/app/quiz/fat-loss/layout.tsx")).toContain("MetaPixel");
     expect(src("src/app/layout.tsx")).not.toContain("MetaPixel");
     expect(src("src/app/recruitment/page.tsx")).not.toContain("MetaPixel");
-    expect(src("src/components/quiz/QuizPartnerWorkbench.tsx")).not.toContain("MetaPixel");
   });
 
-  it("wires Partner and Admin nav without touching Partner Hub quiz workbench", () => {
-    expect(src("src/lib/home/my-home-presentation.ts")).toContain('title: "招募名單"');
-    expect(src("src/lib/home/my-home-presentation.ts")).toContain('href: "/recruitment"');
-    expect(src("src/components/admin/AdminCenterPage.tsx")).toContain("/admin/recruitment");
+  it("keeps public join path and retires admin org recruitment list", () => {
+    expect(src("src/components/admin/AdminCenterPage.tsx")).not.toContain("/admin/recruitment");
     expect(src("src/lib/auth/public-paths.ts")).toContain('"/join/"');
-    expect(src("src/components/quiz/QuizPartnerWorkbench.tsx")).not.toContain("recruitment");
+    expect(existsSync(resolve(process.cwd(), "src/app/api/admin/recruitment/leads/route.ts"))).toBe(false);
   });
 
-  it("enforces partner-scoped lead read/update and Super Admin org list server-side", () => {
+  it("enforces partner-scoped lead read/update server-side (admin org list retired)", () => {
     const service = src("src/lib/recruitment/recruitment-service.ts");
     expect(service).toMatch(/listRecruitmentLeadsForPartner[\s\S]*\.eq\("partner_member_id", partnerMemberId\)/);
     expect(service).toMatch(
@@ -140,8 +137,6 @@ describe("RECRUIT-FUNNEL-01", () => {
     const partnerPatchApi = src("src/app/api/recruitment/leads/[id]/route.ts");
     expect(partnerPatchApi).toContain("updateRecruitmentLeadStatusForPartner");
     expect(partnerPatchApi).toContain("partnerMemberId: memberId");
-    const adminApi = src("src/app/api/admin/recruitment/leads/route.ts");
-    expect(adminApi).toContain("assertSuperAdmin");
-    expect(adminApi).toContain("listRecruitmentLeadsForAdmin");
+    expect(existsSync(resolve(process.cwd(), "src/app/api/admin/recruitment/leads/route.ts"))).toBe(false);
   });
 });

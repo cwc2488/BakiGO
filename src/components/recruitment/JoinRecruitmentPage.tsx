@@ -16,7 +16,7 @@ import { trackMetaLeadOnce } from "@/lib/meta/track-meta-lead";
 import {
   listTaiwanDevelopmentCities,
   listTaiwanDevelopmentDistricts,
-} from "@/lib/radar/semantics/taiwan-development-regions";
+} from "@/lib/site/taiwan-development-regions";
 
 type ResolveState =
   | { status: "loading" }

@@ -133,35 +133,29 @@ describe("TRANSFORMATION-FUNNEL-01", () => {
     expect(src("src/app/layout.tsx")).not.toContain("MetaPixel");
   });
 
-  it("wires owner-only admin surfaces and public path", () => {
-    expect(src("src/components/admin/AdminCenterPage.tsx")).toContain("/admin/transformation");
+  it("keeps public /transform surfaces and retires admin transformation list", () => {
+    expect(src("src/components/admin/AdminCenterPage.tsx")).not.toContain("/admin/transformation");
     expect(src("src/lib/auth/public-paths.ts")).toContain('"/transform/"');
-    const adminApi = src("src/app/api/admin/transformation/leads/route.ts");
-    expect(adminApi).toContain("assertSuperAdmin");
-    const leadDetailApi = src("src/app/api/admin/transformation/leads/[id]/route.ts");
-    expect(leadDetailApi).toContain("assertSuperAdmin");
-    expect(leadDetailApi).toContain("deleteTransformationLeadForAdmin");
-    const shareApi = src("src/app/api/admin/transformation/share/route.ts");
-    expect(shareApi).toContain("assertSuperAdmin");
-    expect(shareApi).toContain("getOrCreateTransformationShareLink");
+    expect(existsSync(resolve(process.cwd(), "src/app/api/admin/transformation/leads/route.ts"))).toBe(
+      false,
+    );
+    expect(existsSync(resolve(process.cwd(), "src/components/transformation/AdminTransformationPage.tsx"))).toBe(
+      false,
+    );
   });
 
-  it("uses compact admin list and authenticated delete", () => {
-    const adminPage = src("src/components/transformation/AdminTransformationPage.tsx");
-    expect(adminPage).toContain("<table");
-    expect(adminPage).toContain("確定要刪除");
-    expect(adminPage).toContain('method: "DELETE"');
+  it("retires compact admin transformation list UI", () => {
+    expect(existsSync(resolve(process.cwd(), "src/components/transformation/AdminTransformationPage.tsx"))).toBe(
+      false,
+    );
     const service = src("src/lib/transformation/transformation-service.ts");
     expect(service).toContain("deleteTransformationLeadForAdmin");
-    expect(service).toMatch(/deleteTransformationLeadForAdmin[\s\S]*transformation_leads[\s\S]*\.delete\(\)/);
   });
 
-  it("links converted leads via customer search instead of UUID paste", () => {
-    const detailPage = src("src/components/transformation/AdminTransformationDetailPage.tsx");
-    expect(detailPage).toContain("連結顧客");
-    expect(detailPage).toContain("searchCustomers");
-    expect(detailPage).toContain("確認連結");
-    expect(detailPage).not.toContain("貼上 ID");
+  it("retires admin conversion link UI (public funnel retained)", () => {
+    expect(
+      existsSync(resolve(process.cwd(), "src/components/transformation/AdminTransformationDetailPage.tsx")),
+    ).toBe(false);
   });
 
   it("shows active contact success UI with confirmed LINE destination", () => {

@@ -23,42 +23,6 @@ export function AdminCenterPage() {
             </p>
           </BrandCard>
         </Link>
-        <Link href="/admin/recruitment" className="block">
-          <BrandCard variant="bordered" className="transition-shadow hover:shadow-md active:scale-[0.99]">
-            <p className="text-[0.8125rem] font-medium text-[#248a3d]">招募漏斗</p>
-            <h3 className="mt-1 text-[1.0625rem] font-semibold text-[#1d1d1f]">招募名單（全組織）</h3>
-            <p className="mt-1 text-[0.875rem] leading-relaxed text-[#86868b]">
-              查看所有 Partner 的招募名單、聯絡方式與廣告來源。
-            </p>
-          </BrandCard>
-        </Link>
-        <Link href="/admin/transformation" className="block">
-          <BrandCard variant="bordered" className="transition-shadow hover:shadow-md active:scale-[0.99]">
-            <p className="text-[0.8125rem] font-medium text-[#248a3d]">體態改造漏斗</p>
-            <h3 className="mt-1 text-[1.0625rem] font-semibold text-[#1d1d1f]">體態改造名單</h3>
-            <p className="mt-1 text-[0.875rem] leading-relaxed text-[#86868b]">
-              Owner-only 體態改造模特兒獲取名單、生命週期與廣告連結。
-            </p>
-          </BrandCard>
-        </Link>
-        <Link href="/life" className="block">
-          <BrandCard variant="bordered" className="transition-shadow hover:shadow-md active:scale-[0.99]">
-            <p className="text-[0.8125rem] font-medium text-[#248a3d]">Baki Life</p>
-            <h3 className="mt-1 text-[1.0625rem] font-semibold text-[#1d1d1f]">私人生活 OS</h3>
-            <p className="mt-1 text-[0.875rem] leading-relaxed text-[#86868b]">
-              Owner-only 記帳、人生目標、財務快照與快速記帳。
-            </p>
-          </BrandCard>
-        </Link>
-        <Link href="/admin/cleaning-roster" className="block">
-          <BrandCard variant="bordered" className="transition-shadow hover:shadow-md active:scale-[0.99]">
-            <p className="text-[0.8125rem] font-medium text-[#248a3d]">打掃輪值表</p>
-            <h3 className="mt-1 text-[1.0625rem] font-semibold text-[#1d1d1f]">公平加權抽籤</h3>
-            <p className="mt-1 text-[0.875rem] leading-relaxed text-[#86868b]">
-              維護打掃區域與人員，一鍵加權抽籤，長期結果更公平。
-            </p>
-          </BrandCard>
-        </Link>
         <Link href="/admin/lose2kg" className="block">
           <BrandCard variant="bordered" className="transition-shadow hover:shadow-md active:scale-[0.99]">
             <p className="text-[0.8125rem] font-medium text-[#248a3d]">再瘦2公斤</p>
@@ -81,11 +45,6 @@ export function AdminCenterPage() {
           <Link href="/organization" className="block">
             <BrandCard variant="bordered" className="transition-shadow hover:shadow-md active:scale-[0.99]">
               <h3 className="text-[1.0625rem] font-semibold text-[#1d1d1f]">我的組織</h3>
-            </BrandCard>
-          </Link>
-          <Link href="/members" className="block">
-            <BrandCard variant="bordered" className="transition-shadow hover:shadow-md active:scale-[0.99]">
-              <h3 className="text-[1.0625rem] font-semibold text-[#1d1d1f]">夥伴關懷</h3>
             </BrandCard>
           </Link>
           <Link href="/profile" className="block">

@@ -3,11 +3,15 @@ import { MY_WORLD_SECONDARY_LINKS, SIDE_NAV_EXTRA_LINKS } from "@/lib/ui/work-hu
 import { MY_HOME_BUSINESS_ENTRIES } from "@/lib/home/my-home-presentation";
 
 describe("three-world work links", () => {
-  it("keeps Meta Review out of my-world secondary links and exposes Radar", () => {
+  it("keeps Meta Review and retired features out of my-world secondary links", () => {
     const serialized = JSON.stringify({ MY_WORLD_SECONDARY_LINKS, SIDE_NAV_EXTRA_LINKS });
     expect(serialized).not.toContain("/meta-review");
-    expect(SIDE_NAV_EXTRA_LINKS.some((link) => link.href === "/radar")).toBe(true);
-    expect(MY_WORLD_SECONDARY_LINKS.some((link) => link.href === "/radar")).toBe(true);
+    expect(serialized).not.toContain("/radar");
+    expect(serialized).not.toContain("/lead-tracking");
+    expect(serialized).not.toContain("/retail-pipeline");
+    expect(serialized).not.toContain("/coaching");
+    expect(serialized).not.toContain("/goals");
+    expect(SIDE_NAV_EXTRA_LINKS.some((link) => link.href === "/organization")).toBe(true);
   });
 
   it("places guided consultation in customer journey, not my-world secondary", () => {

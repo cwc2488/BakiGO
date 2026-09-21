@@ -154,23 +154,16 @@ describe("Partner UI precision cleanup", () => {
     expect(admin).toContainEqual(ADMIN_CENTER_HOME_ENTRY);
   });
 
-  it("restores AI Radar as active customer hub entry", () => {
+  it("retires AI Radar from customer hub after Production Cleanup", () => {
     const radar = CUSTOMER_JOURNEY_HUB_ITEMS.find((item) => item.title === "AI Radar");
-    expect(radar).toMatchObject({
-      href: "/radar",
-      title: "AI Radar",
-      desc: "智慧找人",
-    });
-    expect(radar?.comingSoon).toBeFalsy();
-    expect(radar?.locked).toBeFalsy();
+    expect(radar).toBeUndefined();
 
     const hub = readFileSync(
       resolve(process.cwd(), "src/components/customers/CustomerJourneyHubPage.tsx"),
       "utf8",
     );
-    expect(hub).not.toContain("開發中");
-    expect(hub).not.toContain("border-dashed");
-    expect(hub).not.toContain("comingSoon");
+    expect(hub).not.toContain("/radar");
+    expect(hub).not.toContain("智慧找人");
   });
 
   it("preserves bottom nav IA", () => {

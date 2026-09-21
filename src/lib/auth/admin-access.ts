@@ -29,7 +29,6 @@ export const RECOGNITION_CENTER_ENTRY: HomeMoreEntry = {
 
 export const ADMIN_CENTER_EXISTING_TOOLS: readonly HomeMoreEntry[] = [
   { href: "/organization", title: "我的組織" },
-  { href: "/members", title: "夥伴關懷" },
   { href: "/profile", title: "個人資料／設定" },
 ] as const;
 

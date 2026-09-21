@@ -15,54 +15,15 @@ export type CustomerJourneyHubItem = {
 };
 
 /**
- * Main hub IA — P0/P1 converged entries only.
- *
- * Canonical logged-in Partner Quiz Hub is `/quiz/21d` (21 天名單 / 我的分享 / 我的成效).
- * Public consumer Quiz (`/quiz/fat-loss`, `/q/{code}`) is a separate experience.
- * Do not replace the Partner Hub with the older simple `/quiz/hub` shell during baseline recovery.
+ * Customer hub IA after Production Cleanup — retained surfaces only.
+ * Public consumer Quiz (`/quiz/fat-loss`, `/q/{code}`) remains a separate experience
+ * and is not linked from this partner hub.
  */
 export const CUSTOMER_JOURNEY_HUB_ITEMS: CustomerJourneyHubItem[] = [
-  {
-    href: "/radar",
-    title: "AI Radar",
-    desc: "智慧找人",
-    iconName: APP_ICON.section.aiAnalysis,
-  },
-  {
-    href: "/retail-pipeline",
-    title: "我的名單",
-    desc: "推進每位名單",
-    iconHref: "/retail-pipeline",
-  },
-  {
-    href: "/lead-tracking",
-    title: "名單追蹤",
-    desc: "記下狀況，到時提醒我",
-    iconName: APP_ICON.section.growth,
-  },
-  {
-    href: "/quiz/21d",
-    title: "心理測驗",
-    desc: "分享測驗，聯絡想了解 21 天的人",
-    iconHref: "/quiz/hub",
-    waitingBadge: true,
-  },
   {
     href: "/customers/list",
     title: "我的顧客",
     desc: "顧客資料與追蹤",
     iconHref: "/customers",
-  },
-  {
-    href: "/coaching",
-    title: "陪跑",
-    desc: "今天誰需要我？",
-    iconHref: "/coaching",
-  },
-  {
-    href: "/customers/referrals",
-    title: "轉介紹中心",
-    desc: "成果分享／朋友體驗／A 介紹 B",
-    iconName: APP_ICON.section.growth,
   },
 ];

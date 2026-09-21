@@ -246,7 +246,7 @@ export const MY_HOME_MORE_ENTRIES: HomeMoreEntry[] = [
   { href: "/profile", title: "個人資料／設定" },
 ];
 
-export const CROSS_WORLD_HREFS = ["/customers", "/calendar", "/coaching"] as const;
+export const CROSS_WORLD_HREFS = ["/customers", "/calendar"] as const;
 
 export function isCrossWorldHomeShortcut(href: string): boolean {
   return (CROSS_WORLD_HREFS as readonly string[]).includes(href);

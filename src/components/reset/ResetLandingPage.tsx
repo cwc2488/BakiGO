@@ -25,16 +25,9 @@ export function ResetLandingPage() {
   useEffect(() => {
     const share = getShareParams(searchParams);
     if (landingBeaconSent.current) return;
-    if (!share.shareCode && !share.resultShareCode) return;
+    if (!share.resultShareCode) return;
     if (typeof navigator !== "undefined" && "webdriver" in navigator && navigator.webdriver) return;
     landingBeaconSent.current = true;
-    if (share.shareCode) {
-      void fetch("/api/quiz/partner/landing-view", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-baki-human": "1" },
-        body: JSON.stringify({ shareCode: share.shareCode }),
-      }).catch(() => undefined);
-    }
     if (share.resultShareCode) {
       void fetch("/api/quiz/result-shares/landing-view", {
         method: "POST",

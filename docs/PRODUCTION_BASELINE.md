@@ -12,6 +12,7 @@
 | **Authoritative branch** | `main` (after PRODUCTION-BASELINE-RECONCILE-01) |
 | **Reconcile source tip** | `7ef61c8` (`cursor/go21-coach-console-f161`) — last Production deploy before stale-`main` regression |
 | **Reconcile date** | 2026-09-02 |
+| **Cleanup mission** | Production Cleanup + Calendar Sync (Radar / lists / quiz hub / partner care / life / cleaning-roster retired) |
 | **Must preserve** | See inventory below |
 
 ### How this was chosen
@@ -28,15 +29,16 @@ GitHub Production deployments before PR #38/#39:
 
 ## Must-preserve modules
 
-- **App shell / nav** — 我的｜顧客｜行事曆; hidden modules stay hidden
+- **App shell / nav** — 我的｜顧客｜行事曆
 - **Home** — current Home UI, Taipei month rollover, quota-safe metrics
-- **AI Radar** — real `/radar` route (NOT「開發中」placeholder)
-- **Customer Hub** — 我的名單 / 心理測驗 / 我的顧客 / 陪跑 / 轉介紹 / 21D / live Radar entry
-- **Calendar** — V2 UX, recurring, shared Google Calendar, participants, scroll fixes
+- **Customer Hub** — 我的顧客 (retired: AI Radar / 我的名單 / 名單追蹤 / 心理測驗 hub / 陪跑 dashboard / 轉介紹中心)
+- **Calendar** — V2 UX, recurring, shared Google Calendar, participants, cloud write-through sync
 - **Consultation** — single-event lifecycle + **one-tap**「完成諮詢」(PR #38/#39 semantics)
 - **Quick Consultation** — Home / Daily Action only (not Calendar scheduled completion)
 - **Measurement** — Calendar result-capture UX unchanged
-- **Retail House / points / leaderboard / learning / recognition / quiz / coaching / 21D**
+- **Retail House / points / leaderboard / learning / recognition / 21D portal / lose2kg**
+- **Organization tree** — 我的組織 retained (夥伴關懷 retired)
+- **Public funnels** — `/join`, `/transform`, `/quiz/fat-loss`, `/q`, `/analysis`, `/experience` retained
 
 ## Intentionally excluded (Preview / Do-not-Promote only)
 
@@ -56,7 +58,7 @@ Do **not** promote additional open Preview work unless explicitly accepted. Stac
 
 ```bash
 npm run check:production-baseline
-npm test -- src/lib/calendar/ src/lib/home/ src/lib/radar/
+npm test -- src/lib/calendar/
 npx tsc --noEmit
 npm run build
 ```

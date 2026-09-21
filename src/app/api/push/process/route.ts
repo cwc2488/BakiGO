@@ -5,7 +5,6 @@ import {
   isSupabaseServiceConfigured,
 } from "@/lib/supabase/service-client";
 import { processCalendarPushReminders } from "@/lib/push/calendar-push-scheduler";
-import { processLeadTrackingPushReminders } from "@/lib/push/lead-tracking-push-scheduler";
 import { isVapidConfigured } from "@/lib/push/vapid";
 
 export const runtime = "nodejs";
@@ -13,8 +12,8 @@ export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 /**
- * Server-side Web Push worker for calendar reminders + lead tracking follow-ups.
- * Auth: COACHING_CRON_SECRET / CRON_SECRET / RADAR_CRON_SECRET (same as coaching jobs).
+ * Server-side Web Push worker for calendar reminders.
+ * Auth: COACHING_CRON_SECRET / CRON_SECRET (same as coaching jobs).
  */
 async function handle(request: Request) {
   if (!isCoachingCronAuthorized(request)) {
@@ -48,20 +47,16 @@ async function handle(request: Request) {
   }
 
   try {
-    const [calendar, leads] = await Promise.all([
-      processCalendarPushReminders({ limit }),
-      processLeadTrackingPushReminders({ limit }),
-    ]);
+    const calendar = await processCalendarPushReminders({ limit });
 
     console.info(
       JSON.stringify({
         event: "web_push_worker_complete",
         calendar,
-        leads,
       }),
     );
 
-    return NextResponse.json({ ok: true, calendar, leads });
+    return NextResponse.json({ ok: true, calendar });
   } catch (error) {
     console.error(
       JSON.stringify({

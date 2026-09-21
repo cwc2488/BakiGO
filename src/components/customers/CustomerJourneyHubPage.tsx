@@ -5,12 +5,10 @@ import { PageShell } from "@/components/ui/PageShell";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { APP_ICON } from "@/lib/ui/app-icons";
 import { ROUTE_ICON_COMPONENTS } from "@/components/ui/BrandIcons";
-import { QuizPartnerNavBadge } from "@/components/quiz/QuizPartnerNavBadge";
 import {
   CUSTOMER_JOURNEY_HUB_ITEMS,
   type CustomerJourneyHubItem,
 } from "@/lib/customers/customer-journey-hub-items";
-import { LeadTrackingHubBadge } from "@/components/lead-tracking/LeadTrackingHubBadge";
 
 function HubLinkCard({ item }: { item: CustomerJourneyHubItem }) {
   const Icon = (item.iconHref ? ROUTE_ICON_COMPONENTS[item.iconHref] : null) ?? null;
@@ -30,8 +28,6 @@ function HubLinkCard({ item }: { item: CustomerJourneyHubItem }) {
           <span className="min-w-0 text-[0.9375rem] font-semibold break-words text-[var(--brand-text)] [overflow-wrap:anywhere]">
             {item.title}
           </span>
-          {item.waitingBadge ? <QuizPartnerNavBadge /> : null}
-          {item.href === "/lead-tracking" ? <LeadTrackingHubBadge /> : null}
           {badge ? (
             <span className="shrink-0 rounded-full bg-[#fff7e6] px-2 py-0.5 text-[0.6875rem] font-semibold text-[#b54708]">
               🔒 {badge}
@@ -73,7 +69,7 @@ function HubLinkCard({ item }: { item: CustomerJourneyHubItem }) {
 
 export default function CustomerJourneyHubPage() {
   return (
-    <PageShell showBack={false} subtitle="名單 → 顧客 → 陪跑 → 轉介紹" title="顧客" variant="plain">
+    <PageShell showBack={false} subtitle="顧客資料與下一步" title="顧客" variant="plain">
       <div className="overflow-hidden rounded-[1.25rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] shadow-[0_1px_2px_rgba(29,29,31,0.04)]">
         {CUSTOMER_JOURNEY_HUB_ITEMS.map((item, index) => (
           <div
@@ -84,9 +80,6 @@ export default function CustomerJourneyHubPage() {
           </div>
         ))}
       </div>
-      <p className="pt-2 text-center text-[0.75rem] leading-relaxed text-[var(--brand-hint)]">
-        待聯絡／正在接觸可在「我的名單」裡篩選
-      </p>
     </PageShell>
   );
 }

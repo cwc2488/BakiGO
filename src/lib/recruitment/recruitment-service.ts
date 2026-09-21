@@ -9,7 +9,7 @@ import {
   type RecruitmentPublicSubmitInput,
   type RecruitmentUtmAttribution,
 } from "@/lib/recruitment/recruitment-contract";
-import { isValidTaiwanDevelopmentRegion } from "@/lib/radar/semantics/taiwan-development-regions";
+import { isValidTaiwanDevelopmentRegion } from "@/lib/site/taiwan-development-regions";
 import { buildPublicShareUrl, getPublicAppOrigin } from "@/lib/app/public-origin";
 import {
   createSupabaseServiceClient,
