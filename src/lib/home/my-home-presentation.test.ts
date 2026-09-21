@@ -134,7 +134,7 @@ describe("Partner UI precision cleanup", () => {
 
   it("hides only approved business entries", () => {
     const hrefs = MY_HOME_BUSINESS_ENTRIES.map((entry) => entry.href);
-    expect(hrefs).toEqual(["/organization", "/retail-house", "/learning"]);
+    expect(hrefs).toEqual(["/organization", "/retail-house", "/learning", "/training"]);
     expect(hrefs).not.toContain("/goals");
     expect(hrefs).not.toContain("/leaderboard");
   });

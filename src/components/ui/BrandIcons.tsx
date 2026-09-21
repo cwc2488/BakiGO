@@ -514,6 +514,7 @@ export const ROUTE_ICON_COMPONENTS = {
   "/events": IconEvents,
   "/pre-meeting-graphic": IconPreMeetingGraphic,
   "/learning": IconLearning,
+  "/training": IconMissions,
   "/president-road": IconPresidentRoad,
   "/profile": IconProfile,
   "/quiz/hub": IconQuizHub,
