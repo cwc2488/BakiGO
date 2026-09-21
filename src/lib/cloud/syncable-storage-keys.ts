@@ -7,7 +7,8 @@ export const SYNCABLE_STORAGE_KEYS = [
   STORAGE_KEYS.retailTransactions,
   STORAGE_KEYS.retailTransactionDeletionTombstones,
   STORAGE_KEYS.retailPipelineLeads,
-  STORAGE_KEYS.calendarEvents,
+  // Personal calendar events are event-level in public.calendar_events (082).
+  // Do not sync the legacy full JSON blob (last-write-wins / unbounded).
   STORAGE_KEYS.calendarEventDeletionTombstones,
   STORAGE_KEYS.calendarGoogleDeletionTombstones,
   STORAGE_KEYS.calendarSharedAttendance,

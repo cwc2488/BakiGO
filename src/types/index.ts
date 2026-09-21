@@ -100,15 +100,6 @@ export type {
   EventTimelineEntry,
 } from "./event-center";
 
-export type {
-  GoalCard,
-  GoalCenterResult,
-  GoalKpiCategory,
-  GoalKpiDefinition,
-} from "./goal-center";
-
-export { GOAL_KPI_DEFINITIONS } from "./goal-center";
-
 export {
   RULE_MISSING_DESCRIPTION,
   RULE_MISSING_LABEL,

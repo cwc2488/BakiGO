@@ -1,6 +1,10 @@
 /**
  * Asserts authoritative Production baseline markers are present.
  * Run: npm run check:production-baseline
+ *
+ * Updated for Production Cleanup mission:
+ * retired Radar / lists / quiz hub / coaching dashboard / etc.
+ * Calendar + Customer + Organization + Retail House remain required.
  */
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -40,15 +44,24 @@ check("PRODUCTION_BASELINE.md exists", () => {
   );
 });
 
-check("Radar is first-class (not hub placeholder)", () => {
-  assert(existsSync(resolve(process.cwd(), "src/app/radar/page.tsx")), "missing /radar page");
+check("Retired Radar is gone from hub + routes", () => {
+  assert(!existsSync(resolve(process.cwd(), "src/app/radar/page.tsx")), "radar page still present");
   const hubItems = read("src/lib/customers/customer-journey-hub-items.ts");
-  assert(hubItems.includes('href: "/radar"'), "Customer hub missing /radar entry");
-  assert(hubItems.includes("智慧找人"), "Customer hub missing 智慧找人 label");
-  assert(!hubItems.includes("智慧找人（開發中）"), "Customer hub still shows Radar 開發中 placeholder");
-  // Radar entry must not be comingSoon in hub items block for /radar
-  const radarBlock = hubItems.split('href: "/radar"')[1]?.slice(0, 200) ?? "";
-  assert(!radarBlock.includes("comingSoon: true"), "/radar hub entry marked comingSoon");
+  assert(!hubItems.includes('href: "/radar"'), "Customer hub still links /radar");
+  assert(!hubItems.includes("智慧找人"), "Customer hub still shows 智慧找人");
+});
+
+check("Customer hub retains 我的顧客", () => {
+  const hubItems = read("src/lib/customers/customer-journey-hub-items.ts");
+  assert(hubItems.includes('href: "/customers/list"'), "Customer hub missing 我的顧客");
+  assert(hubItems.includes("我的顧客"), "Customer hub missing 我的顧客 label");
+});
+
+check("Bottom nav retains 我的｜顧客｜行事曆", () => {
+  const nav = read("src/components/navigation/AppNav.tsx");
+  assert(nav.includes('href: "/"'), "missing 我的 nav");
+  assert(nav.includes('href: "/customers"'), "missing 顧客 nav");
+  assert(nav.includes('href: "/calendar"'), "missing 行事曆 nav");
 });
 
 check("Home current lineage markers", () => {
@@ -80,6 +93,16 @@ check("Activity lifecycle module present", () => {
     existsSync(resolve(process.cwd(), "src/lib/event-center/activity-lifecycle.ts")),
     "missing activity-lifecycle",
   );
+});
+
+check("Calendar surface present", () => {
+  assert(existsSync(resolve(process.cwd(), "src/app/calendar/page.tsx")), "missing /calendar page");
+  assert(existsSync(resolve(process.cwd(), "src/components/calendar/CalendarPage.tsx")), "missing CalendarPage");
+});
+
+check("Lose2kg retained (not cleaning-roster)", () => {
+  assert(existsSync(resolve(process.cwd(), "src/app/admin/lose2kg")), "missing lose2kg admin");
+  assert(!existsSync(resolve(process.cwd(), "src/app/admin/cleaning-roster")), "cleaning-roster still present");
 });
 
 if (failures.length > 0) {

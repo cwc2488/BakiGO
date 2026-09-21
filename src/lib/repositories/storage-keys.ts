@@ -13,7 +13,10 @@ export const STORAGE_KEYS = {
   memberCoachNotes: "baki-go:member-coach-notes",
   retailPipelineLeads: "baki-go:retail-pipeline-leads",
   promotionCampaigns: "baki-go:promotion-campaigns",
+  /** @deprecated Legacy full-blob sync key. Personal events use calendar_events table. */
   calendarEvents: "baki-go:calendar-events",
+  /** Bounded offline/cold-start mirror only — never synced as a whole blob. */
+  calendarEventsLocalMirror: "baki-go:calendar-events-local-mirror",
   calendarEventDeletionTombstones: "baki-go:calendar-event-deletion-tombstones",
   calendarGoogleDeletionTombstones: "baki-go:calendar-google-deletion-tombstones",
   calendarSharedAttendance: "baki-go:calendar-shared-attendance",

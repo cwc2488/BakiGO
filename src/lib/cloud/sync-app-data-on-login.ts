@@ -11,10 +11,7 @@ import { STORAGE_KEYS } from "@/lib/repositories/storage-keys";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import { awaitPendingCloudSync, setCloudSyncPaused } from "@/lib/repositories/syncing-storage-adapter";
-import {
-  mergeCalendarEventsOnLogin,
-  readCalendarEventDeletionTombstoneIds,
-} from "@/lib/calendar/calendar-event-deletion-tombstones";
+import { migrateLegacyCalendarBlobToRows } from "@/lib/calendar/calendar-cloud-sync";
 import type { EntityId } from "@/types";
 
 function mergeRetailTombstonePayloads(
@@ -75,6 +72,13 @@ export async function syncAppDataOnLogin(
     const cloudHasData = cloudRows.length > 0;
     const localHasData = localHasSyncableData((key) => storage.getItem(key));
 
+    // Personal calendar: event-level rows (082). Migrate legacy blob once; never blob LWW.
+    try {
+      await migrateLegacyCalendarBlobToRows({ storage, memberId });
+    } catch (error) {
+      console.error("Calendar blob→rows migration failed:", error);
+    }
+
     if (!cloudHasData && localHasData) {
       await pushAllLocalAppData({
         memberId,
@@ -115,20 +119,7 @@ export async function syncAppDataOnLogin(
 
       const cloudRow = cloudByKey.get(key);
       if (cloudRow) {
-        if (key === STORAGE_KEYS.calendarEvents) {
-          const tombstoneIds = readCalendarEventDeletionTombstoneIds(storage);
-          const merged = mergeCalendarEventsOnLogin(
-            storage.getItem(key),
-            serializeCloudPayload(cloudRow.payload),
-            tombstoneIds,
-          );
-          const mergedRaw = JSON.stringify(merged);
-          storage.setItem(key, mergedRaw);
-          await pushCloudAppDataKeys({
-            memberId,
-            entries: [{ dataKey: key, rawValue: mergedRaw }],
-          });
-        } else if (key === STORAGE_KEYS.retailTransactionDeletionTombstones) {
+        if (key === STORAGE_KEYS.retailTransactionDeletionTombstones) {
           const mergedRaw = mergeRetailTombstonePayloads(
             storage.getItem(key),
             serializeCloudPayload(cloudRow.payload),

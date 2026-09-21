@@ -8,18 +8,13 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { AppBottomNav, AppSideNav } from "./AppNav";
 import { CalendarReminderScheduler } from "@/components/calendar/CalendarReminderScheduler";
+import { CalendarSyncBootstrap } from "@/components/calendar/CalendarSyncBootstrap";
 import { CustomerFollowUpReminderScheduler } from "@/components/customers/CustomerFollowUpReminderScheduler";
-
-function isLifePath(pathname: string): boolean {
-  return pathname === "/life" || pathname.startsWith("/life/");
-}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
   const pathname = normalizePathname(usePathname());
-  const lifeSurface = isLifePath(pathname);
-  // Baki Life uses its own shell/nav — keep Baki Go chrome off /life/*
-  const showNav = Boolean(session) && !isPublicPath(pathname) && !lifeSurface;
+  const showNav = Boolean(session) && !isPublicPath(pathname);
 
   useEffect(() => {
     runAppDataResetIfNeeded(createLocalStorageAdapter());
@@ -27,12 +22,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {lifeSurface ? null : (
-        <>
-          <CalendarReminderScheduler />
-          <CustomerFollowUpReminderScheduler />
-        </>
-      )}
+      <CalendarSyncBootstrap />
+      <CalendarReminderScheduler />
+      <CustomerFollowUpReminderScheduler />
       <div className="min-h-full max-w-[100vw]">
         {showNav ? <AppSideNav /> : null}
         <div
@@ -54,8 +46,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       {/* Viewport-fixed bottom nav must not sit inside max-w / page chrome
-          wrappers — those can become fixed containing blocks on mobile WebKit
-          during long Calendar/Radar scrolls (RADAR-BOTTOM-NAV-FIX-01). */}
+          wrappers — those can become fixed containing blocks on mobile WebKit. */}
       {showNav ? <AppBottomNav /> : null}
     </>
   );

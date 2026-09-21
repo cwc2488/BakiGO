@@ -12,11 +12,8 @@ import {
 import type { MemberComputedMetrics } from "@/lib/services/recalculate-member-metrics";
 import { IconLabel } from "@/components/ui/AppIcon";
 import { APP_ICON } from "@/lib/ui/app-icons";
-import { getCurrentMember, resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
-import { hasPartnerCareDownline } from "@/lib/auth/member-management-access";
+import { resolveAuthenticatedMemberId } from "@/lib/auth/auth-service";
 import { buildDailyFollowUpSnapshot } from "@/lib/customers/customer-follow-up-reminder";
-import { buildDailyPartnerFollowUpSnapshot } from "@/lib/members/partner-follow-up";
-import { loadAllMembers } from "@/lib/members/member-service";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -125,36 +122,18 @@ function GrowthSection({ metrics }: { metrics: MemberComputedMetrics }) {
 
 function ProfileQuickLinks() {
   const storage = useMemo(() => createLocalStorageAdapter(), []);
-  const viewer = getCurrentMember(storage);
   const followUpCount = useMemo(
     () => buildDailyFollowUpSnapshot(storage, resolveAuthenticatedMemberId(storage)).count,
     [storage],
   );
-  const partnerFollowUpCount = useMemo(
-    () => (viewer ? buildDailyPartnerFollowUpSnapshot(storage, viewer).count : 0),
-    [storage, viewer],
-  );
-  const showPartnerCare = useMemo(() => {
-    if (!viewer) {
-      return false;
-    }
-    return hasPartnerCareDownline(viewer, loadAllMembers(storage));
-  }, [storage, viewer]);
 
   const links = [
     {
       href: "/customers",
       label: followUpCount > 0 ? `顧客 (${followUpCount})` : "顧客",
     },
-    ...(showPartnerCare
-      ? [{
-          href: "/members",
-          label: partnerFollowUpCount > 0 ? `夥伴關懷 (${partnerFollowUpCount})` : "夥伴關懷",
-        }]
-      : []),
     { href: "/organization", label: "我的組織" },
     { href: "/retail-house", label: "零售屋" },
-    { href: "/goals", label: "我的目標" },
     { href: "/calendar", label: "行事曆" },
   ] as const;
 

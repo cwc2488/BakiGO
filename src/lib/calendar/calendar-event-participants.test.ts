@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 import {
   assertCustomerOwnedByMember,
   eventHasParticipant,
@@ -11,6 +11,7 @@ import {
   withParticipantRemoved,
 } from "./calendar-event-participants";
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
+import { resetCalendarStore } from "@/lib/calendar/calendar-event-store";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
 import { defaultRecurrence } from "./recurrence";
 import type { CalendarEvent } from "@/types/calendar-event";
@@ -63,6 +64,9 @@ function customer(id: string, ownerMemberId = OWNER): Customer {
 }
 
 describe("calendar-event-participants", () => {
+  beforeEach(() => {
+    resetCalendarStore();
+  });
   it("dedupes participant ids", () => {
     expect(uniqueCustomerIds([CUSTOMER_A, CUSTOMER_A, CUSTOMER_B, ""])).toEqual([
       CUSTOMER_A,

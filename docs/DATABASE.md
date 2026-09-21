@@ -38,13 +38,44 @@ Migration `024_customers_profile_extension.sql` adds `birth_date`, `region`, `oc
 
 Migration `061_customers_soft_delete.sql` adds nullable `deleted_at`. Active CRM rows have `deleted_at IS NULL`. Coach delete is a soft delete (`deleted_at = now()`); a BEFORE UPDATE trigger preserves `deleted_at` once set so stale client upserts cannot resurrect. Child tables (measurements, photos, coaching FKs) are not cascade-deleted.
 
+### Personal calendar events (`082_calendar_events_v1.sql`)
+
+| Table | Purpose |
+|-------|---------|
+| `calendar_events` | Normalized personal calendar: **1 row per event** (cloud source of truth) |
+
+**Columns:** `id` (text, client UUID), `member_id`, `created_at`, `updated_at`, `start_at`, `end_at`, `is_recurring`, `payload` (full `CalendarEvent` JSON), `deleted_at` (soft delete).
+
+**Write path:** create / update go through `upsert_calendar_event_optimistic` (084) — INSERT if missing; UPDATE only when `incoming.updated_at > existing.updated_at` and `deleted_at IS NULL`; IGNORE stale; never resurrect soft-deletes. A BEFORE UPDATE trigger (`calendar_events_optimistic_write_guard`) enforces the same rules for any direct table write. Delete soft-deletes one row. Never push the full calendar as a `member_app_data` JSON blob (last-write-wins removed).
+
+**Server backfill (082):** idempotent `INSERT … SELECT jsonb_array_elements(payload)` from `member_app_data` where `data_key = 'baki-go:calendar-events'`. Owner is always `member_app_data.member_id` (payload `memberId` normalized). Legacy blob is **not** deleted (rollback source). Migration verifies source count == migrated count. Conflict update only when `calendar_events.updated_at < excluded.updated_at` (never overwrite newer; never resurrect soft-deletes).
+
+**Cutover / Production rollout (human-operated — do not apply from agent):**
+
+1. Apply migration **082** (table + initial backfill)
+2. Apply migration **083** (`reconcile_calendar_events_from_legacy_blobs`)
+3. Apply migration **084** (optimistic write guard + RPC)
+4. Verify: `calendar_events` exists; Realtime publication includes `calendar_events`; legacy source count == migrated count
+5. Deploy new app
+6. Run `SELECT * FROM public.reconcile_calendar_events_from_legacy_blobs();`
+7. Verify inserted / updated / skipped counts; cross-device smoke (create/update/delete live; concurrent create; offline older vs newer → newer wins)
+8. After transition window: retire legacy blob writers
+
+Client also runs conditional local migrate + `reconcileCloudLegacyCalendarBlob` on bootstrap. Rejected stale mutations replace the local store with the DB-canonical row.
+
+**Read path:** range query for visible window (± buffer) plus active recurring series; delta via `updated_at` cursor. App store retains bounded ranges (LRU + TTL). CalendarPage navigation (day/week/month) calls `ensureVisiblePersonalCalendarRange`.
+
+**Realtime:** `postgres_changes` on `calendar_events` applies INSERT/UPDATE/DELETE by event id only.
+
+**Legacy:** `member_app_data` key `baki-go:calendar-events` may still exist for migration; clients migrate once to rows then stop syncing that blob. Local mirror key `baki-go:calendar-events-local-mirror` is bounded and not cloud-synced.
+
 ### Calendar ↔ Customer participants (`074_calendar_event_participants.sql`)
 
 | Table | Purpose |
 |-------|---------|
 | `calendar_event_participants` | Coach-owned join: personal calendar `event_id` (JSON `CalendarEvent.id`) ↔ `customers.id` |
 
-**Operational source of truth (app):** `CalendarEvent.participantCustomerIds` inside `member_app_data` key `baki-go:calendar-events` (stable customer IDs, not names).
+**Operational source of truth (app):** `CalendarEvent.participantCustomerIds` on the personal event row in `calendar_events.payload` (and still mirrored in the participants join table). Stable customer IDs, not names.
 
 **Cloud mirror:** `calendar_event_participants` enforces uniqueness on
 `(owner_member_id, event_source, event_id, customer_id)` and owner-only RLS that also requires the customer row to belong to the same coach (`deleted_at is null`). Removing a participant or deleting an event does **not** delete the customer or the calendar event series counterpart beyond the join row.

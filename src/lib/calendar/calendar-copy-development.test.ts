@@ -322,15 +322,17 @@ describe("REGRESSION — copy/development must not break baselines", () => {
     expect(page).toContain('formMode === "view"');
   });
 
-  it("REGRESSION-07..09: Radar / Home / Customer baseline markers", () => {
+  it("REGRESSION-07..09: Customer / Home / Calendar baseline markers after cleanup", () => {
     const hubItems = src("src/lib/customers/customer-journey-hub-items.ts");
-    expect(hubItems).toContain('href: "/radar"');
-    expect(hubItems).toContain("智慧找人");
-    expect(hubItems).not.toContain("智慧找人（開發中）");
+    expect(hubItems).toContain('href: "/customers/list"');
+    expect(hubItems).toContain("我的顧客");
+    expect(hubItems).not.toContain('href: "/radar"');
+    expect(hubItems).not.toContain("智慧找人");
 
-    expect(src("src/app/radar/page.tsx").length).toBeGreaterThan(20);
+    expect(src("src/app/calendar/page.tsx").length).toBeGreaterThan(20);
     expect(src("src/components/home/HomePage.tsx").length).toBeGreaterThan(500);
     expect(src("src/lib/home/my-home-presentation.ts").length).toBeGreaterThan(100);
-    expect(src("src/components/customers/CustomerJourneyHubPage.tsx")).toContain("我的名單");
+    expect(src("src/components/customers/CustomerJourneyHubPage.tsx")).toContain("CUSTOMER_JOURNEY_HUB_ITEMS");
+    expect(src("src/components/customers/CustomerJourneyHubPage.tsx")).toContain("顧客");
   });
 });

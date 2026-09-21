@@ -47,7 +47,6 @@ export type NotificationPermissionUiState =
 
 export const PUSH_SOURCE = {
   calendarReminder: "calendar_reminder",
-  leadFollowUp: "lead_follow_up",
   test: "test",
 } as const;
 

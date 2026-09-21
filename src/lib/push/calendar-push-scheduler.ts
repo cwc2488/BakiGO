@@ -139,8 +139,46 @@ async function loadCalendarEventsForMembers(
   }
 
   const supabase = createSupabaseServiceClient();
-  // Batch in chunks to avoid oversized IN filters.
+  const now = new Date();
+  const rangeStart = todayISODate(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+  const rangeEnd = todayISODate(new Date(now.getTime() + SCAN_HORIZON_DAYS * 24 * 60 * 60 * 1000));
+
+  // Prefer normalized calendar_events rows (082). Fall back to legacy blob if empty.
   const chunkSize = 50;
+  for (let i = 0; i < memberIds.length; i += chunkSize) {
+    const chunk = memberIds.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from("calendar_events")
+      .select("member_id, payload, deleted_at, start_at, end_at, is_recurring")
+      .in("member_id", chunk)
+      .is("deleted_at", null)
+      .lte("start_at", `${rangeEnd}T23:59:59`);
+
+    if (error) {
+      // Table may not exist yet on older environments — fall back to blob.
+      break;
+    }
+
+    for (const row of data ?? []) {
+      if (row.deleted_at) continue;
+      const isRecurring = Boolean(row.is_recurring);
+      const endAt = String(row.end_at ?? "");
+      if (!isRecurring && endAt.slice(0, 10) < rangeStart) {
+        continue;
+      }
+      const payload = row.payload as CalendarEvent | null;
+      if (!payload || typeof payload !== "object") continue;
+      const memberId = String(row.member_id);
+      const list = result.get(memberId) ?? [];
+      list.push(payload);
+      result.set(memberId, list);
+    }
+  }
+
+  if (result.size > 0) {
+    return result;
+  }
+
   for (let i = 0; i < memberIds.length; i += chunkSize) {
     const chunk = memberIds.slice(i, i + chunkSize);
     const { data, error } = await supabase

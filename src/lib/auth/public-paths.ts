@@ -14,7 +14,6 @@ export function isOpenPublicPath(pathname: string): boolean {
     OPEN_PUBLIC_PATHS.has(normalized) ||
     normalized.startsWith("/meta-review/") ||
     normalized.startsWith("/quiz/fat-loss") ||
-    normalized.startsWith("/quiz/21d/preview") ||
     normalized.startsWith("/internal/coach-console-preview") ||
     normalized === "/quiz" ||
     normalized.startsWith("/q/") ||

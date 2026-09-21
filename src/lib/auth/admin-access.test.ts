@@ -110,14 +110,17 @@ describe("Admin Center does not swallow partner features", () => {
   it("keeps existing org tools at their original partner-accessible routes", () => {
     expect(ADMIN_CENTER_EXISTING_TOOLS.map((tool) => tool.href)).toEqual([
       "/organization",
-      "/members",
       "/profile",
     ]);
     const adminPages = listFiles(resolve(ROOT, "src/app/admin")).filter((file) => file.endsWith("page.tsx"));
     // Super Admin–only pages under /admin.
-    // Partner org tools stay at /organization, /members, /profile — not swallowed here.
+    // Partner org tools stay at /organization, /profile — not swallowed here.
     expect(adminPages.some((file) => file.endsWith("/admin/page.tsx"))).toBe(true);
-    expect(adminPages.some((file) => file.endsWith("/admin/recruitment/page.tsx"))).toBe(true);
-    expect(adminPages.some((file) => file.endsWith("/admin/cleaning-roster/page.tsx"))).toBe(true);
+    expect(adminPages.some((file) => file.endsWith("/admin/lose2kg/page.tsx") || file.includes("/admin/lose2kg/"))).toBe(
+      true,
+    );
+    expect(adminPages.some((file) => file.includes("/admin/recruitment/"))).toBe(false);
+    expect(adminPages.some((file) => file.includes("/admin/cleaning-roster/"))).toBe(false);
+    expect(adminPages.some((file) => file.includes("/admin/transformation/"))).toBe(false);
   });
 });

@@ -7,6 +7,12 @@ import {
   sharedApiEventsToCalendarEvents,
   type SharedCalendarStoredEvent,
 } from "@/lib/calendar/shared-calendar-storage";
+import {
+  getRangeCachedEvents,
+  makeRangeCacheKey,
+  setRangeCachedEvents,
+} from "@/lib/calendar/calendar-range-cache";
+import { idbGetCalendarRange, idbSetCalendarRange } from "@/lib/calendar/calendar-idb-cache";
 import { getTodayDateString } from "@/lib/calendar/time-grid";
 import type { CalendarEvent, CalendarEventColor } from "@/types/calendar-event";
 import type { StorageAdapter } from "@/lib/repositories/storage-adapter";
@@ -23,8 +29,8 @@ interface SharedCalendarApiEvent {
   color: CalendarEventColor;
 }
 
-/** 每日同步一次即可涵蓋一般瀏覽範圍 */
-export const SHARED_CALENDAR_SYNC_RANGE_DAYS = 180;
+/** Visible range ± ~1 month buffer — avoid downloading years of shared events. */
+export const SHARED_CALENDAR_SYNC_RANGE_DAYS = 45;
 
 export function getSharedCalendarSyncRange(referenceDate = getTodayDateString()): {
   rangeStart: string;
@@ -56,6 +62,26 @@ export async function syncSharedGoogleCalendars(
   if (!options?.force && isSharedCalendarCacheFresh(storage, memberId)) {
     const cached = loadSharedCalendarEvents(storage);
     return { count: cached.length, events: cached, fromCache: true };
+  }
+
+  const rangeKey = makeRangeCacheKey({ memberId, rangeStart, rangeEnd });
+  if (!options?.force) {
+    const memoryCached = getRangeCachedEvents(rangeKey);
+    if (memoryCached) {
+      return { count: memoryCached.length, events: memoryCached, fromCache: true };
+    }
+    const idbRaw = await idbGetCalendarRange(rangeKey);
+    if (idbRaw) {
+      try {
+        const parsed = JSON.parse(idbRaw) as CalendarEvent[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setRangeCachedEvents(rangeKey, parsed);
+          return { count: parsed.length, events: parsed, fromCache: true };
+        }
+      } catch {
+        /* ignore corrupt idb row */
+      }
+    }
   }
 
   const response = await fetch(
@@ -97,6 +123,8 @@ export async function syncSharedGoogleCalendars(
     memberId,
     syncedAt: new Date().toISOString(),
   });
+  setRangeCachedEvents(rangeKey, events);
+  void idbSetCalendarRange(rangeKey, JSON.stringify(events));
 
   return { count: events.length, events, fromCache: false };
 }

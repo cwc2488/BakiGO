@@ -650,7 +650,7 @@ export default function CustomerDetailPage({ customerId }: { customerId: string 
             <div className="flex flex-wrap gap-2">
               <Link
                 className="rounded-full bg-[var(--brand-primary-muted)] px-4 py-2 text-[0.8125rem] font-medium text-[var(--brand-primary-dark)]"
-                href={`/members/${linkedMember.id}`}
+                href={`/organization`}
               >
                 查看夥伴檔案
               </Link>

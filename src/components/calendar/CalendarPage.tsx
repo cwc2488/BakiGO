@@ -30,8 +30,6 @@ import {
 } from "@/lib/calendar/alliance-event-participants";
 import {
   inferCalendarActivityTypeFromTitle,
-  CALENDAR_CATEGORY_KEYS,
-  resolveCalendarCategoryKey,
 } from "@/lib/calendar/calendar-activity-types";
 import {
   attendanceFromExpandedSharedEvent,
@@ -103,7 +101,12 @@ import {
 import { createCalendarEventRepository } from "@/lib/repositories/calendar-event-repository";
 import { createCustomerRepository } from "@/lib/repositories/customer-repository";
 import { createLocalStorageAdapter } from "@/lib/repositories/storage-adapter";
-import { awaitPendingCloudSync } from "@/lib/repositories/syncing-storage-adapter";
+import { flushCalendarWriteThrough, syncStoreFromLocalStorage, ensureVisiblePersonalCalendarRange, expandVisibleRangeWithBuffer, calendarPersistStatusMessage } from "@/lib/calendar/calendar-cloud-sync";
+import {
+  getCalendarStoreSnapshot,
+  subscribeCalendarStore,
+  replaceSharedCalendarEvents,
+} from "@/lib/calendar/calendar-event-store";
 import { useSwipeNavigation } from "@/lib/hooks/use-swipe-navigation";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import { AppIcon } from "@/components/ui/AppIcon";
@@ -111,7 +114,7 @@ import { APP_ICON, QUADRANT_ICONS } from "@/lib/ui/app-icons";
 import { PAGE_GRADIENT_CLASS } from "@/components/ui/brand-ui";
 import type { CalendarEvent, CalendarSlotInterval, ExpandedCalendarEvent, RecurrenceEditScope } from "@/types/calendar-event";
 import type { Customer } from "@/types/customer";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ACTIVITY_EVENT_KEYS } from "@/lib/event-center/event-types";
 import { QuickActivityModal } from "@/components/daily-action/QuickActivityModal";
 import {
@@ -195,11 +198,16 @@ export default function CalendarPage() {
   const [selectedDate, setSelectedDate] = useState(getTodayDateString());
   const [monthAnchor, setMonthAnchor] = useState(getMonthStart(getTodayDateString()));
   const [slotInterval, setSlotInterval] = useState<CalendarSlotInterval>(60);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [sharedEvents, setSharedEvents] = useState<CalendarEvent[]>(() => {
-    migrateSharedCalendarStorageIfNeeded(storage);
-    return loadSharedCalendarEvents(storage);
-  });
+  const storeSnapshot = useSyncExternalStore(
+    subscribeCalendarStore,
+    getCalendarStoreSnapshot,
+    getCalendarStoreSnapshot,
+  );
+  const events = useMemo(
+    () => storeSnapshot.events.filter((event) => event.memberId === memberId && isPersonalCalendarEvent(event)),
+    [memberId, storeSnapshot.events],
+  );
+  const sharedEvents = storeSnapshot.sharedEvents;
   const [attendedSharedEvents, setAttendedSharedEvents] = useState<SharedCalendarAttendance[]>([]);
   const [showSharedCalendar, setShowSharedCalendar] = useState(() =>
     loadShowSharedCalendar(storage),
@@ -260,7 +268,9 @@ export default function CalendarPage() {
   const reloadEvents = useCallback(() => {
     migrateSharedCalendarStorageIfNeeded(storage);
     purgeSharedEventsFromPersonalStorage(storage, getSharedCalendarIds());
-    setEvents(createCalendarEventRepository(storage).getByMemberId(memberId).filter(isPersonalCalendarEvent));
+    syncStoreFromLocalStorage(storage, memberId);
+    const shared = loadSharedCalendarEvents(storage);
+    replaceSharedCalendarEvents(shared);
     reloadAttendance();
     setOwnedCustomers(
       createCustomerRepository(storage)
@@ -271,6 +281,11 @@ export default function CalendarPage() {
 
   useEffect(() => {
     queueMicrotask(() => {
+      migrateSharedCalendarStorageIfNeeded(storage);
+      const cachedShared = loadSharedCalendarEvents(storage);
+      if (cachedShared.length > 0) {
+        replaceSharedCalendarEvents(cachedShared);
+      }
       purgeSharedEventsFromPersonalStorage(storage, getSharedCalendarIds());
       reloadEvents();
     });
@@ -280,6 +295,8 @@ export default function CalendarPage() {
     let cancelled = false;
 
     if (isSharedCalendarCacheFresh(storage, memberId)) {
+      const cached = loadSharedCalendarEvents(storage);
+      replaceSharedCalendarEvents(cached);
       return () => {
         cancelled = true;
       };
@@ -297,7 +314,7 @@ export default function CalendarPage() {
       try {
         const result = await syncSharedGoogleCalendars(storage, memberId, rangeStart, rangeEnd);
         if (!cancelled) {
-          setSharedEvents(result.events);
+          replaceSharedCalendarEvents(result.events);
           reloadEvents();
           setSharedSyncState("done");
           if (!result.fromCache && result.count > 0) {
@@ -332,6 +349,50 @@ export default function CalendarPage() {
     const dates = getMonthGridDates(monthAnchor, weekStartsOn);
     return { start: dates[0], end: dates[dates.length - 1] };
   }, [monthAnchor, weekStartsOn]);
+
+  const visiblePersonalRange = useMemo(() => {
+    if (viewMode === "month") {
+      return expandVisibleRangeWithBuffer({
+        rangeStart: monthGridDates.start,
+        rangeEnd: monthGridDates.end,
+      });
+    }
+    if (viewMode === "week") {
+      return expandVisibleRangeWithBuffer({
+        rangeStart: weekRangeStart,
+        rangeEnd: weekRangeEnd,
+      });
+    }
+    // day / stats: selected day with buffer (covers tablet dual-day)
+    return expandVisibleRangeWithBuffer({
+      rangeStart: selectedDate,
+      rangeEnd: addDays(selectedDate, 1),
+    });
+  }, [
+    viewMode,
+    monthGridDates.start,
+    monthGridDates.end,
+    weekRangeStart,
+    weekRangeEnd,
+    selectedDate,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void ensureVisiblePersonalCalendarRange({
+      storage,
+      memberId,
+      rangeStart: visiblePersonalRange.rangeStart,
+      rangeEnd: visiblePersonalRange.rangeEnd,
+    }).catch((error) => {
+      if (!cancelled) {
+        console.error("Calendar visible range sync failed:", error);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [memberId, storage, visiblePersonalRange.rangeStart, visiblePersonalRange.rangeEnd]);
 
   const withSharedCalendarColor = useCallback((event: CalendarEvent): CalendarEvent => {
     if (!isSharedGoogleCalendarId(event.googleCalendarId)) {
@@ -480,12 +541,12 @@ export default function CalendarPage() {
         eventId: viewingExpandedEvent.sourceEventId,
         customerId,
       });
-      void awaitPendingCloudSync();
+      void flushCalendarWriteThrough();
       return;
     }
     if (formMode === "edit" && editingEventId) {
       createCalendarEventRepository(storage).addParticipant(editingEventId, customerId);
-      void awaitPendingCloudSync();
+      void flushCalendarWriteThrough();
       reloadEvents();
     }
   }
@@ -498,12 +559,12 @@ export default function CalendarPage() {
         eventId: viewingExpandedEvent.sourceEventId,
         customerId,
       });
-      void awaitPendingCloudSync();
+      void flushCalendarWriteThrough();
       return;
     }
     if (formMode === "edit" && editingEventId) {
       createCalendarEventRepository(storage).removeParticipant(editingEventId, customerId);
-      void awaitPendingCloudSync();
+      void flushCalendarWriteThrough();
       reloadEvents();
     }
   }
@@ -905,13 +966,13 @@ export default function CalendarPage() {
       }
 
       repository.delete(plan.eventId);
-      await awaitPendingCloudSync();
+      await flushCalendarWriteThrough();
       return syncGoogleDelete(existing);
     }
 
     if (plan.action === "update") {
       const updated = repository.update(plan.eventId, plan.input);
-      await awaitPendingCloudSync();
+      await flushCalendarWriteThrough();
       return syncToGoogleWithWarning(updated, "update");
     }
 
@@ -919,7 +980,7 @@ export default function CalendarPage() {
       repository.update(plan.updateParent.eventId, plan.updateParent.input);
     }
     const created = repository.create(plan.input);
-    await awaitPendingCloudSync();
+    await flushCalendarWriteThrough();
     return syncToGoogleWithWarning(created, "create");
   }
 
@@ -945,13 +1006,13 @@ export default function CalendarPage() {
         if (!isRecurringSeries(created) && isConsultationActivity(created.activityTypeKey)) {
           ensureScheduledConsultationCalendarEvent(storage, memberId, created);
         }
-        await awaitPendingCloudSync();
+        const persistStatus = await flushCalendarWriteThrough();
         googleWarning = await syncToGoogleWithWarning(created, "create");
         setFormOpen(false);
         setDraftParticipantIds([]);
         resetCalendarInteraction();
         reloadEvents();
-        setStatusMessage(googleWarning ? `行程已新增（${googleWarning}）` : "行程已新增");
+        setStatusMessage(calendarPersistStatusMessage("create", persistStatus, googleWarning));
         return;
       }
 
@@ -975,21 +1036,25 @@ export default function CalendarPage() {
         googleWarning = await applyRecurrenceMutation(plan);
         // Participants belong to the series (source event), not a single occurrence.
         repository.update(editingEventId, { participantCustomerIds: draftParticipantIds });
-        await awaitPendingCloudSync();
+        const persistStatus = await flushCalendarWriteThrough();
+        setFormOpen(false);
+        setEditingOccurrence(null);
+        setRecurrenceScopeMode(null);
+        resetCalendarInteraction();
+        setStatusMessage(calendarPersistStatusMessage("update", persistStatus, googleWarning));
       } else {
         const updated = repository.update(editingEventId, {
           ...payload,
           participantCustomerIds: draftParticipantIds,
         });
-        await awaitPendingCloudSync();
+        const persistStatus = await flushCalendarWriteThrough();
         googleWarning = await syncToGoogleWithWarning(updated, "update");
+        setFormOpen(false);
+        setEditingOccurrence(null);
+        setRecurrenceScopeMode(null);
+        resetCalendarInteraction();
+        setStatusMessage(calendarPersistStatusMessage("update", persistStatus, googleWarning));
       }
-
-      setFormOpen(false);
-      setEditingOccurrence(null);
-      setRecurrenceScopeMode(null);
-      resetCalendarInteraction();
-      setStatusMessage(googleWarning ? `行程已更新（${googleWarning}）` : "行程已更新");
     } catch (caught) {
       setStatusMessage(caught instanceof Error ? caught.message : "儲存失敗");
       closeEventForm();
@@ -1011,6 +1076,7 @@ export default function CalendarPage() {
     }
 
     let googleWarning: string | null = null;
+    let persistStatus: Awaited<ReturnType<typeof flushCalendarWriteThrough>> = "saved";
 
     try {
       if (needsRecurrenceScopePrompt(existing)) {
@@ -1025,6 +1091,7 @@ export default function CalendarPage() {
             planRecurringDelete(existing, occurrenceDate, scope),
           );
           removeBakiEventForPersonalCalendarEvent(storage, memberId, editingEventId, occurrenceDate);
+          persistStatus = await flushCalendarWriteThrough();
         } else {
           removeBakiEventForPersonalCalendarEvent(
             storage,
@@ -1033,7 +1100,7 @@ export default function CalendarPage() {
             existing.startAt.slice(0, 10),
           );
           repository.delete(editingEventId);
-          await awaitPendingCloudSync();
+          persistStatus = await flushCalendarWriteThrough();
           googleWarning = await syncGoogleDelete(existing);
         }
       } else {
@@ -1044,7 +1111,7 @@ export default function CalendarPage() {
           existing.startAt.slice(0, 10),
         );
         repository.delete(editingEventId);
-        await awaitPendingCloudSync();
+        persistStatus = await flushCalendarWriteThrough();
         googleWarning = await syncGoogleDelete(existing);
       }
 
@@ -1052,7 +1119,7 @@ export default function CalendarPage() {
       setEditingOccurrence(null);
       setRecurrenceScopeMode(null);
       resetCalendarInteraction();
-      setStatusMessage(googleWarning ? `行程已刪除（${googleWarning}）` : "行程已刪除");
+      setStatusMessage(calendarPersistStatusMessage("delete", persistStatus, googleWarning));
     } catch (caught) {
       setStatusMessage(caught instanceof Error ? caught.message : "刪除失敗");
       closeEventForm();
@@ -1109,7 +1176,7 @@ export default function CalendarPage() {
           googleWarning = warning;
         }
       }
-      await awaitPendingCloudSync();
+      await flushCalendarWriteThrough();
       setCopyOpen(false);
       setFormOpen(false);
       resetCalendarInteraction();
@@ -1166,7 +1233,7 @@ export default function CalendarPage() {
           startAt: newStartAt,
           endAt: newEndAt,
         });
-        await awaitPendingCloudSync();
+        await flushCalendarWriteThrough();
         googleWarning = await syncToGoogleWithWarning(updated, "update");
       }
 
@@ -1356,7 +1423,7 @@ export default function CalendarPage() {
         {viewMode !== "stats" ? (
           <GoogleCalendarPanel
             memberId={memberId}
-            onSharedEventsSynced={setSharedEvents}
+            onSharedEventsSynced={replaceSharedCalendarEvents}
             onSynced={reloadEvents}
             onShowSharedCalendarChange={toggleShowSharedCalendar}
             selectedDate={selectedDate}

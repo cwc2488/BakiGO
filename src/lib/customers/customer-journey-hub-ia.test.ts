@@ -2,44 +2,26 @@ import { describe, expect, it } from "vitest";
 import { CUSTOMER_JOURNEY_HUB_ITEMS } from "@/lib/customers/customer-journey-hub-items";
 
 describe("CustomerJourneyHub IA", () => {
-  it("does not include 待聯絡 / 正在接觸 as top-level entries", () => {
+  it("retains only 我的顧客 after Production Cleanup", () => {
     const titles = CUSTOMER_JOURNEY_HUB_ITEMS.map((item) => item.title);
+    expect(titles).toEqual(["我的顧客"]);
     expect(titles).not.toContain("待聯絡");
     expect(titles).not.toContain("正在接觸");
-    expect(titles.join(" ")).not.toMatch(/待聯絡|正在接觸/);
+    expect(titles).not.toContain("AI Radar");
+    expect(titles).not.toContain("我的名單");
+    expect(titles).not.toContain("名單追蹤");
+    expect(titles).not.toContain("心理測驗");
+    expect(titles).not.toContain("陪跑");
+    expect(titles).not.toContain("轉介紹中心");
   });
 
-  it("keeps a clickable 心理測驗 partner entry after 我的名單", () => {
-    const titles = CUSTOMER_JOURNEY_HUB_ITEMS.map((item) => item.title);
-    expect(titles).toEqual([
-      "AI Radar",
-      "我的名單",
-      "心理測驗",
-      "我的顧客",
-      "陪跑",
-      "轉介紹中心",
-    ]);
-
-    const quiz = CUSTOMER_JOURNEY_HUB_ITEMS.find((item) => item.title === "心理測驗");
-    expect(quiz).toMatchObject({
-      href: "/quiz/21d",
-      title: "心理測驗",
-      desc: "分享測驗，聯絡想了解 21 天的人",
-      iconHref: "/quiz/hub",
-      waitingBadge: true,
+  it("links 我的顧客 to the customer list", () => {
+    const customers = CUSTOMER_JOURNEY_HUB_ITEMS.find((item) => item.title === "我的顧客");
+    expect(customers).toMatchObject({
+      href: "/customers/list",
+      title: "我的顧客",
     });
-    expect(quiz?.comingSoon).toBeFalsy();
-    expect(quiz?.locked).toBeFalsy();
-    expect(quiz?.href).toBe("/quiz/21d");
-    expect(quiz?.href).not.toBe("/quiz/hub");
-  });
-
-  it("keeps AI Radar active with href and no comingSoon", () => {
-    const radar = CUSTOMER_JOURNEY_HUB_ITEMS.find((item) => item.title === "AI Radar");
-    expect(radar).toMatchObject({
-      href: "/radar",
-      desc: "智慧找人",
-    });
-    expect(radar?.comingSoon).toBeFalsy();
+    expect(customers?.comingSoon).toBeFalsy();
+    expect(customers?.locked).toBeFalsy();
   });
 });

@@ -404,9 +404,10 @@ describe("QUIZ-AI-21 P1 — anonymous analysis foundation", () => {
     expect(homeLinks).toContain("/consultation/new");
   });
 
-  it("P1-16 — Radar remains locked (no nav unlock; nullable architecture only)", () => {
+  it("P1-16 — Radar remains retired (no nav unlock)", () => {
     const home = readSrc("src/components/home/home-core-work-entries.test.ts");
-    expect(home).toContain("/radar");
+    expect(home).not.toContain('href === "/radar"');
+    expect(home).toContain('not.toContain("/radar")');
     const resultPage = readSrc("src/components/quiz/FatLossQuizResultPage.tsx");
     expect(resultPage).not.toContain("/radar");
     const shell = readSrc("src/app/analysis/[token]/page.tsx");
