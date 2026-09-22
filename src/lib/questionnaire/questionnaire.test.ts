@@ -301,3 +301,56 @@ describe("問卷開發 — privacy / routes / migration", () => {
     expect(report).toContain("manualFish");
   });
 });
+
+describe("問卷開發 — delete reverse + performance (087)", () => {
+  it("087 delete RPC edge semantics encoded in SQL", () => {
+    const sql = src("supabase/migrations/087_questionnaire_delete_performance.sql");
+    // A/B/C/D — credit dates via Taipei; independent fish/invite
+    expect(sql).toContain("(v_lead.fish_credited_at at time zone 'Asia/Taipei')::date");
+    expect(sql).toContain("(v_lead.invitation_credited_at at time zone 'Asia/Taipei')::date");
+    // H — never touch manual
+    expect(sql).not.toMatch(/manual_fish_pool_count\s*=/);
+    expect(sql).not.toMatch(/manual_invitation_five_steps_count\s*=/);
+    // I — only decrement when > 0
+    expect(sql).toContain("questionnaire_fish_pool_count > 0");
+    expect(sql).toContain("questionnaire_invitation_five_steps_count > 0");
+    // F — second delete → lead_not_found
+    expect(sql).toContain("raise exception 'lead_not_found'");
+    // P — missing report aborts
+    expect(sql).toContain("raise exception 'credit_report_missing'");
+    // E — DELETE lead (responses cascade via FK)
+    expect(sql).toContain("delete from public.questionnaire_leads");
+    // No ghost insert on delete
+    expect(sql).not.toMatch(
+      /if v_lead\.fish_credited_at[\s\S]*?insert into public\.five_plus_five_reports/,
+    );
+  });
+
+  it("dashboard uses index-friendly timestamp ranges", () => {
+    const sql = src("supabase/migrations/087_questionnaire_delete_performance.sql");
+    expect(sql).toContain("v_today_start := p_today::timestamp at time zone 'Asia/Taipei'");
+    expect(sql).toContain("fish_credited_at >= v_today_start");
+    expect(sql).not.toMatch(
+      /\(fish_credited_at\s+at\s+time\s+zone\s+'Asia\/Taipei'\)::date/,
+    );
+  });
+
+  it("dashboard uses single aggregate RPC", () => {
+    const service = src("src/lib/questionnaire/service.ts");
+    expect(service).toContain("get_questionnaire_dashboard_v1");
+    expect(service).toContain("p_recent_limit");
+  });
+
+  it("detail uses latest_response_id relational select", () => {
+    const service = src("src/lib/questionnaire/service.ts");
+    expect(service).toContain("questionnaire_responses!latest_response_id");
+    expect(service).not.toContain('from("questionnaire_responses")');
+  });
+
+  it("DELETE route ownership from server only", () => {
+    const route = src("src/app/api/questionnaire/leads/[id]/route.ts");
+    expect(route).toContain("export async function DELETE");
+    expect(route).toContain("ownerMemberId: memberId");
+    expect(route).toContain("forged_owner_id");
+  });
+});

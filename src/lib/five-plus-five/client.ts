@@ -1,3 +1,11 @@
+import {
+  CACHE_KEYS,
+  RESOURCE_TTL,
+  getCached,
+  invalidateFivePlusFiveCaches,
+  isFresh,
+  setCached,
+} from "@/lib/client-cache/resource-cache";
 import { fetchWithMemberAuth } from "@/lib/quiz/quiz-member-fetch";
 import type {
   FivePlusFiveMemberDetail,
@@ -18,12 +26,29 @@ async function parseJson<T>(res: Response): Promise<T> {
   return body;
 }
 
-export async function fetchMyFivePlusFive(): Promise<{
+export type FivePlusFiveMePayload = {
   stats: FivePlusFiveMyStats;
   todayReport: FivePlusFiveReportRow | null;
-}> {
-  const res = await fetchWithMemberAuth("/api/5plus5/me", { cache: "no-store" });
-  return parseJson(res);
+};
+
+export async function fetchMyFivePlusFive(
+  init?: RequestInit,
+): Promise<FivePlusFiveMePayload> {
+  const res = await fetchWithMemberAuth("/api/5plus5/me", {
+    cache: "no-store",
+    ...init,
+  });
+  const body = await parseJson<FivePlusFiveMePayload>(res);
+  setCached(CACHE_KEYS.fivePlusFiveMe, body);
+  return body;
+}
+
+export function readCachedFivePlusFiveMe(): FivePlusFiveMePayload | null {
+  return getCached<FivePlusFiveMePayload>(CACHE_KEYS.fivePlusFiveMe)?.data ?? null;
+}
+
+export function isFivePlusFiveMeFresh(now: number = Date.now()): boolean {
+  return isFresh(CACHE_KEYS.fivePlusFiveMe, RESOURCE_TTL.fivePlusFive, now);
 }
 
 export async function upsertMyFivePlusFive(input: {
@@ -42,7 +67,15 @@ export async function upsertMyFivePlusFive(input: {
       invitationFiveStepsCount: input.manualInvitationFiveStepsCount,
     }),
   });
-  return parseJson(res);
+  const body = await parseJson<{ report: FivePlusFiveReportRow; stats: FivePlusFiveMyStats }>(
+    res,
+  );
+  invalidateFivePlusFiveCaches();
+  setCached(CACHE_KEYS.fivePlusFiveMe, {
+    stats: body.stats,
+    todayReport: body.report,
+  });
+  return body;
 }
 
 export async function backfillFivePlusFive(input: {
@@ -60,7 +93,14 @@ export async function backfillFivePlusFive(input: {
       invitationFiveStepsCount: input.manualInvitationFiveStepsCount,
     }),
   });
-  return parseJson(res);
+  const body = await parseJson<{ report: FivePlusFiveReportRow; stats: FivePlusFiveMyStats }>(
+    res,
+  );
+  invalidateFivePlusFiveCaches();
+  void fetchMyFivePlusFive().catch(() => {
+    /* background refresh after backfill */
+  });
+  return body;
 }
 
 export async function fetchFivePlusFiveOrganization(): Promise<FivePlusFiveOrgSummary> {
@@ -78,3 +118,5 @@ export async function fetchFivePlusFiveMember(
   const body = await parseJson<{ detail: FivePlusFiveMemberDetail }>(res);
   return body.detail;
 }
+
+export { CACHE_KEYS, RESOURCE_TTL, invalidateFivePlusFiveCaches };

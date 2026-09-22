@@ -266,6 +266,117 @@ export async function restoreCloudSession(
   }, { awaitSync: false });
 }
 
+/**
+ * Pure decision helper for cold-start auth restore.
+ * Does not touch network or storage — used by restoreCloudSessionFast + tests.
+ */
+export function evaluateFastAuthRestore(input: {
+  supabaseEmail: string | null | undefined;
+  localSession: AuthSession | null;
+  localMember: Member | null;
+}): "fast" | "needs_full" | "signed_out" | "email_mismatch" {
+  const raw = (input.supabaseEmail ?? "").trim();
+  if (!raw) {
+    return "signed_out";
+  }
+  const supabaseEmail = normalizeEmail(raw);
+  const { localSession, localMember } = input;
+  if (!localSession || !localMember) {
+    return "needs_full";
+  }
+  if (localSession.memberId !== localMember.id) {
+    return "needs_full";
+  }
+  if (normalizeEmail(localSession.email) !== supabaseEmail) {
+    return "email_mismatch";
+  }
+  return "fast";
+}
+
+export type CloudSessionFastRestore =
+  | {
+      path: "fast";
+      session: AuthSession;
+      member: Member;
+      supabaseEmail: string;
+    }
+  | {
+      path: "needs_full";
+      session: null;
+      member: null;
+      supabaseEmail: string;
+      reason: "incomplete_local" | "email_mismatch";
+    }
+  | {
+      path: "signed_out";
+      session: null;
+      member: null;
+      supabaseEmail: null;
+    };
+
+/**
+ * Cold-start critical path: Supabase getSession + local read only.
+ * Never awaits fetchCloudMemberByEmail / org / retail / app-data sync.
+ */
+export async function restoreCloudSessionFast(
+  storage: StorageAdapter = createLocalStorageAdapter(),
+): Promise<CloudSessionFastRestore> {
+  if (!isSupabaseConfigured()) {
+    return { path: "signed_out", session: null, member: null, supabaseEmail: null };
+  }
+
+  const supabase = createSupabaseBrowserClient();
+  const { data, error } = await supabase.auth.getSession();
+  const supabaseEmailRaw = data.session?.user.email ?? null;
+
+  if (error || !supabaseEmailRaw) {
+    // Stale local login is not valid without Supabase session
+    createAuthRepository(storage).writeSession(null);
+    return { path: "signed_out", session: null, member: null, supabaseEmail: null };
+  }
+
+  const supabaseEmail = normalizeEmail(supabaseEmailRaw);
+  const localSession = getCurrentSession(storage);
+  const localMember = localSession
+    ? createMemberRepository(storage).getById(localSession.memberId) ?? null
+    : null;
+
+  const decision = evaluateFastAuthRestore({
+    supabaseEmail,
+    localSession,
+    localMember,
+  });
+
+  if (decision === "fast" && localSession && localMember) {
+    return {
+      path: "fast",
+      session: localSession,
+      member: localMember,
+      supabaseEmail,
+    };
+  }
+
+  if (decision === "email_mismatch") {
+    // Never paint account A while Supabase identity is B
+    createAuthRepository(storage).writeSession(null);
+    return {
+      path: "needs_full",
+      session: null,
+      member: null,
+      supabaseEmail,
+      reason: "email_mismatch",
+    };
+  }
+
+  return {
+    path: "needs_full",
+    session: null,
+    member: null,
+    supabaseEmail,
+    reason: "incomplete_local",
+  };
+}
+
 export async function logoutAccount(
   storage: StorageAdapter = createLocalStorageAdapter(),
 ): Promise<void> {

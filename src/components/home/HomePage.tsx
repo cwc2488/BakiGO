@@ -28,8 +28,38 @@ import { useSuperAdmin } from "@/lib/auth/use-super-admin";
 import { useSoftRefresh } from "@/lib/hooks/use-soft-refresh";
 import { millisecondsUntilNextAppMidnight } from "@/lib/config/app-config";
 import { FivePlusFiveHomeCard } from "@/components/five-plus-five/FivePlusFiveHomeCard";
+import {
+  CACHE_KEYS,
+  RESOURCE_TTL,
+  isFresh,
+  setCached,
+} from "@/lib/client-cache/resource-cache";
 
 type LoadState = "loading" | "ready" | "error";
+
+function scheduleIdleRefresh(run: () => void): number {
+  if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+    return window.requestIdleCallback(() => run(), { timeout: 2500 });
+  }
+  return window.setTimeout(run, 32) as unknown as number;
+}
+
+function cancelIdleRefresh(handle: number): void {
+  if (typeof window !== "undefined" && typeof window.cancelIdleCallback === "function") {
+    window.cancelIdleCallback(handle);
+    return;
+  }
+  window.clearTimeout(handle);
+}
+
+function markHomeMetricsRefreshed(now: number = Date.now()): void {
+  setCached(CACHE_KEYS.homeMetricsRefreshAt, now, now);
+}
+
+function shouldSkipHomeSoftRecalc(force: boolean, now: number = Date.now()): boolean {
+  if (force) return false;
+  return isFresh(CACHE_KEYS.homeMetricsRefreshAt, RESOURCE_TTL.homeMetrics, now);
+}
 
 function MetricRow({
   label,
@@ -179,44 +209,83 @@ export default function HomePage() {
       });
       setMetrics(snapshot);
       setLoadState("ready");
+      markHomeMetricsRefreshed();
     } catch {
       setLoadState((prev) => (prev === "ready" ? "ready" : "error"));
       setErrorMessage("系統無法完成計算，請重新載入或稍後再試。");
     }
   }, []);
 
-  const bootstrap = useCallback(() => {
-    setErrorMessage("資料載入失敗，請稍後再試。");
-    let cached: MemberComputedMetrics | null = null;
-    try {
-      cached = readMissionControlMetrics();
-    } catch {
-      cached = null;
-    }
+  useEffect(() => {
+    let idleHandle: number | null = null;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setErrorMessage("資料載入失敗，請稍後再試。");
+      let cached: MemberComputedMetrics | null = null;
+      try {
+        cached = readMissionControlMetrics();
+      } catch {
+        cached = null;
+      }
 
-    if (cached) {
-      setMetrics(cached);
-      setLoadState("ready");
-      queueMicrotask(() => softRecalc());
-      return;
-    }
+      if (cached) {
+        setMetrics(cached);
+        setLoadState("ready");
+        if (!shouldSkipHomeSoftRecalc(false)) {
+          idleHandle = scheduleIdleRefresh(() => {
+            if (cancelled || shouldSkipHomeSoftRecalc(false)) return;
+            softRecalc();
+          });
+        }
+        return;
+      }
 
-    setLoadState("loading");
-    softRecalc();
+      setLoadState("loading");
+      softRecalc();
+    });
+    return () => {
+      cancelled = true;
+      if (idleHandle !== null) cancelIdleRefresh(idleHandle);
+    };
   }, [softRecalc]);
 
-  useEffect(() => {
-    queueMicrotask(() => {
-      bootstrap();
-    });
-  }, [bootstrap]);
+  const bootstrap = useCallback(
+    (options?: { force?: boolean }) => {
+      const force = options?.force === true;
+      setErrorMessage("資料載入失敗，請稍後再試。");
+      let cached: MemberComputedMetrics | null = null;
+      try {
+        cached = readMissionControlMetrics();
+      } catch {
+        cached = null;
+      }
 
-  // Resume from background / focus — re-resolve Taipei "today" without restart.
+      if (cached) {
+        setMetrics(cached);
+        setLoadState("ready");
+        if (shouldSkipHomeSoftRecalc(force)) {
+          return;
+        }
+        scheduleIdleRefresh(() => {
+          if (shouldSkipHomeSoftRecalc(force)) return;
+          softRecalc();
+        });
+        return;
+      }
+
+      setLoadState("loading");
+      softRecalc();
+    },
+    [softRecalc],
+  );
+
+  // Resume from background / focus — skip if freshness window still valid.
   useSoftRefresh(() => {
     bootstrap();
   });
 
-  // Schedule refresh at the next Asia/Taipei midnight boundary.
+  // Schedule refresh at the next Asia/Taipei midnight boundary (always force).
   useEffect(() => {
     let timerId: number | null = null;
     let cancelled = false;
@@ -227,7 +296,7 @@ export default function HomePage() {
       }
       const delay = millisecondsUntilNextAppMidnight();
       timerId = window.setTimeout(() => {
-        bootstrap();
+        bootstrap({ force: true });
         schedule();
       }, delay + 50);
     };
