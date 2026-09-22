@@ -3,6 +3,7 @@ import {
   RESOURCE_TTL,
   getCached,
   invalidateFivePlusFiveCaches,
+  isFresh,
   setCached,
 } from "@/lib/client-cache/resource-cache";
 import { fetchWithMemberAuth } from "@/lib/quiz/quiz-member-fetch";
@@ -44,6 +45,10 @@ export async function fetchMyFivePlusFive(
 
 export function readCachedFivePlusFiveMe(): FivePlusFiveMePayload | null {
   return getCached<FivePlusFiveMePayload>(CACHE_KEYS.fivePlusFiveMe)?.data ?? null;
+}
+
+export function isFivePlusFiveMeFresh(now: number = Date.now()): boolean {
+  return isFresh(CACHE_KEYS.fivePlusFiveMe, RESOURCE_TTL.fivePlusFive, now);
 }
 
 export async function upsertMyFivePlusFive(input: {

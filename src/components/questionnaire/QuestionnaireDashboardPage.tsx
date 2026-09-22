@@ -8,6 +8,7 @@ import { copyTextToClipboard } from "@/lib/five-plus-five/clipboard";
 import { QUESTIONNAIRE_PUBLIC_COPY, QUESTIONNAIRE_SOURCE_LABEL } from "@/lib/questionnaire/contract";
 import {
   fetchQuestionnaireDashboard,
+  isQuestionnaireDashboardFresh,
   prefetchQuestionnaireLead,
   readCachedQuestionnaireDashboard,
 } from "@/lib/questionnaire/client";
@@ -49,8 +50,17 @@ export default function QuestionnaireDashboardPage() {
   const [staleHint, setStaleHint] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { force?: boolean }) => {
+    const force = opts?.force === true;
     const hasData = Boolean(readCachedQuestionnaireDashboard() ?? dashboard);
+
+    // Fresh cache → skip network entirely
+    if (!force && hasData && isQuestionnaireDashboardFresh()) {
+      setColdLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     if (hasData) {
       setRefreshing(true);
       setStaleHint(null);
@@ -76,7 +86,7 @@ export default function QuestionnaireDashboardPage() {
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once; SWR refresh
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once; TTL-aware SWR
   }, []);
 
   useEffect(() => {

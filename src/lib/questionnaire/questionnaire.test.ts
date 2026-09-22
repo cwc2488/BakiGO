@@ -311,12 +311,28 @@ describe("問卷開發 — delete reverse + performance (087)", () => {
     // H — never touch manual
     expect(sql).not.toMatch(/manual_fish_pool_count\s*=/);
     expect(sql).not.toMatch(/manual_invitation_five_steps_count\s*=/);
-    // I — floor at 0
-    expect(sql).toContain("greatest(questionnaire_fish_pool_count - 1, 0)");
+    // I — only decrement when > 0
+    expect(sql).toContain("questionnaire_fish_pool_count > 0");
+    expect(sql).toContain("questionnaire_invitation_five_steps_count > 0");
     // F — second delete → lead_not_found
     expect(sql).toContain("raise exception 'lead_not_found'");
+    // P — missing report aborts
+    expect(sql).toContain("raise exception 'credit_report_missing'");
     // E — DELETE lead (responses cascade via FK)
     expect(sql).toContain("delete from public.questionnaire_leads");
+    // No ghost insert on delete
+    expect(sql).not.toMatch(
+      /if v_lead\.fish_credited_at[\s\S]*?insert into public\.five_plus_five_reports/,
+    );
+  });
+
+  it("dashboard uses index-friendly timestamp ranges", () => {
+    const sql = src("supabase/migrations/087_questionnaire_delete_performance.sql");
+    expect(sql).toContain("v_today_start := p_today::timestamp at time zone 'Asia/Taipei'");
+    expect(sql).toContain("fish_credited_at >= v_today_start");
+    expect(sql).not.toMatch(
+      /\(fish_credited_at\s+at\s+time\s+zone\s+'Asia\/Taipei'\)::date/,
+    );
   });
 
   it("dashboard uses single aggregate RPC", () => {

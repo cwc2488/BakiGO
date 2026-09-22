@@ -46,6 +46,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // that blocked first paint with duplicate cloud merges.
       const restored = await restoreCloudSession(storage);
       const nextSession = restored ?? getCurrentSession(storage);
+      if (nextSession?.memberId) {
+        const { ensureResourceCacheOwner } = await import("@/lib/client-cache/resource-cache");
+        ensureResourceCacheOwner(nextSession.memberId);
+      }
       setSession(nextSession);
       setMember(nextSession ? getCurrentMember(storage) : null);
       setCloudSyncVersion(getCloudBackgroundSyncVersion());
@@ -87,6 +91,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   const signOut = useCallback(async () => {
+    const { clearSensitiveResourceCache } = await import("@/lib/client-cache/resource-cache");
+    clearSensitiveResourceCache();
     await logoutAccount(createLocalStorageAdapter());
     setSession(null);
     setMember(null);

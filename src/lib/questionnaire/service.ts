@@ -578,6 +578,13 @@ export async function deleteQuestionnaireLead(input: {
     if (/lead_not_found/i.test(error.message)) {
       throw new QuestionnaireError("找不到這筆問卷名單。", 404, "not_found");
     }
+    if (/credit_report_missing/i.test(error.message)) {
+      throw new QuestionnaireError(
+        "無法確認 5＋5 回沖紀錄，已中止刪除。請聯絡支援。",
+        409,
+        "credit_report_missing",
+      );
+    }
     throw new QuestionnaireError(error.message, 500, "delete_failed");
   }
 

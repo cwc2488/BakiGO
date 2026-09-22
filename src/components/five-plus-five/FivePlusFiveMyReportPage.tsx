@@ -9,6 +9,7 @@ import { formatPersonalWarReport } from "@/lib/five-plus-five/copy-report";
 import {
   backfillFivePlusFive,
   fetchMyFivePlusFive,
+  isFivePlusFiveMeFresh,
   readCachedFivePlusFiveMe,
   upsertMyFivePlusFive,
 } from "@/lib/five-plus-five/client";
@@ -55,8 +56,16 @@ export default function FivePlusFiveMyReportPage() {
     [],
   );
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { force?: boolean }) => {
+    const force = opts?.force === true;
     const hasCache = Boolean(readCachedFivePlusFiveMe() ?? stats);
+
+    if (!force && hasCache && isFivePlusFiveMeFresh()) {
+      setColdLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     if (hasCache) {
       setRefreshing(true);
     } else {
@@ -81,7 +90,7 @@ export default function FivePlusFiveMyReportPage() {
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once; SWR
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once; TTL-aware SWR
   }, []);
 
   useEffect(() => {

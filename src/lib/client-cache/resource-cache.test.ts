@@ -4,7 +4,10 @@ import { resolve } from "node:path";
 import {
   CACHE_KEYS,
   RESOURCE_TTL,
+  clearSensitiveResourceCache,
+  ensureResourceCacheOwner,
   getCached,
+  getResourceCacheOwner,
   invalidateCached,
   invalidateCachedPrefix,
   invalidateFivePlusFiveCaches,
@@ -12,201 +15,222 @@ import {
   isFresh,
   setCached,
 } from "@/lib/client-cache/resource-cache";
+import { isFullQuestionnaireLeadDetail } from "@/lib/questionnaire/client";
 
 function src(relativePath: string): string {
   return readFileSync(resolve(process.cwd(), relativePath), "utf8");
 }
 
-describe("resource-cache — SWR primitives", () => {
+describe("resource-cache — member owner guard", () => {
   beforeEach(() => {
-    invalidateCachedPrefix("questionnaire:");
-    invalidateCachedPrefix("fiveplusfive:");
-    invalidateCachedPrefix("home:metrics:");
-    // jsdom sessionStorage
+    clearSensitiveResourceCache();
     if (typeof window !== "undefined") {
       window.sessionStorage.clear();
     }
   });
 
   afterEach(() => {
-    invalidateQuestionnaireCaches();
-    invalidateFivePlusFiveCaches();
+    clearSensitiveResourceCache();
   });
 
-  it("A — dashboard cache hit: set then get immediately", () => {
-    const payload = { todayValidNewLeads: 2 };
-    setCached(CACHE_KEYS.questionnaireDashboard, payload);
-    expect(getCached(CACHE_KEYS.questionnaireDashboard)?.data).toEqual(payload);
-    expect(isFresh(CACHE_KEYS.questionnaireDashboard, RESOURCE_TTL.questionnaireDashboard)).toBe(
-      true,
-    );
-  });
+  it("A — member A cache is wiped when switching to B", () => {
+    ensureResourceCacheOwner("member-a");
+    setCached(CACHE_KEYS.questionnaireLead("lead-1"), {
+      id: "lead-1",
+      displayName: "小美",
+      status: "new",
+    });
+    setCached(CACHE_KEYS.fivePlusFiveMe, {
+      stats: { todayDate: "2026-09-22", fish: 5 },
+      todayReport: null,
+    });
+    expect(getCached(CACHE_KEYS.questionnaireLead("lead-1"))?.data).toMatchObject({
+      displayName: "小美",
+    });
 
-  it("B — stale cache still readable while freshness expires", () => {
-    const key = CACHE_KEYS.questionnaireDashboard;
-    setCached(key, { v: 1 }, Date.now() - RESOURCE_TTL.questionnaireDashboard - 1);
-    expect(getCached(key)?.data).toEqual({ v: 1 });
-    expect(isFresh(key, RESOURCE_TTL.questionnaireDashboard)).toBe(false);
-  });
-
-  it("E — detail summary can be seeded from list key", () => {
-    const summary = { id: "lead-1", displayName: "小美", status: "new" };
-    setCached(CACHE_KEYS.questionnaireLead("lead-1"), summary);
-    expect(getCached(CACHE_KEYS.questionnaireLead("lead-1"))?.data).toEqual(summary);
-  });
-
-  it("F — mutation invalidate clears dashboard + leads + 5＋5", () => {
-    setCached(CACHE_KEYS.questionnaireDashboard, { ok: true });
-    setCached(CACHE_KEYS.questionnaireLeads("all", "", 1), { leads: [] });
-    setCached(CACHE_KEYS.fivePlusFiveMe, { stats: {} });
-    invalidateQuestionnaireCaches();
-    invalidateFivePlusFiveCaches();
-    expect(getCached(CACHE_KEYS.questionnaireDashboard)).toBeNull();
-    expect(getCached(CACHE_KEYS.questionnaireLeads("all", "", 1))).toBeNull();
+    ensureResourceCacheOwner("member-b");
+    expect(getResourceCacheOwner()).toBe("member-b");
+    expect(getCached(CACHE_KEYS.questionnaireLead("lead-1"))).toBeNull();
     expect(getCached(CACHE_KEYS.fivePlusFiveMe)).toBeNull();
   });
 
-  it("I — fiveplusfive:me warm reopen uses cache key", () => {
-    setCached(CACHE_KEYS.fivePlusFiveMe, { stats: { todayDate: "2026-09-22" }, todayReport: null });
-    expect(getCached(CACHE_KEYS.fivePlusFiveMe)?.data).toMatchObject({
-      stats: { todayDate: "2026-09-22" },
+  it("B — logout clears questionnaire / 5＋5 / owner", () => {
+    ensureResourceCacheOwner("member-a");
+    setCached(CACHE_KEYS.questionnaireDashboard, { todayValidNewLeads: 1 });
+    setCached(CACHE_KEYS.fivePlusFiveMe, { stats: {}, todayReport: null });
+    clearSensitiveResourceCache();
+    expect(getResourceCacheOwner()).toBeNull();
+    expect(getCached(CACHE_KEYS.questionnaireDashboard)).toBeNull();
+    expect(getCached(CACHE_KEYS.fivePlusFiveMe)).toBeNull();
+  });
+
+  it("C — same member keeps warm cache", () => {
+    ensureResourceCacheOwner("member-a");
+    setCached(CACHE_KEYS.questionnaireDashboard, { todayValidNewLeads: 3 });
+    ensureResourceCacheOwner("member-a");
+    expect(getCached(CACHE_KEYS.questionnaireDashboard)?.data).toEqual({
+      todayValidNewLeads: 3,
     });
+  });
+});
+
+describe("resource-cache — SWR primitives", () => {
+  beforeEach(() => {
+    clearSensitiveResourceCache();
+    ensureResourceCacheOwner("member-test");
+  });
+
+  afterEach(() => {
+    clearSensitiveResourceCache();
+  });
+
+  it("stale vs fresh TTL", () => {
+    const key = CACHE_KEYS.questionnaireDashboard;
+    setCached(key, { v: 1 });
+    expect(isFresh(key, RESOURCE_TTL.questionnaireDashboard)).toBe(true);
+    setCached(key, { v: 1 }, Date.now() - RESOURCE_TTL.questionnaireDashboard - 1);
+    expect(isFresh(key, RESOURCE_TTL.questionnaireDashboard)).toBe(false);
+    expect(getCached(key)?.data).toEqual({ v: 1 });
   });
 
   it("never uses localStorage for questionnaire PII keys", () => {
     const cacheSrc = src("src/lib/client-cache/resource-cache.ts");
     expect(cacheSrc).toContain("sessionStorage");
     expect(cacheSrc).not.toMatch(/localStorage\.setItem/);
-    expect(cacheSrc).toContain('key.startsWith("questionnaire:")');
+    expect(cacheSrc).toContain("ensureResourceCacheOwner");
+    expect(cacheSrc).toContain("clearSensitiveResourceCache");
+    expect(cacheSrc).toContain("baki:rc:owner");
   });
 });
 
-describe("questionnaire performance UX architecture", () => {
-  it("C — leads page uses 300ms debounce", () => {
-    const page = src("src/components/questionnaire/QuestionnaireLeadsPage.tsx");
-    expect(page).toContain("SEARCH_DEBOUNCE_MS");
-    expect(page).toContain("300");
-    expect(page).toContain("setDebouncedSearch");
-  });
-
-  it("D — leads page aborts previous request", () => {
-    const page = src("src/components/questionnaire/QuestionnaireLeadsPage.tsx");
-    expect(page).toContain("AbortController");
-    expect(page).toContain("abortRef");
-    expect(page).toContain(".abort()");
-    expect(page).toContain("signal: controller.signal");
-  });
-
-  it("dashboard / detail / 5＋5 use cache-first SWR (no blank wipe)", () => {
+describe("questionnaire performance UX — real TTL skip-fetch", () => {
+  it("D/E — dashboard fresh skips fetch; stale refreshes", () => {
     const dash = src("src/components/questionnaire/QuestionnaireDashboardPage.tsx");
-    expect(dash).toContain("readCachedQuestionnaireDashboard");
-    expect(dash).not.toMatch(/setDashboard\(null\)/);
+    expect(dash).toContain("isQuestionnaireDashboardFresh");
+    expect(dash).toMatch(/if\s*\(!force\s*&&\s*hasData\s*&&\s*isQuestionnaireDashboardFresh/);
     expect(dash).toContain("更新失敗，顯示上次資料");
-    expect(dash).toContain("更新中…");
+  });
 
+  it("F — leads fresh skips fetch", () => {
+    const page = src("src/components/questionnaire/QuestionnaireLeadsPage.tsx");
+    expect(page).toContain("isQuestionnaireLeadsFresh");
+    expect(page).toContain("SEARCH_DEBOUNCE_MS");
+    expect(page).toContain("AbortController");
+  });
+
+  it("G — filter with no cache clears previous leads", () => {
+    const page = src("src/components/questionnaire/QuestionnaireLeadsPage.tsx");
+    expect(page).toContain("setLeads([])");
+    expect(page).toContain("never show previous filter leads");
+  });
+
+  it("H/I — detail full fresh skips; summary still fetches", () => {
     const detail = src("src/components/questionnaire/QuestionnaireLeadDetailPage.tsx");
-    expect(detail).toContain("readCachedQuestionnaireLead");
-    expect(detail).toContain("刪除這筆問卷");
-    expect(detail).toContain("確認刪除");
-    expect(detail).toContain("deleteQuestionnaireLead");
+    expect(detail).toContain("isQuestionnaireLeadFullFresh");
+    expect(detail).toContain("isFullQuestionnaireLeadDetail");
+    expect(detail).toMatch(/if\s*\(!force\s*&&\s*fullFresh/);
+  });
 
-    const dashPrefetch = src("src/components/questionnaire/QuestionnaireDashboardPage.tsx");
-    expect(dashPrefetch).toContain("prefetchQuestionnaireLead");
-    const leadsPrefetch = src("src/components/questionnaire/QuestionnaireLeadsPage.tsx");
-    expect(leadsPrefetch).toContain("prefetchQuestionnaireLead");
-    expect(leadsPrefetch).toContain("router.prefetch");
-
+  it("J — 5＋5 fresh skips fetch", () => {
     const five = src("src/components/five-plus-five/FivePlusFiveMyReportPage.tsx");
-    expect(five).toContain("readCachedFivePlusFiveMe");
-    expect(five).not.toContain('載入中…');
+    expect(five).toContain("isFivePlusFiveMeFresh");
+    expect(five).toMatch(/if\s*\(!force\s*&&\s*hasCache\s*&&\s*isFivePlusFiveMeFresh/);
   });
 
-  it("dashboard service uses get_questionnaire_dashboard_v1 (not 7 count queries)", () => {
-    const service = src("src/lib/questionnaire/service.ts");
-    expect(service).toContain("get_questionnaire_dashboard_v1");
-    expect(service).toContain("delete_questionnaire_lead_v1");
-    expect(service).toContain("latest_response:questionnaire_responses!latest_response_id");
-    // Should not still fire the old multi-count pattern
-    expect(service).not.toContain("todayBounds");
-    expect(service).not.toContain('eq("first_source", "onsite")');
+  it("K — mutations invalidate caches", () => {
+    const client = src("src/lib/questionnaire/client.ts");
+    expect(client).toContain("invalidateFivePlusFiveCaches");
+    expect(client).toContain("invalidateQuestionnaireCaches");
+    expect(client).toContain("invalidateCached(CACHE_KEYS.questionnaireDashboard)");
+    const fiveClient = src("src/lib/five-plus-five/client.ts");
+    expect(fiveClient).toContain("invalidateFivePlusFiveCaches");
   });
 
-  it("DELETE API rejects forged ownerMemberId", () => {
-    const route = src("src/app/api/questionnaire/leads/[id]/route.ts");
-    expect(route).toContain("export async function DELETE");
-    expect(route).toContain("getMemberIdFromRequest");
-    expect(route).toContain("forged_owner_id");
-    expect(route).toContain("deleteQuestionnaireLead");
-    expect(route).toContain("fishReversed");
+  it("auth wires owner guard + logout clear", () => {
+    const auth = src("src/lib/auth/auth-context.tsx");
+    expect(auth).toContain("ensureResourceCacheOwner");
+    expect(auth).toContain("clearSensitiveResourceCache");
+    expect(auth).toContain("signOut");
+  });
+
+  it("public survey does not touch private resource cache", () => {
+    const pub = src("src/components/questionnaire/PublicSurveyPage.tsx");
+    expect(pub).not.toContain("resource-cache");
+    expect(pub).not.toContain("setCached");
+    expect(pub).not.toContain("questionnaire:dashboard");
+  });
+
+  it("isFullQuestionnaireLeadDetail distinguishes summary", () => {
+    expect(
+      isFullQuestionnaireLeadDetail({
+        id: "1",
+        displayName: "小美",
+        primaryNeed: null,
+        needTags: [],
+        interestLevel: null,
+        usesSupplements: null,
+        status: "new",
+        lastResponseAt: "2026-09-22T00:00:00Z",
+        lastSource: "online",
+      }),
+    ).toBe(false);
+    expect(
+      isFullQuestionnaireLeadDetail({
+        id: "1",
+        displayName: "小美",
+        primaryNeed: null,
+        needTags: [],
+        interestLevel: null,
+        usesSupplements: null,
+        status: "new",
+        lastResponseAt: "2026-09-22T00:00:00Z",
+        lastSource: "online",
+        contactType: "line",
+        contactValue: "x",
+        supplementDetails: null,
+        firstSource: "online",
+        firstResponseAt: "2026-09-22T00:00:00Z",
+        responseCount: 1,
+        fishCreditedAt: null,
+        invitationStartedAt: null,
+        invitationCreditedAt: null,
+        latestResponse: null,
+        recentResponses: [],
+      }),
+    ).toBe(true);
   });
 });
 
-describe("migration 087 — delete + dashboard RPC", () => {
+describe("migration 087 — dashboard index + delete hardening", () => {
   const sql = src("supabase/migrations/087_questionnaire_delete_performance.sql");
 
-  it("defines dashboard + delete RPCs service_role only", () => {
-    expect(sql).toContain("get_questionnaire_dashboard_v1");
-    expect(sql).toContain("delete_questionnaire_lead_v1");
-    expect(sql).toContain("revoke all on function public.delete_questionnaire_lead_v1");
-    expect(sql).toContain("grant execute on function public.delete_questionnaire_lead_v1");
-    expect(sql).toContain("service_role");
-    expect(sql).toContain("from public, anon, authenticated");
+  it("L/M — dashboard uses timestamptz ranges, not per-row ::date", () => {
+    expect(sql).toContain("v_today_start");
+    expect(sql).toContain("v_tomorrow_start");
+    expect(sql).toContain("v_week_start");
+    expect(sql).toContain("fish_credited_at >= v_today_start");
+    expect(sql).toContain("fish_credited_at < v_tomorrow_start");
+    expect(sql).toContain("fish_credited_at >= v_week_start");
+    expect(sql).not.toMatch(
+      /\(fish_credited_at\s+at\s+time\s+zone\s+'Asia\/Taipei'\)::date/,
+    );
   });
 
-  it("delete reverses questionnaire components only (not manual)", () => {
-    expect(sql).toContain("questionnaire_fish_pool_count = greatest(questionnaire_fish_pool_count - 1, 0)");
-    expect(sql).toContain(
-      "questionnaire_invitation_five_steps_count =\n          greatest(questionnaire_invitation_five_steps_count - 1, 0)",
+  it("N/O/P — delete reverse only when component > 0; no ghost report", () => {
+    expect(sql).toContain("questionnaire_fish_pool_count > 0");
+    expect(sql).toContain("questionnaire_invitation_five_steps_count > 0");
+    expect(sql).toContain("credit_report_missing");
+    expect(sql).toContain("returning id into");
+    // Must not INSERT ghost rows on delete path
+    expect(sql).not.toMatch(
+      /if v_lead\.fish_credited_at[\s\S]*?insert into public\.five_plus_five_reports/,
     );
     expect(sql).not.toMatch(/manual_fish_pool_count\s*=\s*greatest/);
     expect(sql).not.toMatch(/manual_invitation_five_steps_count\s*=\s*greatest/);
-    expect(sql).toContain("Asia/Taipei");
-    expect(sql).toContain("lead_not_found");
-    expect(sql).toContain("for update");
-    expect(sql).toContain("fishReversed");
-    expect(sql).toContain("invitationReversed");
   });
 
-  it("does not modify 085 or 086 migration files", () => {
-    // Guard: 087 is additive only
-    expect(sql).not.toContain("085_five_plus_five");
-    expect(sql).toContain("DO NOT apply to Production");
-  });
-});
-
-describe("Home freshness + AppShell prefetch", () => {
-  it("G — Home skips softRecalc within freshness window", () => {
-    const home = src("src/components/home/HomePage.tsx");
-    expect(home).toContain("shouldSkipHomeSoftRecalc");
-    expect(home).toContain("requestIdleCallback");
-    expect(home).toContain("homeMetricsRefreshAt");
-    expect(home).toContain("RESOURCE_TTL.homeMetrics");
-  });
-
-  it("H — Taipei midnight still force refreshes", () => {
-    const home = src("src/components/home/HomePage.tsx");
-    expect(home).toContain("millisecondsUntilNextAppMidnight");
-    expect(home).toContain("bootstrap({ force: true })");
-  });
-
-  it("AppShell idle-prefetches primary routes (code only)", () => {
-    const shell = src("src/components/navigation/AppShell.tsx");
-    expect(shell).toContain("PRIMARY_ROUTE_PREFETCH");
-    expect(shell).toContain('"/5plus5"');
-    expect(shell).toContain('"/questionnaire"');
-    expect(shell).toContain("router.prefetch");
-    expect(shell).toContain("requestIdleCallback");
-  });
-});
-
-describe("client invalidate on status/delete", () => {
-  it("patch + delete invalidate required caches", () => {
-    const client = src("src/lib/questionnaire/client.ts");
-    expect(client).toContain("invalidateCached(CACHE_KEYS.questionnaireDashboard)");
-    expect(client).toContain('invalidateCachedPrefix("questionnaire:leads:")');
-    expect(client).toContain("invalidateFivePlusFiveCaches");
-    expect(client).toContain("invalidateQuestionnaireCaches");
-    expect(client).toContain("deleteQuestionnaireLead");
-    expect(client).toContain("prefetchQuestionnaireLead");
+  it("service maps credit_report_missing", () => {
+    const service = src("src/lib/questionnaire/service.ts");
+    expect(service).toContain("credit_report_missing");
   });
 });

@@ -15,6 +15,8 @@ import {
 import {
   deleteQuestionnaireLead,
   fetchQuestionnaireLead,
+  isFullQuestionnaireLeadDetail,
+  isQuestionnaireLeadFullFresh,
   patchQuestionnaireLeadStatus,
   readCachedQuestionnaireLead,
 } from "@/lib/questionnaire/client";
@@ -59,12 +61,6 @@ function interestPublicLabel(value: string): string {
   return QUESTIONNAIRE_INTEREST_OPTIONS.find((o) => o.value === value)?.label ?? value;
 }
 
-function isFullDetail(
-  value: QuestionnaireLeadDetail | QuestionnaireLeadSummary | null,
-): value is QuestionnaireLeadDetail {
-  return Boolean(value && "contactType" in value && "firstResponseAt" in value);
-}
-
 export default function QuestionnaireLeadDetailPage({ leadId }: { leadId: string }) {
   const router = useRouter();
   const cached = readCachedQuestionnaireLead(leadId);
@@ -80,9 +76,24 @@ export default function QuestionnaireLeadDetailPage({ leadId }: { leadId: string
   const [staleHint, setStaleHint] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    const hasCache = Boolean(readCachedQuestionnaireLead(leadId));
+  const load = useCallback(async (opts?: { force?: boolean }) => {
+    const force = opts?.force === true;
+    const next = readCachedQuestionnaireLead(leadId);
+    const hasCache = Boolean(next);
+    const fullFresh = isQuestionnaireLeadFullFresh(leadId);
+
+    // Full detail + fresh → skip network
+    if (!force && fullFresh) {
+      if (next) setLead(next);
+      setColdLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    // Summary only or stale full → show what we have, fetch full
     if (hasCache) {
+      if (next) setLead(next);
+      setColdLoading(false);
       setRefreshing(true);
     } else {
       setColdLoading(true);
@@ -109,6 +120,9 @@ export default function QuestionnaireLeadDetailPage({ leadId }: { leadId: string
     if (next) {
       setLead(next);
       setColdLoading(false);
+    } else {
+      setLead(null);
+      setColdLoading(true);
     }
     void load();
   }, [leadId, load]);
@@ -153,7 +167,7 @@ export default function QuestionnaireLeadDetailPage({ leadId }: { leadId: string
     }
   }
 
-  const full = isFullDetail(lead) ? lead : null;
+  const full = isFullQuestionnaireLeadDetail(lead) ? lead : null;
   const actions = lead
     ? allowedQuestionnaireStatusActions(lead.status as QuestionnaireLeadStatus)
     : [];

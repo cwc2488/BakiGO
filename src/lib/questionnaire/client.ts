@@ -6,6 +6,7 @@ import {
   invalidateCachedPrefix,
   invalidateFivePlusFiveCaches,
   invalidateQuestionnaireCaches,
+  isFresh,
   setCached,
 } from "@/lib/client-cache/resource-cache";
 import { fetchWithMemberAuth } from "@/lib/quiz/quiz-member-fetch";
@@ -28,6 +29,12 @@ async function parseJson<T>(res: Response): Promise<T> {
   return body;
 }
 
+export function isFullQuestionnaireLeadDetail(
+  value: QuestionnaireLeadDetail | QuestionnaireLeadSummary | null | undefined,
+): value is QuestionnaireLeadDetail {
+  return Boolean(value && "contactType" in value && "firstResponseAt" in value && "latestResponse" in value);
+}
+
 export async function fetchQuestionnaireDashboard(
   init?: RequestInit,
 ): Promise<QuestionnaireDashboard> {
@@ -42,6 +49,10 @@ export async function fetchQuestionnaireDashboard(
 
 export function readCachedQuestionnaireDashboard(): QuestionnaireDashboard | null {
   return getCached<QuestionnaireDashboard>(CACHE_KEYS.questionnaireDashboard)?.data ?? null;
+}
+
+export function isQuestionnaireDashboardFresh(now: number = Date.now()): boolean {
+  return isFresh(CACHE_KEYS.questionnaireDashboard, RESOURCE_TTL.questionnaireDashboard, now);
 }
 
 export async function fetchQuestionnaireShare(): Promise<QuestionnaireShareLinkView> {
@@ -81,12 +92,12 @@ export async function fetchQuestionnaireLeads(
     input?.page ?? 1,
   );
   setCached(key, body);
-  // Seed detail summaries for warmer navigation
+  // Seed detail summaries for warmer navigation (never overwrite fresher full detail)
   for (const lead of body.leads) {
     const existing = getCached<QuestionnaireLeadDetail | QuestionnaireLeadSummary>(
       CACHE_KEYS.questionnaireLead(lead.id),
     );
-    if (!existing || !("contactType" in (existing.data as object))) {
+    if (!existing || !isFullQuestionnaireLeadDetail(existing.data as QuestionnaireLeadSummary)) {
       setCached(CACHE_KEYS.questionnaireLead(lead.id), lead);
     }
   }
@@ -104,6 +115,18 @@ export function readCachedQuestionnaireLeads(input: {
     input.page ?? 1,
   );
   return getCached<QuestionnaireLeadsPageResult>(key)?.data ?? null;
+}
+
+export function isQuestionnaireLeadsFresh(
+  input: { status?: string; search?: string; page?: number },
+  now: number = Date.now(),
+): boolean {
+  const key = CACHE_KEYS.questionnaireLeads(
+    input.status ?? "",
+    input.search ?? "",
+    input.page ?? 1,
+  );
+  return isFresh(key, RESOURCE_TTL.questionnaireLeads, now);
 }
 
 export async function fetchQuestionnaireLead(
@@ -129,14 +152,17 @@ export function readCachedQuestionnaireLead(
   );
 }
 
+export function isQuestionnaireLeadFullFresh(leadId: string, now: number = Date.now()): boolean {
+  const key = CACHE_KEYS.questionnaireLead(leadId);
+  const entry = getCached<QuestionnaireLeadDetail | QuestionnaireLeadSummary>(key);
+  if (!entry || !isFullQuestionnaireLeadDetail(entry.data)) return false;
+  return now - entry.updatedAt <= RESOURCE_TTL.questionnaireLeadDetail;
+}
+
 /** Lightweight detail prefetch for pointer/touch hover — does not block UI. */
 export function prefetchQuestionnaireLead(leadId: string): void {
   if (!leadId) return;
-  const key = CACHE_KEYS.questionnaireLead(leadId);
-  const existing = getCached(key);
-  if (existing && Date.now() - existing.updatedAt < RESOURCE_TTL.questionnaireLeadDetail) {
-    return;
-  }
+  if (isQuestionnaireLeadFullFresh(leadId)) return;
   void fetchQuestionnaireLead(leadId).catch(() => {
     /* warm cache best-effort */
   });
@@ -181,4 +207,9 @@ export async function deleteQuestionnaireLead(
   return body;
 }
 
-export { CACHE_KEYS, RESOURCE_TTL, invalidateQuestionnaireCaches, invalidateFivePlusFiveCaches };
+export {
+  CACHE_KEYS,
+  RESOURCE_TTL,
+  invalidateQuestionnaireCaches,
+  invalidateFivePlusFiveCaches,
+};

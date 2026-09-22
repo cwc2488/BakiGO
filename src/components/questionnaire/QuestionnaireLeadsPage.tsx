@@ -11,6 +11,7 @@ import {
 } from "@/lib/questionnaire/contract";
 import {
   fetchQuestionnaireLeads,
+  isQuestionnaireLeadsFresh,
   prefetchQuestionnaireLead,
   readCachedQuestionnaireLeads,
 } from "@/lib/questionnaire/client";
@@ -78,20 +79,27 @@ export default function QuestionnaireLeadsPage() {
   }, [searchInput]);
 
   useEffect(() => {
-    const cached = readCachedQuestionnaireLeads({
-      status,
-      search: debouncedSearch,
-      page,
-    });
+    const query = { status, search: debouncedSearch, page };
+    const cached = readCachedQuestionnaireLeads(query);
+
     if (cached) {
       setLeads(cached.leads);
       setHasMore(cached.hasMore);
       setColdLoading(false);
+      setError(null);
+      // Fresh → skip network
+      if (isQuestionnaireLeadsFresh(query)) {
+        setRefreshing(false);
+        return;
+      }
       setRefreshing(true);
-    } else if (leads.length === 0) {
-      setColdLoading(true);
     } else {
-      setRefreshing(true);
+      // Filter/page changed with no cache for this key — never show previous filter leads
+      setLeads([]);
+      setHasMore(false);
+      setColdLoading(true);
+      setRefreshing(false);
+      setStaleHint(null);
     }
 
     abortRef.current?.abort();
@@ -117,8 +125,7 @@ export default function QuestionnaireLeadsPage() {
         if (controller.signal.aborted) return;
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (err instanceof Error && /abort/i.test(err.message)) return;
-        const hasData = leads.length > 0 || Boolean(cached);
-        if (hasData) {
+        if (cached) {
           setStaleHint("更新失敗，顯示上次資料");
         } else {
           setError(err instanceof Error ? err.message : "載入失敗");
@@ -134,7 +141,6 @@ export default function QuestionnaireLeadsPage() {
     return () => {
       controller.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: status/search/page drive fetch
   }, [status, debouncedSearch, page]);
 
   function warmLead(leadId: string) {

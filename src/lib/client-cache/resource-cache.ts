@@ -1,6 +1,7 @@
 /**
  * Lightweight stale-while-revalidate client cache.
  * Questionnaire PII: memory + sessionStorage only (never localStorage).
+ * Keys are member-scoped via ensureResourceCacheOwner — never share across accounts.
  */
 
 export type ResourceCacheEntry<T> = {
@@ -17,9 +18,12 @@ type StoredEnvelope = {
 const memory = new Map<string, ResourceCacheEntry<unknown>>();
 
 const SESSION_PREFIX = "baki:rc:";
+const OWNER_SESSION_KEY = "baki:rc:owner";
 
 type Listener = (key: string) => void;
 const listeners = new Set<Listener>();
+
+let memoryOwner: string | null = null;
 
 function notify(key: string): void {
   for (const listener of listeners) {
@@ -46,6 +50,36 @@ function canUseSession(key: string): boolean {
     key.startsWith("fiveplusfive:") ||
     key.startsWith("home:metrics:")
   );
+}
+
+function readSessionOwner(): string | null {
+  if (typeof window === "undefined") return memoryOwner;
+  try {
+    const raw = window.sessionStorage.getItem(OWNER_SESSION_KEY);
+    return raw && raw.trim() ? raw.trim() : null;
+  } catch {
+    return memoryOwner;
+  }
+}
+
+function writeSessionOwner(memberId: string): void {
+  memoryOwner = memberId;
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(OWNER_SESSION_KEY, memberId);
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearSessionOwner(): void {
+  memoryOwner = null;
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(OWNER_SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
 function readSession<T>(key: string): ResourceCacheEntry<T> | null {
@@ -80,6 +114,39 @@ function removeSession(key: string): void {
   }
 }
 
+export function getResourceCacheOwner(): string | null {
+  if (memoryOwner) return memoryOwner;
+  const sessionOwner = readSessionOwner();
+  if (sessionOwner) {
+    memoryOwner = sessionOwner;
+    return sessionOwner;
+  }
+  return null;
+}
+
+/**
+ * Bind resource cache to the authenticated member.
+ * If owner changes, wipe questionnaire / 5＋5 / home:metrics caches immediately.
+ */
+export function ensureResourceCacheOwner(memberId: string): void {
+  const next = (memberId ?? "").trim();
+  if (!next) return;
+  const current = getResourceCacheOwner();
+  if (current === next) return;
+  clearSensitiveResourceCache();
+  writeSessionOwner(next);
+}
+
+/**
+ * Clear only this PR's sensitive resource cache (not Calendar IndexedDB / CRM).
+ */
+export function clearSensitiveResourceCache(): void {
+  invalidateCachedPrefix("questionnaire:");
+  invalidateCachedPrefix("fiveplusfive:");
+  invalidateCachedPrefix("home:metrics:");
+  clearSessionOwner();
+}
+
 export function getCached<T>(key: string): ResourceCacheEntry<T> | null {
   const mem = memory.get(key) as ResourceCacheEntry<T> | undefined;
   if (mem) return mem;
@@ -106,7 +173,10 @@ export function invalidateCached(key: string): void {
 
 export function invalidateCachedPrefix(prefix: string): void {
   for (const key of [...memory.keys()]) {
-    if (key.startsWith(prefix)) memory.delete(key);
+    if (key.startsWith(prefix)) {
+      memory.delete(key);
+      notify(key);
+    }
   }
   if (typeof window === "undefined") return;
   try {
@@ -114,6 +184,7 @@ export function invalidateCachedPrefix(prefix: string): void {
     for (let i = 0; i < window.sessionStorage.length; i += 1) {
       const full = window.sessionStorage.key(i);
       if (!full?.startsWith(SESSION_PREFIX)) continue;
+      // OWNER_SESSION_KEY is baki:rc:owner — not under SESSION_PREFIX + data key pattern for prefixes
       const key = full.slice(SESSION_PREFIX.length);
       if (key.startsWith(prefix)) toRemove.push(full);
     }
