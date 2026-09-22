@@ -6,7 +6,11 @@ import { useCallback, useEffect, useState } from "react";
 import { TabRootShell } from "@/components/ui/TabRootShell";
 import { copyTextToClipboard } from "@/lib/five-plus-five/clipboard";
 import { QUESTIONNAIRE_PUBLIC_COPY, QUESTIONNAIRE_SOURCE_LABEL } from "@/lib/questionnaire/contract";
-import { fetchQuestionnaireDashboard } from "@/lib/questionnaire/client";
+import {
+  fetchQuestionnaireDashboard,
+  prefetchQuestionnaireLead,
+  readCachedQuestionnaireDashboard,
+} from "@/lib/questionnaire/client";
 import { resolveQuestionnaireTargets } from "@/lib/questionnaire/rules";
 import type { QuestionnaireDashboard } from "@/types/questionnaire";
 
@@ -26,29 +30,54 @@ function formatLeadTime(iso: string): string {
   }
 }
 
+function seedDashboardFromCache(): QuestionnaireDashboard | null {
+  try {
+    return readCachedQuestionnaireDashboard();
+  } catch {
+    return null;
+  }
+}
+
 export default function QuestionnaireDashboardPage() {
   const router = useRouter();
   const dailyTarget = resolveQuestionnaireTargets().dailyValidNewLeads;
-  const [dashboard, setDashboard] = useState<QuestionnaireDashboard | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cached = seedDashboardFromCache();
+  const [dashboard, setDashboard] = useState<QuestionnaireDashboard | null>(cached);
+  const [coldLoading, setColdLoading] = useState(!cached);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [staleHint, setStaleHint] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    const hasData = Boolean(readCachedQuestionnaireDashboard() ?? dashboard);
+    if (hasData) {
+      setRefreshing(true);
+      setStaleHint(null);
+    } else {
+      setColdLoading(true);
+    }
     setError(null);
     try {
       const data = await fetchQuestionnaireDashboard();
       setDashboard(data);
+      setStaleHint(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "載入失敗");
+      if (hasData) {
+        setStaleHint("更新失敗，顯示上次資料");
+      } else {
+        setError(err instanceof Error ? err.message : "載入失敗");
+      }
     } finally {
-      setLoading(false);
+      setColdLoading(false);
+      setRefreshing(false);
     }
-  }, []);
+  }, [dashboard]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once; SWR refresh
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -85,13 +114,23 @@ export default function QuestionnaireDashboardPage() {
     router.push(dashboard.share.onsiteHref);
   }
 
+  function warmLead(leadId: string) {
+    router.prefetch(`/questionnaire/leads/${leadId}`);
+    prefetchQuestionnaireLead(leadId);
+  }
+
   return (
     <TabRootShell
       header={
         <header className="space-y-1">
-          <p className="text-[0.75rem] font-semibold tracking-[0.06em] text-[var(--brand-text-muted)]">
-            Baki Go
-          </p>
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-[0.75rem] font-semibold tracking-[0.06em] text-[var(--brand-text-muted)]">
+              Baki Go
+            </p>
+            {refreshing ? (
+              <p className="text-[0.6875rem] text-[var(--brand-hint)]">更新中…</p>
+            ) : null}
+          </div>
           <h1 className="text-[1.625rem] font-semibold tracking-tight text-[var(--brand-text)]">
             問卷開發
           </h1>
@@ -101,14 +140,23 @@ export default function QuestionnaireDashboardPage() {
         </header>
       }
     >
-      {loading ? (
-        <p className="text-[0.875rem] text-[var(--brand-text-muted)]">載入中…</p>
+      {coldLoading && !dashboard ? (
+        <div className="space-y-4 animate-pulse" aria-busy="true">
+          <div className="h-28 rounded-[1.25rem] bg-[var(--brand-primary-muted)]" />
+          <div className="h-12 rounded-[1rem] bg-[var(--brand-primary-muted)]" />
+          <div className="h-20 rounded-[1.25rem] bg-[var(--brand-primary-muted)]" />
+        </div>
       ) : null}
-      {error ? (
+
+      {error && !dashboard ? (
         <p className="rounded-xl bg-[#fff2f2] px-3 py-2 text-[0.875rem] text-[#d70015]">{error}</p>
       ) : null}
 
-      {!loading && dashboard ? (
+      {staleHint ? (
+        <p className="mb-3 text-[0.75rem] text-[var(--brand-text-muted)]">{staleHint}</p>
+      ) : null}
+
+      {dashboard ? (
         <div className="space-y-5">
           <section className="space-y-3 rounded-[1.25rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] p-5">
             <p className="text-[0.8125rem] font-semibold tracking-[0.04em] text-[var(--brand-text-muted)]">
@@ -172,6 +220,8 @@ export default function QuestionnaireDashboardPage() {
 
           <Link
             href="/questionnaire/leads"
+            onPointerEnter={() => router.prefetch("/questionnaire/leads")}
+            onTouchStart={() => router.prefetch("/questionnaire/leads")}
             className="flex min-h-12 items-center justify-between rounded-[1rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] px-4 text-[0.9375rem] font-semibold text-[var(--brand-text)]"
           >
             <span>我的問卷名單 {dashboard.totalLeadCount} 人</span>
@@ -193,6 +243,8 @@ export default function QuestionnaireDashboardPage() {
                   <li key={lead.id}>
                     <Link
                       href={`/questionnaire/leads/${lead.id}`}
+                      onPointerEnter={() => warmLead(lead.id)}
+                      onTouchStart={() => warmLead(lead.id)}
                       className={`block px-4 py-3 active:bg-[var(--brand-primary-muted)] ${
                         index > 0 ? "border-t border-[var(--brand-border)]/70" : ""
                       }`}

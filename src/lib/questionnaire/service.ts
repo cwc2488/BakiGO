@@ -403,112 +403,58 @@ function mapResponse(row: Record<string, unknown>): QuestionnaireResponseView {
   };
 }
 
-function taipeiDayBounds(isoDate: string): { startIso: string; endIso: string } {
-  // Asia/Taipei = UTC+8; day [00:00, next 00:00)
-  const startIso = new Date(`${isoDate}T00:00:00+08:00`).toISOString();
-  const [y, m, d] = isoDate.split("-").map(Number);
-  const next = new Date(Date.UTC(y, m - 1, d + 1));
-  const nextDate = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
-  const endIso = new Date(`${nextDate}T00:00:00+08:00`).toISOString();
-  return { startIso, endIso };
-}
-
 export async function getQuestionnaireDashboard(
   ownerMemberId: string,
   now: Date = new Date(),
 ): Promise<QuestionnaireDashboard> {
   const supabase = requireService();
-  const share = await getOrCreateQuestionnaireShareLink(ownerMemberId);
   const today = fivePlusFiveToday(now);
   const week = getBusinessWeekRange(today);
-  const todayBounds = taipeiDayBounds(today);
-  const weekStartBounds = taipeiDayBounds(week.start);
   const targets = resolveQuestionnaireTargets();
 
-  const [
-    todayFishRes,
-    weekFishRes,
-    invitationRes,
-    totalRes,
-    recentRes,
-    todayOnsiteRes,
-    todayOnlineRes,
-  ] = await Promise.all([
-    supabase
-      .from("questionnaire_leads")
-      .select("id", { count: "exact", head: true })
-      .eq("owner_member_id", ownerMemberId)
-      .gte("fish_credited_at", todayBounds.startIso)
-      .lt("fish_credited_at", todayBounds.endIso),
-    supabase
-      .from("questionnaire_leads")
-      .select("id", { count: "exact", head: true })
-      .eq("owner_member_id", ownerMemberId)
-      .gte("fish_credited_at", weekStartBounds.startIso)
-      .lt("fish_credited_at", todayBounds.endIso),
-    supabase
-      .from("questionnaire_leads")
-      .select("id", { count: "exact", head: true })
-      .eq("owner_member_id", ownerMemberId)
-      .not("invitation_credited_at", "is", null),
-    supabase
-      .from("questionnaire_leads")
-      .select("id", { count: "exact", head: true })
-      .eq("owner_member_id", ownerMemberId),
-    supabase
-      .from("questionnaire_leads")
-      .select(
-        "id, display_name, primary_need, need_tags, interest_level, uses_supplements, status, last_response_at, last_source, updated_at",
-      )
-      .eq("owner_member_id", ownerMemberId)
-      .order("last_response_at", { ascending: false })
-      .limit(QUESTIONNAIRE_RULES.recentLeadsLimit),
-    supabase
-      .from("questionnaire_leads")
-      .select("id", { count: "exact", head: true })
-      .eq("owner_member_id", ownerMemberId)
-      .eq("first_source", "onsite")
-      .gte("fish_credited_at", todayBounds.startIso)
-      .lt("fish_credited_at", todayBounds.endIso),
-    supabase
-      .from("questionnaire_leads")
-      .select("id", { count: "exact", head: true })
-      .eq("owner_member_id", ownerMemberId)
-      .eq("first_source", "online")
-      .gte("fish_credited_at", todayBounds.startIso)
-      .lt("fish_credited_at", todayBounds.endIso),
+  // Max 2 round trips: share link + aggregate RPC (087)
+  const [share, rpcResult] = await Promise.all([
+    getOrCreateQuestionnaireShareLink(ownerMemberId),
+    supabase.rpc("get_questionnaire_dashboard_v1", {
+      p_owner_member_id: ownerMemberId,
+      p_today: today,
+      p_week_start: week.start,
+      p_recent_limit: QUESTIONNAIRE_RULES.recentLeadsLimit,
+    }),
   ]);
 
-  for (const res of [
-    todayFishRes,
-    weekFishRes,
-    invitationRes,
-    totalRes,
-    recentRes,
-    todayOnsiteRes,
-    todayOnlineRes,
-  ]) {
-    if (res.error) {
-      throw new QuestionnaireError(res.error.message, 500, "dashboard_failed");
-    }
+  if (rpcResult.error) {
+    throw new QuestionnaireError(rpcResult.error.message, 500, "dashboard_failed");
   }
 
-  const todayValid = todayFishRes.count ?? 0;
+  const payload = (rpcResult.data ?? {}) as {
+    todayValidNewLeads?: number;
+    todayOnsite?: number;
+    todayOnline?: number;
+    todayFishCredited?: number;
+    weekValidNewLeads?: number;
+    invitationStartedCount?: number;
+    totalLeadCount?: number;
+    recentLeads?: Record<string, unknown>[];
+  };
+
+  const todayValid = Number(payload.todayValidNewLeads ?? 0);
   const todayTarget = targets.dailyValidNewLeads;
+  const recentRaw = Array.isArray(payload.recentLeads) ? payload.recentLeads : [];
 
   return {
     todayValidNewLeads: todayValid,
     todayTarget,
     todayProgressPercent:
       todayTarget > 0 ? Math.min(100, Math.round((todayValid / todayTarget) * 100)) : 0,
-    todayOnsite: todayOnsiteRes.count ?? 0,
-    todayOnline: todayOnlineRes.count ?? 0,
-    todayFishCredited: todayValid,
-    weekValidNewLeads: weekFishRes.count ?? 0,
-    invitationStartedCount: invitationRes.count ?? 0,
-    totalLeadCount: totalRes.count ?? 0,
+    todayOnsite: Number(payload.todayOnsite ?? 0),
+    todayOnline: Number(payload.todayOnline ?? 0),
+    todayFishCredited: Number(payload.todayFishCredited ?? todayValid),
+    weekValidNewLeads: Number(payload.weekValidNewLeads ?? 0),
+    invitationStartedCount: Number(payload.invitationStartedCount ?? 0),
+    totalLeadCount: Number(payload.totalLeadCount ?? 0),
     share,
-    recentLeads: (recentRes.data ?? []).map((row) => mapLeadSummary(row as Record<string, unknown>)),
+    recentLeads: recentRaw.map((row) => mapLeadSummary(row)),
   };
 }
 
@@ -567,9 +513,10 @@ export async function getQuestionnaireLeadDetail(input: {
   leadId: string;
 }): Promise<QuestionnaireLeadDetail> {
   const supabase = requireService();
+  // Single round trip: lead + latest response via latest_response_id FK
   const { data, error } = await supabase
     .from("questionnaire_leads")
-    .select("*")
+    .select("*, latest_response:questionnaire_responses!latest_response_id(*)")
     .eq("id", input.leadId)
     .eq("owner_member_id", input.ownerMemberId)
     .maybeSingle();
@@ -581,35 +528,73 @@ export async function getQuestionnaireLeadDetail(input: {
     throw new QuestionnaireError("找不到這筆問卷名單。", 404, "not_found");
   }
 
-  const summary = mapLeadSummary(data as Record<string, unknown>);
-  const { data: responses, error: respError } = await supabase
-    .from("questionnaire_responses")
-    .select("*")
-    .eq("lead_id", input.leadId)
-    .eq("owner_member_id", input.ownerMemberId)
-    .order("submitted_at", { ascending: false })
-    .limit(QUESTIONNAIRE_RULES.responseHistoryLimit);
-
-  if (respError) {
-    throw new QuestionnaireError(respError.message, 500, "responses_failed");
-  }
-
-  const recentResponses = (responses ?? []).map((row) => mapResponse(row as Record<string, unknown>));
-  const latestResponse = recentResponses[0] ?? null;
+  const row = data as Record<string, unknown>;
+  const summary = mapLeadSummary(row);
+  const latestRaw = row.latest_response;
+  const latestRow = Array.isArray(latestRaw)
+    ? ((latestRaw[0] as Record<string, unknown> | undefined) ?? null)
+    : ((latestRaw as Record<string, unknown> | null) ?? null);
+  const latestResponse = latestRow ? mapResponse(latestRow) : null;
+  const recentResponses = latestResponse ? [latestResponse] : [];
 
   return {
     ...summary,
-    contactType: data.contact_type as QuestionnaireContactType,
-    contactValue: String(data.contact_value ?? ""),
-    supplementDetails: data.supplement_details ? String(data.supplement_details) : null,
-    firstSource: normalizeQuestionnaireSource(String(data.first_source ?? "online")),
-    firstResponseAt: String(data.first_response_at),
-    responseCount: Number(data.response_count ?? 1),
-    fishCreditedAt: data.fish_credited_at ? String(data.fish_credited_at) : null,
-    invitationStartedAt: data.invitation_started_at ? String(data.invitation_started_at) : null,
-    invitationCreditedAt: data.invitation_credited_at ? String(data.invitation_credited_at) : null,
+    contactType: row.contact_type as QuestionnaireContactType,
+    contactValue: String(row.contact_value ?? ""),
+    supplementDetails: row.supplement_details ? String(row.supplement_details) : null,
+    firstSource: normalizeQuestionnaireSource(String(row.first_source ?? "online")),
+    firstResponseAt: String(row.first_response_at),
+    responseCount: Number(row.response_count ?? 1),
+    fishCreditedAt: row.fish_credited_at ? String(row.fish_credited_at) : null,
+    invitationStartedAt: row.invitation_started_at ? String(row.invitation_started_at) : null,
+    invitationCreditedAt: row.invitation_credited_at ? String(row.invitation_credited_at) : null,
     latestResponse,
     recentResponses,
+  };
+}
+
+export type DeleteQuestionnaireLeadResult = {
+  ok: true;
+  fishReversed: boolean;
+  invitationReversed: boolean;
+  fishDate: string | null;
+  invitationDate: string | null;
+};
+
+export async function deleteQuestionnaireLead(input: {
+  ownerMemberId: string;
+  leadId: string;
+  now?: Date;
+}): Promise<DeleteQuestionnaireLeadResult> {
+  const supabase = requireService();
+  const now = input.now ?? new Date();
+  const { data, error } = await supabase.rpc("delete_questionnaire_lead_v1", {
+    p_owner_member_id: input.ownerMemberId,
+    p_lead_id: input.leadId,
+    p_now: now.toISOString(),
+  });
+
+  if (error) {
+    if (/lead_not_found/i.test(error.message)) {
+      throw new QuestionnaireError("找不到這筆問卷名單。", 404, "not_found");
+    }
+    throw new QuestionnaireError(error.message, 500, "delete_failed");
+  }
+
+  const payload = (data ?? {}) as {
+    ok?: boolean;
+    fishReversed?: boolean;
+    invitationReversed?: boolean;
+    fishDate?: string | null;
+    invitationDate?: string | null;
+  };
+
+  return {
+    ok: true,
+    fishReversed: Boolean(payload.fishReversed),
+    invitationReversed: Boolean(payload.invitationReversed),
+    fishDate: payload.fishDate ? String(payload.fishDate) : null,
+    invitationDate: payload.invitationDate ? String(payload.invitationDate) : null,
   };
 }
 

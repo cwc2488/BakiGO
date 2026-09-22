@@ -1,3 +1,13 @@
+import {
+  CACHE_KEYS,
+  RESOURCE_TTL,
+  getCached,
+  invalidateCached,
+  invalidateCachedPrefix,
+  invalidateFivePlusFiveCaches,
+  invalidateQuestionnaireCaches,
+  setCached,
+} from "@/lib/client-cache/resource-cache";
 import { fetchWithMemberAuth } from "@/lib/quiz/quiz-member-fetch";
 import type {
   QuestionnaireDashboard,
@@ -18,10 +28,20 @@ async function parseJson<T>(res: Response): Promise<T> {
   return body;
 }
 
-export async function fetchQuestionnaireDashboard(): Promise<QuestionnaireDashboard> {
-  const res = await fetchWithMemberAuth("/api/questionnaire/dashboard", { cache: "no-store" });
+export async function fetchQuestionnaireDashboard(
+  init?: RequestInit,
+): Promise<QuestionnaireDashboard> {
+  const res = await fetchWithMemberAuth("/api/questionnaire/dashboard", {
+    cache: "no-store",
+    ...init,
+  });
   const body = await parseJson<{ dashboard: QuestionnaireDashboard }>(res);
+  setCached(CACHE_KEYS.questionnaireDashboard, body.dashboard);
   return body.dashboard;
+}
+
+export function readCachedQuestionnaireDashboard(): QuestionnaireDashboard | null {
+  return getCached<QuestionnaireDashboard>(CACHE_KEYS.questionnaireDashboard)?.data ?? null;
 }
 
 export async function fetchQuestionnaireShare(): Promise<QuestionnaireShareLinkView> {
@@ -30,16 +50,21 @@ export async function fetchQuestionnaireShare(): Promise<QuestionnaireShareLinkV
   return body.share;
 }
 
-export async function fetchQuestionnaireLeads(input?: {
-  status?: string;
-  search?: string;
-  page?: number;
-}): Promise<{
+export type QuestionnaireLeadsPageResult = {
   leads: QuestionnaireLeadSummary[];
   page: number;
   pageSize: number;
   hasMore: boolean;
-}> {
+};
+
+export async function fetchQuestionnaireLeads(
+  input?: {
+    status?: string;
+    search?: string;
+    page?: number;
+  },
+  init?: RequestInit,
+): Promise<QuestionnaireLeadsPageResult> {
   const params = new URLSearchParams();
   if (input?.status) params.set("status", input.status);
   if (input?.search) params.set("search", input.search);
@@ -47,18 +72,74 @@ export async function fetchQuestionnaireLeads(input?: {
   const qs = params.toString();
   const res = await fetchWithMemberAuth(
     `/api/questionnaire/leads${qs ? `?${qs}` : ""}`,
-    { cache: "no-store" },
+    { cache: "no-store", ...init },
   );
-  return parseJson(res);
+  const body = await parseJson<QuestionnaireLeadsPageResult>(res);
+  const key = CACHE_KEYS.questionnaireLeads(
+    input?.status ?? "",
+    input?.search ?? "",
+    input?.page ?? 1,
+  );
+  setCached(key, body);
+  // Seed detail summaries for warmer navigation
+  for (const lead of body.leads) {
+    const existing = getCached<QuestionnaireLeadDetail | QuestionnaireLeadSummary>(
+      CACHE_KEYS.questionnaireLead(lead.id),
+    );
+    if (!existing || !("contactType" in (existing.data as object))) {
+      setCached(CACHE_KEYS.questionnaireLead(lead.id), lead);
+    }
+  }
+  return body;
 }
 
-export async function fetchQuestionnaireLead(leadId: string): Promise<QuestionnaireLeadDetail> {
+export function readCachedQuestionnaireLeads(input: {
+  status?: string;
+  search?: string;
+  page?: number;
+}): QuestionnaireLeadsPageResult | null {
+  const key = CACHE_KEYS.questionnaireLeads(
+    input.status ?? "",
+    input.search ?? "",
+    input.page ?? 1,
+  );
+  return getCached<QuestionnaireLeadsPageResult>(key)?.data ?? null;
+}
+
+export async function fetchQuestionnaireLead(
+  leadId: string,
+  init?: RequestInit,
+): Promise<QuestionnaireLeadDetail> {
   const res = await fetchWithMemberAuth(
     `/api/questionnaire/leads/${encodeURIComponent(leadId)}`,
-    { cache: "no-store" },
+    { cache: "no-store", ...init },
   );
   const body = await parseJson<{ lead: QuestionnaireLeadDetail }>(res);
+  setCached(CACHE_KEYS.questionnaireLead(leadId), body.lead);
   return body.lead;
+}
+
+export function readCachedQuestionnaireLead(
+  leadId: string,
+): QuestionnaireLeadDetail | QuestionnaireLeadSummary | null {
+  return (
+    getCached<QuestionnaireLeadDetail | QuestionnaireLeadSummary>(
+      CACHE_KEYS.questionnaireLead(leadId),
+    )?.data ?? null
+  );
+}
+
+/** Lightweight detail prefetch for pointer/touch hover — does not block UI. */
+export function prefetchQuestionnaireLead(leadId: string): void {
+  if (!leadId) return;
+  const key = CACHE_KEYS.questionnaireLead(leadId);
+  const existing = getCached(key);
+  if (existing && Date.now() - existing.updatedAt < RESOURCE_TTL.questionnaireLeadDetail) {
+    return;
+  }
+  void fetchQuestionnaireLead(leadId).catch(() => {
+    /* warm cache best-effort */
+  });
 }
 
 export async function patchQuestionnaireLeadStatus(
@@ -73,5 +154,31 @@ export async function patchQuestionnaireLeadStatus(
     },
   );
   const body = await parseJson<{ lead: QuestionnaireLeadDetail }>(res);
+  setCached(CACHE_KEYS.questionnaireLead(leadId), body.lead);
+  invalidateCached(CACHE_KEYS.questionnaireDashboard);
+  invalidateCachedPrefix("questionnaire:leads:");
+  invalidateFivePlusFiveCaches();
   return body.lead;
 }
+
+export type DeleteQuestionnaireLeadClientResult = {
+  ok: true;
+  fishReversed: boolean;
+  invitationReversed: boolean;
+};
+
+export async function deleteQuestionnaireLead(
+  leadId: string,
+): Promise<DeleteQuestionnaireLeadClientResult> {
+  const res = await fetchWithMemberAuth(
+    `/api/questionnaire/leads/${encodeURIComponent(leadId)}`,
+    { method: "DELETE" },
+  );
+  const body = await parseJson<DeleteQuestionnaireLeadClientResult>(res);
+  invalidateQuestionnaireCaches();
+  invalidateCached(CACHE_KEYS.questionnaireLead(leadId));
+  invalidateFivePlusFiveCaches();
+  return body;
+}
+
+export { CACHE_KEYS, RESOURCE_TTL, invalidateQuestionnaireCaches, invalidateFivePlusFiveCaches };

@@ -9,6 +9,7 @@ import { formatPersonalWarReport } from "@/lib/five-plus-five/copy-report";
 import {
   backfillFivePlusFive,
   fetchMyFivePlusFive,
+  readCachedFivePlusFiveMe,
   upsertMyFivePlusFive,
 } from "@/lib/five-plus-five/client";
 import { formatShortDisplayDate, addCalendarDays } from "@/lib/five-plus-five/dates";
@@ -19,36 +20,69 @@ import {
 import { dayStatusLabel } from "@/lib/five-plus-five/stats";
 import type { FivePlusFiveMyStats } from "@/types/five-plus-five";
 
+function seedFivePlusFive() {
+  try {
+    return readCachedFivePlusFiveMe();
+  } catch {
+    return null;
+  }
+}
+
 export default function FivePlusFiveMyReportPage() {
-  const [stats, setStats] = useState<FivePlusFiveMyStats | null>(null);
-  const [manualFish, setManualFish] = useState(0);
-  const [manualInvite, setManualInvite] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const seeded = seedFivePlusFive();
+  const [stats, setStats] = useState<FivePlusFiveMyStats | null>(seeded?.stats ?? null);
+  const [manualFish, setManualFish] = useState(seeded?.todayReport?.manualFishPoolCount ?? 0);
+  const [manualInvite, setManualInvite] = useState(
+    seeded?.todayReport?.manualInvitationFiveStepsCount ?? 0,
+  );
+  const [coldLoading, setColdLoading] = useState(!seeded);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [staleHint, setStaleHint] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [backfillOpen, setBackfillOpen] = useState(false);
   const [backfillDate, setBackfillDate] = useState("");
   const [backfillFish, setBackfillFish] = useState(0);
   const [backfillInvite, setBackfillInvite] = useState(0);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const result = await fetchMyFivePlusFive();
+  const applyPayload = useCallback(
+    (result: NonNullable<ReturnType<typeof readCachedFivePlusFiveMe>>) => {
       setStats(result.stats);
       setManualFish(result.todayReport?.manualFishPoolCount ?? 0);
       setManualInvite(result.todayReport?.manualInvitationFiveStepsCount ?? 0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "載入失敗");
-    } finally {
-      setLoading(false);
+    },
+    [],
+  );
+
+  const load = useCallback(async () => {
+    const hasCache = Boolean(readCachedFivePlusFiveMe() ?? stats);
+    if (hasCache) {
+      setRefreshing(true);
+    } else {
+      setColdLoading(true);
     }
-  }, []);
+    setError(null);
+    try {
+      const result = await fetchMyFivePlusFive();
+      applyPayload(result);
+      setStaleHint(null);
+    } catch (err) {
+      if (hasCache) {
+        setStaleHint("更新失敗，顯示上次資料");
+      } else {
+        setError(err instanceof Error ? err.message : "載入失敗");
+      }
+    } finally {
+      setColdLoading(false);
+      setRefreshing(false);
+    }
+  }, [applyPayload, stats]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once; SWR
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -128,15 +162,30 @@ export default function FivePlusFiveMyReportPage() {
 
   return (
     <FivePlusFiveShell subtitle={subtitle}>
-      {loading ? (
-        <p className="text-[0.875rem] text-[var(--brand-text-muted)]">載入中…</p>
+      {refreshing ? (
+        <p className="mb-2 text-right text-[0.6875rem] text-[var(--brand-hint)]">更新中…</p>
       ) : null}
 
-      {error ? (
+      {coldLoading && !stats ? (
+        <div className="space-y-4 animate-pulse" aria-busy="true">
+          <div className="h-28 rounded-[1.25rem] bg-[var(--brand-primary-muted)]" />
+          <div className="h-28 rounded-[1.25rem] bg-[var(--brand-primary-muted)]" />
+        </div>
+      ) : null}
+
+      {error && !stats ? (
         <p className="rounded-xl bg-[#fff2f2] px-3 py-2 text-[0.875rem] text-[#d70015]">{error}</p>
       ) : null}
 
-      {!loading && stats ? (
+      {staleHint ? (
+        <p className="mb-3 text-[0.75rem] text-[var(--brand-text-muted)]">{staleHint}</p>
+      ) : null}
+
+      {error && stats ? (
+        <p className="mb-3 rounded-xl bg-[#fff2f2] px-3 py-2 text-[0.875rem] text-[#d70015]">{error}</p>
+      ) : null}
+
+      {stats ? (
         <>
           <section className="space-y-4">
             <div className="space-y-3 rounded-[1.25rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] p-4">

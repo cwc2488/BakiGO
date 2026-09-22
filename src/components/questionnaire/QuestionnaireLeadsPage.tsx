@@ -1,14 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { TabRootShell } from "@/components/ui/TabRootShell";
 import {
   QUESTIONNAIRE_INTEREST_OPTIONS,
   QUESTIONNAIRE_LEAD_STATUS_LABEL,
   QUESTIONNAIRE_LEAD_STATUSES,
 } from "@/lib/questionnaire/contract";
-import { fetchQuestionnaireLeads } from "@/lib/questionnaire/client";
+import {
+  fetchQuestionnaireLeads,
+  prefetchQuestionnaireLead,
+  readCachedQuestionnaireLeads,
+} from "@/lib/questionnaire/client";
 import type { QuestionnaireLeadSummary } from "@/types/questionnaire";
 
 const FILTERS = [
@@ -19,6 +24,8 @@ const FILTERS = [
   { value: "completed", label: "已完成" },
   { value: "paused", label: "暫不追蹤" },
 ] as const;
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 function interestLabel(level: string | null): string {
   const found = QUESTIONNAIRE_INTEREST_OPTIONS.find((o) => o.value === level);
@@ -41,46 +48,115 @@ function formatTime(iso: string): string {
 }
 
 export default function QuestionnaireLeadsPage() {
-  const [leads, setLeads] = useState<QuestionnaireLeadSummary[]>([]);
+  const router = useRouter();
   const [status, setStatus] = useState("");
-  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [leads, setLeads] = useState<QuestionnaireLeadSummary[]>(() => {
+    const cached = readCachedQuestionnaireLeads({ status: "", search: "", page: 1 });
+    return cached?.leads ?? [];
+  });
+  const [hasMore, setHasMore] = useState(() => {
+    const cached = readCachedQuestionnaireLeads({ status: "", search: "", page: 1 });
+    return cached?.hasMore ?? false;
+  });
+  const [coldLoading, setColdLoading] = useState(() => {
+    return !readCachedQuestionnaireLeads({ status: "", search: "", page: 1 });
+  });
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [staleHint, setStaleHint] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await fetchQuestionnaireLeads({
-        status: status || undefined,
-        search: search.trim() || undefined,
-        page,
-      });
-      setLeads(result.leads);
-      setHasMore(result.hasMore);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "載入失敗");
-    } finally {
-      setLoading(false);
-    }
-  }, [status, search, page]);
+  // 300ms debounce for search
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setDebouncedSearch(searchInput.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(id);
+  }, [searchInput]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    const cached = readCachedQuestionnaireLeads({
+      status,
+      search: debouncedSearch,
+      page,
+    });
+    if (cached) {
+      setLeads(cached.leads);
+      setHasMore(cached.hasMore);
+      setColdLoading(false);
+      setRefreshing(true);
+    } else if (leads.length === 0) {
+      setColdLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    void (async () => {
+      setError(null);
+      try {
+        const result = await fetchQuestionnaireLeads(
+          {
+            status: status || undefined,
+            search: debouncedSearch || undefined,
+            page,
+          },
+          { signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
+        setLeads(result.leads);
+        setHasMore(result.hasMore);
+        setStaleHint(null);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (err instanceof Error && /abort/i.test(err.message)) return;
+        const hasData = leads.length > 0 || Boolean(cached);
+        if (hasData) {
+          setStaleHint("更新失敗，顯示上次資料");
+        } else {
+          setError(err instanceof Error ? err.message : "載入失敗");
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setColdLoading(false);
+          setRefreshing(false);
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: status/search/page drive fetch
+  }, [status, debouncedSearch, page]);
+
+  function warmLead(leadId: string) {
+    router.prefetch(`/questionnaire/leads/${leadId}`);
+    prefetchQuestionnaireLead(leadId);
+  }
 
   return (
     <TabRootShell
       header={
         <header className="space-y-3">
-          <Link
-            href="/questionnaire"
-            className="text-[0.8125rem] font-medium text-[var(--brand-text-secondary)]"
-          >
-            ← 問卷開發
-          </Link>
+          <div className="flex items-center justify-between gap-2">
+            <Link
+              href="/questionnaire"
+              className="text-[0.8125rem] font-medium text-[var(--brand-text-secondary)]"
+            >
+              ← 問卷開發
+            </Link>
+            {refreshing ? (
+              <p className="text-[0.6875rem] text-[var(--brand-hint)]">更新中…</p>
+            ) : null}
+          </div>
           <h1 className="text-[1.5rem] font-semibold tracking-tight text-[var(--brand-text)]">
             我的問卷名單
           </h1>
@@ -90,10 +166,10 @@ export default function QuestionnaireLeadsPage() {
       <div className="space-y-4">
         <input
           type="search"
-          value={search}
+          value={searchInput}
           onChange={(e) => {
             setPage(1);
-            setSearch(e.target.value);
+            setSearchInput(e.target.value);
           }}
           placeholder="搜尋姓名／暱稱"
           className="w-full rounded-xl border border-[var(--brand-border)] px-3 py-2.5 text-[0.9375rem]"
@@ -119,14 +195,22 @@ export default function QuestionnaireLeadsPage() {
           ))}
         </div>
 
-        {loading ? (
-          <p className="text-[0.875rem] text-[var(--brand-text-muted)]">載入中…</p>
+        {staleHint ? (
+          <p className="text-[0.75rem] text-[var(--brand-text-muted)]">{staleHint}</p>
         ) : null}
-        {error ? (
+
+        {coldLoading && leads.length === 0 ? (
+          <div className="space-y-3 animate-pulse" aria-busy="true">
+            <div className="h-24 rounded-[1.25rem] bg-[var(--brand-primary-muted)]" />
+            <div className="h-24 rounded-[1.25rem] bg-[var(--brand-primary-muted)]" />
+          </div>
+        ) : null}
+
+        {error && leads.length === 0 ? (
           <p className="rounded-xl bg-[#fff2f2] px-3 py-2 text-[0.875rem] text-[#d70015]">{error}</p>
         ) : null}
 
-        {!loading && leads.length === 0 ? (
+        {!coldLoading && leads.length === 0 && !error ? (
           <p className="text-[0.9375rem] text-[var(--brand-text-secondary)]">還沒有問卷名單</p>
         ) : null}
 
@@ -135,6 +219,8 @@ export default function QuestionnaireLeadsPage() {
             <li key={lead.id}>
               <Link
                 href={`/questionnaire/leads/${lead.id}`}
+                onPointerEnter={() => warmLead(lead.id)}
+                onTouchStart={() => warmLead(lead.id)}
                 className="block space-y-2 rounded-[1.25rem] border border-[var(--brand-border)]/80 bg-[var(--brand-surface)] p-4 active:bg-[var(--brand-primary-muted)]"
               >
                 <div className="flex items-start justify-between gap-2">
@@ -198,3 +284,5 @@ export default function QuestionnaireLeadsPage() {
     </TabRootShell>
   );
 }
+
+export { SEARCH_DEBOUNCE_MS };
