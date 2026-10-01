@@ -1,10 +1,10 @@
 import { addDays } from "@/lib/calendar/recurrence";
 import { SHARED_GOOGLE_CALENDARS } from "@/lib/calendar/shared-calendars";
 import {
-  isSharedCalendarCacheFresh,
   loadSharedCalendarEvents,
   saveSharedCalendarCache,
   sharedApiEventsToCalendarEvents,
+  shouldSkipSharedCalendarApiSync,
   type SharedCalendarStoredEvent,
 } from "@/lib/calendar/shared-calendar-storage";
 import {
@@ -46,7 +46,7 @@ export function loadCachedSharedCalendarEvents(
   storage: StorageAdapter,
   memberId: string,
 ): CalendarEvent[] {
-  if (!isSharedCalendarCacheFresh(storage, memberId)) {
+  if (!shouldSkipSharedCalendarApiSync(storage, memberId)) {
     return [];
   }
   return loadSharedCalendarEvents(storage);
@@ -59,7 +59,9 @@ export async function syncSharedGoogleCalendars(
   rangeEnd: string,
   options?: { force?: boolean },
 ): Promise<{ count: number; events: CalendarEvent[]; fromCache: boolean }> {
-  if (!options?.force && isSharedCalendarCacheFresh(storage, memberId)) {
+  // Fresh metadata with an empty events array is not a valid cache hit —
+  // continue to API (same contract as CalendarPage shared init).
+  if (!options?.force && shouldSkipSharedCalendarApiSync(storage, memberId)) {
     const cached = loadSharedCalendarEvents(storage);
     return { count: cached.length, events: cached, fromCache: true };
   }

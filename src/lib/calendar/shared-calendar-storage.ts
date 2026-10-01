@@ -92,6 +92,28 @@ export function isSharedCalendarCacheFresh(storage: StorageAdapter, memberId: st
   return meta.memberId === memberId && meta.syncedDate === getTodayDateString();
 }
 
+/**
+ * localStorage shared cache is best-effort only.
+ * Never apply an empty/missing local cache over in-memory API results.
+ */
+export function shouldApplySharedEventsFromLocalCache(cached: CalendarEvent[]): boolean {
+  return cached.length > 0;
+}
+
+/**
+ * Only treat shared localStorage as a valid API skip when metadata is fresh
+ * AND the cache actually contains events. Fresh metadata with [] must re-fetch.
+ */
+export function shouldSkipSharedCalendarApiSync(
+  storage: StorageAdapter,
+  memberId: string,
+): boolean {
+  return (
+    isSharedCalendarCacheFresh(storage, memberId) &&
+    loadSharedCalendarEvents(storage).length > 0
+  );
+}
+
 export function clearSharedCalendarEvents(storage: StorageAdapter): void {
   storage.removeItem(STORAGE_KEYS.sharedCalendarEvents);
   storage.removeItem(STORAGE_KEYS.sharedCalendarCacheMeta);
