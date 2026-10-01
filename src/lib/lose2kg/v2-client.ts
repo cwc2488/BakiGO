@@ -112,4 +112,37 @@ export async function deleteLose2kgPeriod(periodId: string) {
   });
 }
 
+export async function patchLose2kgQuestionnaire(
+  periodId: string,
+  patch: { isOpen?: boolean; regenerateToken?: boolean },
+) {
+  return lose2kgFetch<{
+    ok: true;
+    settings: import("@/types/lose2kg").Lose2kgQuestionnaireSettings;
+  }>(`/api/admin/lose2kg/periods/${periodId}/questionnaire`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function fetchLose2kgQuestionnaireSettings(periodId: string) {
+  const body = await lose2kgFetch<{
+    ok: true;
+    settings: import("@/types/lose2kg").Lose2kgQuestionnaireSettings;
+  }>(`/api/admin/lose2kg/periods/${periodId}/questionnaire`, {
+    cache: "no-store",
+  });
+  return body.settings;
+}
+
+export async function fetchLose2kgQuestionnaireResults(periodId: string) {
+  const body = await lose2kgFetch<{
+    ok: true;
+    data: import("@/lib/lose2kg/questionnaire").QuestionnaireAdminSummary;
+  }>(`/api/admin/lose2kg/periods/${periodId}/questionnaire/results`, {
+    cache: "no-store",
+  });
+  return body.data;
+}
+
 export type { Lose2kgPrize };

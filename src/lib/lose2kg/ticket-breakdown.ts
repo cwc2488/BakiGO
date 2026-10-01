@@ -213,12 +213,22 @@ export function buildTicketBreakdown(input: {
   milestoneRows.sort((a, b) => a.percent - b.percent);
 
   const extraTickets: Lose2kgTicketBreakdownExtra[] = input.events
-    .filter((e) => e.eventType === "manual_add" || e.eventType === "manual_remove")
+    .filter(
+      (e) =>
+        e.eventType === "manual_add" ||
+        e.eventType === "manual_remove" ||
+        e.eventType === "questionnaire_completed",
+    )
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .map((e) => ({
       id: e.id,
       at: e.createdAt,
-      description: e.reason?.trim() ? e.reason.trim() : "舊版額外票紀錄",
+      description:
+        e.eventType === "questionnaire_completed"
+          ? e.reason?.trim() || "第四週成果問卷 +1"
+          : e.reason?.trim()
+            ? e.reason.trim()
+            : "舊版額外票紀錄",
       delta: e.delta,
     }));
 

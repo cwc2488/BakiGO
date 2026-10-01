@@ -5,7 +5,11 @@ import type { Lose2kgPeriod } from "@/types/lose2kg";
 
 export async function requireStaffFromRequest(
   staffToken: string,
-): Promise<{ periodId: string; period: Lose2kgPeriod }> {
+): Promise<{
+  periodId: string;
+  period: Lose2kgPeriod;
+  periodRow: Record<string, unknown>;
+}> {
   const raw = await readLose2kgStaffSessionCookie();
   return requireStaffPeriodAccess({ staffToken, rawSessionToken: raw });
 }

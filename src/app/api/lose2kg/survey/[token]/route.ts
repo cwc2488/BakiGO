@@ -1,6 +1,5 @@
 import { Lose2kgError, lose2kgErrorResponse } from "@/lib/lose2kg/api";
-import { assertStaffTokenParam, requireStaffFromRequest } from "@/lib/lose2kg/staff-api";
-import { getStaffBootstrap } from "@/lib/lose2kg/v2-service";
+import { getPublicSurveyBootstrap } from "@/lib/lose2kg/questionnaire";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -11,9 +10,7 @@ export async function GET(
 ) {
   try {
     const { token } = await context.params;
-    const staffToken = assertStaffTokenParam(token);
-    const { periodId, periodRow } = await requireStaffFromRequest(staffToken);
-    const data = await getStaffBootstrap(periodId, periodRow);
+    const data = await getPublicSurveyBootstrap(token);
     return NextResponse.json({ ok: true, data });
   } catch (error) {
     if (error instanceof Lose2kgError) return lose2kgErrorResponse(error);
