@@ -453,14 +453,18 @@ export async function loginStaffWorkstation(input: {
   };
 }
 
+/** Throttle last_seen writes — validity/revoke semantics unchanged. */
+export const LOSE2KG_STAFF_LAST_SEEN_THROTTLE_MS = 10 * 60 * 1000;
+
 export async function resolveStaffSession(
   rawSessionToken: string | null,
+  periodRowHint?: Record<string, unknown> | null,
 ): Promise<{ periodId: string; sessionId: string } | null> {
   if (!rawSessionToken) return null;
   const hash = hashStaffSessionToken(rawSessionToken);
   const { data, error } = await db()
     .from("lose2kg_staff_sessions")
-    .select("*")
+    .select("id, period_id, revoked_at, expires_at, created_at, last_seen_at")
     .eq("session_token_hash", hash)
     .maybeSingle();
   if (error || !data) return null;
@@ -468,33 +472,73 @@ export async function resolveStaffSession(
   if (row.revoked_at) return null;
   if (new Date(String(row.expires_at)).getTime() <= Date.now()) return null;
 
-  const period = await getPeriodRow(String(row.period_id));
+  const periodId = String(row.period_id);
+  const period =
+    periodRowHint && String(periodRowHint.id) === periodId
+      ? periodRowHint
+      : await getPeriodRow(periodId);
   const revokedAt = period.staff_sessions_revoked_at
     ? new Date(String(period.staff_sessions_revoked_at)).getTime()
     : 0;
   const createdAt = new Date(String(row.created_at)).getTime();
   if (revokedAt && createdAt < revokedAt) return null;
 
-  await db()
-    .from("lose2kg_staff_sessions")
-    .update({ last_seen_at: nowIso() })
-    .eq("id", String(row.id));
+  const lastSeenMs = row.last_seen_at
+    ? new Date(String(row.last_seen_at)).getTime()
+    : 0;
+  if (!lastSeenMs || Date.now() - lastSeenMs >= LOSE2KG_STAFF_LAST_SEEN_THROTTLE_MS) {
+    await db()
+      .from("lose2kg_staff_sessions")
+      .update({ last_seen_at: nowIso() })
+      .eq("id", String(row.id));
+  }
 
-  return { periodId: String(row.period_id), sessionId: String(row.id) };
+  return { periodId, sessionId: String(row.id) };
 }
 
 export async function requireStaffPeriodAccess(input: {
   staffToken: string;
   rawSessionToken: string | null;
-}): Promise<{ periodId: string; period: Lose2kgPeriod }> {
+}): Promise<{ periodId: string; period: Lose2kgPeriod; periodRow: Record<string, unknown> }> {
   const periodRow = await findPeriodByStaffToken(input.staffToken);
-  const session = await resolveStaffSession(input.rawSessionToken);
+  const session = await resolveStaffSession(input.rawSessionToken, periodRow);
   if (!session || session.periodId !== String(periodRow.id)) {
     throw new Lose2kgError("請先登入工作站。", 401, "unauthorized");
   }
   return {
     periodId: String(periodRow.id),
     period: mapPeriodV2(periodRow),
+    periodRow,
+  };
+}
+
+/**
+ * Single initialization for staff workstation:
+ * - always returns gate fields
+ * - when authenticated, also returns bootstrap (no second HTTP round-trip)
+ */
+export async function getStaffWorkstationInit(input: {
+  staffToken: string;
+  rawSessionToken: string | null;
+}): Promise<{
+  periodId: string;
+  periodName: string;
+  status: Lose2kgPeriodStatus;
+  authenticated: boolean;
+  bootstrap: Awaited<ReturnType<typeof getStaffBootstrap>> | null;
+}> {
+  const periodRow = await findPeriodByStaffToken(input.staffToken);
+  const periodId = String(periodRow.id);
+  const session = await resolveStaffSession(input.rawSessionToken, periodRow);
+  const authenticated = Boolean(session && session.periodId === periodId);
+  return {
+    periodId,
+    periodName: String(periodRow.name),
+    status: periodRow.status as Lose2kgPeriodStatus,
+    authenticated,
+    bootstrap: authenticated
+      ? await getStaffBootstrap(periodId, periodRow)
+      : null,
   };
 }
 
@@ -512,7 +556,10 @@ function currentMeasurementSlot(dates: [string, string, string, string]): {
   return { slot, nextDate: next };
 }
 
-export async function getStaffBootstrap(periodId: string): Promise<{
+export async function getStaffBootstrap(
+  periodId: string,
+  periodRowHint?: Record<string, unknown>,
+): Promise<{
   period: Lose2kgPeriod;
   currentSlot: 1 | 2 | 3 | 4;
   nextMeasurementDate: string | null;
@@ -521,13 +568,19 @@ export async function getStaffBootstrap(periodId: string): Promise<{
   participantCount: number;
   totalTickets: number;
 }> {
-  const period = mapPeriodV2(await getPeriodRow(periodId));
+  const period = mapPeriodV2(
+    periodRowHint && String(periodRowHint.id) === periodId
+      ? periodRowHint
+      : await getPeriodRow(periodId),
+  );
   const [participants, measurements] = await Promise.all([
     listParticipants(periodId),
     (async () => {
       const { data, error } = await db()
         .from("lose2kg_measurements")
-        .select("*")
+        .select(
+          "id, period_id, participant_id, slot, weight_kg, measured_at, weight_change_pct, created_at, updated_at",
+        )
         .eq("period_id", periodId)
         .order("slot", { ascending: true });
       if (error) throw new Lose2kgError(error.message, 500, "db_error");
@@ -739,10 +792,28 @@ export async function staffQuickMeasure(input: {
   slot: 1 | 2 | 3 | 4;
   weightKg: number;
 }): Promise<StaffMeasureResult> {
-  const before = await getParticipantDetail(input.participantId);
-  const beforeWeight = before.participant.weightTicketBalance;
+  // Lean before-state only (no milestones/events) — feedback needs weight tickets + baseline presence.
+  const { data: beforeRow, error: beforeErr } = await db()
+    .from("lose2kg_participants")
+    .select("weight_ticket_balance")
+    .eq("id", input.participantId)
+    .maybeSingle();
+  if (beforeErr) throw new Lose2kgError(beforeErr.message, 500, "db_error");
+  if (!beforeRow) throw new Lose2kgError("找不到參賽者。", 404, "not_found");
+  const beforeWeight = Number(
+    (beforeRow as Record<string, unknown>).weight_ticket_balance ?? 0,
+  );
+
+  const { data: baselineRow } = await db()
+    .from("lose2kg_measurements")
+    .select("weight_kg")
+    .eq("participant_id", input.participantId)
+    .eq("slot", 1)
+    .maybeSingle();
   const hadBaseline =
-    (before.measurements.find((m) => m.slot === 1)?.weightKg ?? null) != null;
+    baselineRow != null &&
+    (baselineRow as Record<string, unknown>).weight_kg != null;
+
   const result = await upsertMeasurement({
     participantId: input.participantId,
     slot: input.slot,

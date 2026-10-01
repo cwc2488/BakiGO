@@ -340,10 +340,13 @@ async function ensureMeasurementSlots(periodId: string, participantId: string): 
   if (error) throw new Lose2kgError(error.message, 500, "db_error");
 }
 
+const PARTICIPANT_BOOTSTRAP_COLUMNS =
+  "id, period_id, name, public_display_name, status, note, sort_order, weight_ticket_balance, activity_ticket_balance, current_weight_change_pct, created_at, updated_at";
+
 export async function listParticipants(periodId: string): Promise<Lose2kgParticipant[]> {
   const { data, error } = await db()
     .from("lose2kg_participants")
-    .select("*")
+    .select(PARTICIPANT_BOOTSTRAP_COLUMNS)
     .eq("period_id", periodId)
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
@@ -571,13 +574,7 @@ async function syncParticipantTicketCaches(
   weightBalance: number,
   weightChangePct: number | null,
 ): Promise<Lose2kgParticipant> {
-  const { data: current, error: readError } = await db()
-    .from("lose2kg_participants")
-    .select("*")
-    .eq("id", participantId)
-    .single();
-  if (readError) throw new Lose2kgError(readError.message, 500, "db_error");
-
+  // Returning update avoids a redundant pre-read of the same participant row.
   const { data, error } = await db()
     .from("lose2kg_participants")
     .update({
@@ -589,8 +586,48 @@ async function syncParticipantTicketCaches(
     .select("*")
     .single();
   if (error) throw new Lose2kgError(error.message, 500, "db_error");
-  void current;
   return mapParticipant(data as Record<string, unknown>);
+}
+
+function slotWeightChangePct(
+  slot: Lose2kgMeasurementSlot,
+  weightKg: number | null,
+  baseline: number | null,
+): number | null {
+  if (slot === 1 && weightKg != null) return 0;
+  if (baseline != null && weightKg != null && slot >= 2) {
+    return computeWeightChangePct(baseline, weightKg);
+  }
+  return null;
+}
+
+/** Batch-write all slot percentage columns in one upsert round-trip. */
+async function batchUpdateMeasurementPercentages(
+  measurements: Lose2kgMeasurement[],
+  baseline: number | null,
+): Promise<Lose2kgMeasurement[]> {
+  const updatedAt = nowIso();
+  const withPct = measurements.map((m) => {
+    const pct = slotWeightChangePct(m.slot, m.weightKg, baseline);
+    return { ...m, weightChangePct: pct, updatedAt };
+  });
+
+  const { error } = await db().from("lose2kg_measurements").upsert(
+    withPct.map((m) => ({
+      id: m.id,
+      period_id: m.periodId,
+      participant_id: m.participantId,
+      slot: m.slot,
+      weight_kg: m.weightKg,
+      measured_at: m.measuredAt,
+      weight_change_pct: m.weightChangePct,
+      created_at: m.createdAt,
+      updated_at: updatedAt,
+    })),
+    { onConflict: "participant_id,slot" },
+  );
+  if (error) throw new Lose2kgError(error.message, 500, "db_error");
+  return withPct;
 }
 
 export async function upsertMeasurement(input: {
@@ -613,14 +650,24 @@ export async function upsertMeasurement(input: {
   if (!participantRow) throw new Lose2kgError("找不到參賽者。", 404, "not_found");
   const periodId = String((participantRow as Record<string, unknown>).period_id);
 
-  await ensureMeasurementSlots(periodId, input.participantId);
-
-  const { data: existingMeas, error: mErr } = await db()
+  let { data: existingMeas, error: mErr } = await db()
     .from("lose2kg_measurements")
     .select("*")
     .eq("participant_id", input.participantId)
     .order("slot", { ascending: true });
   if (mErr) throw new Lose2kgError(mErr.message, 500, "db_error");
+
+  // Normal path: createParticipant already created 4 slots. Only repair legacy/corrupt rows.
+  if ((existingMeas ?? []).length < 4) {
+    await ensureMeasurementSlots(periodId, input.participantId);
+    const repaired = await db()
+      .from("lose2kg_measurements")
+      .select("*")
+      .eq("participant_id", input.participantId)
+      .order("slot", { ascending: true });
+    if (repaired.error) throw new Lose2kgError(repaired.error.message, 500, "db_error");
+    existingMeas = repaired.data;
+  }
 
   const measurements = (existingMeas ?? []).map((row) =>
     mapMeasurement(row as Record<string, unknown>),
@@ -629,12 +676,14 @@ export async function upsertMeasurement(input: {
   if (!target) throw new Lose2kgError("找不到量測欄位。", 404, "not_found");
 
   const oldWeight = target.weightKg;
+  const measuredAt = input.weightKg == null ? null : nowIso();
+  const updatedAt = nowIso();
   const { error: updErr } = await db()
     .from("lose2kg_measurements")
     .update({
       weight_kg: input.weightKg,
-      measured_at: input.weightKg == null ? null : nowIso(),
-      updated_at: nowIso(),
+      measured_at: measuredAt,
+      updated_at: updatedAt,
     })
     .eq("id", target.id);
   if (updErr) throw new Lose2kgError(updErr.message, 500, "db_error");
@@ -652,47 +701,56 @@ export async function upsertMeasurement(input: {
     });
   }
 
-  return recalculateParticipantTickets(input.participantId, input.editedByMemberId);
+  const nextMeasurements = measurements.map((m) =>
+    m.id === target.id
+      ? { ...m, weightKg: input.weightKg, measuredAt, updatedAt }
+      : m,
+  );
+
+  return recalculateParticipantTickets(input.participantId, input.editedByMemberId, {
+    participantRow: participantRow as Record<string, unknown>,
+    measurements: nextMeasurements,
+  });
 }
 
 async function recalculateParticipantTickets(
   participantId: string,
   memberId: string | null,
+  cached?: {
+    participantRow: Record<string, unknown>;
+    measurements: Lose2kgMeasurement[];
+  },
 ): Promise<{ participant: Lose2kgParticipant; measurements: Lose2kgMeasurement[] }> {
-  const { data: participantRow, error: pErr } = await db()
-    .from("lose2kg_participants")
-    .select("*")
-    .eq("id", participantId)
-    .single();
-  if (pErr) throw new Lose2kgError(pErr.message, 500, "db_error");
-  const periodId = String((participantRow as Record<string, unknown>).period_id);
+  let participantRow = cached?.participantRow;
+  if (!participantRow) {
+    const { data, error: pErr } = await db()
+      .from("lose2kg_participants")
+      .select("*")
+      .eq("id", participantId)
+      .single();
+    if (pErr) throw new Lose2kgError(pErr.message, 500, "db_error");
+    participantRow = data as Record<string, unknown>;
+  }
+  const periodId = String(participantRow.period_id);
 
-  const { data: measRows, error: mErr } = await db()
-    .from("lose2kg_measurements")
-    .select("*")
-    .eq("participant_id", participantId)
-    .order("slot", { ascending: true });
-  if (mErr) throw new Lose2kgError(mErr.message, 500, "db_error");
+  let measurements = cached?.measurements;
+  if (!measurements) {
+    const { data: measRows, error: mErr } = await db()
+      .from("lose2kg_measurements")
+      .select("*")
+      .eq("participant_id", participantId)
+      .order("slot", { ascending: true });
+    if (mErr) throw new Lose2kgError(mErr.message, 500, "db_error");
+    measurements = (measRows ?? []).map((row) => mapMeasurement(row as Record<string, unknown>));
+  }
 
-  const measurements = (measRows ?? []).map((row) => mapMeasurement(row as Record<string, unknown>));
   const baseline = measurements.find((m) => m.slot === 1)?.weightKg ?? null;
   const after = [2, 3, 4].map(
     (slot) => measurements.find((m) => m.slot === slot)?.weightKg ?? null,
   );
 
-  // Update per-slot percentage display (always vs slot-1 baseline)
-  for (const m of measurements) {
-    let pct: number | null = null;
-    if (m.slot === 1 && m.weightKg != null) {
-      pct = 0;
-    } else if (baseline != null && m.weightKg != null && m.slot >= 2) {
-      pct = computeWeightChangePct(baseline, m.weightKg);
-    }
-    await db()
-      .from("lose2kg_measurements")
-      .update({ weight_change_pct: pct, updated_at: nowIso() })
-      .eq("id", m.id);
-  }
+  // Single batch write for all slot percentages (no per-slot serial round-trips)
+  const measurementsWithPct = await batchUpdateMeasurementPercentages(measurements, baseline);
 
   const prior = await loadMilestones(participantId);
   const priorPercents = prior.map((m) => m.milestonePercent);
@@ -723,16 +781,10 @@ async function recalculateParticipantTickets(
 
   const participant = await syncParticipantTicketCaches(participantId, weightBalance, latestPct);
 
-  const { data: refreshed, error: rErr } = await db()
-    .from("lose2kg_measurements")
-    .select("*")
-    .eq("participant_id", participantId)
-    .order("slot", { ascending: true });
-  if (rErr) throw new Lose2kgError(rErr.message, 500, "db_error");
-
+  // Return locally computed measurements — avoid a final identical select.
   return {
     participant,
-    measurements: (refreshed ?? []).map((row) => mapMeasurement(row as Record<string, unknown>)),
+    measurements: measurementsWithPct,
   };
 }
 

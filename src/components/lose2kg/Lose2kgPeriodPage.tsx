@@ -1,6 +1,7 @@
 "use client";
 
 import { PersistentShareUrl } from "@/components/lose2kg/CopyLinkButton";
+import { Lose2kgQuestionnaireAdminSection } from "@/components/lose2kg/Lose2kgQuestionnaireAdminSection";
 import { Lose2kgButton, Lose2kgToast } from "@/components/lose2kg/Lose2kgUi";
 import { PageShell } from "@/components/ui/PageShell";
 import {
@@ -252,6 +253,8 @@ function ControlCenterInner() {
             </label>
           </div>
         </section>
+
+        <Lose2kgQuestionnaireAdminSection periodId={periodId} onToast={showToast} />
 
         <section className="space-y-3 border-b border-[#e8e4dc] pb-6">
           <h2 className="text-[1rem] font-semibold">量測日期</h2>

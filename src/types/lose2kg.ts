@@ -11,7 +11,8 @@ export type Lose2kgTicketEventType =
   | "weight_ticket_revoked"
   | "manual_add"
   | "manual_remove"
-  | "correction";
+  | "correction"
+  | "questionnaire_completed";
 
 export type Lose2kgMeasurementSlot = 1 | 2 | 3 | 4;
 
@@ -182,4 +183,112 @@ export type Lose2kgLiveDashboard = {
   maxTickets: number;
   publicShowWeights: boolean;
   leaderboard: Lose2kgLiveLeaderboardRow[];
+};
+
+/** Week-4 outcomes questionnaire (lose2kg-only). */
+export type Lose2kgBiggestChange =
+  | "weight"
+  | "body_composition"
+  | "diet"
+  | "exercise"
+  | "energy"
+  | "no_change"
+  | "other";
+
+export type Lose2kgProductInterest =
+  | "know_what"
+  | "interested_need_guidance"
+  | "want_to_learn"
+  | "none";
+
+export type Lose2kgDesiredHelp =
+  | "diet"
+  | "product_pairing"
+  | "fat_loss"
+  | "muscle_body"
+  | "exercise_plan"
+  | "coach_support"
+  | "self_continue";
+
+export type Lose2kgFavoritePart =
+  | "challenge"
+  | "exercise_games"
+  | "nutrition_class"
+  | "product_experience"
+  | "team_atmosphere"
+  | "bring_friends"
+  | "other";
+
+export type Lose2kgBusinessInterest =
+  | "very_interested"
+  | "open_to_listen"
+  | "customer_only"
+  | "not_now";
+
+export type Lose2kgIncomeInterest =
+  | "willing_to_learn"
+  | "somewhat_interested"
+  | "not_interested";
+
+export type Lose2kgConsultationInterest = "yes" | "contact_later" | "no";
+
+export type Lose2kgQuestionnaireSettings = {
+  periodId: string;
+  isOpen: boolean;
+  openedAt: string | null;
+  closedAt: string | null;
+  publicToken: string | null;
+  surveyUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Lose2kgQuestionnaireResponse = {
+  id: string;
+  periodId: string;
+  participantId: string;
+  inviterMemberId: string;
+  coachMemberId: string | null;
+  satisfactionScore: number;
+  biggestChange: Lose2kgBiggestChange;
+  biggestChangeOther: string | null;
+  nextGoal: string;
+  productInterest: Lose2kgProductInterest;
+  desiredHelp: Lose2kgDesiredHelp[];
+  favoritePart: Lose2kgFavoritePart;
+  favoritePartOther: string | null;
+  businessInterest: Lose2kgBusinessInterest;
+  incomeInterest: Lose2kgIncomeInterest;
+  consultationInterest: Lose2kgConsultationInterest;
+  additionalNote: string | null;
+  ticketAwarded: boolean;
+  submittedAt: string;
+  updatedAt: string;
+};
+
+export type Lose2kgQuestionnaireSegment =
+  | "all"
+  | "pending"
+  | "consultation"
+  | "product_high"
+  | "business_interest"
+  | "product_and_business"
+  | "no_demand";
+
+export type Lose2kgQuestionnaireResultRow = {
+  participantId: string;
+  participantName: string;
+  publicDisplayName: string;
+  hasResponse: boolean;
+  inviterName: string | null;
+  coachName: string | null;
+  productInterest: Lose2kgProductInterest | null;
+  businessInterest: Lose2kgBusinessInterest | null;
+  incomeInterest: Lose2kgIncomeInterest | null;
+  consultationInterest: Lose2kgConsultationInterest | null;
+  productHigh: boolean;
+  businessInterested: boolean;
+  wantsConsultation: boolean;
+  submittedAt: string | null;
+  response: Lose2kgQuestionnaireResponse | null;
 };

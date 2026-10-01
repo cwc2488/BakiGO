@@ -48,14 +48,11 @@ async function staffFetch<T>(token: string, path: string, init?: RequestInit): P
 }
 
 function weightOf(
-  measurements: Lose2kgMeasurement[],
+  lookup: Map<string, Lose2kgMeasurement>,
   participantId: string,
   slot: number,
 ): number | null {
-  return (
-    measurements.find((m) => m.participantId === participantId && m.slot === slot)?.weightKg ??
-    null
-  );
+  return lookup.get(`${participantId}:${slot}`)?.weightKg ?? null;
 }
 
 function shortDate(iso: string) {
@@ -137,14 +134,17 @@ export function Lose2kgStaffWorkstationPage() {
     });
   }
 
-  async function loadGate() {
+  async function loadInit() {
     const body = await staffFetch<{
       ok: true;
       periodName: string;
       authenticated: boolean;
+      data?: Bootstrap;
     }>(token, "");
     setGate({ periodName: body.periodName, authenticated: body.authenticated });
-    if (body.authenticated) await loadBootstrap();
+    if (body.authenticated && body.data) {
+      setData(body.data);
+    }
   }
 
   async function loadBootstrap() {
@@ -185,7 +185,7 @@ export function Lose2kgStaffWorkstationPage() {
     let cancelled = false;
     void (async () => {
       try {
-        await loadGate();
+        await loadInit();
         if (!cancelled) setError(null);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "載入失敗");
@@ -201,6 +201,14 @@ export function Lose2kgStaffWorkstationPage() {
     () => (data?.participants ?? []).filter((p) => p.status === "active"),
     [data],
   );
+
+  const measurementLookup = useMemo(() => {
+    const map = new Map<string, Lose2kgMeasurement>();
+    for (const m of data?.measurements ?? []) {
+      map.set(`${m.participantId}:${m.slot}`, m);
+    }
+    return map;
+  }, [data?.measurements]);
 
   const detailParticipant = useMemo(
     () => activeParticipants.find((p) => p.id === detailId) ?? null,
@@ -400,7 +408,7 @@ export function Lose2kgStaffWorkstationPage() {
           <MeasureGrid
             measurementDates={data.period.measurementDates}
             participants={activeParticipants}
-            measurements={data.measurements}
+            measurementLookup={measurementLookup}
             feedback={measureFeedback}
             cellStatus={cellStatus}
             inputRefs={inputRefs}
@@ -745,7 +753,7 @@ function ExtraTicketModal({
 function MeasureGrid({
   measurementDates,
   participants,
-  measurements,
+  measurementLookup,
   feedback,
   cellStatus,
   inputRefs,
@@ -756,7 +764,7 @@ function MeasureGrid({
 }: {
   measurementDates: [string, string, string, string];
   participants: Lose2kgParticipant[];
-  measurements: Lose2kgMeasurement[];
+  measurementLookup: Map<string, Lose2kgMeasurement>;
   feedback: Record<string, string>;
   cellStatus: Record<string, "idle" | "saving" | "ok" | "err">;
   inputRefs: MutableRefObject<Record<string, HTMLInputElement | null>>;
@@ -788,7 +796,7 @@ function MeasureGrid({
   ) {
     const value = Number(raw);
     if (!(value > 0) || !Number.isFinite(value)) return;
-    const existing = weightOf(measurements, participantId, slot);
+    const existing = weightOf(measurementLookup, participantId, slot);
     if (existing != null && Math.abs(existing - value) < 1e-9) return;
     onSave(participantId, slot, value, nextKey);
   }
@@ -848,8 +856,8 @@ function MeasureGrid({
                         type="number"
                         inputMode="decimal"
                         step="0.1"
-                        defaultValue={weightOf(measurements, p.id, s) ?? ""}
-                        key={`${key}-${weightOf(measurements, p.id, s) ?? "empty"}`}
+                        defaultValue={weightOf(measurementLookup, p.id, s) ?? ""}
+                        key={`${key}-${weightOf(measurementLookup, p.id, s) ?? "empty"}`}
                         className={`w-[4.5rem] rounded-md border px-1.5 py-1.5 text-[0.875rem] tabular-nums outline-none transition ${cellBorder(key)}`}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
@@ -939,8 +947,8 @@ function MeasureGrid({
                       type="number"
                       inputMode="decimal"
                       step="0.1"
-                      defaultValue={weightOf(measurements, p.id, s) ?? ""}
-                      key={`m-${key}-${weightOf(measurements, p.id, s) ?? "empty"}`}
+                      defaultValue={weightOf(measurementLookup, p.id, s) ?? ""}
+                      key={`m-${key}-${weightOf(measurementLookup, p.id, s) ?? "empty"}`}
                       className={`w-full rounded-md border px-2 py-2 text-[0.9375rem] tabular-nums ${cellBorder(key)}`}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
