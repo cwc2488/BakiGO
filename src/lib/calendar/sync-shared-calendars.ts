@@ -1,7 +1,6 @@
 import { addDays } from "@/lib/calendar/recurrence";
 import { SHARED_GOOGLE_CALENDARS } from "@/lib/calendar/shared-calendars";
 import {
-  isSharedCalendarCacheFresh,
   loadSharedCalendarEvents,
   saveSharedCalendarCache,
   sharedApiEventsToCalendarEvents,
