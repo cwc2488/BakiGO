@@ -66,7 +66,34 @@ describe("lose2kg performance — staff init single request", () => {
     expect(upsert).toContain("length < 4");
     expect(upsert).toContain("ensureMeasurementSlots");
     expect(upsert).toContain("recalculateParticipantTickets");
-    expect(upsert).toContain("measurements: nextMeasurements");
+    expect(upsert).toContain("measurements: freshMeasurements");
+  });
+
+  it("measurement save fresh-reads all slots after weight UPDATE before recalculation", () => {
+    const svc = src("src/lib/lose2kg/service.ts");
+    const upsert = svc.slice(
+      svc.indexOf("export async function upsertMeasurement"),
+      svc.indexOf("async function recalculateParticipantTickets"),
+    );
+    // Weight write happens before the fresh SELECT
+    const updateIdx = upsert.indexOf(".update({");
+    const weightKgIdx = upsert.indexOf("weight_kg: input.weightKg");
+    const freshSelectMarker = 'Fresh read after weight write';
+    const freshIdx = upsert.indexOf(freshSelectMarker);
+    const freshSelectIdx = upsert.indexOf(
+      '.eq("participant_id", input.participantId)',
+      freshIdx,
+    );
+    const recalcIdx = upsert.indexOf("recalculateParticipantTickets");
+    expect(updateIdx).toBeGreaterThan(-1);
+    expect(weightKgIdx).toBeGreaterThan(updateIdx);
+    expect(freshIdx).toBeGreaterThan(weightKgIdx);
+    expect(freshSelectIdx).toBeGreaterThan(freshIdx);
+    expect(recalcIdx).toBeGreaterThan(freshSelectIdx);
+    expect(upsert).toContain("freshMeasurements");
+    expect(upsert).toContain("measurements: freshMeasurements");
+    // Must not pass a locally patched pre-update snapshot
+    expect(upsert).not.toContain("nextMeasurements");
   });
 
   it("percentage updates use pct-only RPC, not serial per-slot loop", () => {

@@ -694,15 +694,20 @@ export async function upsertMeasurement(input: {
     });
   }
 
-  const nextMeasurements = measurements.map((m) =>
-    m.id === target.id
-      ? { ...m, weightKg: input.weightKg, measuredAt, updatedAt }
-      : m,
+  // Fresh read after weight write — avoids stale sibling-slot snapshots under concurrent staff saves.
+  const { data: freshMeas, error: freshErr } = await db()
+    .from("lose2kg_measurements")
+    .select("*")
+    .eq("participant_id", input.participantId)
+    .order("slot", { ascending: true });
+  if (freshErr) throw new Lose2kgError(freshErr.message, 500, "db_error");
+  const freshMeasurements = (freshMeas ?? []).map((row) =>
+    mapMeasurement(row as Record<string, unknown>),
   );
 
   return recalculateParticipantTickets(input.participantId, input.editedByMemberId, {
     participantRow: participantRow as Record<string, unknown>,
-    measurements: nextMeasurements,
+    measurements: freshMeasurements,
   });
 }
 
