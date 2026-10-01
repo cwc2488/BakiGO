@@ -220,9 +220,43 @@ describe("lose2kg week-4 questionnaire", () => {
     expect(sql).toContain("inviter_name_required");
     expect(sql).toContain("questionnaire_completed");
     expect(sql).toContain("drop not null");
+    expect(sql).toContain("lose2kg_questionnaire_responses_inviter_name_check");
+    expect(sql).toContain("char_length(trim(inviter_name)) between 1 and 80");
+    expect(sql).toContain("before insert or update of inviter_member_id, inviter_name");
+    expect(sql).not.toContain("security definer\nset search_path = public\nas $$\ndeclare\n  v_name text;");
+    // Trigger helper must not be SECURITY DEFINER
+    const triggerFn = sql.slice(
+      sql.indexOf("create or replace function public.lose2kg_questionnaire_fill_inviter_name"),
+      sql.indexOf("drop trigger if exists lose2kg_questionnaire_fill_inviter_name_trg"),
+    );
+    expect(triggerFn.toLowerCase()).not.toContain("security definer");
+    expect(sql.toLowerCase()).not.toContain("when others then");
     expect(sql.toLowerCase()).not.toContain("drop table");
     expect(sql.toLowerCase()).not.toContain("truncate");
     expect(sql).not.toMatch(/delete from public\.lose2kg_questionnaire_responses/i);
+  });
+
+  it("migration 090 v2 INSERT nulls IDs but ON CONFLICT preserves legacy attribution", () => {
+    const sql = src("supabase/migrations/090_lose2kg_inviter_free_text.sql");
+    const v2 = sql.slice(
+      sql.indexOf("create or replace function public.submit_lose2kg_questionnaire_v2"),
+      sql.indexOf("revoke all on function public.submit_lose2kg_questionnaire_v2"),
+    );
+    const valuesIdx = v2.indexOf(") values (");
+    const conflictIdx = v2.indexOf("on conflict (period_id, participant_id) do update set");
+    expect(valuesIdx).toBeGreaterThan(-1);
+    expect(conflictIdx).toBeGreaterThan(valuesIdx);
+
+    const insertValues = v2.slice(valuesIdx, conflictIdx);
+    // New inserts explicitly set both IDs null
+    expect(insertValues).toMatch(/null,\s*null,\s*v_inviter_name/);
+
+    const conflictUpdate = v2.slice(conflictIdx);
+    expect(conflictUpdate).toContain("inviter_name = excluded.inviter_name");
+    expect(conflictUpdate).not.toContain("inviter_member_id = null");
+    expect(conflictUpdate).not.toContain("coach_member_id = null");
+    expect(conflictUpdate).toContain("Preserve legacy inviter_member_id / coach_member_id on edit");
+    expect(conflictUpdate).toContain("questionnaire_completed");
   });
 
   it("admin results prefer stored inviter_name; inviter_member_id may be null", () => {

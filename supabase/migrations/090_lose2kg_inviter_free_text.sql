@@ -17,38 +17,47 @@ where r.inviter_member_id = m.id
   and (r.inviter_name is null or btrim(r.inviter_name) = '');
 
 -- 3) Make inviter_member_id nullable (legacy may remain populated)
-do $$
-begin
-  alter table public.lose2kg_questionnaire_responses
-    alter column inviter_member_id drop not null;
-exception
-  when others then
-    -- Already nullable or constraint name differs — ignore
-    null;
-end $$;
+alter table public.lose2kg_questionnaire_responses
+  alter column inviter_member_id drop not null;
 
--- 4) Backward-compatible trigger: v1 inserts with inviter_member_id still populate inviter_name
+-- 4) inviter_name length check (matches Production)
+alter table public.lose2kg_questionnaire_responses
+  drop constraint if exists lose2kg_questionnaire_responses_inviter_name_check;
+alter table public.lose2kg_questionnaire_responses
+  add constraint lose2kg_questionnaire_responses_inviter_name_check
+  check (
+    inviter_name is null
+    or char_length(trim(inviter_name)) between 1 and 80
+  );
+
+-- 5) Backward-compatible trigger: only fires on inviter_member_id / inviter_name changes
 create or replace function public.lose2kg_questionnaire_fill_inviter_name()
 returns trigger
 language plpgsql
-security definer
 set search_path = public
 as $$
 declare
   v_name text;
 begin
-  if new.inviter_name is null or btrim(new.inviter_name) = '' then
-    if new.inviter_member_id is not null then
-      select m.name into v_name
-      from public.members m
-      where m.id = new.inviter_member_id;
-      if v_name is not null and btrim(v_name) <> '' then
-        new.inviter_name := btrim(v_name);
-      end if;
-    end if;
-  else
+  -- If inviter_name supplied → trim it
+  if new.inviter_name is not null and btrim(new.inviter_name) <> '' then
     new.inviter_name := btrim(new.inviter_name);
+    return new;
   end if;
+
+  -- If inviter_name missing but legacy inviter_member_id exists → fill from members.name
+  if new.inviter_member_id is not null then
+    select m.name into v_name
+    from public.members m
+    where m.id = new.inviter_member_id;
+    if v_name is not null and btrim(v_name) <> '' then
+      new.inviter_name := btrim(v_name);
+      return new;
+    end if;
+  end if;
+
+  -- Otherwise leave null
+  new.inviter_name := null;
   return new;
 end;
 $$;
@@ -57,11 +66,14 @@ drop trigger if exists lose2kg_questionnaire_fill_inviter_name_trg
   on public.lose2kg_questionnaire_responses;
 
 create trigger lose2kg_questionnaire_fill_inviter_name_trg
-  before insert or update on public.lose2kg_questionnaire_responses
+  before insert or update of inviter_member_id, inviter_name
+  on public.lose2kg_questionnaire_responses
   for each row
   execute function public.lose2kg_questionnaire_fill_inviter_name();
 
--- 5) Free-text submit RPC v2 (no members lookup required)
+-- 6) Free-text submit RPC v2 (no members lookup required)
+-- NEW inserts: inviter_member_id / coach_member_id = null
+-- ON CONFLICT edits: preserve legacy inviter_member_id / coach_member_id
 create or replace function public.submit_lose2kg_questionnaire_v2(
   p_period_id uuid,
   p_participant_id uuid,
@@ -174,8 +186,7 @@ begin
   )
   on conflict (period_id, participant_id) do update set
     inviter_name = excluded.inviter_name,
-    inviter_member_id = null,
-    coach_member_id = null,
+    -- Preserve legacy inviter_member_id / coach_member_id on edit
     satisfaction_score = excluded.satisfaction_score,
     biggest_change = excluded.biggest_change,
     biggest_change_other = excluded.biggest_change_other,
@@ -264,4 +275,4 @@ grant execute on function public.submit_lose2kg_questionnaire_v2(
 ) to service_role;
 
 comment on function public.submit_lose2kg_questionnaire_v2 is
-  'Lose2kg week-4 questionnaire upsert with free-text inviter_name. Awards +1 activity ticket exactly once on first claim.';
+  'Lose2kg week-4 questionnaire upsert with free-text inviter_name. Awards +1 activity ticket exactly once on first claim. Preserves legacy member IDs on edit.';
