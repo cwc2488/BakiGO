@@ -270,7 +270,13 @@ export default function CalendarPage() {
     purgeSharedEventsFromPersonalStorage(storage, getSharedCalendarIds());
     syncStoreFromLocalStorage(storage, memberId);
     const shared = loadSharedCalendarEvents(storage);
-    replaceSharedCalendarEvents(shared);
+    // IMPORTANT:
+    // localStorage shared cache is best-effort only.
+    // Never let an empty/missing local cache wipe fresh shared events
+    // that were already loaded from the API into the in-memory store.
+    if (shared.length > 0) {
+      replaceSharedCalendarEvents(shared);
+    }
     reloadAttendance();
     setOwnedCustomers(
       createCustomerRepository(storage)
@@ -294,9 +300,12 @@ export default function CalendarPage() {
   useEffect(() => {
     let cancelled = false;
 
-    if (isSharedCalendarCacheFresh(storage, memberId)) {
-      const cached = loadSharedCalendarEvents(storage);
-      replaceSharedCalendarEvents(cached);
+    const cachedSharedEvents = loadSharedCalendarEvents(storage);
+    if (
+      isSharedCalendarCacheFresh(storage, memberId) &&
+      cachedSharedEvents.length > 0
+    ) {
+      replaceSharedCalendarEvents(cachedSharedEvents);
       return () => {
         cancelled = true;
       };
