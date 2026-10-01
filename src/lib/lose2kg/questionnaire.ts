@@ -316,8 +316,8 @@ export async function searchPublicSurveyMembers(input: {
 }): Promise<{ id: string; name: string }[]> {
   await findSettingsBySurveyToken(input.surveyToken);
   const q = input.query.trim();
-  if (q.length < 1) return [];
-  const limit = Math.min(Math.max(input.limit ?? 20, 1), 40);
+  if (q.length < 2) return [];
+  const limit = Math.min(Math.max(input.limit ?? 20, 1), 20);
 
   const { data, error } = await db()
     .from("members")

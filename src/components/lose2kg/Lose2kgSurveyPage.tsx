@@ -137,7 +137,7 @@ function MemberSearchField({
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    if (query.trim().length < 1) {
+    if (query.trim().length < 2) {
       setOptions([]);
       return;
     }
@@ -212,7 +212,7 @@ function MemberSearchField({
                 </li>
               ))}
             </ul>
-          ) : query.trim() ? (
+          ) : query.trim().length >= 2 ? (
             <p className="text-[0.75rem] text-[#86868b]">找不到符合的人</p>
           ) : null}
         </>
@@ -271,7 +271,7 @@ export function Lose2kgSurveyPage() {
     if (!businessInterest || !incomeInterest || !consultation) return false;
     if (!nextGoal.trim()) return false;
     if (desiredHelp.length === 0) return false;
-    if (!sameCoach && !coach) return false;
+    // Coach is optional: sameCoach uses inviter; otherwise coach may be empty → null
     return true;
   }, [
     participantId,
@@ -285,8 +285,6 @@ export function Lose2kgSurveyPage() {
     consultation,
     nextGoal,
     desiredHelp,
-    sameCoach,
-    coach,
   ]);
 
   function toggleHelp(value: Lose2kgDesiredHelp) {
@@ -608,7 +606,7 @@ export function Lose2kgSurveyPage() {
                     body: JSON.stringify({
                       participantId,
                       inviterMemberId: inviter?.id,
-                      coachMemberId: sameCoach ? inviter?.id : coach?.id,
+                      coachMemberId: sameCoach ? inviter?.id : coach?.id ?? null,
                       sameCoachAsInviter: sameCoach,
                       satisfactionScore: satisfaction,
                       biggestChange,

@@ -601,7 +601,7 @@ function slotWeightChangePct(
   return null;
 }
 
-/** Batch-write all slot percentage columns in one upsert round-trip. */
+/** Batch-write slot percentages only — never touches weight_kg / measured_at / created_at. */
 async function batchUpdateMeasurementPercentages(
   measurements: Lose2kgMeasurement[],
   baseline: number | null,
@@ -612,20 +612,13 @@ async function batchUpdateMeasurementPercentages(
     return { ...m, weightChangePct: pct, updatedAt };
   });
 
-  const { error } = await db().from("lose2kg_measurements").upsert(
-    withPct.map((m) => ({
+  const { error } = await db().rpc("lose2kg_batch_update_measurement_pcts", {
+    p_updates: withPct.map((m) => ({
       id: m.id,
-      period_id: m.periodId,
-      participant_id: m.participantId,
-      slot: m.slot,
-      weight_kg: m.weightKg,
-      measured_at: m.measuredAt,
       weight_change_pct: m.weightChangePct,
-      created_at: m.createdAt,
       updated_at: updatedAt,
     })),
-    { onConflict: "participant_id,slot" },
-  );
+  });
   if (error) throw new Lose2kgError(error.message, 500, "db_error");
   return withPct;
 }

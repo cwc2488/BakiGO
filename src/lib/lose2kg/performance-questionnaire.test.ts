@@ -69,15 +69,43 @@ describe("lose2kg performance — staff init single request", () => {
     expect(upsert).toContain("measurements: nextMeasurements");
   });
 
-  it("percentage updates use batch upsert, not serial per-slot loop", () => {
+  it("percentage updates use pct-only RPC, not serial per-slot loop", () => {
     const svc = src("src/lib/lose2kg/service.ts");
     expect(svc).toContain("batchUpdateMeasurementPercentages");
+    const batchFn = svc.slice(
+      svc.indexOf("async function batchUpdateMeasurementPercentages"),
+      svc.indexOf("export async function upsertMeasurement"),
+    );
+    expect(batchFn).toContain('rpc("lose2kg_batch_update_measurement_pcts"');
+    expect(batchFn).toContain("weight_change_pct");
+    expect(batchFn).toContain("updated_at");
+    // Must never include weight source-of-truth fields in the batch payload
+    expect(batchFn).not.toContain("weight_kg");
+    expect(batchFn).not.toContain("measured_at");
+    expect(batchFn).not.toContain("created_at");
+    expect(batchFn).not.toContain(".upsert(");
     const recalc = svc.slice(
       svc.indexOf("async function recalculateParticipantTickets"),
       svc.indexOf("export async function applyLiveMeasurementReading"),
     );
     expect(recalc).toContain("batchUpdateMeasurementPercentages");
     expect(recalc).not.toMatch(/for\s*\(\s*const m of measurements\s*\)[\s\S]*?\.update\(\s*\{\s*weight_change_pct/);
+  });
+
+  it("migration 089 pct RPC only updates weight_change_pct and updated_at", () => {
+    const sql = src("supabase/migrations/089_lose2kg_batch_measurement_pcts.sql");
+    expect(sql).toContain("lose2kg_batch_update_measurement_pcts");
+    const updateBlock = sql.slice(
+      sql.toLowerCase().indexOf("update public.lose2kg_measurements"),
+      sql.toLowerCase().indexOf("end;"),
+    );
+    expect(updateBlock).toContain("weight_change_pct");
+    expect(updateBlock).toContain("updated_at");
+    expect(updateBlock.toLowerCase()).not.toContain("weight_kg");
+    expect(updateBlock.toLowerCase()).not.toContain("measured_at");
+    expect(updateBlock.toLowerCase()).not.toContain("created_at");
+    expect(sql.toLowerCase()).not.toContain("drop table");
+    expect(sql.toLowerCase()).not.toContain("truncate");
   });
 
   it("staff grid uses memoized measurementLookup Map", () => {
@@ -125,6 +153,45 @@ describe("lose2kg week-4 questionnaire", () => {
     expect(bootstrap).toContain("public_display_name");
     expect(bootstrap).not.toContain("email");
     expect(bootstrap).not.toContain("phone");
+  });
+
+  it("public member search requires 2+ chars and caps at 20 results", () => {
+    const svc = src("src/lib/lose2kg/questionnaire.ts");
+    const searchFn = svc.slice(
+      svc.indexOf("export async function searchPublicSurveyMembers"),
+      svc.indexOf("export type QuestionnaireSubmitInput"),
+    );
+    expect(searchFn).toContain("q.length < 2");
+    expect(searchFn).toContain(", 20)");
+    expect(searchFn).not.toContain(", 40)");
+    expect(searchFn).toContain('.select("id, name")');
+    expect(searchFn).not.toContain("email");
+    expect(searchFn).not.toContain("phone");
+    expect(searchFn).toContain("findSettingsBySurveyToken");
+
+    const page = src("src/components/lose2kg/Lose2kgSurveyPage.tsx");
+    expect(page).toContain("query.trim().length < 2");
+  });
+
+  it("coach is optional; inviter required; sameCoach maps to inviter", () => {
+    const page = src("src/components/lose2kg/Lose2kgSurveyPage.tsx");
+    const canSubmit = page.slice(
+      page.indexOf("const canSubmit = useMemo"),
+      page.indexOf("function toggleHelp"),
+    );
+    expect(canSubmit).not.toContain("!sameCoach && !coach");
+    expect(canSubmit).not.toMatch(/if\s*\(\s*!sameCoach\s*&&\s*!coach/);
+    expect(page).toContain("同邀請人");
+    expect(page).toContain("coachMemberId: sameCoach ? inviter?.id : coach?.id ?? null");
+
+    const svc = src("src/lib/lose2kg/questionnaire.ts");
+    const validate = svc.slice(
+      svc.indexOf("function validateSubmitInput"),
+      svc.indexOf("export async function submitPublicSurvey"),
+    );
+    expect(validate).toContain("sameCoachAsInviter");
+    expect(validate).toContain("input.inviterMemberId");
+    expect(validate).toMatch(/coachMemberId\?\.trim\(\)\s*\|\|\s*null/);
   });
 
   it("segmentation rules are deterministic", () => {
