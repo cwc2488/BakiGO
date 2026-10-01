@@ -247,7 +247,10 @@ export type Lose2kgQuestionnaireResponse = {
   id: string;
   periodId: string;
   participantId: string;
-  inviterMemberId: string;
+  /** Legacy member attribution; nullable after free-text inviter migration. */
+  inviterMemberId: string | null;
+  /** Free-text inviter name (preferred display / attribution). */
+  inviterName: string;
   coachMemberId: string | null;
   satisfactionScore: number;
   biggestChange: Lose2kgBiggestChange;
