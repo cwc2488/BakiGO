@@ -134,7 +134,8 @@ function mapResponse(row: Record<string, unknown>): Lose2kgQuestionnaireResponse
     id: String(row.id),
     periodId: String(row.period_id),
     participantId: String(row.participant_id),
-    inviterMemberId: String(row.inviter_member_id),
+    inviterMemberId: row.inviter_member_id ? String(row.inviter_member_id) : null,
+    inviterName: row.inviter_name ? String(row.inviter_name) : "",
     coachMemberId: row.coach_member_id ? String(row.coach_member_id) : null,
     satisfactionScore: Number(row.satisfaction_score),
     biggestChange: row.biggest_change as Lose2kgBiggestChange,
@@ -308,36 +309,11 @@ export async function getPublicSurveyBootstrap(
   };
 }
 
-/** Public member search — id + display name only. */
-export async function searchPublicSurveyMembers(input: {
-  surveyToken: string;
-  query: string;
-  limit?: number;
-}): Promise<{ id: string; name: string }[]> {
-  await findSettingsBySurveyToken(input.surveyToken);
-  const q = input.query.trim();
-  if (q.length < 2) return [];
-  const limit = Math.min(Math.max(input.limit ?? 20, 1), 20);
-
-  const { data, error } = await db()
-    .from("members")
-    .select("id, name")
-    .ilike("name", `%${q}%`)
-    .order("name", { ascending: true })
-    .limit(limit);
-  if (error) throw new Lose2kgError(error.message, 500, "db_error");
-
-  return (data ?? []).map((row) => {
-    const r = row as Record<string, unknown>;
-    return { id: String(r.id), name: String(r.name) };
-  });
-}
+/** Public member search removed — free-text inviter only (migration 090). */
 
 export type QuestionnaireSubmitInput = {
   participantId: string;
-  inviterMemberId: string;
-  coachMemberId?: string | null;
-  sameCoachAsInviter?: boolean;
+  inviterName: string;
   satisfactionScore: number;
   biggestChange: Lose2kgBiggestChange;
   biggestChangeOther?: string | null;
@@ -353,15 +329,19 @@ export type QuestionnaireSubmitInput = {
 };
 
 function validateSubmitInput(input: QuestionnaireSubmitInput): {
-  coachMemberId: string | null;
+  inviterName: string;
   desiredHelp: Lose2kgDesiredHelp[];
   nextGoal: string;
 } {
   if (!input.participantId) {
     throw new Lose2kgError("請選擇參賽名稱。", 400, "participant_required");
   }
-  if (!input.inviterMemberId) {
-    throw new Lose2kgError("請選擇邀請人。", 400, "inviter_required");
+  const inviterName = (input.inviterName ?? "").trim();
+  if (!inviterName) {
+    throw new Lose2kgError("請填寫邀請人姓名。", 400, "inviter_name_required");
+  }
+  if (inviterName.length > 80) {
+    throw new Lose2kgError("邀請人姓名過長（最多 80 字）。", 400, "inviter_name_too_long");
   }
   if (
     !Number.isInteger(input.satisfactionScore) ||
@@ -397,10 +377,7 @@ function validateSubmitInput(input: QuestionnaireSubmitInput): {
   if (desiredHelp.length === 0) {
     throw new Lose2kgError("請至少選擇一項希望得到的協助。", 400, "desired_help_required");
   }
-  const coachMemberId = input.sameCoachAsInviter
-    ? input.inviterMemberId
-    : input.coachMemberId?.trim() || null;
-  return { coachMemberId, desiredHelp, nextGoal };
+  return { inviterName, desiredHelp, nextGoal };
 }
 
 export async function submitPublicSurvey(
@@ -418,11 +395,10 @@ export async function submitPublicSurvey(
   const periodId = String(settings.period_id);
   const validated = validateSubmitInput(input);
 
-  const { data, error } = await db().rpc("submit_lose2kg_questionnaire_v1", {
+  const { data, error } = await db().rpc("submit_lose2kg_questionnaire_v2", {
     p_period_id: periodId,
     p_participant_id: input.participantId,
-    p_inviter_member_id: input.inviterMemberId,
-    p_coach_member_id: validated.coachMemberId,
+    p_inviter_name: validated.inviterName,
     p_satisfaction_score: input.satisfactionScore,
     p_biggest_change: input.biggestChange,
     p_biggest_change_other: input.biggestChangeOther?.trim() || null,
@@ -445,11 +421,11 @@ export async function submitPublicSurvey(
     if (msg.includes("participant_not_in_period") || msg.includes("participant_not_active")) {
       throw new Lose2kgError("找不到此參賽者。", 400, "invalid_participant");
     }
-    if (msg.includes("inviter_required") || msg.includes("inviter_not_found")) {
-      throw new Lose2kgError("請選擇有效的邀請人。", 400, "inviter_required");
+    if (msg.includes("inviter_name_required")) {
+      throw new Lose2kgError("請填寫邀請人姓名。", 400, "inviter_name_required");
     }
-    if (msg.includes("coach_not_found")) {
-      throw new Lose2kgError("請選擇有效的教練。", 400, "invalid_coach");
+    if (msg.includes("inviter_name_too_long")) {
+      throw new Lose2kgError("邀請人姓名過長（最多 80 字）。", 400, "inviter_name_too_long");
     }
     if (msg.includes("questionnaire_not_configured")) {
       throw new Lose2kgError("問卷尚未設定。", 404, "not_found");
@@ -503,18 +479,18 @@ export async function getQuestionnaireAdminResults(
   );
   const byParticipant = new Map(responseList.map((r) => [r.participantId, r]));
 
-  const memberIds = new Set<string>();
+  // Legacy coach names only — inviter display uses stored inviter_name (no members lookup required).
+  const coachIds = new Set<string>();
   for (const r of responseList) {
-    memberIds.add(r.inviterMemberId);
-    if (r.coachMemberId) memberIds.add(r.coachMemberId);
+    if (r.coachMemberId) coachIds.add(r.coachMemberId);
   }
 
   const memberNameById = new Map<string, string>();
-  if (memberIds.size > 0) {
+  if (coachIds.size > 0) {
     const { data: members, error: mErr } = await db()
       .from("members")
       .select("id, name")
-      .in("id", [...memberIds]);
+      .in("id", [...coachIds]);
     if (mErr) throw new Lose2kgError(mErr.message, 500, "db_error");
     for (const m of members ?? []) {
       const row = m as Record<string, unknown>;
@@ -535,7 +511,7 @@ export async function getQuestionnaireAdminResults(
       publicDisplayName: String(pr.public_display_name),
       hasResponse: Boolean(response),
       inviterName: response
-        ? (memberNameById.get(response.inviterMemberId) ?? null)
+        ? response.inviterName.trim() || null
         : null,
       coachName: response?.coachMemberId
         ? (memberNameById.get(response.coachMemberId) ?? null)

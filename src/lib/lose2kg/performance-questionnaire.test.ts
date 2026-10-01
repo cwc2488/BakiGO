@@ -167,58 +167,109 @@ describe("lose2kg week-4 questionnaire", () => {
     expect(existsSync(resolve(ROOT, "src/app/lose2kg/survey/[token]/page.tsx"))).toBe(true);
   });
 
-  it("public survey APIs do not expose private member fields", () => {
-    const members = src("src/app/api/lose2kg/survey/[token]/members/route.ts");
+  it("public survey bootstrap does not expose private member fields", () => {
     const svc = src("src/lib/lose2kg/questionnaire.ts");
-    expect(svc).toContain('.select("id, name")');
-    expect(members).not.toContain("email");
-    expect(members).not.toContain("phone");
     const bootstrap = svc.slice(
       svc.indexOf("export async function getPublicSurveyBootstrap"),
-      svc.indexOf("export async function searchPublicSurveyMembers"),
+      svc.indexOf("export type QuestionnaireSubmitInput") >= 0
+        ? svc.indexOf("export type QuestionnaireSubmitInput")
+        : svc.indexOf("/** Public member search removed"),
     );
     expect(bootstrap).toContain("public_display_name");
     expect(bootstrap).not.toContain("email");
     expect(bootstrap).not.toContain("phone");
+    expect(bootstrap).not.toContain('from("members")');
   });
 
-  it("public member search requires 2+ chars and caps at 20 results", () => {
+  it("public member search is removed; inviter is free-text only", () => {
+    expect(
+      existsSync(resolve(ROOT, "src/app/api/lose2kg/survey/[token]/members/route.ts")),
+    ).toBe(false);
+
     const svc = src("src/lib/lose2kg/questionnaire.ts");
-    const searchFn = svc.slice(
-      svc.indexOf("export async function searchPublicSurveyMembers"),
-      svc.indexOf("export type QuestionnaireSubmitInput"),
-    );
-    expect(searchFn).toContain("q.length < 2");
-    expect(searchFn).toContain(", 20)");
-    expect(searchFn).not.toContain(", 40)");
-    expect(searchFn).toContain('.select("id, name")');
-    expect(searchFn).not.toContain("email");
-    expect(searchFn).not.toContain("phone");
-    expect(searchFn).toContain("findSettingsBySurveyToken");
+    expect(svc).not.toContain("searchPublicSurveyMembers");
+    expect(svc).toContain("submit_lose2kg_questionnaire_v2");
+    expect(svc).toContain("p_inviter_name");
+    expect(svc).toContain("請填寫邀請人姓名。");
 
     const page = src("src/components/lose2kg/Lose2kgSurveyPage.tsx");
-    expect(page).toContain("query.trim().length < 2");
+    expect(page).not.toContain("MemberSearchField");
+    expect(page).not.toContain("/members");
+    expect(page).not.toContain("同邀請人");
+    expect(page).not.toContain("inviterMemberId");
+    expect(page).not.toContain("coachMemberId");
+    expect(page).not.toContain("sameCoachAsInviter");
+    expect(page).toContain("inviterName");
+    expect(page).toContain("輸入邀請人姓名");
+    expect(page).toContain("inviterName.trim().length === 0");
+    expect(page).toContain("inviterName: inviterName.trim()");
+    expect(page).toContain("至少選 1 項");
+
+    const submit = src("src/app/api/lose2kg/survey/[token]/submit/route.ts");
+    expect(submit).toContain("inviterName");
+    expect(submit).not.toContain("inviterMemberId");
+    expect(submit).not.toContain("coachMemberId");
+    expect(submit).not.toContain("sameCoachAsInviter");
   });
 
-  it("coach is optional; inviter required; sameCoach maps to inviter", () => {
-    const page = src("src/components/lose2kg/Lose2kgSurveyPage.tsx");
-    const canSubmit = page.slice(
-      page.indexOf("const canSubmit = useMemo"),
-      page.indexOf("function toggleHelp"),
+  it("migration 090 adds free-text inviter_name and v2 RPC idempotently", () => {
+    const sql = src("supabase/migrations/090_lose2kg_inviter_free_text.sql");
+    expect(sql).toContain("add column if not exists inviter_name");
+    expect(sql).toContain("submit_lose2kg_questionnaire_v2");
+    expect(sql).toContain("p_inviter_name");
+    expect(sql).toContain("inviter_name_required");
+    expect(sql).toContain("questionnaire_completed");
+    expect(sql).toContain("drop not null");
+    expect(sql).toContain("lose2kg_questionnaire_responses_inviter_name_check");
+    expect(sql).toContain("char_length(trim(inviter_name)) between 1 and 80");
+    expect(sql).toContain("before insert or update of inviter_member_id, inviter_name");
+    expect(sql).not.toContain("security definer\nset search_path = public\nas $$\ndeclare\n  v_name text;");
+    // Trigger helper must not be SECURITY DEFINER
+    const triggerFn = sql.slice(
+      sql.indexOf("create or replace function public.lose2kg_questionnaire_fill_inviter_name"),
+      sql.indexOf("drop trigger if exists lose2kg_questionnaire_fill_inviter_name_trg"),
     );
-    expect(canSubmit).not.toContain("!sameCoach && !coach");
-    expect(canSubmit).not.toMatch(/if\s*\(\s*!sameCoach\s*&&\s*!coach/);
-    expect(page).toContain("同邀請人");
-    expect(page).toContain("coachMemberId: sameCoach ? inviter?.id : coach?.id ?? null");
+    expect(triggerFn.toLowerCase()).not.toContain("security definer");
+    expect(sql.toLowerCase()).not.toContain("when others then");
+    expect(sql.toLowerCase()).not.toContain("drop table");
+    expect(sql.toLowerCase()).not.toContain("truncate");
+    expect(sql).not.toMatch(/delete from public\.lose2kg_questionnaire_responses/i);
+  });
 
-    const svc = src("src/lib/lose2kg/questionnaire.ts");
-    const validate = svc.slice(
-      svc.indexOf("function validateSubmitInput"),
-      svc.indexOf("export async function submitPublicSurvey"),
+  it("migration 090 v2 INSERT nulls IDs but ON CONFLICT preserves legacy attribution", () => {
+    const sql = src("supabase/migrations/090_lose2kg_inviter_free_text.sql");
+    const v2 = sql.slice(
+      sql.indexOf("create or replace function public.submit_lose2kg_questionnaire_v2"),
+      sql.indexOf("revoke all on function public.submit_lose2kg_questionnaire_v2"),
     );
-    expect(validate).toContain("sameCoachAsInviter");
-    expect(validate).toContain("input.inviterMemberId");
-    expect(validate).toMatch(/coachMemberId\?\.trim\(\)\s*\|\|\s*null/);
+    const valuesIdx = v2.indexOf(") values (");
+    const conflictIdx = v2.indexOf("on conflict (period_id, participant_id) do update set");
+    expect(valuesIdx).toBeGreaterThan(-1);
+    expect(conflictIdx).toBeGreaterThan(valuesIdx);
+
+    const insertValues = v2.slice(valuesIdx, conflictIdx);
+    // New inserts explicitly set both IDs null
+    expect(insertValues).toMatch(/null,\s*null,\s*v_inviter_name/);
+
+    const conflictUpdate = v2.slice(conflictIdx);
+    expect(conflictUpdate).toContain("inviter_name = excluded.inviter_name");
+    expect(conflictUpdate).not.toContain("inviter_member_id = null");
+    expect(conflictUpdate).not.toContain("coach_member_id = null");
+    expect(conflictUpdate).toContain("Preserve legacy inviter_member_id / coach_member_id on edit");
+    expect(conflictUpdate).toContain("questionnaire_completed");
+  });
+
+  it("admin results prefer stored inviter_name; inviter_member_id may be null", () => {
+    const svc = src("src/lib/lose2kg/questionnaire.ts");
+    expect(svc).toContain("inviterName: row.inviter_name");
+    expect(svc).toContain("inviterMemberId: row.inviter_member_id ? String(row.inviter_member_id) : null");
+    const admin = svc.slice(
+      svc.indexOf("export async function getQuestionnaireAdminResults"),
+      svc.length,
+    );
+    expect(admin).toContain("response.inviterName.trim()");
+    // Inviter display must not require members lookup by inviter_member_id
+    expect(admin).not.toContain("memberNameById.get(response.inviterMemberId)");
   });
 
   it("segmentation rules are deterministic", () => {

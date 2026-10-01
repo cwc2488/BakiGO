@@ -20,8 +20,6 @@ type Bootstrap = {
   participants: { id: string; publicDisplayName: string }[];
 };
 
-type MemberOption = { id: string; name: string };
-
 type SuccessState = {
   awardedThisSubmit: boolean;
 };
@@ -119,108 +117,6 @@ function ChoiceButton({
   );
 }
 
-function MemberSearchField({
-  token,
-  label,
-  value,
-  onChange,
-  required,
-}: {
-  token: string;
-  label: string;
-  value: MemberOption | null;
-  onChange: (next: MemberOption | null) => void;
-  required?: boolean;
-}) {
-  const [query, setQuery] = useState("");
-  const [options, setOptions] = useState<MemberOption[]>([]);
-  const [searching, setSearching] = useState(false);
-
-  useEffect(() => {
-    if (query.trim().length < 2) {
-      setOptions([]);
-      return;
-    }
-    let cancelled = false;
-    const handle = window.setTimeout(() => {
-      void (async () => {
-        setSearching(true);
-        try {
-          const body = await surveyFetch<{ ok: true; members: MemberOption[] }>(
-            token,
-            `/members?q=${encodeURIComponent(query.trim())}`,
-          );
-          if (!cancelled) setOptions(body.members);
-        } catch {
-          if (!cancelled) setOptions([]);
-        } finally {
-          if (!cancelled) setSearching(false);
-        }
-      })();
-    }, 220);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, [query, token]);
-
-  return (
-    <div className="space-y-2">
-      <label className="block text-[0.875rem] font-medium text-[#1d1d1f]">
-        {label}
-        {required ? <span className="text-[#d70015]"> *</span> : null}
-      </label>
-      {value ? (
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-[#1d1d1f] bg-[#1d1d1f] px-4 py-3 text-white">
-          <span className="font-medium">{value.name}</span>
-          <button
-            type="button"
-            className="text-[0.8125rem] text-white/80 underline"
-            onClick={() => {
-              onChange(null);
-              setQuery("");
-            }}
-          >
-            重選
-          </button>
-        </div>
-      ) : (
-        <>
-          <input
-            className="w-full rounded-xl border border-[#ddd6c8] bg-white px-4 py-3 text-[1rem]"
-            placeholder="搜尋姓名…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {searching ? (
-            <p className="text-[0.75rem] text-[#86868b]">搜尋中…</p>
-          ) : options.length > 0 ? (
-            <ul className="max-h-48 overflow-y-auto rounded-xl border border-[#e8e4dc] bg-white">
-              {options.map((m) => (
-                <li key={m.id}>
-                  <button
-                    type="button"
-                    className="w-full px-4 py-3 text-left text-[0.9375rem] transition hover:bg-[#f4f1ea]"
-                    onClick={() => {
-                      onChange(m);
-                      setQuery("");
-                      setOptions([]);
-                    }}
-                  >
-                    {m.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : query.trim().length >= 2 ? (
-            <p className="text-[0.75rem] text-[#86868b]">找不到符合的人</p>
-          ) : null}
-        </>
-      )}
-    </div>
-  );
-}
-
 export function Lose2kgSurveyPage() {
   const params = useParams<{ token: string }>();
   const token = params.token;
@@ -231,9 +127,7 @@ export function Lose2kgSurveyPage() {
   const [success, setSuccess] = useState<SuccessState | null>(null);
 
   const [participantId, setParticipantId] = useState("");
-  const [inviter, setInviter] = useState<MemberOption | null>(null);
-  const [coach, setCoach] = useState<MemberOption | null>(null);
-  const [sameCoach, setSameCoach] = useState(false);
+  const [inviterName, setInviterName] = useState("");
   const [satisfaction, setSatisfaction] = useState<number | null>(null);
   const [biggestChange, setBiggestChange] = useState<Lose2kgBiggestChange | null>(null);
   const [biggestChangeOther, setBiggestChangeOther] = useState("");
@@ -266,16 +160,15 @@ export function Lose2kgSurveyPage() {
   }, [token]);
 
   const canSubmit = useMemo(() => {
-    if (!participantId || !inviter || satisfaction == null) return false;
+    if (!participantId || inviterName.trim().length === 0 || satisfaction == null) return false;
     if (!biggestChange || !productInterest || !favoritePart) return false;
     if (!businessInterest || !incomeInterest || !consultation) return false;
     if (!nextGoal.trim()) return false;
     if (desiredHelp.length === 0) return false;
-    // Coach is optional: sameCoach uses inviter; otherwise coach may be empty → null
     return true;
   }, [
     participantId,
-    inviter,
+    inviterName,
     satisfaction,
     biggestChange,
     productInterest,
@@ -378,50 +271,18 @@ export function Lose2kgSurveyPage() {
           </div>
         </section>
 
-        <section className="space-y-4 rounded-2xl border border-[#e8e4dc] bg-white p-4">
-          <MemberSearchField
-            token={token}
-            label="這次是誰邀請你參加減重挑戰賽的？"
-            value={inviter}
-            required
-            onChange={(next) => {
-              setInviter(next);
-              if (sameCoach) setCoach(next);
-            }}
+        <section className="space-y-3 rounded-2xl border border-[#e8e4dc] bg-white p-4">
+          <label className="block text-[1rem] font-semibold">
+            這次是誰邀請你參加減重挑戰賽的？ <span className="text-[#d70015]">*</span>
+          </label>
+          <input
+            className="w-full rounded-xl border border-[#ddd6c8] px-4 py-3 text-[1rem]"
+            placeholder="輸入邀請人姓名"
+            value={inviterName}
+            onChange={(e) => setInviterName(e.target.value)}
+            maxLength={80}
+            autoComplete="name"
           />
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[0.875rem] font-medium">目前主要協助你的教練是誰？</p>
-              <button
-                type="button"
-                className={`rounded-lg px-3 py-1.5 text-[0.75rem] ${
-                  sameCoach ? "bg-[#1d1d1f] text-white" : "bg-[#f4f1ea] text-[#86868b]"
-                }`}
-                onClick={() => {
-                  const next = !sameCoach;
-                  setSameCoach(next);
-                  if (next && inviter) setCoach(inviter);
-                  if (!next) setCoach(null);
-                }}
-              >
-                同邀請人
-              </button>
-            </div>
-            {!sameCoach ? (
-              <MemberSearchField
-                token={token}
-                label=""
-                value={coach}
-                onChange={setCoach}
-              />
-            ) : inviter ? (
-              <p className="rounded-xl bg-[#f4f1ea] px-4 py-3 text-[0.9375rem]">
-                教練：{inviter.name}
-              </p>
-            ) : (
-              <p className="text-[0.75rem] text-[#86868b]">請先選擇邀請人</p>
-            )}
-          </div>
         </section>
 
         <section className="space-y-3 rounded-2xl border border-[#e8e4dc] bg-white p-4">
@@ -494,7 +355,9 @@ export function Lose2kgSurveyPage() {
         </section>
 
         <section className="space-y-3 rounded-2xl border border-[#e8e4dc] bg-white p-4">
-          <h2 className="text-[1rem] font-semibold">下一階段你希望得到哪些協助？（可複選）</h2>
+          <h2 className="text-[1rem] font-semibold">
+            下一階段你希望得到哪些協助？（可複選，至少選 1 項）
+          </h2>
           <div className="space-y-2">
             {HELP_OPTIONS.map((opt) => (
               <ChoiceButton
@@ -605,9 +468,7 @@ export function Lose2kgSurveyPage() {
                     method: "POST",
                     body: JSON.stringify({
                       participantId,
-                      inviterMemberId: inviter?.id,
-                      coachMemberId: sameCoach ? inviter?.id : coach?.id ?? null,
-                      sameCoachAsInviter: sameCoach,
+                      inviterName: inviterName.trim(),
                       satisfactionScore: satisfaction,
                       biggestChange,
                       biggestChangeOther,

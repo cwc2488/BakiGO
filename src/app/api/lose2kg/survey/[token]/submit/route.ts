@@ -21,9 +21,7 @@ export async function POST(
     const { token } = await context.params;
     const body = (await request.json().catch(() => ({}))) as {
       participantId?: string;
-      inviterMemberId?: string;
-      coachMemberId?: string | null;
-      sameCoachAsInviter?: boolean;
+      inviterName?: string;
       satisfactionScore?: number;
       biggestChange?: Lose2kgBiggestChange;
       biggestChangeOther?: string | null;
@@ -40,9 +38,7 @@ export async function POST(
 
     const result = await submitPublicSurvey(token, {
       participantId: body.participantId ?? "",
-      inviterMemberId: body.inviterMemberId ?? "",
-      coachMemberId: body.coachMemberId,
-      sameCoachAsInviter: Boolean(body.sameCoachAsInviter),
+      inviterName: body.inviterName ?? "",
       satisfactionScore: Number(body.satisfactionScore),
       biggestChange: body.biggestChange as Lose2kgBiggestChange,
       biggestChangeOther: body.biggestChangeOther,
